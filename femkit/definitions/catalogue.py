@@ -15,6 +15,7 @@ from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.core.units import UnitTable, Units
 from femkit.definitions.formulations import FormulationDefinition
+from femkit.definitions.meshers import MesherDefinition
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 
 
@@ -30,6 +31,7 @@ class Catalogue:
     schedulers: dict[str, SchedulerKind]
     units: UnitTable
     formulations: dict[str, FormulationDefinition]
+    meshers: dict[str, MesherDefinition]
 
 
 class CatalogueError(DefinitionError):
@@ -123,6 +125,17 @@ def schedulers(ctx: Context) -> dict[str, SchedulerKind]:
     return ctx.cached("schedulers", load_schedulers)
 
 
+def load_meshers(root: Path | None = None) -> dict[str, MesherDefinition]:
+    """Every mesher; each names an engine environment that provides it (models.md § 6.5)."""
+    environments = {p.stem for p in ((root or data_root()) / "environments").glob("*.toml")}
+    return _load_dir((root or data_root()) / "meshers", MesherDefinition, {"environments": environments})
+
+
+def meshers(ctx: Context) -> dict[str, MesherDefinition]:
+    """The meshers, loaded once per invocation."""
+    return ctx.cached("meshers", load_meshers)
+
+
 def formulations(ctx: Context) -> dict[str, FormulationDefinition]:
     """The formulations, loaded once per invocation; they need no engine registry."""
     return ctx.cached("formulations", load_formulations)
@@ -144,6 +157,7 @@ def load_catalogue(root: Path | None = None, *, engines: Mapping[str, frozenset[
         "schedulers": lambda: load_schedulers(root),
         "units": lambda: load_units(root),
         "formulations": lambda: load_formulations(root),
+        "meshers": lambda: load_meshers(root),
     }
     for name, load in loaders.items():
         try:

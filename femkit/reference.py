@@ -27,6 +27,7 @@ from femkit.core.schema import Model, field_extras
 from femkit.core.units import UnitTable, Units
 from femkit.definitions import catalogue
 from femkit.definitions.formulations import FormulationDefinition
+from femkit.definitions.meshers import MesherDefinition
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 from femkit.jobs.record import Record
 from femkit.models.schema import ModelFile, StudyFile
@@ -36,7 +37,7 @@ from femkit.engines import registered
 PAGES: dict[str, tuple[str, str, list[type[Model]]]] = {
     "definitions": ("Shipped definitions", "`femkit/data/` (definitions.md)",
                     [ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind, UnitTable,
-                     FormulationDefinition]),
+                     FormulationDefinition, MesherDefinition]),
     "config": ("User configuration", "`<config>/config.toml` (config.md § 3)", [UserConfig]),
     "machines": ("Machine records", "`<config>/machines/<name>.toml` (jobs.md § 9)", [Record]),
     "models": ("Models and studies", "`<project>/model.toml` and `<project>/studies/<study>/study.toml` "
@@ -60,6 +61,7 @@ class CheckResult(Result):
     schedulers: list[str] = Field(default_factory=list, description="scheduler kinds that loaded")
     units: int = Field(0, description="unit symbols the unit table reads, prefixed ones included")
     formulations: list[str] = Field(default_factory=list, description="formulations that loaded")
+    meshers: list[str] = Field(default_factory=list, description="meshers that loaded")
 
     def text(self) -> str:
         if not self.ok():
@@ -71,6 +73,7 @@ class CheckResult(Result):
             ("schedulers", text.show(self.schedulers)),
             ("units", f"units.toml, {text.count(self.units, 'symbol')}"),
             ("formulations", text.show(self.formulations)),
+            ("meshers", text.show(self.meshers)),
         ]))
 
 
@@ -88,7 +91,7 @@ def schema_check(req: CheckRequest, ctx: Context) -> CheckResult:
         return CheckResult(issues=issues)
     return CheckResult(environments=list(cat.environments), managers=list(cat.managers),
                        schedulers=list(cat.schedulers), units=len(Units(cat.units).symbols()),
-                       formulations=list(cat.formulations))
+                       formulations=list(cat.formulations), meshers=list(cat.meshers))
 
 
 # ------------------------------------------------------------------ rendering

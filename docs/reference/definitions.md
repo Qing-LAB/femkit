@@ -274,3 +274,40 @@ A quantity an observable may name.
 | `description` | text | required | one plain sentence: what it is or states |
 | `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
 | `unit` | text | required | its unit |
+
+## MesherDefinition
+
+One mesher (models.md § 6.5).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `description` | text | required | one line |
+| `provided_by` | text | required | the engine environment it runs in |
+| `dimensions` | list of `2` \| `3` | required | the dimensions it meshes |
+| `builds` | list of `rectangle` \| `disk` \| `polygon` \| `box` \| `sphere` \| `cylinder` \| `extrusion` \| `union` \| `difference` \| `intersection` \| `import` | required | the model's shape kinds it can build |
+| `imports` | list of `step` \| `iges` \| `brep` \| `stl` | empty | the CAD formats an `import` may be in |
+| `controls` | list of `size` \| `regions` | required | the mesh policy's keys it honors |
+| `tolerance` | [Tolerance](#tolerance), optional | — | its geometric tolerance; absent: not known, and no feature can be checked against it |
+| `writes` | [Writes](#writes) | required | the mesh it writes |
+| `orders` | list of integer | required | the geometry orders it writes |
+| `keeps_region_names` | boolean | required | whether the mesh's parts keep the model's region names |
+| `basis` | text | required | where these facts come from: what was measured, on which version, or a citation |
+
+## Tolerance
+
+How close two points must be for the mesher to merge them.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `kind` | `absolute` \| `relative` | required | in the length unit geometry is handed over in, or relative to the model's size |
+| `value` | text | required | a plain number |
+
+## Writes
+
+The mesh file it writes.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `format` | text | required | the format (`msh`, `vol`) |
+| `version` | text, optional | — | the format's version, where it has several |
+| `encoding` | `ascii` \| `binary`, optional | — | text or binary |

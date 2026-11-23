@@ -267,3 +267,33 @@ def test_a_formulation_that_misstates_itself_does_not_load(change, at):
     with pytest.raises(DefinitionError) as caught:
         validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units())})
     assert at in [path for path, _ in caught.value.problems]
+
+
+def test_the_meshers_build_exactly_the_models_shape_kinds():
+    """Fails if a mesher may name a shape kind the model has not, or the model gains a kind no
+    mesher could ever declare: the two lists are one (models.md § 3, § 6.5)."""
+    import typing
+    from femkit.definitions.meshers import ShapeKind
+    from femkit.models.schema import Shape
+    kinds = set()
+    for member in typing.get_args(typing.get_args(Shape)[0]):
+        kinds |= set(typing.get_args(member.model_fields["kind"].annotation))
+    assert kinds == set(typing.get_args(ShapeKind))
+
+
+@pytest.mark.parametrize("change, at", [
+    ({"provided_by": "comsol"}, "provided_by"),                 # no such environment
+    ({"imports": []}, "imports"),                              # builds `import`, imports nothing
+    ({"builds": ["torus"]}, "builds[0]"),                      # no such shape kind
+])
+def test_a_mesher_that_misstates_itself_does_not_load(change, at):
+    """Fails if a mesher names an environment that does not exist, builds `import` with no
+    format, or a shape the model does not have (models.md § 6.5)."""
+    import tomllib
+    from femkit.core.schema import DefinitionError, validate
+    from femkit.definitions.catalogue import data_root
+    from femkit.definitions.meshers import MesherDefinition
+    data = tomllib.loads((data_root() / "meshers" / "gmsh.toml").read_text()) | change
+    with pytest.raises(DefinitionError) as caught:
+        validate(MesherDefinition, data, "m.toml", {"environments": {"elmer", "ngsolve"}})
+    assert at in [path for path, _ in caught.value.problems]

@@ -481,6 +481,31 @@ keeps.
 | `netgen` | the `ngsolve` environment | constructive solid geometry, 2-D geometry and STL; no STEP import while its build sets `USE_OCC = false` | its own mesh, curved to its geometry |
 | `gmsh` | the `elmer` environment | its own geometry kernels; ElmerGrid converts its meshes for Elmer | MSH 2.2 ASCII when the mesh is shared, the form Netgen's Gmsh reader parses; first or second geometry order, which ElmerGrid and Netgen's reader both keep |
 
+The `gmsh` definition, whole — every key is in
+[`../reference/definitions.md`](../reference/definitions.md):
+
+```toml
+description = "Gmsh with its OpenCASCADE kernel"
+provided_by = "elmer"
+dimensions = [2, 3]
+builds = ["rectangle", "disk", "polygon", "box", "sphere", "cylinder", "extrusion",
+          "union", "difference", "intersection", "import"]
+imports = ["step", "iges", "brep"]
+controls = ["size", "regions"]
+tolerance = { kind = "absolute", value = "1e-8" }   # in the length unit geometry is handed over in
+writes = { format = "msh", version = "2.2", encoding = "ascii" }
+orders = [1, 2]
+keeps_region_names = true
+basis = "measured 2026-11-23 on gmsh 4.15.2 (conda-forge, OpenCASCADE 8.0.1): its build options, Geometry.Tolerance; orders 1 and 2 as models.md § 6.5 states what ElmerGrid and Netgen's reader keep, not yet measured (plan § 3, M6)"
+```
+
+- A mesher states only what is measured or cited, in `basis`; what is not
+  known is left out — a mesher without `tolerance` cannot have the smallest
+  feature checked against it, and that is a match line.
+- `builds` names the model's shape kinds (§ 3), `controls` the mesh policy's
+  keys (§ 5), and `provided_by` an engine environment; loading refuses any
+  other.
+
 - **Each engine meshes with its own by default** — NGSolve with Netgen, Elmer
   with Gmsh — declared as the environment's default mesher, and run inside the
   environment during its preparation; no person's code runs there. A

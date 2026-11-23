@@ -1,0 +1,15 @@
+# Netgen, in the ngsolve environment (models.md § 6.5): constructive solid geometry in 3-D,
+# 2-D constructive geometry (CSG2d), and STL. The ngsolve build sets USE_OCC = false, so it
+# imports no STEP. Its mesh is its own, curved to its geometry by NGSolve. Its geometric
+# tolerance is not stated: it has not been measured.
+description = "Netgen's constructive geometry, without OpenCASCADE"
+provided_by = "ngsolve"
+dimensions = [2, 3]
+builds = ["rectangle", "disk", "polygon", "box", "sphere", "cylinder", "extrusion",
+          "union", "difference", "intersection", "import"]
+imports = ["stl"]
+controls = ["size", "regions"]
+writes = { format = "vol" }
+orders = [1, 2, 3, 4]
+keeps_region_names = true
+basis = "measured 2026-11-23 on netgen 6.2.2606 as the ngsolve environment builds it: netgen.csg (OrthoBrick, Sphere, Cylinder, Extrusion), netgen.geom2d (CSG2d, Rectangle, Circle, Solid2d), netgen.stl; netgen.occ refuses to load; Mesh.Curve at orders 1-4 on a unit disk, area errors 1.4e-1, 9.0e-4, 1.1e-4, 1.2e-6"
