@@ -203,6 +203,31 @@ def test_a_step_ended_by_sigkill_is_killed_and_names_the_interactive_allocation(
     assert issue.next[0].split()[0] == load_schedulers()["slurm"].interactive
 
 
+@pytest.mark.parametrize("log_line, expected", [
+    ("x86_64-conda-linux-gnu-gfortran: fatal error: Killed signal terminated program f951", "killed"),
+    ("Acoustics.F90:12:3: Error: Symbol 'x' at (1) has no IMPLICIT type", "failed"),
+], ids=["compiler killed", "compile error"])
+def test_a_compiler_killed_under_the_build_tool_makes_its_step_killed(log_line, expected, tmp_path, monkeypatch):
+    """Fails if a compile whose compiler the system killed reads as an ordinary failure, so the
+    login-node advice never shows, or if a real compile error reads as killed: make exits 2 either
+    way, and only the log tells (envs.md § 6.2; the line as measured on a cluster's login node)."""
+    from femkit.core.process import ProcessResult
+    from femkit.definitions.catalogue import load_environments
+    from femkit.envs import install
+    from femkit.envs.manager import resolve
+
+    def make(argv, log=None, **kw):
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(f"[ 63%] Built target CoilSolver\n{log_line}\ngmake: *** [Makefile:166: all] Error 2\n")
+        return ProcessResult(tuple(argv), 2, "", "", log)
+
+    monkeypatch.setattr(install.process, "run", make)
+    t = install.Target(name="elmer", env=load_environments(None, registered())["elmer"], prefix=tmp_path / "p",
+                       manager=resolve(ctx()), channels=[], python_minor="3.12", cuda_architectures=None, jobs=1,
+                       install_fingerprint="f", launcher=["mpirun", "-np", "{ranks}"])
+    assert install.run_step(t, Step(id="compile:elmer", describe="", argv=("x",)), tmp_path / "logs")[0] == expected
+
+
 def test_a_step_killed_inside_an_allocation_is_not_sent_to_another(monkeypatch):
     """Fails if a step the allocation's own memory limit killed is told to run inside an
     interactive allocation, which it already is (envs.md § 6.2)."""

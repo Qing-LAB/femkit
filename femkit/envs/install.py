@@ -185,13 +185,31 @@ KILLED = "killed"
 SIGKILL_CODES = (-9, 137)  # killed by SIGKILL: directly, or as a shell reports it
 
 
+#: What GCC's driver prints when the compiler it started is ended by SIGKILL, as measured on a
+#: cluster's login node: `x86_64-conda-linux-gnu-gfortran: fatal error: Killed signal terminated
+#: program f951`. The build tool then exits with its own code; only the log tells (envs.md § 6.2).
+COMPILER_KILLED = "Killed signal terminated program"
+
+
+def _compiler_killed(log: Path) -> str | None:
+    """The line of ``log`` that says a compiler was ended by SIGKILL, if one does."""
+    try:
+        with open(log, encoding="utf-8", errors="replace") as fh:
+            return next((line.strip() for line in fh if COMPILER_KILLED in line), None)
+    except OSError:
+        return None
+
+
 def _ended(result: process.ProcessResult, log: Path) -> str:
-    """What a step's command ending means: done, failed, or `killed` — ended by SIGKILL, on a
-    cluster most often a login node's memory limit (envs.md § 6.2)."""
+    """What a step's command ending means: done, failed, or `killed` — it, or a compiler under
+    it, ended by SIGKILL, on a cluster most often a login node's limits (envs.md § 6.2)."""
     if result.ok:
         return "done"
     if result.returncode in SIGKILL_CODES:
         _note(log, f"killed (exit {result.returncode}): SIGKILL, most often a memory limit")
+        return KILLED
+    if line := _compiler_killed(log):
+        _note(log, f"killed: a compiler under the build tool was ended by SIGKILL, most often a memory limit: {line}")
         return KILLED
     return "failed"
 
