@@ -835,7 +835,20 @@ flowchart LR
   `region:boundary`, `region:domain`, `region:interface`, `material`,
   `quantity`, `parameter` — and becomes a port of that type; the reference
   validator reads the same annotation, so the graph and the check cannot
-  disagree. A port accepts only its own type.
+  disagree. A port accepts only its own type. Each port carries the address a
+  wire drawn from it writes — a list's port adds the name to the list — and a
+  table naming objects by key and value, `assign`, gives each region its key
+  can name a port at `assign.<region>`. Each edge says how its reference is
+  held — a table's key, a value, a list's item, or a name used inside a value's
+  text — which says how the wire is cut: the first two by `model unset` of its
+  address, an item by setting the list without it, a use in a text only by
+  editing that text.
+- **The document is all a surface needs.** Each node carries its fields as
+  its file writes them, each at its address, its place in the chain's order
+  and whether `model rename` takes it; the palette, each entry with the names
+  its address needs and the node kinds that may fill them; the fields that
+  take one of a list, the formulation among them. A surface names no field of
+  its own ([`api.md`](api.md) § 5.2).
 - **The palette comes from the formulation**: the condition, source, truncation
   and observable kinds it allows, and the material properties it reads.
 - **Status.** Each node carries the findings of `model check` that name it;
@@ -846,7 +859,8 @@ flowchart LR
   it is refused when cases are expanded or prepared.
 - **Layout is presentation.** Node positions live in
   `<project>/.femkit/layout.json`, written by `model layout`, read by no other
-  step.
+  step; the page applies a move without showing its plan
+  ([`api.md`](api.md) § 5.2).
 
 ### 11.3 The web interface
 

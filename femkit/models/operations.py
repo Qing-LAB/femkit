@@ -334,6 +334,8 @@ class GraphResult(Result):
     project: str = Field(description="the project")
     study: str | None = Field(default=None, description="the study shown")
     formulation: str | None = Field(default=None, description="the model's formulation")
+    choices: list[graph.GraphChoice] = Field(default_factory=list, description="the fields that take one of a list")
+    studies: list[str] = Field(default_factory=list, description="the project's studies")
     science: str | None = Field(default=None, description="its science document, for the palette's sections")
     nodes: list[graph.GraphNode] = Field(default_factory=list)
     edges: list[graph.GraphEdge] = Field(default_factory=list)
@@ -356,13 +358,15 @@ def model_graph(req: GraphRequest, ctx: Context) -> GraphResult:
     project = _project(req)
     formulations = catalogue.formulations(ctx)
     if not model_file(project).is_file():
-        return GraphResult(project=str(project), study=req.study, palette=graph.palette(None, req.study))
+        return GraphResult(project=str(project), study=req.study, palette=graph.palette(None, req.study),
+                           choices=graph.choices(None, sorted(formulations)), studies=studies(project))
     model = load_model(project, ctx)
     s = load_study(project, req.study, ctx, model) if req.study else None
     issues = check.findings(model, formulations, catalogue.units(ctx))
     nodes, edges, loose = graph.build(model, req.study, s, issues, project)
     f = formulations.get(model.formulation or "")
     return GraphResult(project=str(project), study=req.study, formulation=model.formulation,
+                       choices=graph.choices(model, sorted(formulations)), studies=studies(project),
                        science=f.science if f else None, nodes=nodes, edges=edges, issues=loose,
                        palette=graph.palette(f, req.study),
                        mermaid=graph.mermaid(nodes, edges) if req.mermaid else None)

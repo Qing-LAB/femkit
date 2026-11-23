@@ -193,3 +193,75 @@ def test_positions_are_saved_for_known_nodes_only(project):
     assert next(n for n in graph(project).nodes if n.address == "model:regions.left").position == [10, 20]
     with pytest.raises(UsageError, match="no node"):
         op.plan(op.request_from({"project": str(project), "positions": {"model:regions.nowhere": [0, 0]}}), ctx())
+
+
+def test_every_field_the_graph_shows_set_back_as_written_changes_nothing(project):
+    """Fails if a field the page shows, set back unchanged at its address, is refused or changes
+    the file — a number shown as text, or a parameter at an address `model set` cannot take
+    would make the inspector's every Set fail or rewrite the person's value (models.md § 11.2)."""
+    text = model_file(project).read_text().replace('size = [1, 1]', 'size = [0.5, 1]')
+    model_file(project).write_text(text)
+    nodes = graph(project, study="check").nodes
+    shown = {f.address: f.text for n in nodes for f in n.fields}
+    assert shown["model:parameters.bias"] == '"1 V"' and shown["model:geometry.shapes.square.size"] == "[0.5, 1]"
+    before = {p: p.read_text() for p in (model_file(project), study_file(project, "check"))}
+    for address, written in shown.items():
+        edit("set", project, address, written)
+    assert {p: p.read_text() for p in before} == before
+
+
+def test_every_reference_a_wire_is_drawn_into_is_under_a_port_of_its_node(project):
+    """Fails if a reference held as a value or a list item — what a wire is drawn into — has no
+    port on the node it starts from, or a port accepts other than the schema's type: the page
+    could not draw it, or would draw what the loader refuses (models.md § 11.2)."""
+    g = graph(project, study="check")
+    by = {n.address: n for n in g.nodes}
+    held = [e for e in g.edges if e.held in ("value", "item")]
+    assert held
+    for e in held:
+        ports = [p for p in by[e.source].ports if e.address == p.address or e.address.startswith(p.address + ".")]
+        target = by[e.target]
+        assert ports, e
+        assert any(target.kind in p.accepts or f"{target.kind}:{target.type}" in p.accepts for p in ports), e
+    domain = {p.name: p for p in by["model:regions.domain"].ports}
+    assert (domain["shapes"].many, domain["shapes"].names) == (True, ["square"])
+    assert (domain["material"].address, domain["material"].accepts) == ("model:assign.domain", ["material"])
+    assert {p.name for p in by["model:regions.left"].ports} == {"faces_of"}    # a boundary's own rules only
+
+
+def test_a_wire_drawn_through_a_port_writes_what_the_loader_reads(project):
+    """Fails if setting a port's address to a name, or adding one to a list port, as a wire
+    does, does not give the reference the port names (models.md § 11.2)."""
+    edit("set", project, "model:materials.air", '{ relative_permittivity = { value = "1", convention = "real", '
+                                                 'source = "s", range = "all" } }')
+    edit("set", project, "model:geometry.shapes.extra", '{ kind = "rectangle", corner = [1, 0], size = [1, 1] }')
+    domain = {p.name: p for p in next(n for n in graph(project).nodes if n.address == "model:regions.domain").ports}
+    edit("set", project, domain["material"].address, '"air"')
+    edit("set", project, domain["shapes"].address, '["square", "extra"]')
+    model = load_model(project, ctx())
+    assert model.assign["domain"] == "air" and model.regions["domain"].shapes == ["square", "extra"]
+
+
+def test_a_parameter_used_twice_in_one_value_is_one_wire(project):
+    """Fails if one value naming a parameter twice gives two wires, which a surface cannot tell
+    apart (models.md § 11.2)."""
+    text = model_file(project).read_text().replace('value = "bias"', 'value = "bias * 2 - bias"')
+    model_file(project).write_text(text)
+    wires = [e for e in graph(project).edges if e.target == "model:parameters.bias" and e.source == "model:conditions.right"]
+    assert len(wires) == 1
+
+
+def test_the_graph_names_what_a_surface_needs_and_no_surface_list(project):
+    """Fails if the order, the names an add needs, or the choices a surface offers are not in
+    the graph document — a surface would have to keep a list of its own (api.md § 5.2)."""
+    g = graph(project)
+    ranks = {n.kind: n.rank for n in g.nodes}
+    assert ranks["parameter"] < ranks["shape"] < ranks["region"] < ranks["material"] == ranks["condition"]
+    assert {n.address for n in g.nodes if n.renamable} >= {"model:regions.left", "model:parameters.bias"}
+    assert not next(n for n in g.nodes if n.address == "model:conditions.left").renamable
+    potential = next(p for p in g.palette if p.group == "conditions" and p.kind == "potential")
+    assert potential.names == {"<region>": ["region:boundary"]}
+    assert all(p.needs for p in g.palette if p.group == "study")                 # no study chosen
+    assert all(not p.needs for p in graph(project, study="check").palette)
+    (choice,) = g.choices
+    assert (choice.address, choice.value, "electrostatics" in choice.options) == ("model:formulation", "electrostatics", True)

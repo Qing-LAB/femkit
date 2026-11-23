@@ -294,11 +294,17 @@ viewer, in a tab of its own. Open:
    `SECURITY.md` saying what femkit then stores — the token, the session key, a
    provider's client secret — where, and that a browser extension with access
    to the page can act as the person, so a profile without extensions is used.
-3. **The model graph view** from `model graph`: the palette, typed
-   connections, findings on each node, the selected node's form, positions
-   saved; each kind, parameter and property with its formulation's
-   description as its tooltip, linked to its section of the science document.
-   Acceptance: the Laplace model built in the page from an empty
+3. **The model graph view** from `model graph`. Built: the top bar, the
+   Model, Runs and Operations workspaces; the palette, each entry's
+   formulation sentence as its tooltip, linked to its section of the science
+   document, added through a form; the canvas with typed wires — a port takes
+   only its own type, a wire drawn or deleted plans its `model set` or
+   `model unset` — findings on each node and in the bottom panel; the
+   inspector, each field as the file writes it, a finding's fix, remove and
+   rename; positions saved; Runs' cases and `study expand`. Open: dropping a
+   palette entry on the canvas or on a node; each field's sentence in the
+   inspector; the bottom panel's cases and progress; the narrow screen's
+   drawers. Acceptance: the Laplace model built in the page from an empty
    folder, with no field named in the front-end code.
 4. **The match overlay**: each node marked with its worst match line for a
    chosen environment; an open line offering the decisions that resolve it,

@@ -74,7 +74,7 @@ def _validate(kind, text: str, path: Path, context: dict):
         raise UsageError(f"the edit would leave {path.name} unloadable — {exc.summary()}") from None
 
 
-def _named(address: Address) -> str | None:
+def named(address: Address) -> str | None:
     """The reference type of the named object ``address`` is, if it is one."""
     table = MODEL_OBJECTS if address.study is None else STUDY_OBJECTS
     for prefix, kind in table.items():
@@ -130,7 +130,7 @@ def unset(project: Project, address: Address) -> None:
     doc = project.docs.get(address.study)
     if doc is None or not address.path or not document_has(doc, address.path):
         raise UsageError(f"{address} is not set")
-    kind = _named(address)
+    kind = named(address)
     if kind is not None:
         model, studies_ = project.load()
         using = [(s, at) for s, at, held in referrers(project, model, studies_, kind, address.path[-1])
@@ -145,7 +145,7 @@ def unset(project: Project, address: Address) -> None:
 def rename(project: Project, address: Address, new: str) -> None:
     """The object renamed, and every reference to it, every expression using it, every axis
     varying it, changed with it."""
-    kind = _named(address)
+    kind = named(address)
     if kind is None:
         raise UsageError(f"{address} is not a named object: one of "
                          + ", ".join(".".join(p) + ".<name>" for p in (MODEL_OBJECTS if address.study is None

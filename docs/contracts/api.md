@@ -280,10 +280,10 @@ that runs in the browser. Both live in the `web` environment
 ([`envs.md`](envs.md) § 1): the server runs on its Python, and the page is
 built with its Node.js; the control environment holds neither. The routes and
 `serve` are built in token mode, and the front end's operation, progress and
-documents views; TLS, sign-in, `--no-auth`, uploads and the other views are not
-built yet (plan § 3, M7), and these rules hold when they are. A basic test
-checks that every registered operation can be expressed this way (its request
-and result models produce a JSON schema).
+documents views and, in part, the Model workspace; TLS, sign-in, `--no-auth`,
+uploads and the other views are not built yet (plan § 3, M7), and these rules
+hold when they are. A basic test checks that every registered operation can be
+expressed this way (its request and result models produce a JSON schema).
 The reasons for the front end's form are
 [ADR 0009](../decisions/0009-web-front-end.md).
 
@@ -320,8 +320,11 @@ names.
 - **Writes only through plan and apply.** Every change the page makes — an
   edit of the model, a decision, preparing a case — is an operation, shown as
   its plan and applied with its digest; the page holds no state the files do
-  not. The one exception is an upload, which writes only into a project's
-  upload area, which nothing reads until an operation names the file (§ 5.5).
+  not. Two exceptions: an upload, which writes only into a project's upload
+  area, which nothing reads until an operation names the file (§ 5.5); and a
+  node's position, which is presentation that no other step reads
+  ([`models.md`](models.md) § 11.2): moving a node plans `model layout` and
+  applies it with its digest at once, without showing the plan.
 - **Code is a file.** A customization is uploaded as a file into the project
   (§ 5.5) and named by an operation that records its hash; the page shows it
   and never runs or edits code typed into a form.
@@ -419,10 +422,11 @@ flowchart LR
     J --> R["result tables;<br/>fields in ParaView"]
 ```
 
-What each part waits on: the Model workspace on `model graph` and the edits
-(plan § 3, M5 step 4, M7 item 3); the environment's overlay on abilities and
-the match report (M5 step 3, M7 item 4); Runs on preparation and jobs (M3,
-M4, M6, M7 item 5). Operations, progress and the documents are built.
+What each part waits on: the Model workspace is built but for what plan § 3,
+M7 item 3 lists open; the environment's overlay waits on abilities and the
+match report (M5 step 3, M7 item 4); Runs, past its cases and `study expand`,
+on preparation and jobs (M3, M4, M6, M7 item 5). Operations, progress and the
+documents are built.
 
 #### 5.2.3 The document viewer
 
@@ -453,7 +457,7 @@ M4, M6, M7 item 5). Operations, progress and the documents are built.
 ### 5.3 Source and build
 
 - **Source** is a React application, in a top-level `frontend/` folder
-  (`PROJECT_CONTRACT.md` § 2); its graph view will use React Flow
+  (`PROJECT_CONTRACT.md` § 2); its graph view uses React Flow
   ([ADR 0009](../decisions/0009-web-front-end.md)). `package.json` declares,
   under `femkit.sources`, the files the bundle is built from, its lock file
   included.
