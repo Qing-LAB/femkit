@@ -317,17 +317,109 @@ names.
   its plan and applied with its digest; the page holds no state the files do
   not. The one exception is an upload, which writes only into a project's
   upload area, which nothing reads until an operation names the file (§ 5.5).
-- **Its views:**
+- **Code is a file.** A customization is uploaded as a file into the project
+  (§ 5.5) and named by an operation that records its hash; the page shows it
+  and never runs or edits code typed into a form.
+- **Fields are viewed in ParaView**
+  ([ADR 0002](../decisions/0002-paraview-visualization-boundary.md)); the page
+  shows numbers, tables and where the field files are.
 
-  | view | shows | acts through |
-  |---|---|---|
-  | operation | any operation as a form, its plan, its outcome | the routes of § 5.1 |
-  | model graph | the model and a study as nodes and typed wires; findings on each node; with an environment chosen, each node's worst match line | `model graph`, `model check`, `model set`, `model unset`, `model rename`, `model layout` |
-  | node | the selected node's form, from its kind's schema; for an open match line, the decisions and customizations that resolve it | `model set`, `model unset` |
-  | review | `case prepare`'s plan — the match report, each decision, each customization with its hash, the translator's command — and `job prepare`'s — the inputs, those customizations changed, the steps, the command ([`models.md`](models.md) § 9.6) | apply with the digest |
-  | progress | an operation's steps as they run, and the running step's log's last lines | `GET /api/events/…`, `GET /api/tail/…` |
-  | jobs and results | runs, their states, the result tables; where each field file is, for ParaView | the job and result operations |
-  | documents | the repository's documents, in a tab of their own (below) | `GET /api/docs…` |
+#### 5.2.1 Views
+
+| view | shows | acts through |
+|---|---|---|
+| operation | any operation as a form, its plan, its outcome | the routes of § 5.1 |
+| model graph | the model and a study as nodes and typed wires; findings on each node; with an environment chosen, each node's worst match line | `model graph`, `model check`, `model set`, `model unset`, `model rename`, `model layout` |
+| node | the selected node's form, from its kind's schema; for an open match line, the decisions and customizations that resolve it | `model set`, `model unset` |
+| review | `case prepare`'s plan — the match report, each decision, each customization with its hash, the translator's command — and `job prepare`'s — the inputs, those customizations changed, the steps, the command ([`models.md`](models.md) § 9.6) | apply with the digest |
+| progress | an operation's steps as they run, and the running step's log's last lines | `GET /api/events/…`, `GET /api/tail/…` |
+| jobs and results | runs, their states, the result tables; where each field file is, for ParaView | the job and result operations |
+| documents | the repository's documents, in a tab of their own (§ 5.2.3) | `GET /api/docs…` |
+
+#### 5.2.2 Layout
+
+The page has three workspaces — **Model**, **Runs** and **Operations** — under
+one top bar, and the documents in a tab of their own (§ 5.2.3):
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│ femkit  project ▾  study ▾  environment ▾  [Model] [Runs] [Operations]  docs ↗      │
+├──────────────┬──────────────────────────────────────────────────────┬───────────────┤
+│ palette      │ canvas — the model and the study as a graph          │ inspector     │
+│              │                                                      │               │
+│ geometry     │  parameter ┐                                         │ the selected  │
+│ regions      │  shape ────┴─▶ region ──┬─▶ condition                │ node's form,  │
+│ materials    │                         ├─▶ assign ◀── material      │ each field    │
+│ conditions   │                         └─▶ observable ◀── axis      │ with its      │
+│ sources      │                                                      │ sentence;     │
+│ study        │  nodes: findings ● and, with an environment,         │ its findings, │
+│              │  the worst match line of each                        │ each a fix    │
+├──────────────┴──────────────────────────────────────────────────────┴───────────────┤
+│ findings · cases · progress of the running operation                                │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **The top bar** chooses the project, the study and an environment. The
+  environment overlays each node with its worst match line
+  ([`models.md`](models.md) § 6.2); with none chosen, the graph shows the
+  physics alone.
+- **Model** is the palette, the canvas and the inspector:
+  - **the palette** lists what may be added, from the formulation and the
+    schema: the shape kinds (those the environment's mesher cannot build
+    marked, with why), the region kinds, the material properties the
+    formulation reads, its condition and source kinds grouped by where they
+    may stand, and the study's axes and observables (the formulation's
+    derived quantities). Each entry's tooltip is its formulation sentence,
+    linked to its section in the document viewer;
+  - **the canvas** shows each object of the model and the study as a node at
+    its address ([`models.md`](models.md) § 11.1), and each reference as a wire
+    between ports of its type, laid out in the chain's order: parameters and
+    geometry, regions, materials and conditions, the study. A port accepts only
+    its own type. Dropping a palette entry on the canvas, or on a node — a
+    condition on a boundary — and drawing or removing a wire each plan the
+    `model set` or `model unset` they mean; the plan is shown and applied with
+    its digest. Moving a node saves its position (`model layout`);
+  - **the inspector** is the selected node's form, from its schema — for a
+    condition or a source, the formulation's parameters with their units — each
+    field with its sentence. Below it are the node's findings, each with its fix
+    as a button that plans the edit the finding names, and, for an open match
+    line, the decisions and customizations that resolve it.
+- **Every canvas action is also a form action.** Adding, wiring and removing
+  each have their form in the inspector, so the model is built as fully by
+  keyboard as by mouse.
+- **The bottom panel** holds the findings of `model check`, each leading to its
+  node; the cases, with their axis values and, per environment, their match
+  and preparation state (`case list`), and `study expand`; and the progress of
+  the running operation (§ 5.2.1).
+- **Runs** is each case against each environment: the review before
+  `case prepare` and before a job is launched, the jobs and their states, the
+  result tables, and where each field file is for ParaView.
+- **Operations** is every operation as a form (§ 5.2.1), for what no workspace
+  shows.
+- **On a narrow screen** the palette and the inspector become drawers over the
+  canvas.
+
+A person's way through it, from an empty folder:
+
+```mermaid
+flowchart LR
+    E["empty folder"] --> M["Model: palette and canvas<br/>model set, one edit at a time"]
+    M --> F{"findings?"}
+    F -->|"each fix in the inspector"| M
+    F -->|"none"| S["study: axes, observables<br/>study expand → cases"]
+    S --> X["environment chosen:<br/>match lines on the nodes"]
+    X -->|"a decision, a customization"| X
+    X --> P["Runs: review, case prepare"]
+    P --> J["review, launch the job;<br/>progress"]
+    J --> R["result tables;<br/>fields in ParaView"]
+```
+
+What each part waits on: the Model workspace on `model graph` and the edits
+(plan § 3, M5 step 4, M7 item 3); the environment's overlay on abilities and
+the match report (M5 step 3, M7 item 4); Runs on preparation and jobs (M3,
+M4, M6, M7 item 5). Operations, progress and the documents are built.
+
+#### 5.2.3 The document viewer
 
 - **The document viewer** opens in its own tab at `/docs`, its token handed
   over in the address's fragment as the page's own is (§ 5.5). It shows every
@@ -352,13 +444,6 @@ names.
   function that checks a formulation's sections ([`models.md`](models.md) § 4)
   — so a link written in one document, a section a formulation names, and the
   viewer's address of that section always agree.
-
-- **Code is a file.** A customization is uploaded as a file into the project
-  (§ 5.5) and named by an operation that records its hash; the page shows it
-  and never runs or edits code typed into a form.
-- **Fields are viewed in ParaView**
-  ([ADR 0002](../decisions/0002-paraview-visualization-boundary.md)); the page
-  shows numbers, tables and where the field files are.
 
 ### 5.3 Source and build
 
