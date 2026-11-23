@@ -270,7 +270,8 @@ Built: the routes of `api.md` § 5.1 but uploads and sign-in; `serve`, its
 five verbs as operations, the server's state machine observed from its lock and
 pidfile, the supervisor, the rotated log; token-mode access with the `Host`,
 `Origin`, write and size checks and the response headers; the page's operation
-and progress views, from the registry's schemas, and `web build`. Open:
+and progress views, from the registry's schemas, and `web build`; the document
+viewer, in a tab of its own. Open:
 
 1. **`serve` on a cluster**: the Unix socket on a login node, reached through
    `ssh -L`, and the manager's femkit-owned home with the cluster's mamba

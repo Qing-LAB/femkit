@@ -38,13 +38,15 @@ export interface JsonSchema {
   additionalProperties?: boolean | JsonSchema;
 }
 
-/** The token: taken once from the address's fragment, then the address is cleaned. */
+/** The token: taken once from the address's fragment, then removed from it; the rest of the
+ * fragment (the viewer's document and section) stays. */
 export function takeToken(): string | null {
   const match = window.location.hash.match(/token=([A-Za-z0-9_-]+)/);
   try {
     if (match) {
       sessionStorage.setItem(KEY, match[1]);
-      history.replaceState(null, "", window.location.pathname + window.location.search);
+      const rest = window.location.hash.slice(1).split("&").filter((p) => !p.startsWith("token=")).join("&");
+      history.replaceState(null, "", window.location.pathname + window.location.search + (rest ? "#" + rest : ""));
     }
     return sessionStorage.getItem(KEY);
   } catch {
@@ -65,6 +67,12 @@ let current: string | null = takeToken();
 
 export function hasToken(): boolean {
   return current !== null && current !== "";
+}
+
+/** The address of the document viewer, in a tab of its own, its token handed over as the page's was. */
+export function viewerAddress(doc?: string, at?: string): string {
+  const parts = [`token=${current ?? ""}`, doc ? `doc=${encodeURIComponent(doc)}` : "", at ? `at=${encodeURIComponent(at)}` : ""];
+  return "/docs#" + parts.filter(Boolean).join("&");
 }
 
 async function send(path: string, body?: unknown): Promise<Response> {
@@ -139,4 +147,23 @@ export async function events(address: string): Promise<Response> {
 export async function tail(address: string, step: string): Promise<string[]> {
   const data = await json(await send(`/api/tail/${address}/${encodeURIComponent(step)}`));
   return data.lines as string[];
+}
+
+export interface DocText { path: string; text: string; headings: { level: number; text: string; anchor: string }[] }
+
+export async function docsList(): Promise<string[]> {
+  return (await json(await send("/api/docs"))).files as string[];
+}
+
+export async function docText(path: string): Promise<DocText> {
+  const response = await send("/api/docs/" + path.split("/").map(encodeURIComponent).join("/"));
+  if (response.status === 404) throw new Refused("missing", `${path} is not one of the documents`, []);
+  return json(response);
+}
+
+export async function docImage(path: string): Promise<string | null> {
+  const response = await send("/api/docs/" + path.split("/").map(encodeURIComponent).join("/"));
+  if (!response.ok) return null;
+  const data = await response.json();
+  return data.type && data.data ? `data:${data.type};base64,${data.data}` : null;
 }

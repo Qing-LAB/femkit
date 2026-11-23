@@ -3,12 +3,12 @@
 
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 from pydantic import Field, ValidationInfo, model_validator
 
 from femkit.core import dirs
+from femkit.core.markdown import headings
 from femkit.core.schema import Model, refuse
 from femkit.core.units import UnitError
 
@@ -86,7 +86,7 @@ class FormulationDefinition(Model):
         if self.unknown.name not in self.derived:
             problems.append((("derived",), f"names the unknown, {self.unknown.name!r}, as an observable may"))
         science = dirs.checkout() / self.science
-        anchors = _anchors(science.read_text(encoding="utf-8")) if science.is_file() else set()
+        anchors = {h.anchor for h in headings(science.read_text(encoding="utf-8"))} if science.is_file() else set()
         described = [((t, k), d) for t in ("properties", "conditions", "sources", "derived")
                      for k, d in getattr(self, t).items()]
         for at, d in described if anchors else []:
@@ -95,13 +95,3 @@ class FormulationDefinition(Model):
         refuse("FormulationDefinition", problems)
         return self
 
-
-def _anchors(markdown: str) -> set[str]:
-    """Each heading's link anchor, as GitHub writes it: lower case, punctuation dropped,
-    spaces to hyphens."""
-    out = set()
-    for line in markdown.splitlines():
-        if line.startswith("#"):
-            title = line.lstrip("#").strip().lower()
-            out.add(re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", title)))
-    return out

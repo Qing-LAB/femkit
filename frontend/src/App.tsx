@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { hasToken, NeedToken, OperationInfo, operations, setToken } from "./api";
+import { hasToken, NeedToken, OperationInfo, operations, setToken, viewerAddress } from "./api";
 import { command, OperationView } from "./OperationView";
 
 // The page: every registered operation, grouped as the command line groups them, built from
@@ -71,6 +71,9 @@ export function App() {
           ))}
         </nav>
         <div className="sidebar-foot">
+          <button className="quiet docs-link" onClick={() => window.open(viewerAddress(), "_blank", "noopener")}>
+            Documents ↗
+          </button>
           <span className="muted">Model graph — arrives with <code>model graph</code> (M5)</span>
         </div>
       </aside>

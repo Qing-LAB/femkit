@@ -274,9 +274,10 @@ Built from `core/text.py`, so every command reads alike:
 ## 5. The web application — `femkit/web/`
 
 Two parts: a flask application built from the same registry, and a front end
-that runs in the browser. The routes and `serve` are built in token mode;
-TLS, sign-in, `--no-auth`, uploads and the front end are not built yet (plan
-§ 3, M7), and these rules hold when they are. A basic test checks that every registered operation can
+that runs in the browser. The routes and `serve` are built in token mode, and
+the front end's operation, progress and documents views; TLS, sign-in,
+`--no-auth`, uploads and the other views are not built yet (plan § 3, M7), and
+these rules hold when they are. A basic test checks that every registered operation can
 be expressed this way (its request and result models produce a JSON schema).
 The reasons for the front end's form are
 [ADR 0009](../decisions/0009-web-front-end.md).
@@ -294,7 +295,9 @@ The reasons for the front end's form are
 | `PUT /api/upload?project=<path>` | streams one file into that project's upload area and answers with its SHA-256 (§ 5.5) |
 | `GET /auth/start/<provider>`, `GET /auth/callback/<provider>`, `POST /auth/sign-out` | sign-in, with sign-in configured (§ 5.5) |
 | `GET /api/tail/<subject>/<time>/<step>` | the last lines of that step's log, for the running step's live line; its path checked as the event stream's |
-| `GET /` and `/static/…` | the built front end |
+| `GET /api/docs` | every document the viewer shows: the repository's own Markdown files (below) |
+| `GET /api/docs/<path>` | one of them — its text and its headings, each with its link anchor — or an image a document shows, as data; any other path is 404 |
+| `GET /`, `GET /docs` and `/static/…` | the built front end; `/docs` opens it as the document viewer |
 
 HTTP status follows § 4.3: 200 for a result, exit 0 or 1 (the body says `ok`);
 409 for a refusal; 500 for a defect, with the log path. A request body is the
@@ -324,6 +327,31 @@ names.
   | review | `case prepare`'s plan — the match report, each decision, each customization with its hash, the translator's command — and `job prepare`'s — the inputs, those customizations changed, the steps, the command ([`models.md`](models.md) § 9.6) | apply with the digest |
   | progress | an operation's steps as they run, and the running step's log's last lines | `GET /api/events/…`, `GET /api/tail/…` |
   | jobs and results | runs, their states, the result tables; where each field file is, for ParaView | the job and result operations |
+  | documents | the repository's documents, in a tab of their own (below) | `GET /api/docs…` |
+
+- **The document viewer** opens in its own tab at `/docs`, its token handed
+  over in the address's fragment as the page's own is (§ 5.5). It shows every
+  Markdown file under `docs/` and `examples/`, and the root documents
+  `PROJECT_CONTRACT.md` § 2 names — by name, so a local file beside them is
+  never shown — as a tree of folders that expand, and renders each as GitHub does: tables, code,
+  math (KaTeX), Mermaid diagrams. Links work as in the repository: a link to
+  another of these documents opens it in the viewer, at its section, and the
+  browser's back and forward move through them; a link to any other file of the
+  repository shows its path, not followed; a link outside opens in a new tab.
+  A section of a document has an address of its own, so a tooltip or a finding
+  can link to it.
+- **It cannot be made to reach beyond its documents.** The server serves a
+  path only when it is on the list `GET /api/docs` gives — made by walking
+  those folders without following a symbolic link — so no spelling of a path
+  reaches another file, and a document's text is never sent as anything but
+  text. The page renders a document's raw HTML as text, follows no
+  `javascript:` link, loads an image only from that list, and applies a
+  diagram's or a formula's styles through the page's object model, so the
+  content-security policy (§ 5.5) holds without an exception.
+- **Each heading's anchor is the server's**, by GitHub's rule — the same
+  function that checks a formulation's sections ([`models.md`](models.md) § 4)
+  — so a link written in one document, a section a formulation names, and the
+  viewer's address of that section always agree.
 
 - **Code is a file.** A customization is uploaded as a file into the project
   (§ 5.5) and named by an operation that records its hash; the page shows it

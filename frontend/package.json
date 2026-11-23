@@ -3,18 +3,30 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "The femkit web page, built by `python -m femkit web build` into femkit/web/static/ (docs/contracts/api.md § 5.3)",
+  "description": "The femkit web page, built by `python -m femkit web build` into femkit/web/static/ (docs/contracts/api.md \u00a7 5.3)",
   "scripts": {
     "build": "tsc --noEmit && vite build"
   },
   "femkit": {
-    "sources": ["index.html", "package.json", "package-lock.json", "tsconfig.json", "vite.config.ts", "src"]
+    "sources": [
+      "index.html",
+      "package.json",
+      "package-lock.json",
+      "tsconfig.json",
+      "vite.config.ts",
+      "src"
+    ]
   },
   "dependencies": {
+    "katex": "0.16.11",
+    "markdown-it": "14.1.0",
+    "mermaid": "11.4.1",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@types/katex": "0.16.7",
+    "@types/markdown-it": "14.1.2",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "@vitejs/plugin-react": "4.3.4",

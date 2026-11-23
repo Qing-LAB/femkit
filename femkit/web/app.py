@@ -6,6 +6,7 @@ command line serves it (api.md § 4).
 
 from __future__ import annotations
 
+import base64
 import json
 import queue
 import re
@@ -19,12 +20,13 @@ from flask import Flask, Response, abort, jsonify, request, send_from_directory
 
 from femkit import registry
 from femkit.core import eventlog
+from femkit.core.markdown import headings
 from femkit.core.errors import PlanStale, Refusal
 from femkit.core.operations import Context, Operation, Plan, SilentObserver, Step, operations_root
 from femkit.core.process import tail
 from femkit.server import health
 from femkit.server.protocol import Listen
-from femkit.web import access
+from femkit.web import access, docs
 
 STATIC = Path(__file__).parent / "static"
 SUBJECT = re.compile(r"[a-z0-9][a-z0-9._-]*")
@@ -92,6 +94,7 @@ def _operation_dir(subject: str, at: str) -> Path:
 
 def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
+    app.url_map.merge_slashes = False  # a path is taken as written, never rewritten into another
     access.install(app, token, listen)
     ops = operations if operations is not None else registry.operations()
     streams = threading.BoundedSemaphore(STREAMS)
@@ -264,7 +267,29 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
             abort(404)
         return jsonify({"lines": tail(path, TAIL_LINES)})
 
+    # ------------------------------------------------------------ the documents
+
+    @app.get("/api/docs")
+    def docs_list():
+        return jsonify({"files": [p for p in docs.listing() if p.endswith(docs.MARKDOWN)]})
+
+    @app.get("/api/docs/<path:name>")
+    def docs_file(name: str):
+        found = docs.read(name)
+        if found is None:
+            abort(404)
+        kind, data = found
+        if kind == "markdown":
+            text = data.decode("utf-8", errors="replace")
+            return jsonify({"path": name, "text": text, "headings": [
+                {"level": h.level, "text": h.text, "anchor": h.anchor} for h in headings(text)]})
+        return jsonify({"path": name, "type": kind, "data": base64.b64encode(data).decode("ascii")})
+
     # ------------------------------------------------------------ the page
+
+    @app.get("/docs")
+    def docs_page():
+        return page()
 
     @app.get("/")
     def page():
