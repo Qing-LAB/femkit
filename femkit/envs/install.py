@@ -185,17 +185,18 @@ KILLED = "killed"
 SIGKILL_CODES = (-9, 137)  # killed by SIGKILL: directly, or as a shell reports it
 
 
-#: What GCC's driver prints when the compiler it started is ended by SIGKILL, as measured on a
-#: cluster's login node: `x86_64-conda-linux-gnu-gfortran: fatal error: Killed signal terminated
-#: program f951`. The build tool then exits with its own code; only the log tells (envs.md § 6.2).
-COMPILER_KILLED = "Killed signal terminated program"
+#: What a compiler driver prints when a compiler it started is ended by SIGKILL, each as measured on
+#: a cluster (envs.md § 6.2): GCC's — `x86_64-conda-linux-gnu-gfortran: fatal error: Killed signal
+#: terminated program f951` — and NVCC's — `nvcc error   : 'cudafe++' died due to signal 9 (Kill
+#: signal)`. The build tool then exits with its own code; only the log tells.
+COMPILER_KILLED = ("Killed signal terminated program", "died due to signal 9 (Kill signal)")
 
 
 def _compiler_killed(log: Path) -> str | None:
     """The line of ``log`` that says a compiler was ended by SIGKILL, if one does."""
     try:
         with open(log, encoding="utf-8", errors="replace") as fh:
-            return next((line.strip() for line in fh if COMPILER_KILLED in line), None)
+            return next((line.strip() for line in fh if any(k in line for k in COMPILER_KILLED)), None)
     except OSError:
         return None
 

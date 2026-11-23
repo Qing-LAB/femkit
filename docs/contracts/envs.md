@@ -599,10 +599,12 @@ command (or, for a kind that declares none, says to run inside a job); inside a
 scheduler job, it says to ask the allocation for more memory or lower
 `build.jobs`; on a workstation, to free memory or lower `build.jobs`. A compiler killed under the
 build tool makes the build tool exit with its own code; that step is `killed`
-too when its log holds the line GCC's driver prints for it (`… fatal error:
-Killed signal terminated program f951`, as measured on a cluster's login
-node), and the same finding follows. A compiler that says it in other words
-leaves its step `failed`, and the warning before the installs is what covers it.
+too when its log holds the line its compiler driver prints for it — GCC's
+`… fatal error: Killed signal terminated program f951`, on a cluster's login
+node, or NVCC's `nvcc error : 'cudafe++' died due to signal 9 (Kill signal)`,
+in a cluster allocation, each as measured there — and the same finding
+follows. A compiler that says it in other words leaves its step `failed`, and
+the warning before the installs is what covers it.
 
 ## 7. The install script and the control environment
 
