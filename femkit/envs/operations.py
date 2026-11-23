@@ -8,7 +8,7 @@ from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.probe import place
-from femkit.core import process, text
+from femkit.core import locks, process, text
 from femkit.core.errors import PlanStale, Refusal, UsageError
 from femkit.core.eventlog import EventLog, fold
 from femkit.core.issues import Issue
@@ -95,8 +95,9 @@ class EnvClean:
         basis = {"state": state.value, "prefix": str(f.prefix)}
         if not MACHINE.require(state, "clean", req.name).command:
             return Plan(operation="env.clean", request=req.model_dump(), basis=basis)
+        locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         manager = resolve(ctx)
-        argv = tuple(manager.argv(manager.kind.remove, prefix=str(f.prefix)))
+        argv = tuple(manager.remove(f.prefix, catalogue.load_control().channels))
         return Plan(operation="env.clean", request=req.model_dump(), basis=basis,
                     steps=(Step(id="remove", describe=f"remove {text.path(f.prefix)}", argv=argv),))
 
@@ -266,6 +267,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
     basis = {"state": state.value, "install_fingerprint": f.install_fingerprint, "prefix": str(f.prefix)}
     if not MACHINE.require(state, "install --clean" if clean else "install", name).command:
         return [], basis
+    locks.require_free(layout.subject(name))              # a program using it — a web server — holds it shared
     env = definition(ctx, name)
     cpu = checks.selected(env, gpu=False)
     validate = Step(id="validate", describe=f"validate: run its {text.count(len(cpu), 'CPU check')} (env validate)"
@@ -415,6 +417,7 @@ class EnvValidate:
                                  (text.typed("env", "validate", cuda, "--gpu"),))
             raise UsageError(f"{req.name} declares no GPU check", (text.typed("env", "validate", req.name),))
         MACHINE.require(state, "validate --gpu" if req.gpu else "validate", req.name)  # envs.md § 3.3
+        locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         checks.refusals(ctx, env, chosen)
         return Plan(operation="env.validate", request=req.model_dump(), basis=self._basis(f, state),
                     steps=tuple(checks.steps(chosen)))

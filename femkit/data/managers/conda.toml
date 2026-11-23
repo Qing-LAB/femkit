@@ -11,4 +11,5 @@ create = ["{exe}", "create", "-y", "-p", "{prefix}", "--override-channels", "--n
 channel = ["-c", "{channel}"]
 create_from_lock = ["{exe}", "create", "-y", "-p", "{prefix}", "--file", "{file}", "--no-default-packages"]
 export_lock = ["{exe}", "list", "--explicit", "--md5", "-p", "{prefix}"]
-remove = ["{exe}", "env", "remove", "-y", "-p", "{prefix}"]
+remove = ["{exe}", "remove", "--all", "-y", "-p", "{prefix}", "--override-channels"]   # with the declared channels: conda 26 otherwise checks the terms of the base configuration's defaults (envs.md § 4.4)
+remove_channels = true

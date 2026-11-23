@@ -42,8 +42,8 @@ femkit/
 ├── registry.py    the one list of operation modules (api.md § 6)
 ├── reference.py   `schema check|docs`: they span every domain (definitions.md § 2.3)
 ├── cli/           the generic command-line adapter (api.md § 4)
-└── web/           the generic flask adapter (api.md § 5); its built front end
-                   — not built yet (plan § 3, M7)
+└── web/           the generic flask adapter (api.md § 5), run in the `web`
+                   environment; its built front end
 scripts/install-env.sh  the install script (envs.md § 7) — the only shell code
 tools/             developer tools that import nothing from femkit (testing.md § 4)
 ```

@@ -2,6 +2,7 @@
 """Run a test tier with a live progress log, and say what the log supports.
 
     python tools/testrun.py run basic                  # the default tier, over the cores
+    <data>/environments/web/bin/python tools/testrun.py run web   # the web environment's own Python
     python tools/testrun.py run field                  # this machine's manager and scheduler
     python tools/testrun.py run engine                 # installed engines, on the person's word
     python tools/testrun.py run tests/basic/test_x.py  # a targeted set: batch `custom`
@@ -32,7 +33,7 @@ from datetime import datetime
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROGRESS_DIR = os.path.join(REPO, ".test-progress")
 
-TIERS = {"basic": "tests/basic", "field": "tests/field", "engine": "tests/engine"}
+TIERS = {"basic": "tests/basic", "web": "tests/web", "field": "tests/field", "engine": "tests/engine"}
 ONE_PROCESS = {"field", "engine"}  # no two installs or calculations compete (§ 4.6)
 
 #: A log silent this long belongs to a run that is not writing any more (§ 4.4).
@@ -345,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="action", required=True)
     pr = sub.add_parser("run", help="run a tier or a targeted set with a live progress log")
-    pr.add_argument("batch", help="basic | field | engine | lf | a test path")
+    pr.add_argument("batch", help="basic | web | field | engine | lf | a test path")
     pr.add_argument("targets", nargs="*", help="more test paths (makes the batch `custom`)")
     pr.add_argument("--force", action="store_true", help="run even while this batch is running")
     pr.add_argument("--workers", type=int, default=default_workers(),

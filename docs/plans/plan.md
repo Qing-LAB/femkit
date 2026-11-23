@@ -29,9 +29,8 @@ numerical convergence shown before any physical study (§ 3, after M9).
 - the web server: `serve` and its supervisor, the server's state observed from
   its lock and pidfile, and the routes in token mode
   ([`../contracts/api.md`](../contracts/api.md) § 5.1, § 5.4, § 5.5); the page's
-  operation and progress views, built by `web build` with the `nodejs` tool
-  environment (§ 5.3, [`../contracts/definitions.md`](../contracts/definitions.md)
-  § 4.7);
+  operation and progress views, served and built from the `web` environment
+  (§ 5.3, [`../contracts/definitions.md`](../contracts/definitions.md) § 4.7);
 - every manager command run in femkit's own places — its home, package cache
   and list of environments under `<cache>/`
   ([`../contracts/envs.md`](../contracts/envs.md) § 4.4).

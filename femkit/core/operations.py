@@ -78,7 +78,9 @@ class Ask(Model):
 class Plan(Model):
     operation: str = Field(description="the operation's name")
     request: dict = Field(description="the request, as JSON")
-    subjects: tuple[str, ...] = Field(default=(), description="the lock subjects apply holds")
+    subjects: tuple[str, ...] = Field(default=(), description="the lock subjects apply holds alone: what it changes")
+    shared: tuple[str, ...] = Field(default=(), description="those it holds shared: what it uses and does not change "
+                                                            "(core.md § 5)")
     basis: dict = Field(default_factory=dict, description="the observed facts the plan was made from")
     steps: tuple[Step, ...] = Field(default=(), description="every step, in order; empty: nothing to do")
     issues: list[Issue] = Field(default_factory=list, description="findings a person should know before consenting")
@@ -264,11 +266,13 @@ class Operation:
         return plan.model_copy(update={"subjects": subjects})
 
     def apply(self, plan: Plan, ctx: Context, observer: Observer | None = None) -> Outcome:
-        """Hold every subject's lock, then apply (core.md § 5, api.md § 3)."""
+        """Hold every subject's lock — alone, or shared — then apply (core.md § 5, api.md § 3)."""
         assert self.changes, f"{self.name} is read-only: run it"
         with ExitStack() as stack:
             for subject in plan.subjects:
                 stack.enter_context(subject_lock(subject))
+            for subject in plan.shared:
+                stack.enter_context(subject_lock(subject, shared=True))
             return self.impl.apply(plan, ctx, _Recording(observer or SilentObserver()))
 
 

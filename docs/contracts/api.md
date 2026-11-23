@@ -132,7 +132,8 @@ class Step(Model):
 class Plan(Model):
     operation: str
     request: dict                          # the request, as JSON
-    subjects: tuple[str, ...]
+    subjects: tuple[str, ...]              # the lock subjects apply holds alone: what it changes
+    shared: tuple[str, ...] = ()           # those it holds shared: what it uses and does not change
     basis: dict                            # the observed facts the plan was made from
     steps: tuple[Step, ...]                # empty: nothing to do
     issues: list[Issue] = []
@@ -146,7 +147,8 @@ class Plan(Model):
    line. A state that does not allow the action raises `Refused` here
    (core.md § 7, `require`).
 2. The surface shows the plan and obtains consent (§ 4.2, § 5).
-3. The runner takes the subjects' locks, then calls `apply(plan, ctx,
+3. The runner takes the subjects' locks — `subjects` alone, `shared` shared
+   (core.md § 5) — then calls `apply(plan, ctx,
    observer)`. `apply` first observes again and raises `PlanStale` if the
    facts differ from `plan.basis`; then it runs the steps, writing the event
    log (core.md § 6) and reporting each step to the observer. The first step
@@ -274,11 +276,14 @@ Built from `core/text.py`, so every command reads alike:
 ## 5. The web application — `femkit/web/`
 
 Two parts: a flask application built from the same registry, and a front end
-that runs in the browser. The routes and `serve` are built in token mode, and
-the front end's operation, progress and documents views; TLS, sign-in,
-`--no-auth`, uploads and the other views are not built yet (plan § 3, M7), and
-these rules hold when they are. A basic test checks that every registered operation can
-be expressed this way (its request and result models produce a JSON schema).
+that runs in the browser. Both live in the `web` environment
+([`envs.md`](envs.md) § 1): the server runs on its Python, and the page is
+built with its Node.js; the control environment holds neither. The routes and
+`serve` are built in token mode, and the front end's operation, progress and
+documents views; TLS, sign-in, `--no-auth`, uploads and the other views are not
+built yet (plan § 3, M7), and these rules hold when they are. A basic test
+checks that every registered operation can be expressed this way (its request
+and result models produce a JSON schema).
 The reasons for the front end's form are
 [ADR 0009](../decisions/0009-web-front-end.md).
 
@@ -453,9 +458,9 @@ M4, M6, M7 item 5). Operations, progress and the documents are built.
   under `femkit.sources`, the files the bundle is built from, its lock file
   included.
 - **Built by `web build`**, an operation like any other, with the Node.js of
-  the `nodejs` tool environment ([`definitions.md`](definitions.md) § 4.7;
-  `env install nodejs`) — never the control environment, and never a Node.js
-  of the person's own. It copies the declared sources into
+  the `web` environment ([`definitions.md`](definitions.md) § 4.7;
+  `env install web`) — never the control environment, and never a Node.js of
+  the person's own. It copies the declared sources into
   `<cache>/frontend/work/`, runs `npm ci --ignore-scripts` there from the
   committed lock file, then `npm run build`, each inside the environment
   through the manager ([`envs.md`](envs.md) § 4.4), with npm's cache and
@@ -486,8 +491,12 @@ M4, M6, M7 item 5). Operations, progress and the documents are built.
 | `serve stop` | refuses while the child holds an operation's lock unless `--force`, naming each; otherwise stops the supervisor (`SIGTERM`), which sends its child `SIGTERM`, ends its event streams, waits, then sends `SIGKILL`, and removes the pidfile, the socket and the token |
 | `serve foreground` | `start` without detaching: the same lock, checks and files, so `status`, `restart` and `stop` from another terminal act on it; the child's output goes to the terminal as well as the log; Ctrl-C stops them, and is a normal stop, exit 0 |
 
-The supervisor runs `python -m femkit.web` as a child process; the `server`
-domain never imports the web package, as no domain imports a surface. The
+The supervisor runs `python -m femkit.web` as a child process, with the `web`
+environment's Python and the checkout as its working folder; `start` and
+`foreground` refuse while that environment is not `ready`, naming
+`env install web`. The supervisor itself runs in the control environment, and
+the `server` domain never imports the web package, as no domain imports a
+surface. The
 supervisor imports only the standard library and the core's file and process
 building blocks — never flask, the web package or another domain — so a change
 that breaks the application leaves the supervisor running, to start the fixed
@@ -557,8 +566,13 @@ the supervisor's liveness**: the subject `server-<host>-<name>`
 ([`core.md`](core.md) § 5), taken by `start` and `foreground` through the
 operation runner, and held by the supervisor from then on — the kernel releases
 it however the supervisor ends, so a supervisor that is gone is observed, never
-guessed from a process ID that may have been reused. `restart` and `stop` take
-no lock of their own: they verify the holder and signal it. Which operation
+guessed from a process ID that may have been reused. `start` and `foreground`
+also take the `web` environment's subject, `env-web`, **shared**, and the
+supervisor holds it with the server's own: while any server runs, `env
+install web`, `env clean web` and `env validate web`, which need it alone, are
+refused, naming each server and its `serve stop`; and no server starts while
+an operation holds it alone ([`core.md`](core.md) § 5). `restart` and `stop`
+take no lock of their own: they verify the holder and signal it. Which operation
 locks the child holds is read from the kernel's lock table, never from a lock
 file's text. The rules, in order:
 

@@ -156,13 +156,17 @@ def test_the_saved_lock_is_the_list_every_manager_creates_from(listing):
     assert explicit(listing) == f"@EXPLICIT\n{URL}\n"
 
 
-def test_every_manager_command_femkit_runs_is_in_femkits_places(manager, cuda):
+def test_every_manager_command_femkit_runs_is_in_femkits_places(manager, cuda, tmp_path, monkeypatch):
     """Fails if femkit runs its manager, or a command in a prefix, with the person's HOME,
-    package cache or environment registration (envs.md § 4.4)."""
+    package cache, environment registration or temporary folder, or hands it a variable naming
+    the person's own configuration — conda reads a `condarc` through each (envs.md § 4.4)."""
     from femkit.core import dirs, process
-    from femkit.envs.manager import confined, resolve
-    m = resolve(ctx())
+    from femkit.envs.manager import PERSONS_OWN, confined, resolve
+    for variable in PERSONS_OWN:
+        monkeypatch.setenv(variable, str(tmp_path / "the-persons" / variable))
+    m = resolve(Context.from_process())
     process.run(m.argv(m.kind.version), env=m.environment, timeout=30)
     assert confined(m.environment)["HOME"] == str(dirs.cache_dir() / "manager-home")
     places = [line.split() for line in Path(f"{manager}.places").read_text().splitlines()]
-    assert places == [[str(dirs.cache_dir() / "manager-home"), str(dirs.cache_dir() / "pkgs"), "false"]]
+    assert places == [[str(dirs.cache_dir() / "manager-home"), str(dirs.cache_dir() / "pkgs"), "false",
+                       str(dirs.cache_dir() / "tmp"), "person="]]

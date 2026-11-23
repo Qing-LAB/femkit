@@ -107,8 +107,13 @@ def load_environments(root: Path | None, engines: Mapping[str, frozenset[str]]) 
     if taken:
         raise CatalogueError([DefinitionError(directory / f"{name}.toml", [("", why)]) for name, why in taken.items()])
     out = {}
+    control = load_control(root).dependencies if any(d.control_packages for d in found.values()) else []
     for name, definition in found.items():
         out[name] = definition.built(cuda=False)
+        if definition.control_packages:  # femkit's own libraries, by reference (definitions.md § 4.7)
+            built = out[name]
+            out[name] = built.model_copy(update={"packages": built.packages.model_copy(
+                update={"conda": [*control, *built.packages.conda]})})
         if definition.cuda is not None:
             out[name + CUDA_SUFFIX] = definition.built(cuda=True)
     return dict(sorted(out.items()))

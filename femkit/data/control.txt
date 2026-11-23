@@ -3,7 +3,6 @@
 # `python=` line is the Python minor every environment shares.
 python=3.12
 click>=8.1,<9
-flask>=3,<4
 pydantic>=2,<3
 tomlkit>=0.13,<1
 pytest>=8,<9

@@ -291,27 +291,34 @@ processor — and CMake to its 4.5 series (ADR 0006).
 
 ### 4.7 A tool environment
 
-An environment that runs no engine — a tool femkit uses to build itself, such as
-Node.js for the web page ([`api.md`](api.md) § 5.3) — states no `engine`; it
-states the command that reports its version instead:
+An environment that runs no engine — what femkit's own surfaces need, such as
+the web server and the tool its page is built with ([`api.md`](api.md) § 5) —
+states no `engine`; it states the command that reports its version instead:
 
 ```toml
-description = "Node.js: builds the web page (api.md § 5.3)"
+description = "the web surface: femkit's server, and Node.js to build its page"
 version = "v22.23.5"                   # the last line `version_command` prints
 version_command = ["node", "--version"]
 maturity = "production"
+control_packages = true                # femkit's own libraries, as control.txt lists them
 
 [packages]
-conda = ["nodejs=22.23.5"]
+conda = ["flask>=3,<4", "nodejs=22.23.5"]
 
 [provides]
-executables = ["node", "npm"]
+executables = ["python", "node", "npm"]
+modules = ["flask"]
 ```
 
 - Exactly one of `engine` and `version_command` is given.
+- `control_packages = true` takes the control environment's packages
+  (`control.txt`), solved with its own: a tool environment that runs femkit's
+  own code — `web` runs femkit's server — needs femkit's own libraries, and
+  taking them by reference keeps the two lists one. A change of `control.txt`
+  changes its install fingerprint.
 - A tool environment has no `toolchain`, `sources`, `builds`, `checks`,
   `agreements`, `cuda`, thread or fixed variables, and is never `default`: it is
-  installed when a person asks (`env install nodejs`).
+  installed when a person asks (`env install web`).
 - It installs as any environment does — the declared channels, a solved and
   saved lock, the audit of `provides`, the version probe — in the manager's
   femkit places ([`envs.md`](envs.md) § 4.4), and is `ready` once its manifest is
@@ -416,7 +423,7 @@ by ID and named in the kind.
 
 | directory | one file per | declares |
 |---|---|---|
-| `managers/` | conda; mamba, 1.x and 2.x (every form measured on 1.5.9 and 2.9.0); micromamba once measured (plan) | create from constraints (the control environment's: `--file control.txt`), overriding the person's own conda channels and, where the manager can, default packages / from a lock; run in a prefix (and, not built yet, the text its `run` prints when it cannot start a command, [`envs.md`](envs.md) § 4.4); export the lock; remove; report version, root and platform; `activate`: the kind's two ways a shell enters a prefix, between which this machine's `activation.command` chooses ([`config.md`](config.md) § 3.1) — the shell function, with the hook file under `{root}` that defines it (for conda `{root}/etc/profile.d/conda.sh`, checked on disk, never derived from the binary's path, which on a cluster may be a module's wrapper), and the activate script (`source activate {prefix}`) ([`envs.md`](envs.md) § 6.2) |
+| `managers/` | conda; mamba, 1.x and 2.x (every form measured on 1.5.9 and 2.9.0); micromamba once measured (plan) | create from constraints (the control environment's: `--file control.txt`), overriding the person's own conda channels and, where the manager can, default packages / from a lock; run in a prefix (and, not built yet, the text its `run` prints when it cannot start a command, [`envs.md`](envs.md) § 4.4); export the lock; remove, naming the declared channels as a create does where the kind needs them (`remove_channels`: conda does, mamba refuses them) ([`envs.md`](envs.md) § 4.4); report version, root and platform; `activate`: the kind's two ways a shell enters a prefix, between which this machine's `activation.command` chooses ([`config.md`](config.md) § 3.1) — the shell function, with the hook file under `{root}` that defines it (for conda `{root}/etc/profile.d/conda.sh`, checked on disk, never derived from the binary's path, which on a cluster may be a module's wrapper), and the activate script (`source activate {prefix}`) ([`envs.md`](envs.md) § 6.2) |
 | `schedulers/` | local, slurm | the parts of the `SchedulerKind` model (`docs/reference/`); [`jobs.md`](jobs.md) § 7 says what each is for |
 
 The manager in use and the scheduler a machine has are facts of that machine

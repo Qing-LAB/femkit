@@ -21,8 +21,16 @@ node editor is a program that runs in the browser, and femkit has none.
 
 1. **A React application, its graph view built on React Flow** (the xyflow
    project, MIT-licensed), in a top-level `frontend/` folder.
-2. **Built with Node.js by whoever changes it**, in their own environment, from
-   conda-forge; the control environment never holds Node.js.
+2. **Served and built from one `web` environment**, installed by
+   `env install web` where a machine serves the page or a person changes it:
+   femkit's own libraries, taken from the control environment's list, flask to
+   serve, and Node.js from conda-forge to build. The control environment holds
+   neither: it is femkit's command and installer, made first on every machine,
+   and a machine that never serves the page carries no web stack. *Amended
+   2026-11-23:* first decided as a Node.js of the developer's own and flask in
+   the control environment; once the web became a surface of its own, with a
+   runtime and a build, both moved into one environment, so the web's needs
+   are in one place and installed only where they are used.
 3. **The bundle is shipped** in `femkit/web/static/`, generated and checked
    against its sources' hash like the reference pages, so installing femkit and
    opening the page need neither Node.js nor the network.

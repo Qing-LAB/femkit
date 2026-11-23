@@ -230,14 +230,57 @@ def test_a_tool_environment_runs_no_engine_and_is_never_a_default(change, at):
     assert at in [path for path, _ in caught.value.problems]
 
 
-def test_a_tool_environment_installs_without_python_and_probes_its_own_version(manager):
-    """Fails if a tool environment's create adds the Python femkit's own programs need, or its
-    version is probed with an engine's command (definitions.md § 4.7)."""
+def test_the_web_environment_takes_the_control_environments_packages_by_reference(manager):
+    """Fails if the web environment does not hold femkit's own libraries exactly as control.txt
+    lists them — its server would run femkit on other versions — or the control environment
+    holds the web's flask or Node.js (definitions.md § 4.7, ADR 0009)."""
     from femkit.core.operations import Context
+    from femkit.definitions.catalogue import load_control
     from femkit.envs.operations import EnvInstall
-    plan = EnvInstall.plan(EnvInstall.request(names=["nodejs"]), Context.from_process())
-    create = next(s for s in plan.steps if s.id.endswith("/create")).argv
-    assert not any(a.startswith("python=") for a in create) and "nodejs=22.23.5" in create
+    plan = EnvInstall.plan(EnvInstall.request(names=["web"]), Context.from_process())
+    create = list(next(s for s in plan.steps if s.id.endswith("/create")).argv)
+    control = load_control().dependencies
+    assert all(d in create for d in control) and "flask>=3,<4" in create and "nodejs=22.23.5" in create
+    assert not any(d.startswith(("flask", "nodejs")) for d in control)
+
+
+def test_a_tool_environment_without_control_packages_holds_only_its_own(manager, tmp_path, monkeypatch):
+    """Fails if the create planned for a tool environment that does not ask for femkit's
+    libraries installs them, or the Python femkit's own programs need (definitions.md § 4.7)."""
+    import shutil
+    from femkit.core.operations import Context
+    from femkit.definitions import catalogue
+    from femkit.envs.operations import EnvInstall
+    data = tmp_path / "data"
+    shutil.copytree(catalogue.data_root(), data)
+    (data / "environments" / "tool.toml").write_text(
+        'description = "a tool"\nversion = "v1"\nversion_command = ["tool", "--version"]\nmaturity = "production"\n'
+        '[packages]\nconda = ["tool=1"]\n[provides]\nexecutables = ["tool"]\n')
+    monkeypatch.setattr(catalogue, "data_root", lambda: data)
+    plan = EnvInstall.plan(EnvInstall.request(names=["tool"]), Context.from_process())
+    create = list(next(s for s in plan.steps if s.id.endswith("/create")).argv)
+    assert create[-1] == "tool=1" and not any(a.startswith("python") for a in create)
+    assert not set(catalogue.load_control().dependencies) & set(create)
+
+
+def test_a_conda_removal_names_the_declared_channels_and_a_mamba_one_none():
+    """Fails if conda's removal leaves out the declared channels — under femkit's HOME it would
+    stop on the terms of the base configuration's `defaults`, channels femkit never uses — or
+    mamba's names them, which mamba 2.9.0 refuses (envs.md § 4.4; measured forms)."""
+    from pathlib import Path
+    from femkit.definitions.catalogue import load_control, load_managers
+    from femkit.envs.manager import Manager
+    kinds, channels = load_managers(), load_control().channels
+    conda = Manager(Path("/m/conda"), "conda", kinds["conda"], {}).remove(Path("/p"), channels)
+    mamba = Manager(Path("/m/mamba"), "mamba", kinds["mamba"], {}).remove(Path("/p"), channels)
+    assert channels == ["conda-forge"]
+    assert conda == ["/m/conda", "remove", "--all", "-y", "-p", "/p", "--override-channels", "-c", "conda-forge"]
+    assert mamba == ["/m/mamba", "env", "remove", "-y", "-p", "/p"]
+
+
+def catalogue_engines():
+    from femkit.engines import registered
+    return registered()
 
 
 DERIVED = {"description": "d", "section": "7-derived-quantities"}

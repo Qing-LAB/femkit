@@ -29,10 +29,10 @@ from femkit.server import protocol
 from femkit.server.protocol import Listen, LogRoll, Pidfile, event_line
 
 
-def child_argv(listen: Listen, fd: int, parent: int) -> list[str]:
-    """The web application's command: it serves on the inherited socket ``fd`` and ends when
-    ``parent`` does (api.md § 5.4)."""
-    return [sys.executable, "-m", protocol.CHILD_MODULE, "--fd", str(fd), "--parent", str(parent),
+def child_argv(python: str, listen: Listen, fd: int, parent: int) -> list[str]:
+    """The web application's command, on the web environment's ``python``: it serves on the
+    inherited socket ``fd`` and ends when ``parent`` does (api.md § 5.4)."""
+    return [python, "-m", protocol.CHILD_MODULE, "--fd", str(fd), "--parent", str(parent),
             "--listen", json.dumps(listen.as_json())]
 
 
@@ -45,7 +45,7 @@ def remove_files(listen: Listen) -> None:
         path.unlink(missing_ok=True)
 
 
-def supervise(listen: Listen, fd: int, *, log_max_bytes: int, log_keep: int,
+def supervise(listen: Listen, fd: int, python: str, *, log_max_bytes: int, log_keep: int,
               echo: BinaryIO | None = None, on_child: Callable[[Identity], None] | None = None) -> int:
     """Run the child until a stop, a child that exits by itself, or two deaths by a signal
     within the flap window. Returns the supervisor's exit code. ``echo``: a terminal the
@@ -89,9 +89,10 @@ def supervise(listen: Listen, fd: int, *, log_max_bytes: int, log_keep: int,
     try:
         while not state["stop"]:
             state["restart"] = False
-            child = subprocess.Popen(child_argv(listen, fd, me.pid), stdin=subprocess.DEVNULL,
-                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                     pass_fds=(fd,), start_new_session=True)
+            child = subprocess.Popen(child_argv(python, listen, fd, me.pid), stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, pass_fds=(fd,),
+                                     start_new_session=True, cwd=dirs.checkout(),  # femkit, from the checkout
+                                     env={**os.environ, "PYTHONNOUSERSITE": "1"})
             state["child"] = child
             who = identify(child.pid)
             Pidfile(me, who, dirs.host(), listen, echo is not None).write()
@@ -140,12 +141,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m femkit.server.supervisor")
     parser.add_argument("--listen", required=True, help="where it listens, as JSON")
     parser.add_argument("--fd", type=int, required=True, help="the listening socket, inherited")
+    parser.add_argument("--python", required=True, help="the web environment's Python, which runs the child")
     parser.add_argument("--lock-fd", type=int, required=True, help="the server's lock, inherited")
+    parser.add_argument("--use-fd", type=int, required=True, help="the web environment's lock, held shared, inherited")
     parser.add_argument("--log-max-bytes", type=int, required=True)
     parser.add_argument("--log-keep", type=int, required=True)
     args = parser.parse_args(argv)
-    locks.adopt(args.lock_fd)  # held from here for as long as this process runs
-    return supervise(Listen.from_json(json.loads(args.listen)), args.fd,
+    listen = Listen.from_json(json.loads(args.listen))
+    for fd in (args.lock_fd, args.use_fd):  # held from here for as long as this process runs
+        locks.adopt(fd, *listen.holds())
+    return supervise(listen, args.fd, args.python,
                      log_max_bytes=args.log_max_bytes, log_keep=args.log_keep)
 
 

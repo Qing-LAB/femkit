@@ -53,7 +53,8 @@ The three questions every command answers in this order:
 
 | environment | defined by | holds |
 |---|---|---|
-| `control` | `femkit/data/channels.txt`, `control.txt` | Python and the libraries the `femkit` command needs; no solver |
+| `control` | `femkit/data/channels.txt`, `control.txt` | Python and the libraries the `femkit` command needs; no solver, no web server |
+| `web` | `femkit/data/environments/web.toml`, a tool environment ([`definitions.md`](definitions.md) § 4.7) | everything the web surface needs: the control environment's packages, by reference, with flask to serve the page and Node.js to build it ([`api.md`](api.md) § 5); installed on request, `env install web`, never by `--all` or `bootstrap` |
 | `ngsolve`, `elmer` | `femkit/data/environments/<name>.toml` | one engine with everything it builds and runs with on CPUs; the defaults |
 | `ngsolve-cuda`, `elmer-cuda` | the same file's `[cuda]` part ([`definitions.md`](definitions.md) § 4.5) | the same engine with CUDA; installed on request, never by `--all` or `bootstrap` |
 
@@ -115,7 +116,7 @@ All are read from disk; observing starts no process and needs no network.
 
 | fact | read from |
 |---|---|
-| lock held | another process holds the environment's subject lock ([`core.md`](core.md) § 5); the process holding it reads its own environment as not busy |
+| lock held | another process holds the environment's subject lock alone ([`core.md`](core.md) § 5); the process holding it reads its own environment as not busy. A lock held shared — a program using the environment, as a running web server uses `web` ([`api.md`](api.md) § 5.4) — leaves its state as it is; `install`, `clean` and `validate`, which need the lock alone, are refused while it is held, naming each user and the command that ends its use |
 | prefix | `absent`, a plain directory, or a manager environment (`conda-meta/` present) |
 | manifest | `<prefix>/.femkit/manifest.json`: missing, unreadable, or its install fingerprint |
 | checks | `<prefix>/.femkit/checks.json`: missing, or its check fingerprint and outcomes |
@@ -392,19 +393,34 @@ flowchart LR
 - **The manager runs in femkit's own places.** Every manager command femkit
   runs — a query, a create, a removal, a `run`, the install script's included
   (§ 7) — runs with `HOME` set to `<cache>/manager-home/`, its package cache at
-  `<cache>/pkgs/` (`CONDA_PKGS_DIRS`) and environment registration off
-  (`CONDA_REGISTER_ENVS=false`), so nothing it writes lands in the person's
-  home: package downloads, repodata and notice caches, its list of
-  environments, mamba's process records. Measured 2026-11-23 on a workstation:
+  `<cache>/pkgs/` (`CONDA_PKGS_DIRS`), environment registration off
+  (`CONDA_REGISTER_ENVS=false`) and `TMPDIR` at `<cache>/tmp/`, so nothing it
+  or a command inside a prefix writes lands in the person's home or the
+  system's temporary folder: package downloads, repodata and notice caches, its
+  list of environments, mamba's process records, Node.js's compile cache
+  (measured 2026-11-23: `web build` left `/tmp/node-compile-cache` before this
+  rule). Measured 2026-11-23 on a workstation:
   conda 26.7.1 honours both variables; mamba 2.9.0 honours the package cache
   but registers every environment it creates in `$HOME/.conda/environments.txt`
   with no setting to stop it, so its `HOME` is femkit's; `conda info` writes
   `~/.anaconda/keyring` and `~/.conda/aau_token` into whichever `HOME` it has;
-  both report the same root prefix under either `HOME`. The person's
+  both report the same root prefix under either `HOME`. The variables that
+  name the person's own configuration and caches apart from `HOME` —
+  `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`,
+  `CONDARC`, `MAMBARC` — are removed from every manager command: measured
+  2026-11-23, conda 26.7.1 under femkit's `HOME` still reads
+  `$XDG_CONFIG_HOME/conda/.condarc` and `$CONDARC`. The person's
   `~/.condarc` and `~/.mambarc` are therefore not read by femkit's installs:
   the channels are femkit's own (below), and a proxy reaches the manager
   through `HTTPS_PROXY`, which passes. A command inside a prefix inherits that
-  `HOME`, so a build's or a check's own caches stay in femkit's places too.
+  `HOME`, so a build's or a check's own caches stay in femkit's places too. A
+  conda removal names the declared channels, as a create does: measured with
+  conda 26.7.1, a removal under femkit's `HOME` otherwise checks the terms of
+  service of the `defaults` channels the manager's own base configuration
+  lists — channels femkit never uses — and stops; femkit never accepts terms
+  on the person's behalf. A mamba removal names none: mamba 2.9.0 refuses
+  channels on `env remove` (exit 109) and checks no terms. Each kind file says
+  which (`remove_channels`, [`definitions.md`](definitions.md) § 6).
 - **Nothing outside the definitions enters a prefix.** Every environment,
   the control one included, is created by the manager kind's `create`: the
   channels `channels.txt` names and no others — the person's own conda
@@ -445,7 +461,8 @@ flowchart LR
   the toolchain check proves every tool a build calls resolves inside the
   prefix. The allow-list is one constant, `envs/manager.py` (`CONFINED`).
 - The manager's own commands — create, remove, export a lock — keep the
-  invocation's variables: the manager reads its own configuration and proxies.
+  invocation's variables but those naming the person's own configuration
+  (above): the manager reads its installation's configuration and proxies.
 
 ### 4.5 The toolchain and the host
 

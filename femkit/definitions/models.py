@@ -288,6 +288,8 @@ class EnvironmentDefinition(Model):
     version_command: list[str] | None = Field(default=None, description="a tool environment's: the command, run "
                                               "in the prefix, whose last line of output is its version")
     version: str = Field(description="what the version probe must report")
+    control_packages: bool = Field(default=False, description="a tool environment's: the control environment's "
+                                   "packages (control.txt), solved with its own (definitions.md § 4.7)")
     description: str = Field(description="one line for `env list`")
     maturity: Maturity = Field(description="production, candidate or experimental")
     default: bool = Field(default=False, description="part of `env install --all`")
@@ -347,6 +349,9 @@ class EnvironmentDefinition(Model):
                     problems.append(((key,), "a tool environment has none: it runs no engine (definitions.md § 4.7)"))
             if self.default:
                 problems.append((("default",), "a tool environment is installed when asked, never by default"))
+        elif self.control_packages:
+            problems.append((("control_packages",), "only a tool environment takes the control environment's "
+                                                   "packages; an engine's are its own"))
         for var in sorted(set(self.thread_variables) & set(self.fixed_variables)):
             problems.append((("fixed_variables", var), "also in thread_variables; a variable is in one or the other"))
         part = self.cuda_part
@@ -580,6 +585,10 @@ class ManagerKind(Model):
     create_from_lock: ManagerArgv = Field(description="creates {prefix} from the exact package list in {file}")
     export_lock: ManagerArgv = Field(description="prints the exact package list of {prefix}, one URL a line")
     remove: ManagerArgv = Field(description="removes {prefix}")
+    remove_channels: bool = Field(default=False, description="whether `remove` names the declared channels as "
+                                  "`create` does, `channel` once per channel after it: conda 26 otherwise checks the "
+                                  "terms of its base configuration's defaults; mamba 2.9.0 refuses channels on a "
+                                  "removal (both measured, envs.md § 4.4)")
 
     @field_validator("channel")
     @classmethod

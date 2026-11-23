@@ -61,6 +61,60 @@ def test_a_second_holder_of_a_subject_is_refused_not_queued():
         pass
 
 
+HOLDER = """
+import sys
+from femkit.core import locks
+with locks.subject_lock(sys.argv[1], shared=sys.argv[2] == "shared"):
+    locks.adopt(locks.held_fd(sys.argv[1]), "a user of " + sys.argv[1], ("end it",))
+    print("held", flush=True)
+    sys.stdin.read()
+"""
+
+
+def hold(subject: str, mode: str):
+    """Another process holding ``subject``'s lock, ``mode`` shared or alone, until its stdin closes."""
+    import subprocess
+    import sys
+    p = subprocess.Popen([sys.executable, "-c", HOLDER, subject, mode], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         text=True)
+    assert p.stdout.readline().strip() == "held"
+    return p
+
+
+def test_users_share_a_lock_and_a_change_is_refused_naming_each_and_what_ends_it():
+    """Fails if two users cannot hold a subject shared at once, if something can take it alone
+    while one does — or one join while it is held alone — or if the refusal does not name each
+    live user and offer what ends its hold (core.md § 5)."""
+    from femkit.core.locks import is_held, require_free
+    from femkit.core.locks import lock_path
+    lock_path("env-x").parent.mkdir(parents=True, exist_ok=True)
+    lock_path("env-x").write_text("pid 999999999: a holder long gone, in the old form\n")
+    users = [hold("env-x", "shared"), hold("env-x", "shared")]
+    try:
+        assert not is_held("env-x")                         # a use is not a change
+        with pytest.raises(Busy) as caught:
+            with subject_lock("env-x"):
+                pass
+        assert str(caught.value).count("a user of env-x") == 2 and caught.value.next == ("end it",)
+        assert "long gone" not in str(caught.value)            # a holder that ended is not named
+        with pytest.raises(Busy):
+            require_free("env-x")
+        with subject_lock("env-x", shared=True):            # one more user
+            pass
+    finally:
+        for p in users:
+            p.communicate("")
+    require_free("env-x")
+    changer = hold("env-x", "alone")
+    try:
+        assert is_held("env-x")
+        with pytest.raises(Busy):
+            with subject_lock("env-x", shared=True):
+                pass
+    finally:
+        changer.communicate("")
+
+
 def test_the_event_log_fold_reads_progress_interruption_and_a_torn_line(tmp_path):
     """Fails if resume could skip an unfinished step, a dead writer's run read as in
     progress, or a torn last line break the read (core.md § 6)."""

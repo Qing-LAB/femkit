@@ -22,6 +22,7 @@
 | `engine` | text, optional | — | the registered engine adapter ID; absent for a tool environment |
 | `version_command` | list of text, optional | — | a tool environment's: the command, run in the prefix, whose last line of output is its version |
 | `version` | text | required | what the version probe must report |
+| `control_packages` | boolean | `False` | a tool environment's: the control environment's packages (control.txt), solved with its own (definitions.md § 4.7) |
 | `description` | text | required | one line for `env list` |
 | `maturity` | `production` \| `candidate` \| `experimental` | required | production, candidate or experimental |
 | `default` | boolean | `False` | part of `env install --all` |
@@ -157,6 +158,7 @@ Checks that must give the same quantity (definitions.md § 5.2).
 | `create_from_lock` | list of text | required | creates {prefix} from the exact package list in {file}. Placeholders: `{exe}`, `{file}`, `{prefix}` |
 | `export_lock` | list of text | required | prints the exact package list of {prefix}, one URL a line. Placeholders: `{exe}`, `{file}`, `{prefix}` |
 | `remove` | list of text | required | removes {prefix}. Placeholders: `{exe}`, `{file}`, `{prefix}` |
+| `remove_channels` | boolean | `False` | whether `remove` names the declared channels as `create` does, `channel` once per channel after it: conda 26 otherwise checks the terms of its base configuration's defaults; mamba 2.9.0 refuses channels on a removal (both measured, envs.md § 4.4) |
 
 ## JsonQuery
 

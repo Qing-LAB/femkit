@@ -37,8 +37,11 @@ if [[ "$CACHE_DIR" != /* ]]; then
     exit 2
 fi
 # Every manager command runs in femkit's own places, never the person's home (envs.md § 4.4):
-# its HOME, its package cache and its list of environments.
-MANAGER_ENV=(env "HOME=$CACHE_DIR/manager-home" "CONDA_PKGS_DIRS=$CACHE_DIR/pkgs" "CONDA_REGISTER_ENVS=false")
+# its HOME, its package cache, its list of environments and its temporary files; none of the
+# person's own configuration or caches named apart from HOME.
+MANAGER_ENV=(env -u XDG_CONFIG_HOME -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_STATE_HOME -u CONDARC -u MAMBARC
+             "HOME=$CACHE_DIR/manager-home" "CONDA_PKGS_DIRS=$CACHE_DIR/pkgs" "CONDA_REGISTER_ENVS=false"
+             "TMPDIR=$CACHE_DIR/tmp")
 STAMP="$CONTROL/.femkit/control.sha256"
 
 AUTO_YES=0
@@ -259,7 +262,7 @@ create_control() {
         kind_argv channel
         for arg in "${ARGV[@]}"; do cmd+=("${arg//\{channel\}/$channel}"); done
     done
-    mkdir -p "$CACHE_DIR/manager-home" "$CACHE_DIR/pkgs"
+    mkdir -p "$CACHE_DIR/manager-home" "$CACHE_DIR/pkgs" "$CACHE_DIR/tmp"
     "${MANAGER_ENV[@]}" "${cmd[@]}" --file "$CONTROL_TXT" || { say "creating the control environment failed"; exit 1; }
     mkdir -p "$CONTROL/.femkit"
     local digest
@@ -289,9 +292,17 @@ recreate_control() {
         case "$answer" in y|Y|yes) ;; *) refuse "declined; nothing was changed" ;; esac
     fi
     trap rebuild_failed EXIT
-    kind_argv remove
-    mkdir -p "$CACHE_DIR/manager-home" "$CACHE_DIR/pkgs"
-    "${MANAGER_ENV[@]}" "${ARGV[@]}" || { say "removing the control environment failed"; exit 1; }
+    kind_argv remove; local rm=("${ARGV[@]}") channel arg channels=()
+    # Where the kind's removal names the declared channels, as its create does (envs.md § 4.4).
+    if grep -qE "^remove_channels = true" "$REPO_ROOT/femkit/data/managers/$(basename "$ENV_MGR").toml"; then
+        mapfile -t channels < "$CHANNELS_TXT"
+        for channel in "${channels[@]}"; do
+            kind_argv channel
+            for arg in "${ARGV[@]}"; do rm+=("${arg//\{channel\}/$channel}"); done
+        done
+    fi
+    mkdir -p "$CACHE_DIR/manager-home" "$CACHE_DIR/pkgs" "$CACHE_DIR/tmp"
+    "${MANAGER_ENV[@]}" "${rm[@]}" || { say "removing the control environment failed"; exit 1; }
     CONTROL_REMOVED=1
     create_control
     CONTROL_REMOVED=0

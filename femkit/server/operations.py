@@ -82,8 +82,30 @@ def _listen(req: ServeRequest, ctx: Context) -> Listen:
 
 # ------------------------------------------------------------------ what start refuses
 
+WEB = "web"  # the environment the server runs in (envs.md § 1)
+
+
+def _web_subject() -> str:
+    """The web environment's lock subject: a running server holds it shared (api.md § 5.4)."""
+    from femkit.envs import layout
+    return layout.subject(WEB)
+
+
+def web_python(ctx: Context) -> str:
+    """The web environment's Python, which runs the server's child; refused until that
+    environment is `ready` (api.md § 5.4)."""
+    from femkit.envs import layout
+    from femkit.envs.state import EnvState, observe
+    state = observe(ctx, WEB)[1]
+    if state is not EnvState.ready:
+        raise Refused(f"the {WEB} environment, which runs the server, is {state.value}",
+                      (text.typed("env", "install", WEB),))
+    return str(layout.prefix(ctx, WEB) / "bin" / "python")
+
+
 def _preflight(listen: Listen, ctx: Context) -> None:
     """Everything `start` refuses, refused before it detaches (api.md § 5.4)."""
+    web_python(ctx)
     private_dir(dirs.runtime_dir())
     if listen.socket and len(listen.socket.encode()) > protocol.SOCKET_PATH_MAX:
         raise UsageError(f"the socket's path is longer than a Unix socket's {protocol.SOCKET_PATH_MAX} bytes: "
@@ -241,9 +263,9 @@ def _start_plan(name: str, req: ServeRequest, ctx: Context, detached: bool) -> P
                   Step(id="answer", describe="wait until it answers with the token")]
     else:
         steps += [Step(id="supervise", describe="run the supervisor here, until Ctrl-C or `serve stop`",
-                       argv=(sys.executable, "-m", protocol.CHILD_MODULE, "…"))]
+                       argv=("<web>/bin/python", "-m", protocol.CHILD_MODULE, "…"))]
     return Plan(operation=name, request=req.model_dump(mode="json"), subjects=(protocol.subject(listen.name),),
-                basis={"state": state.value, "listen": listen.as_json()}, steps=tuple(steps))
+                shared=(_web_subject(),), basis={"state": state.value, "listen": listen.as_json()}, steps=tuple(steps))
 
 
 def _reobserve(plan: Plan) -> tuple[Listen, object]:
@@ -279,11 +301,12 @@ class ServeStart:
                 held["token"] = _write_token(listen)
             elif step.id == "supervise":
                 sock, lock_fd = held["socket"], locks.held_fd(protocol.subject(listen.name))
-                argv = [sys.executable, "-m", "femkit.server.supervisor",
+                use_fd = locks.held_fd(_web_subject())
+                argv = [sys.executable, "-m", "femkit.server.supervisor", "--python", web_python(ctx),
                         "--listen", json.dumps(listen.as_json()), "--fd", str(sock.fileno()),
-                        "--lock-fd", str(lock_fd), "--log-max-bytes", str(req.log_max_mb * 1024 * 1024),
-                        "--log-keep", str(req.log_keep)]
-                held["supervisor"] = start_detached(argv, keep_fds=(sock.fileno(), lock_fd), cwd=dirs.checkout(),
+                        "--lock-fd", str(lock_fd), "--use-fd", str(use_fd),
+                        "--log-max-bytes", str(req.log_max_mb * 1024 * 1024), "--log-keep", str(req.log_keep)]
+                held["supervisor"] = start_detached(argv, keep_fds=(sock.fileno(), lock_fd, use_fd), cwd=dirs.checkout(),
                                                     log=protocol.supervisor_log(listen.name))
                 sock.close()  # the supervisor holds it now
             elif step.id == "answer":
@@ -341,7 +364,9 @@ class ServeForeground:
             elif step.id == "token":
                 held["token"] = _write_token(listen)
             elif step.id == "supervise":
-                code = supervisor.supervise(listen, held["socket"].fileno(),
+                for subject in (protocol.subject(listen.name), _web_subject()):  # the runner's holds, named as the server
+                    locks.adopt(locks.held_fd(subject), *listen.holds())
+                code = supervisor.supervise(listen, held["socket"].fileno(), web_python(ctx),
                                             log_max_bytes=req.log_max_mb * 1024 * 1024,
                                             log_keep=req.log_keep, echo=sys.stdout.buffer,
                                             on_child=announce)

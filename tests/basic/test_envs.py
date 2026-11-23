@@ -106,6 +106,28 @@ def test_a_held_lock_reads_busy_and_refuses_every_action():
             EnvClean.plan(EnvClean.request(name=NAME), ctx())
 
 
+def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manager):
+    """Fails if a program holding an environment's lock shared — as a running web server holds
+    `web`'s — makes it read busy, or lets install, clean or validate run under it instead of
+    refusing with what ends that use (envs.md § 3.2, api.md § 5.4)."""
+    from tests.basic.test_core import hold
+    from femkit.core.errors import Busy
+    from femkit.envs.operations import EnvInstall, EnvValidate
+    user = hold(layout.subject(NAME), "shared")
+    try:
+        with pytest.raises(Busy) as caught:                 # absent: an install has steps
+            EnvInstall.plan(EnvInstall.request(names=[NAME]), ctx())
+        assert caught.value.next == ("end it",)
+        installed(outcomes=[passed("cpu"), passed("gpu")])
+        assert state() is EnvState.ready
+        for op, request in ((EnvClean, EnvClean.request(name=NAME)), (EnvValidate, EnvValidate.request(name=NAME))):
+            with pytest.raises(Busy, match=f"a user of {layout.subject(NAME)}"):
+                op.plan(request, ctx())
+    finally:
+        user.communicate("")
+    EnvClean.plan(EnvClean.request(name=NAME), ctx())       # its use ended: allowed
+
+
 def test_changing_the_cuda_targets_makes_a_cuda_build_outdated():
     """Fails if build.cuda_architectures does not enter the install fingerprint of an
     environment with a CUDA build, or enters one without (envs.md § 2)."""
@@ -139,7 +161,9 @@ def test_clean_removes_the_prefix_through_the_manager_while_holding_its_lock(man
     c = ctx()
     outcome = EnvClean.apply(EnvClean.plan(EnvClean.request(name=NAME), c), c)
     assert outcome.status == "done" and not f.prefix.exists()
-    assert manager.read_text().split() == ["env", "remove", "-y", "-p", str(f.prefix)]
+    from femkit.definitions.catalogue import load_control
+    from femkit.envs.manager import resolve
+    assert manager.read_text().split() == resolve(ctx()).remove(f.prefix, load_control().channels)[1:]
 
 
 def test_in_the_activated_control_environment_the_manager_is_the_one_activation_named(manager, monkeypatch):

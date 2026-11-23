@@ -42,6 +42,13 @@ class Manager:
             argv += [render(arg, {"channel": channel}) for arg in self.kind.channel]
         return argv + list(packages)
 
+    def remove(self, prefix: Path, channels: list[str]) -> list[str]:
+        """The kind's `remove`, naming the declared channels where the kind does (envs.md § 4.4)."""
+        argv = self.argv(self.kind.remove, prefix=str(prefix))
+        for channel in channels if self.kind.remove_channels else []:
+            argv += [render(arg, {"channel": channel}) for arg in self.kind.channel]
+        return argv
+
     def in_prefix(self, prefix: Path, command: list[str]) -> list[str]:
         """``command`` run inside ``prefix`` through the manager's own mechanism (envs.md § 4.4)."""
         return self.argv(self.kind.run, prefix=str(prefix)) + list(command)
@@ -104,13 +111,21 @@ def confined(base: Mapping[str, str], *, checkout: bool = False) -> dict[str, st
 ACTIVATION_VARIABLES = ("MAMBA_EXE", "CONDA_EXE")  # set by the manager's own activation
 
 
+# Where a person's own configuration and caches are named apart from `HOME`: the manager reads a
+# `condarc` and writes its caches through these (measured 2026-11-23, conda 26.7.1 reads both
+# `$XDG_CONFIG_HOME/conda/.condarc` and `$CONDARC` under femkit's `HOME`), so none reaches it.
+PERSONS_OWN = ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "CONDARC", "MAMBARC")
+
+
 def in_femkit_places(base: Mapping[str, str]) -> dict[str, str]:
     """``base`` as every manager command runs with it (envs.md § 4.4): its `HOME`, package
-    cache and list of environments in femkit's cache, never in the person's home."""
-    home, packages = dirs.cache_dir() / "manager-home", dirs.cache_dir() / "pkgs"
-    home.mkdir(parents=True, exist_ok=True)
-    packages.mkdir(parents=True, exist_ok=True)
-    return {**base, "HOME": str(home), "CONDA_PKGS_DIRS": str(packages), "CONDA_REGISTER_ENVS": "false"}
+    cache, list of environments and temporary files in femkit's cache, never in the person's
+    home or the system's temporary folder, and none of the person's own configuration read."""
+    home, packages, tmp = (dirs.cache_dir() / d for d in ("manager-home", "pkgs", "tmp"))
+    for folder in (home, packages, tmp):
+        folder.mkdir(parents=True, exist_ok=True)
+    return {**{k: v for k, v in base.items() if k not in PERSONS_OWN}, "HOME": str(home),
+            "CONDA_PKGS_DIRS": str(packages), "CONDA_REGISTER_ENVS": "false", "TMPDIR": str(tmp)}
 
 
 def resolve(ctx: Context) -> Manager:

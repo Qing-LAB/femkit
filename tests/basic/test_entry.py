@@ -40,6 +40,8 @@ def declared(*names: str) -> list[list[str]]:
         if name == "create":
             m = resolve(Context.from_process())
             out.append(m.create(dirs.control_prefix(), load_control().channels, ["--file", str(control_files()[1])])[1:])
+        elif name == "remove":  # as femkit assembles every removal: with the channels, where the kind names them
+            out.append(resolve(Context.from_process()).remove(dirs.control_prefix(), load_control().channels)[1:])
         else:
             out.append([render(a, {"exe": "", "prefix": str(dirs.control_prefix())}) for a in getattr(kind, name)[1:]])
     return out
@@ -236,13 +238,18 @@ def test_help_before_control_exists_is_the_scripts_own_and_creates_nothing(manag
 
 def femkit_places() -> list[str]:
     from femkit.core import dirs
-    return [str(dirs.cache_dir() / "manager-home"), str(dirs.cache_dir() / "pkgs"), "false"]
+    return [str(dirs.cache_dir() / "manager-home"), str(dirs.cache_dir() / "pkgs"), "false",
+            str(dirs.cache_dir() / "tmp"), "person="]
 
 
-def test_the_script_runs_the_manager_in_femkits_places_never_the_persons_home(manager):
+def test_the_script_runs_the_manager_in_femkits_places_never_the_persons_home(manager, tmp_path, monkeypatch):
     """Fails if the install script's create runs the manager with the person's HOME, package
-    cache or environment registration: whatever the manager writes would land in their home
-    (envs.md § 4.4, § 7)."""
+    cache, environment registration or temporary folder, or with a variable naming the person's
+    own configuration: whatever the manager writes would land in their home, and what they
+    configured would be read (envs.md § 4.4, § 7)."""
+    from femkit.envs.manager import PERSONS_OWN
+    for variable in PERSONS_OWN:
+        monkeypatch.setenv(variable, str(tmp_path / "the-persons" / variable))
     install_env("bootstrap", "--yes")
     places = [line.split() for line in Path(f"{manager}.places").read_text().splitlines()]
     assert places and all(p == femkit_places() for p in places), places

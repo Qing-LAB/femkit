@@ -10,8 +10,8 @@ its progress log, its one-run-per-batch lock and the states it reports
 
 | rule | § |
 |---|---|
-| **Three tiers**, one directory each: `basic` (no outside tool), `field` (this machine's real manager and scheduler), `engine` (installed solvers) | 1 |
-| A basic test cannot reach the person's directories, a package manager, a scheduler or a solver: each is a **tripwire** that fails the test | 2.1 |
+| **Four tiers**, one directory each: `basic` (no outside tool), `web` (the `web` environment), `field` (this machine's real manager and scheduler), `engine` (installed solvers) | 1 |
+| A basic or web test cannot reach the person's directories, a package manager, a scheduler or a solver: each is a **tripwire** that fails the test | 2.1 |
 | **Canaries** measure the outcome: a run that changed the person's config, environments or checkout fails | 2.2 |
 | No test input is **typed-in output** of a solver, manager or scheduler; output is read where it is printed — in the field and engine tiers | 2.1 |
 | A test exists only by naming the **failure it catches** that nothing else would; it says so, and which contract owns the rule, in its first lines | 3 |
@@ -26,6 +26,7 @@ its progress log, its one-run-per-batch lock and the states it reports
 | tier | answers | needs | directory |
 |---|---|---|---|
 | **basic** | does femkit decide and write what its contracts say? | the control environment only | `tests/basic/` |
+| **web** | does the web surface serve, check and refuse what its contract says? | the `web` environment's Python, which holds flask (`env install web`; [`api.md`](api.md) § 5) | `tests/web/` |
 | **field** | does it work with **this** machine — its manager, its scheduler, its records? | this machine's manager (and network for a small package solve); on a cluster, its scheduler | `tests/field/` |
 | **engine** | do the installed solvers give the right numbers, and does a real job run end to end? | installed engine environments; their CPUs and GPUs | `tests/engine/` |
 
@@ -60,10 +61,11 @@ word, and `env validate` writes each prefix's check results there exactly as it
 does for the person. In that tier the environments canary (§ 2.2) watches
 `conda-meta/` and the manifest, not the check results.
 
-In the **basic** tier, `PATH` starts with a directory of tripwires for every
-outside program femkit can start: the managers, MPI and scheduler
-commands, CMake and CTest, `nvidia-smi`, and every solver executable a
-definition names. A tripwire logs its call and exits 97; a test that reached one
+In the **basic** and **web** tiers, `PATH` starts with a directory of
+tripwires for every outside program femkit can start: the managers, MPI and
+scheduler commands, CMake and CTest, `nvidia-smi`, and every executable an
+environment definition names — the solvers, and the `web` environment's
+Node.js. A tripwire logs its call and exits 97; a test that reached one
 fails, naming the call. `FEMKIT_ENV_MANAGER` points at a tripwire too. No
 scheduler kind's job variables are set, so the basic tier gives the same answers
 run inside an allocation as anywhere else.
@@ -119,6 +121,7 @@ it ends, and a difference fails the run, naming what changed:
 
 ```bash
 python tools/testrun.py run basic                  # the default tier, over the cores
+<data>/environments/web/bin/python tools/testrun.py run web   # the web environment's own Python
 python tools/testrun.py run field                  # this machine's manager/scheduler
 python tools/testrun.py run engine                 # installed engines, on the person's word
 python tools/testrun.py run tests/basic/test_x.py  # a targeted set: batch `custom`

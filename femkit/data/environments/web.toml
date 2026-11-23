@@ -1,0 +1,15 @@
+# The web surface (api.md § 5): femkit's server and the tool its page is built with — a tool
+# environment (definitions.md § 4.7), installed when a machine serves the page or a person
+# changes it: `env install web`. The control environment holds neither (ADR 0009).
+description = "the web surface: femkit's server, and Node.js to build its page"
+version = "v22.23.5"
+version_command = ["node", "--version"]
+maturity = "production"
+control_packages = true
+
+[packages]
+conda = ["flask>=3,<4", "nodejs=22.23.5"]
+
+[provides]
+executables = ["python", "node", "npm"]
+modules = ["flask"]

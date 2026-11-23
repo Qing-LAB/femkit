@@ -1,4 +1,4 @@
-"""`web build`: the web page's bundle, built with the `nodejs` tool environment (api.md § 5.3).
+"""`web build`: the web page's bundle, built with the Node.js of the `web` environment (api.md § 5.3).
 
 npm runs inside that environment through the manager, in a work folder under femkit's
 cache, with its cache and configuration there too: nothing reaches the person's home or
@@ -25,7 +25,7 @@ from femkit.envs import layout
 from femkit.envs.manager import confined, resolve
 from femkit.envs.state import EnvState, observe
 
-TOOL = "nodejs"                    # the tool environment that builds the page (definitions.md § 4.7)
+TOOL = "web"                       # the environment that builds and serves the page (definitions.md § 4.7)
 PROXIES = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy")
 
 
@@ -110,7 +110,7 @@ class BuildOutcome(Outcome):
 
 @operation("web.build", request=BuildRequest, result=BuildOutcome, changes=True, subject=lambda req: ["web-build"])
 class WebBuild:
-    """Build the web page's bundle from frontend/ with the nodejs tool environment, into
+    """Build the web page's bundle from frontend/ with the web environment's Node.js, into
     femkit/web/static/ with its build.json and third-party licenses."""
 
     def plan(self, req: BuildRequest, ctx: Context) -> Plan:

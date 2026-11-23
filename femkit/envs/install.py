@@ -148,7 +148,7 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
     m, p = t.manager, t.prefix
     steps: list[Step] = []
     if remove_first:
-        steps.append(Step(id="remove", describe=f"remove {text.path(p)}", argv=tuple(m.argv(m.kind.remove, prefix=str(p)))))
+        steps.append(Step(id="remove", describe=f"remove {text.path(p)}", argv=tuple(m.remove(p, t.channels))))
     if discard_lock:
         steps.append(Step(id="discard-lock", describe=f"discard the saved lock {text.path(t.lock)}"))
     if t.lock.exists() and not discard_lock:

@@ -109,6 +109,19 @@ def test_start_serves_with_its_token_and_a_second_start_is_refused(server):
         apply("serve.start", port=server, tcp=True)
 
 
+def test_a_running_server_holds_its_environment_until_it_stops(server):
+    """Fails if the web environment can be changed under a running server — its supervisor not
+    holding `env-web` shared — or the refusal does not offer this server's stop, or the hold
+    outlives the server (api.md § 5.4, core.md § 5)."""
+    from femkit.core import locks
+    with pytest.raises(Busy) as caught:
+        locks.require_free("env-web")
+    assert f"the web server on 127.0.0.1:{server}" in str(caught.value)
+    assert caught.value.next == (f"python -m femkit serve stop --port {server}",)
+    assert apply("serve.stop", port=server).ok()
+    locks.require_free("env-web")
+
+
 def test_stop_ends_both_processes_and_removes_its_files(server):
     """Fails if `stop` leaves the supervisor, the child, the pidfile or the token behind."""
     name = str(server)

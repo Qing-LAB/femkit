@@ -82,13 +82,15 @@ def tripwires(tripwire_dir, monkeypatch):
 # (envs.md § 4.4), and a stand-in that read its log path from them would lose it.
 STAND_IN = r"""#!/bin/sh
 printf '%s\n' "$*" >> @LOG@
-printf '%s %s %s\n' "$HOME" "${CONDA_PKGS_DIRS:-unset}" "${CONDA_REGISTER_ENVS:-unset}" >> @LOG@.places
+printf '%s %s %s %s person=%s\n' "$HOME" "${CONDA_PKGS_DIRS:-unset}" "${CONDA_REGISTER_ENVS:-unset}" "${TMPDIR:-unset}" \
+  "${XDG_CONFIG_HOME-}${XDG_CACHE_HOME-}${XDG_DATA_HOME-}${XDG_STATE_HOME-}${CONDARC-}${MAMBARC-}" >> @LOG@.places
 case "$1 $2" in
 RUN_LINE
   "create -y") prefix="$4"; mkdir -p "$prefix/conda-meta" "$prefix/bin"
                 printf '#!/bin/sh\necho "python $*" >> %s\n' @LOG@ > "$prefix/bin/python"
                 chmod +x "$prefix/bin/python" ;;
   "env remove") rm -rf "$5" ;;
+  "remove --all") rm -rf "$5" ;;
 esac
 exit 0
 """

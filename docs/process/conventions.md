@@ -137,7 +137,8 @@ These hold for every change; a review checks each.
   to the declared variables ([`envs.md`](../contracts/envs.md) § 4.4). Code
   never sets `PATH` or `LD_LIBRARY_PATH` by hand, and never derives a prefix
   from where a program lives. femkit itself runs on the control environment's
-  own `python` and needs no activation.
+  own `python`, and its web server's child on the `web` environment's own
+  `python` ([`api.md`](../contracts/api.md) § 5.4); neither needs activation.
 
 ## 4. Configuration and data
 

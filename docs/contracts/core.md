@@ -167,10 +167,12 @@ every folder.
 
 ```python
 @contextmanager
-def subject_lock(subject: str) -> Iterator[None]    # raises Busy
-def is_held(subject: str) -> bool
+def subject_lock(subject: str, *, shared: bool = False) -> Iterator[None]    # raises Busy
+def is_held(subject: str) -> bool       # held alone: something is changing it
+def require_free(subject: str) -> None  # raises Busy while anyone holds it, shared or alone; takes nothing
 def held_fd(subject: str) -> int        # the descriptor this process holds it on, to hand to a process it starts
-def adopt(fd: int) -> None              # a handed lock: its file now names the receiver
+def adopt(fd: int, by: str | None = None, next: tuple[str, ...] = ()) -> None
+                                        # a handed lock: its file now names the receiver, and what ends its hold
 def holders() -> dict[str, int]         # subject -> pid, from the kernel's lock table (/proc/locks): the
                                         # process that took the lock, which after a handover is not the holder
 ```
@@ -180,14 +182,22 @@ def holders() -> dict[str, int]         # subject -> pid, from the kernel's lock
   as long as either runs — how `serve start` leaves its lock with the
   supervisor it detaches ([`api.md`](api.md) § 5.4).
 
-- An exclusive, non-blocking `flock` on `<data>/locks/<subject>.lock` (a
-  *subject lock*; the solved package lists beside it are *package locks*,
+- A non-blocking `flock` on `<data>/locks/<subject>.lock` (a *subject lock*;
+  the solved package lists beside it are *package locks*,
   [`envs.md`](envs.md) § 4.3), held for the `with` block. The kernel releases
   it however the process ends, so there is no stale lock to detect.
+- **Alone or shared.** What changes a subject holds its lock alone; what only
+  uses it holds it shared — any number of users at once, and none while
+  something holds it alone. A running web server holds the `web`
+  environment's lock shared, so the environment is never removed under it
+  ([`api.md`](api.md) § 5.4). `is_held` answers whether something holds it
+  alone — is changing it; `require_free` refuses while anyone holds it.
 - `Busy` means **another** process holds it. The process that holds it reads
   its own subject as not busy: its facts function is told so.
-- The file holds the holder's pid and command only so `Busy` can name them;
-  nothing is decided from its content.
+- The file holds one line per holder — its pid, what it is, and the commands
+  that end its hold — only so `Busy` can name the live ones and offer those
+  commands as its next steps; nothing is decided from its content. A holder
+  alone rewrites the file; a shared holder adds its line.
 - A subject is a stable name: `env-ngsolve`, `run-<calculation path hash>`.
   The operation declares it ([`api.md`](api.md) § 2); the operation runner,
   not the operation, takes the lock.

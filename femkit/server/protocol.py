@@ -73,6 +73,11 @@ class Listen:
     def describe(self) -> str:
         return self.socket if self.socket else f"{LOOPBACK}:{self.port}"
 
+    def holds(self) -> tuple[str, tuple[str, ...]]:
+        """What its locks' files say holds them, and the command that ends the hold (core.md § 5)."""
+        stop = ["python", "-m", "femkit", "serve", "stop", *(["--socket"] if self.socket else ["--port", str(self.port)])]
+        return f"the web server on {self.describe()}", (" ".join(stop),)
+
     def as_json(self) -> dict:
         return {"socket": self.socket} if self.socket else {"port": self.port}
 
