@@ -22,7 +22,7 @@ who writes each, how each is found, and the user configuration
 
 | home | holds | lives in | written by |
 |---|---|---|---|
-| shipped definitions | `channels.txt`, `control.txt`, environments, manager and scheduler kinds, templates | the repository, `femkit/data/` | a femkit change, reviewed ([`definitions.md`](definitions.md)) |
+| shipped definitions | `channels.txt`, `control.txt`, `units.toml`, environments, manager and scheduler kinds, templates | the repository, `femkit/data/` | a femkit change, reviewed ([`definitions.md`](definitions.md)) |
 | user configuration | choices for this machine | `<config>/config.toml` | the person, through `config init` / `config set` |
 | machine records | measured facts of a machine | `<config>/machines/<name>.toml` | `job probe`, run on that machine ([`jobs.md`](jobs.md) § 9) |
 | install records | what was installed and what its checks showed | inside each prefix, plus package locks under `<data>` | the installer and validator ([`envs.md`](envs.md) § 4) |

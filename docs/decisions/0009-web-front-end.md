@@ -52,8 +52,9 @@ node editor is a program that runs in the browser, and femkit has none.
 
 - femkit gains a JavaScript toolchain, used only to change the front end; a
   stale bundle fails a basic test, as a stale reference page does.
-- The page works offline and on a cluster through an SSH tunnel, served from
-  the loopback address of the machine that holds the calculation folders.
+- The page works offline and on a cluster through an SSH tunnel, served only
+  locally — on the loopback address, or on a cluster login node on a Unix
+  socket (`api.md` § 5.4) — by the machine that holds the calculation folders.
 - Nothing about a model's meaning lives in the front end: a new field,
   operation or node kind reaches the page through the schemas and the graph
   document.

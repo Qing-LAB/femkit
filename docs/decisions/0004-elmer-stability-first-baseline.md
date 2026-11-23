@@ -203,7 +203,7 @@ elmer: the selected Elmer release
 │   └── Zoltan → exact nested source revision pinned in elmer.toml
 ├── Mesh adaptation → Mmg and ParMmg, built from pinned sources (§ Mesh adaptation)
 ├── GPU interface, in elmer-cuda only → AmgX 2.5.0
-│   ├── CUDA toolkit: NVCC, runtime, cuBLAS, cuSPARSE, cuSOLVER and headers
+│   ├── CUDA toolkit as its metapackage composes it, less cuda-tools: NVCC, runtime, every library and header (cuRAND's included)
 │   ├── CCCL → toolkit-compatible C++/Thrust support
 │   ├── NVTX3 headers → AmgX 2.5's profiling interface when enabled
 │   ├── Compatible host C++ compiler

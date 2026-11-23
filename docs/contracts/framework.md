@@ -86,9 +86,9 @@ The rules every change follows, whatever package it touches, are
 
 femkit has six: the install script's control environment
 ([`envs.md`](envs.md) § 7), an environment ([`envs.md`](envs.md) § 3), an
-install's steps ([`envs.md`](envs.md) § 4), a run ([`jobs.md`](jobs.md)
-§ 5), and, not built yet (plan § 3, M6, M7), a case's preparation ([`models.md`](models.md) § 9.5)
-and the web server ([`api.md`](api.md) § 5.4); the test runner's batch states ([`testing.md`](testing.md) § 4.4) are
+install's steps ([`envs.md`](envs.md) § 4), and, not built yet (plan § 3, M3,
+M6, M7), a run ([`jobs.md`](jobs.md) § 5), a case's preparation
+([`models.md`](models.md) § 9.5) and the web server ([`api.md`](api.md) § 5.4); the test runner's batch states ([`testing.md`](testing.md) § 4.4) are
 a seventh, outside femkit.
 
 Every one follows these rules. In Python the primitive that enforces them is

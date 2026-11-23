@@ -123,16 +123,17 @@ effective-tunneling studies.
   that dry-run solves every environment, each `-cuda` one included, with each
   manager kind.
 - **The driver's CUDA version**, read on a GPU node, kept in the machine record
-  and checked at install against each CUDA environment's toolkit — refused,
-  naming both, when the driver is older. Its contract is written first.
+  and shown at install beside each CUDA environment's toolkit, naming both when
+  the driver is older — shown, never a refusal (`framework.md` § 4). Its
+  contract is written first.
 - **Entering through the activate hook** where the manager kind's `run`
   cannot start a command, with the text of that failure in the kind
   (`envs.md` § 4.4).
 - **On the cluster** (the person's runs):
   - `env bootstrap` with the cluster's mamba module, inside an allocation;
-  - `ngsolve-cuda` and `elmer-cuda` built from the toolkit's parts their
-    builds link (ADRs 0003, 0004) and validated with `--gpu` on a GPU node,
-    settling whether nvcc's host compiler and CMake's CUDA toolkit are found
+  - `ngsolve-cuda` and `elmer-cuda` built from the CUDA toolkit as its
+    metapackage composes it, less its profilers (ADRs 0003, 0004), and
+    validated with `--gpu` on a GPU node, settling whether nvcc's host compiler and CMake's CUDA toolkit are found
     inside the prefix without `CMAKE_CUDA_HOST_COMPILER` and `CUDAToolkit_ROOT`
     — Elmer finds AmgX through CMake's old FindCUDA module, which the pinned
     CMake 4.5 still offers — and whether a CUDA build starts on a node without
@@ -411,8 +412,11 @@ What the bowtie model must state before it is prepared, beyond what every model
 states (`models.md` § 3, § 5):
 
 - **Geometry:** the main axis and the polarization axis; every dimension and
-  the construction, its gap and lengths as parameters; named volumes, surfaces,
-  edges, points and probe planes; no unwanted buried or overlapping interfaces.
+  the construction, its gap and lengths as parameters; named domains,
+  boundaries and interfaces; named edges and points (for mesh sizes at the
+  tips), which `models.md` § 3's regions do not have yet and the bowtie's
+  design adds; probe planes as observables' supports; no unwanted buried or
+  overlapping interfaces.
 - **Materials:** the complex relative permittivity of each metal with its
   source, its convention, wavelength range and interpolation rule; water or
   air; the effective tunneling region and its conductivity law, marked as a

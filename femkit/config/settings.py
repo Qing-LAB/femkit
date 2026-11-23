@@ -86,14 +86,14 @@ class Activation(Section):
         default=None,
         description="shell lines a run script runs on this machine before it enters an environment "
         "(module load lines, for instance); [] states that none are needed",
-        json_schema_extra=_unset("`machine probe --write` and `job prepare` are refused, naming this key"),
+        json_schema_extra=_unset("`job probe --write` and `job prepare` are refused, naming this key"),
     )
     command: Literal["source activate", "conda activate", "mamba activate"] | None = Field(
         default=None,
         description="how a shell on this machine enters an environment, after the preamble: `source activate`, "
         "the activate script on PATH (a cluster's module puts it there); or `conda activate` / `mamba activate`, "
         "the manager's shell function, its hook file sourced first",
-        json_schema_extra=_unset("`machine probe --write` and `job prepare` are refused, naming this key"),
+        json_schema_extra=_unset("`job probe --write` and `job prepare` are refused, naming this key"),
     )
 
 

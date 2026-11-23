@@ -19,7 +19,7 @@ kind of document each is.
 | folder | holds |
 |---|---|
 | *(root)* | this index; [`design.md`](design.md) — mission, design values, scientific-data rules, settled choices |
-| `contracts/` | one contract per package, named after it ([`contracts/framework.md`](contracts/framework.md) § 2) |
+| `contracts/` | one contract per package, named after it ([`contracts/framework.md`](contracts/framework.md) § 1) |
 | `reference/` | pages generated from the schema models by `python -m femkit schema docs`; never edited by hand |
 | `science/` | equations, assumptions, validity limits, citations, observable definitions |
 | `decisions/` | ADRs, `NNNN-short-name.md`, one settled choice each |

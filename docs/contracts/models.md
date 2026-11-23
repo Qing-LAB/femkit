@@ -1,7 +1,8 @@
 # Models — one calculation, described once, solved in a chosen environment
 
 **Role:** contract
-**Status:** current; nothing it describes is built yet — the work is
+**Status:** current; of what it describes, only the units are built
+([`core.md`](core.md) § 11) — the rest is
 [`../plans/plan.md`](../plans/plan.md) § 3, M5, M6, M8, M9
 **Authority:** how a calculation is described independently of any engine; how
 it is matched against an engine environment's declared abilities, with every
@@ -718,7 +719,7 @@ also the environment's (`env-<name>`), since it writes into the prefix.
   indices, and shows each side's fidelity, truncation and mesher beside the
   difference. It refuses an observable that is `unverified` or `custom-input`
   on either side, and a pair that does not solve the same stated problem —
-  frame, conventions, excitation normalization, observable support or side —
+  conventions, excitation normalization, observable support or side —
   naming the difference; other observables of the same runs remain comparable.
   A benchmark is compared against its reference solution as its proof (§ 6.3).
 

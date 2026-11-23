@@ -296,8 +296,9 @@ class UnitTable(Model)                         # the schema of femkit/data/units
 
 @dataclass(frozen=True)
 class Quantity:
-    value: Fraction                            # exact, in the canonical unit of its dimension
-    dimension: tuple[tuple[str, int], ...]     # each base dimension with its power, by name; no power is zero
+    value: Fraction                                # exact, in the canonical unit of its dimension
+    dimension: tuple[tuple[str, int], ...] = ()    # each base dimension with its power, by name;
+                                                   # no power is zero; empty for a plain number
 
 class Units:
     def __init__(self, table: UnitTable)
@@ -335,5 +336,5 @@ class UnitError(ValueError)                    # names the text and what in it i
   power on anything but a unit symbol, or one that is not an integer; a
   division by zero; anything outside the grammar. Raised inside a schema
   validator, it is that field's problem (§ 2).
-- A value is shown to a person only by a surface, in the units it chooses
-  ([`models.md`](models.md) § 3).
+- A value is shown to a person only by a surface: in a study's display units,
+  else in its canonical unit ([`models.md`](models.md) § 5).
