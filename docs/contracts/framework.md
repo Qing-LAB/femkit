@@ -137,9 +137,12 @@ environment — has three owners, and each answers only its own part:
 - **What is refused is a missing statement, or one that contradicts the record**: a
   value the work needs that was stated nowhere, a name the record does not
   list (a queue, a target), two statements that contradict each other, a
-  record whose `settings` no longer match this machine, or a record that lists
+  record whose `settings` no longer match this machine, a record that lists
   nothing a request could name (no queues on a machine with a scheduler,
-  naming the probe that renews it). These are `Refusal`s
+  naming the probe that renews it), or an environment to install whose CUDA
+  toolkit needs a newer driver than the record measured, since what it builds
+  could not run here (the driver is the machine's; femkit never changes it).
+  These are `Refusal`s
   ([`core.md`](core.md) § 9) — a contradicting statement a `UsageError`, a
   record that no longer matches `Refused` — because nothing could be prepared
   correctly from them.

@@ -123,9 +123,10 @@ effective-tunneling studies.
   that dry-run solves every environment, each `-cuda` one included, with each
   manager kind.
 - **The driver's CUDA version**, read on a GPU node, kept in the machine record
-  and shown at install beside each CUDA environment's toolkit, naming both when
-  the driver is older — shown, never a refusal (`framework.md` § 4). Its
-  contract is written first.
+  and checked at install against each CUDA environment's toolkit — refused,
+  naming both, when the driver is older, since what would be built could not
+  run here (`framework.md` § 4). The driver is the machine's: femkit never
+  installs or changes it. Its contract is written first.
 - **Entering through the activate hook** where the manager kind's `run`
   cannot start a command, with the text of that failure in the kind
   (`envs.md` § 4.4).
