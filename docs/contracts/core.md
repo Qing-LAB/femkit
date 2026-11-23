@@ -48,8 +48,10 @@ module reads no file, probes nothing and starts nothing.
 class Model(pydantic.BaseModel):          # extra="forbid", frozen=True
     ...
 
-def load_toml(path: Path, model: type[M], context: dict | None = None) -> M
+def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact: bool = False) -> M
 def validate(model: type[M], data: Any, file: Path | str, context: dict | None = None) -> M
+def field_extras(field: FieldInfo) -> dict              # a field's annotations, its Annotated type's included
+def references(instance) -> Iterator[tuple[location, type, name]]   # every name its `ref` fields hold
 
 class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[key_path, reason]]
 ```
@@ -62,10 +64,19 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   `unset` (what an unset optional key means, [`config.md`](config.md) § 3),
   `declarable` (a machine fact `--set` may declare, [`jobs.md`](jobs.md)
   § 9.2), `cli` (how the command line spells it, [`api.md`](api.md) § 4),
-  `placeholders` (the names a templated field accepts, § 2.1), and — not
-  built yet (plan § 3, M5) — `ref` (the type of object a field refers to by name, read by both
-  the cross-reference check and the model graph,
-  [`models.md`](models.md) § 11.2).
+  `placeholders` (the names a templated field accepts, § 2.1), `ref` (the type of
+  object a field refers to by name, read by both the cross-reference check and
+  the model graph, [`models.md`](models.md) § 11.2) and `quantity` (a value
+  written as a quantity, § 11: `any`, `length`, `coordinate` — a bare number in
+  the frame's unit, or a length — or `unit`, a unit text alone).
+- **`ref`** on a text or a list of texts names the type its values refer to; on
+  a table it is `{"key": type, "value": type}`, either part optional. A type may
+  offer alternatives, `region:boundary|region:interface`. `references` walks a
+  loaded file's fields and yields every name with its location and type; the
+  domain that owns the file says which names exist.
+- **`exact=True`** reads every TOML float from its decimal text as a
+  `Decimal`, never a binary float: a model's numbers enter a case ID exactly
+  (§ 11).
 - **Loading fails whole.** Every field problem in a file is reported at once,
   each as `(key path, reason)`; the key path uses dots and `[index]`, e.g.
   `builds[1].options.NETGEN_DIR`. Cross-reference problems (next point) are

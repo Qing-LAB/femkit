@@ -12,6 +12,7 @@ DOMAINS = (
     "femkit.jobs.operations",
     "femkit.jobs.setup",
     "femkit.reference",
+    "femkit.models.operations",
     "femkit.server.operations",
     "femkit.server.build",
 )

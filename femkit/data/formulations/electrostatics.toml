@@ -1,0 +1,34 @@
+# The electrostatic potential (docs/science/electrostatics.md): -div(eps0 eps_r grad phi) = rho.
+description = "the electrostatic potential: -div(eps grad phi) = rho"
+science = "docs/science/electrostatics.md"
+unknown = { name = "potential", space = "H1", unit = "V" }
+meanings = { 2 = ["per unit depth", "axisymmetric"], 3 = ["full"] }
+conventions = []
+
+[properties.relative_permittivity]
+unit = "1"
+complex = false
+
+[conditions.potential]                  # phi = value (Dirichlet)
+on = ["boundary"]
+parameters = { value = "V" }
+
+[conditions.insulating]                 # n . D = 0 (natural), stated
+on = ["boundary"]
+
+[conditions.surface_charge]             # n . D = value (Neumann); n points out of the domain
+on = ["boundary"]
+parameters = { value = "C/m^2" }
+
+[conditions.interface]                  # continuity of phi and of n . D, stated
+on = ["interface"]
+
+[sources.charge_density]
+on = ["domain"]
+parameters = { value = "C/m^3" }
+
+[derived]                               # what an observable may name, and its unit
+potential = "V"
+electric_field = "V/m"
+displacement = "C/m^2"
+energy_density = "J/m^3"

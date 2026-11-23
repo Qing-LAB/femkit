@@ -23,16 +23,15 @@ What is configured per user or per machine is not here: it is
 
 ## 1. What a shipped definition is
 
-femkit ships five types of definition under `femkit/data/`, beside the
-templates for user configuration — seven once formulations and meshers are
-built:
+femkit ships six types of definition under `femkit/data/`, beside the
+templates for user configuration — seven once meshers are built:
 
 ```text
 femkit/data/
 ├── channels.txt               the channel order every environment is solved with
 ├── control.txt                the control environment's packages, as `conda create --file` reads them
 ├── environments/<name>.toml   one per engine environment
-├── formulations/<id>.toml     a physical problem stated for every engine (models.md § 4; not built yet, plan § 3, M5)
+├── formulations/<id>.toml     a physical problem stated for every engine (models.md § 4)
 ├── meshers/<id>.toml          a mesher and what it builds (models.md § 6.5; not built yet, plan § 3, M5)
 ├── managers/<kind>.toml       how to drive a package manager (conda, mamba)
 ├── schedulers/<kind>.toml     how to talk to a scheduler (local, slurm)

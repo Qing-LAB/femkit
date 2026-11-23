@@ -1,8 +1,10 @@
 # Models — one calculation, described once, solved in a chosen environment
 
 **Role:** contract
-**Status:** current; of what it describes, only the units are built
-([`core.md`](core.md) § 11) — the rest is
+**Status:** current; of what it describes, the units ([`core.md`](core.md)
+§ 11), the model and study schemas with their first tier of validity
+(§ 11.2; [`../reference/models.md`](../reference/models.md)), the formulation
+type with `electrostatics`, and `model check` are built — the rest is
 [`../plans/plan.md`](../plans/plan.md) § 3, M5, M6, M8, M9
 **Authority:** how a calculation is described independently of any engine; how
 it is matched against an engine environment's declared abilities, with every

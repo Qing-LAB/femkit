@@ -32,7 +32,8 @@ femkit/
 │                  (jobs.md) — records, the probe and setup built, the rest not yet
 ├── models/        calculations described once: model, studies, cases, the match
 │                  against an environment's abilities, decisions, customizations,
-│                  preparation (models.md) — not built yet (plan § 3, M5, M6, M8, M9)
+│                  preparation (models.md) — the schemas and `model check` built;
+│                  the rest not yet (plan § 3, M5, M6, M8, M9)
 ├── results/       a run's observables, proofs, comparisons, analysis (models.md
 │                  § 6.3, § 10) — not built yet (plan § 3, M6)
 ├── server/        `serve`: the web server's verbs, state machine, supervisor,

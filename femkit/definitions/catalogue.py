@@ -14,6 +14,7 @@ from femkit.core.dirs import CONTROL
 from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.core.units import UnitTable, Units
+from femkit.definitions.formulations import FormulationDefinition
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 
 
@@ -28,6 +29,7 @@ class Catalogue:
     managers: dict[str, ManagerKind]
     schedulers: dict[str, SchedulerKind]
     units: UnitTable
+    formulations: dict[str, FormulationDefinition]
 
 
 class CatalogueError(DefinitionError):
@@ -82,6 +84,12 @@ def load_units(root: Path | None = None) -> UnitTable:
     return load_toml((root or data_root()) / "units.toml", UnitTable)
 
 
+def load_formulations(root: Path | None = None) -> dict[str, FormulationDefinition]:
+    """Every formulation, its units read by the unit table (models.md § 4)."""
+    return _load_dir((root or data_root()) / "formulations", FormulationDefinition,
+                     {"units": Units(load_units(root))})
+
+
 CUDA_SUFFIX = "-cuda"  # a definition's CUDA environment is named after it with this (definitions.md § 4.5)
 
 
@@ -115,6 +123,11 @@ def schedulers(ctx: Context) -> dict[str, SchedulerKind]:
     return ctx.cached("schedulers", load_schedulers)
 
 
+def formulations(ctx: Context) -> dict[str, FormulationDefinition]:
+    """The formulations, loaded once per invocation; they need no engine registry."""
+    return ctx.cached("formulations", load_formulations)
+
+
 def units(ctx: Context) -> Units:
     """The unit table, read once per invocation (core.md § 11); it needs no engine registry."""
     return ctx.cached("units", lambda: Units(load_units()))
@@ -130,6 +143,7 @@ def load_catalogue(root: Path | None = None, *, engines: Mapping[str, frozenset[
         "managers": lambda: load_managers(root),
         "schedulers": lambda: load_schedulers(root),
         "units": lambda: load_units(root),
+        "formulations": lambda: load_formulations(root),
     }
     for name, load in loaders.items():
         try:

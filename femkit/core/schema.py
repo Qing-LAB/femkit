@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import re
 import tomllib
+import typing
+from decimal import Decimal
 from pathlib import Path
-from typing import Any, Iterable, TypeVar
+from typing import Any, Iterable, Iterator, TypeVar
 
 from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic.fields import FieldInfo
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from femkit.core.errors import Refusal
@@ -77,10 +80,12 @@ def validate(model: type[M], data: Any, file: Path | str, context: dict | None =
         raise DefinitionError(file, problems) from None
 
 
-def load_toml(path: Path, model: type[M], context: dict | None = None) -> M:
+def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact: bool = False) -> M:
+    """``exact``: every TOML float is read from its decimal text as a ``Decimal``, never a
+    binary float — a model's numbers enter a case ID exactly (core.md § 11)."""
     try:
         with open(path, "rb") as fh:
-            data = tomllib.load(fh)
+            data = tomllib.load(fh, parse_float=Decimal) if exact else tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
         raise DefinitionError(path, [("", f"not TOML: {exc}")]) from None
     return validate(model, data, path, context)
@@ -115,3 +120,60 @@ def render(text: str, values: dict[str, str]) -> str:
         return values[key]
 
     return PLACEHOLDER.sub(one, text)
+
+
+# ---------------------------------------------------------------- field annotations
+
+def field_extras(field: FieldInfo) -> dict:
+    """A field's json_schema_extra, merged with any inside its (Annotated, optional) type."""
+    found: dict = {}
+
+    def walk(annotation: Any) -> None:
+        if typing.get_origin(annotation) is typing.Annotated:
+            for meta in typing.get_args(annotation)[1:]:
+                if isinstance(meta, FieldInfo) and isinstance(meta.json_schema_extra, dict):
+                    found.update(meta.json_schema_extra)
+        for arg in typing.get_args(annotation):
+            walk(arg)
+
+    walk(field.annotation)
+    for meta in field.metadata:
+        if isinstance(meta, FieldInfo) and isinstance(meta.json_schema_extra, dict):
+            found.update(meta.json_schema_extra)
+    if isinstance(field.json_schema_extra, dict):
+        found.update(field.json_schema_extra)
+    return found
+
+
+def references(instance: BaseModel, at: tuple = ()) -> Iterator[tuple[tuple, str, str]]:
+    """Every name ``instance`` refers to, as ``(location, type, name)``, from its fields' `ref`
+    annotations (core.md § 2): on a text or a list of texts, ``ref`` is the type its values
+    name; on a table, ``ref`` is ``{"key": type, "value": type}``, either part optional. A
+    type may offer alternatives, `region:boundary|region:interface`."""
+    for name, field in type(instance).model_fields.items():
+        value = getattr(instance, name)
+        key = field.alias or name
+        ref = field_extras(field).get("ref")
+        if isinstance(ref, str):
+            for i, item in enumerate(value if isinstance(value, (list, tuple)) else [value]):
+                if isinstance(item, str):
+                    yield ((*at, key, i) if isinstance(value, (list, tuple)) else (*at, key)), ref, item
+        elif isinstance(ref, dict) and isinstance(value, dict):
+            for k, v in value.items():
+                if "key" in ref:
+                    yield (*at, key, k), ref["key"], k
+                if "value" in ref and isinstance(v, str):
+                    yield (*at, key, k), ref["value"], v
+        for loc, item in _children(value, (*at, key)):
+            yield from references(item, loc)
+
+
+def _children(value: Any, at: tuple) -> Iterator[tuple[tuple, BaseModel]]:
+    if isinstance(value, BaseModel):
+        yield at, value
+    elif isinstance(value, (list, tuple)):
+        for i, item in enumerate(value):
+            yield from _children(item, (*at, i))
+    elif isinstance(value, dict):
+        for k, item in value.items():
+            yield from _children(item, (*at, k))

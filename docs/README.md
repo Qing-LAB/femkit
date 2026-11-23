@@ -148,9 +148,13 @@ Moving or merging a document is a review, not a file move:
 - [`reference/config.md`](reference/config.md) — every field of `config.toml`.
 - [`reference/machines.md`](reference/machines.md) — every field of a machine
   record.
+- [`reference/models.md`](reference/models.md) — every field of `model.toml` and
+  `study.toml`.
 
 ### Science
 
+- [`science/electrostatics.md`](science/electrostatics.md) — the electrostatic
+  potential: its equation, conditions, what each dimension means.
 - [`science/electromagnetics.md`](science/electromagnetics.md) — the
   frequency-domain Maxwell problem, its validation ladder, and what a
   converged adaptive result requires.

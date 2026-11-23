@@ -203,16 +203,19 @@ request the record cannot fit.
 
 All by [`../contracts/models.md`](../contracts/models.md):
 
-1. **The project, the model, studies and cases.** Their schemas, each
-   reference field annotated with its target type (`core.md` § 2); parameters
-   and their arithmetic; regions, interfaces included; material conventions
-   and their conversion; `radiation` and sources; per-environment bindings;
-   `model check`, `study expand`, `study copy`, `case list`, case IDs.
-2. **Formulations and meshers as definition types** (`definitions.md` § 1):
-   `electrostatics` first, with its science document
-   (`docs/science/electrostatics.md`, not written yet) and the benchmarks
-   that need no expressions — the two-material case — declared (the
-   manufactured ones come with the expression language, M6); the `netgen` and `gmsh` meshers.
+1. **The project, the model, studies and cases.** Built: the model and study
+   schemas, each reference field annotated with its target type (`core.md`
+   § 2), loaded with their first tier of validity — types, unknown keys,
+   quantities, parameters and their arithmetic, references — and the job
+   request's resources they bind; `model check`, the second tier: what is
+   missing, and what the formulation does not allow. Open: material
+   conventions and their conversion, `study expand`, `study copy`,
+   `case list`, case IDs.
+2. **Formulations and meshers as definition types** (`definitions.md` § 1).
+   Built: the formulation type, and `electrostatics` with its science document.
+   Open: its benchmarks that need no expressions — the two-material case —
+   declared (the manufactured ones come with the expression language, M6); the
+   mesher type, and the `netgen` and `gmsh` meshers.
 3. **Abilities**: their schema; each one's digest; the abilities, default
    mesher, extension points and engine-only options of `elmer` and `ngsolve`
    for `electrostatics`; the proof record's schema; `case match` and

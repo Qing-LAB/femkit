@@ -23,19 +23,24 @@ from femkit.core.issues import Issue
 from femkit.core.errors import PlanStale
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import atomic_write_text
-from femkit.core.schema import Model
+from femkit.core.schema import Model, field_extras
 from femkit.core.units import UnitTable, Units
 from femkit.definitions import catalogue
+from femkit.definitions.formulations import FormulationDefinition
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 from femkit.jobs.record import Record
+from femkit.models.schema import ModelFile, StudyFile
 from femkit.engines import registered
 
 # page name -> (title, the files it describes, models)
 PAGES: dict[str, tuple[str, str, list[type[Model]]]] = {
     "definitions": ("Shipped definitions", "`femkit/data/` (definitions.md)",
-                    [ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind, UnitTable]),
+                    [ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind, UnitTable,
+                     FormulationDefinition]),
     "config": ("User configuration", "`<config>/config.toml` (config.md § 3)", [UserConfig]),
     "machines": ("Machine records", "`<config>/machines/<name>.toml` (jobs.md § 9)", [Record]),
+    "models": ("Models and studies", "`<project>/model.toml` and `<project>/studies/<study>/study.toml` "
+               "(models.md § 3, § 5)", [ModelFile, StudyFile]),
 }
 
 
@@ -54,6 +59,7 @@ class CheckResult(Result):
     managers: list[str] = Field(default_factory=list, description="manager kinds that loaded")
     schedulers: list[str] = Field(default_factory=list, description="scheduler kinds that loaded")
     units: int = Field(0, description="unit symbols the unit table reads, prefixed ones included")
+    formulations: list[str] = Field(default_factory=list, description="formulations that loaded")
 
     def text(self) -> str:
         if not self.ok():
@@ -64,6 +70,7 @@ class CheckResult(Result):
             ("managers", text.show(self.managers)),
             ("schedulers", text.show(self.schedulers)),
             ("units", f"units.toml, {text.count(self.units, 'symbol')}"),
+            ("formulations", text.show(self.formulations)),
         ]))
 
 
@@ -80,7 +87,8 @@ def schema_check(req: CheckRequest, ctx: Context) -> CheckResult:
         ]
         return CheckResult(issues=issues)
     return CheckResult(environments=list(cat.environments), managers=list(cat.managers),
-                       schedulers=list(cat.schedulers), units=len(Units(cat.units).symbols()))
+                       schedulers=list(cat.schedulers), units=len(Units(cat.units).symbols()),
+                       formulations=list(cat.formulations))
 
 
 # ------------------------------------------------------------------ rendering
@@ -131,27 +139,6 @@ def _nested(annotation: Any) -> list[type[Model]]:
     return found
 
 
-def _extras(field: FieldInfo) -> dict:
-    """A field's json_schema_extra, merged with any inside its (Annotated, optional) type."""
-    found: dict = {}
-
-    def walk(annotation: Any) -> None:
-        if typing.get_origin(annotation) is typing.Annotated:
-            for meta in typing.get_args(annotation)[1:]:
-                if isinstance(meta, FieldInfo) and isinstance(meta.json_schema_extra, dict):
-                    found.update(meta.json_schema_extra)
-        for arg in typing.get_args(annotation):
-            walk(arg)
-
-    walk(field.annotation)
-    for meta in field.metadata:
-        if isinstance(meta, FieldInfo) and isinstance(meta.json_schema_extra, dict):
-            found.update(meta.json_schema_extra)
-    if isinstance(field.json_schema_extra, dict):
-        found.update(field.json_schema_extra)
-    return found
-
-
 def _cell(text: str) -> str:
     return html.escape(text, quote=False).replace("|", "\\|")
 
@@ -166,9 +153,17 @@ def render_model(model: type[Model], seen: set) -> list[str]:
     nested: list[type[Model]] = []
     for name, field in model.model_fields.items():
         meaning = _cell(field.description or "")
-        extra = _extras(field)
+        extra = field_extras(field)
         if "unset" in extra:
             meaning += f". When unset: {_cell(extra['unset'])}"
+        if "ref" in extra:
+            target = extra["ref"]
+            names = target if isinstance(target, str) else ", ".join(f"its {k}s: {v}" for k, v in target.items())
+            meaning += f". Refers by name to {_cell(names.replace('|', ' or '))}"
+        if "quantity" in extra:
+            meaning += {"any": ". A quantity with its unit, or an expression of parameters",
+                        "length": ". A length", "coordinate": ". A bare number in the frame's unit, or a length",
+                        "unit": ". A unit"}[extra["quantity"]]
         if "placeholders" in extra:
             meaning += ". Placeholders: " + ", ".join("`{%s}`" % p for p in extra["placeholders"])
         lines.append(f"| `{field.alias or name}` | {_type_name(field.annotation)} | {_default(field)} | {meaning} |")  # the key as written

@@ -238,3 +238,24 @@ def test_a_tool_environment_installs_without_python_and_probes_its_own_version(m
     plan = EnvInstall.plan(EnvInstall.request(names=["nodejs"]), Context.from_process())
     create = next(s for s in plan.steps if s.id.endswith("/create")).argv
     assert not any(a.startswith("python=") for a in create) and "nodejs=22.23.5" in create
+
+
+@pytest.mark.parametrize("change, at", [
+    ({"science": "docs/science/none.md"}, "science"),                                   # no such document
+    ({"derived": {"potential": "V", "field": "V/mm2"}}, "derived.field"),                # a unit the grammar does not read
+    ({"derived": {"electric_field": "V/m"}}, "derived"),                                 # the unknown not observable
+    ({"conditions": {"potential": {"on": ["edge"], "parameters": {"value": "V"}}}}, "conditions.potential.on[0]"),
+])
+def test_a_formulation_that_misstates_itself_does_not_load(change, at):
+    """Fails if a formulation loads with a science document that does not exist, a unit the
+    grammar does not read, its unknown not among what an observable may name, or a condition
+    on a region kind that does not exist (models.md § 4)."""
+    import tomllib
+    from femkit.core.schema import DefinitionError, validate
+    from femkit.core.units import Units
+    from femkit.definitions.catalogue import data_root, load_units
+    from femkit.definitions.formulations import FormulationDefinition
+    data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text()) | change
+    with pytest.raises(DefinitionError) as caught:
+        validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units())})
+    assert at in [path for path, _ in caught.value.problems]

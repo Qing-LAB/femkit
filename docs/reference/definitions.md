@@ -207,3 +207,47 @@ One unit: a base dimension times an exact factor, or an expression of units abov
 | `factor` | text | `'1'` | with `dimension`: how many of the dimension's canonical unit one of this unit is, an exact number (`1/1000`) |
 | `equals` | text, optional | — | otherwise: what one of this unit is, an expression of units above it (`W/A`, `1.602176634e-19 J`) |
 | `prefixes` | boolean | required | whether SI prefixes apply to it (`nm`, `kV`) |
+
+## FormulationDefinition
+
+One physical problem, stated without reference to any engine (models.md § 4).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `description` | text | required | one line: what it solves |
+| `science` | text | required | its science document, from the checkout's root |
+| `unknown` | [Unknown](#unknown) | required | what it solves for |
+| `meanings` | table of `2` \| `3` → list of text | required | what each dimension may mean; a model chooses one |
+| `conventions` | list of `phasor` \| `amplitude` | empty | the conventions a model must choose |
+| `properties` | table of text → [PropertySpec](#propertyspec) | required | the material properties it reads |
+| `conditions` | table of text → [KindSpec](#kindspec) | required | the condition kinds it allows |
+| `sources` | table of text → [KindSpec](#kindspec) | empty | the source kinds it allows |
+| `derived` | table of text → text | required | each quantity an observable may name, and its unit |
+
+## Unknown
+
+What the formulation solves for.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `name` | text | required | its name (`potential`) |
+| `space` | `H1` \| `Hcurl` | required | its function space |
+| `unit` | text | required | its unit |
+
+## PropertySpec
+
+A material property the formulation reads.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `unit` | text | required | its unit; `1` for a plain number |
+| `complex` | boolean | required | whether its values may be complex |
+
+## KindSpec
+
+A condition or source kind: where it may stand, and its parameters with their units.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `on` | list of `domain` \| `boundary` \| `interface` | required | the region kinds it may be stated on |
+| `parameters` | table of text → text | empty | each parameter and its unit |
