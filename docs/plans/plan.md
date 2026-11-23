@@ -208,9 +208,11 @@ All by [`../contracts/models.md`](../contracts/models.md):
    § 2), loaded with their first tier of validity — types, unknown keys,
    quantities, parameters and their arithmetic, references — and the job
    request's resources they bind; `model check`, the second tier: what is
-   missing, and what the formulation does not allow. Open: material
-   conventions and their conversion, `study expand`, `study copy`,
-   `case list`, case IDs.
+   missing, and what the formulation does not allow; `study expand`, case
+   IDs and `case.json` in their canonical form, tabulated materials converted
+   to the model's convention with the passivity check, a case outside a
+   property's range refused; `study copy`; `case list`. Open: `case list`'s
+   match and preparation columns, which come with step 3 and M6.
 2. **Formulations and meshers as definition types** (`definitions.md` § 1).
    Built: the formulation type, and `electrostatics` with its science document.
    Open: its benchmarks that need no expressions — the two-material case —
@@ -293,7 +295,9 @@ and progress views, from the registry's schemas, and `web build`. Open:
    to the page can act as the person, so a profile without extensions is used.
 3. **The model graph view** from `model graph`: the palette, typed
    connections, findings on each node, the selected node's form, positions
-   saved. Acceptance: the Laplace model built in the page from an empty
+   saved; each kind, parameter and property with its formulation's
+   description as its tooltip, linked to its section of the science document.
+   Acceptance: the Laplace model built in the page from an empty
    folder, with no field named in the front-end code.
 4. **The match overlay**: each node marked with its worst match line for a
    chosen environment; an open line offering the decisions that resolve it,

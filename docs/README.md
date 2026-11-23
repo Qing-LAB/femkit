@@ -154,7 +154,8 @@ Moving or merging a document is a review, not a file move:
 ### Science
 
 - [`science/electrostatics.md`](science/electrostatics.md) — the electrostatic
-  potential: its equation, conditions, what each dimension means.
+  potential: its terms and symbols, equation, conditions and their signs, what
+  each dimension means, derived quantities.
 - [`science/electromagnetics.md`](science/electromagnetics.md) — the
   frequency-domain Maxwell problem, its validation ladder, and what a
   converged adaptive result requires.

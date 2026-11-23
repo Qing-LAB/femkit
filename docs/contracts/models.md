@@ -4,7 +4,8 @@
 **Status:** current; of what it describes, the units ([`core.md`](core.md)
 § 11), the model and study schemas with their first tier of validity
 (§ 11.2; [`../reference/models.md`](../reference/models.md)), the formulation
-type with `electrostatics`, and `model check` are built — the rest is
+type with `electrostatics`, `model check`, `study expand`, `study copy`,
+`case list` and case IDs are built — the rest is
 [`../plans/plan.md`](../plans/plan.md) § 3, M5, M6, M8, M9
 **Authority:** how a calculation is described independently of any engine; how
 it is matched against an engine environment's declared abilities, with every
@@ -94,11 +95,9 @@ study's observables; results are compared on declared probes.
 - **Every JSON file carries `schema`**, an integer raised when its shape
   changes: `case.json`, `manifest.json`, `result.json`, `layout.json`, a
   mesh's manifest, the proof record (§ 6.3).
-- **A case ID** is the SHA-256 of the case's canonical JSON: keys sorted, every
-  dimensional value converted to its canonical unit as an exact rational
-  (`1/2000000`, never a binary float), every number in one form. "500 nm" and
-  "0.5 µm" give the same ID. Renaming a region or a material changes the case
-  and its ID: the old preparations become `orphaned` and keep their runs.
+- **A case is named by its content**, its ID (§ 5): "500 nm" and "0.5 µm"
+  give the same ID, and renaming a region or a material changes the case and
+  its ID — the old preparations become `orphaned` and keep their runs.
 - **Benchmarks** (§ 6.3) are projects femkit writes, one per benchmark,
   `<data>/benchmarks/<environment>/<formulation>/<mesher>/<benchmark>/`, each
   a model and a study laid out as above.
@@ -114,7 +113,7 @@ numerical choice.
 | `frame` | the length unit a bare-number coordinate is written in; the axes are Cartesian and right-handed, their origin where coordinates are zero | a coordinate is a number in this unit, a quantity (`"20 nm"`) or an expression of parameters; a plane is a point and a normal, never a label |
 | `geometry` | the dimension (2 or 3) and what it means for the formulation (§ 4), the shapes and how they combine, or an imported CAD file with its SHA-256 | — |
 | `regions` | named domains (top dimension), outer boundaries and interfaces (internal boundaries between two domains), each with its `kind` and exactly one selection rule, under the rule's own key: `shapes` (a domain: named shapes), `plane` (a point and a normal), `box`, `faces_of` (the outer faces of a named shape) or `rest` (the outer boundary no other region selects), `between` (an interface: two named domains) | names match `[a-z][a-z0-9_]*`; every domain and every outer boundary belongs to exactly one region, and an overlap or a gap is refused, naming the place — where a mesher runs (§ 9.2), since it needs the geometry built; a face between two domains is continuous by the formulation's function space, and is named as an interface only to carry a sheet condition or an observable's support |
-| `materials` | named materials; each property with its value or table, unit, source, independent variable, interpolation rule, the complex-value convention of the source data (`"real"`, `"exp(-iwt)"`, `"exp(+iwt)"`), and valid range (`"all"`, or `[from, to]` in its variable) | a bare constant named after a substance is refused; a case outside a property's range is refused when expanded |
+| `materials` | named materials; each property with its value or table, unit, source, independent variable, interpolation rule, the complex-value convention of the source data (`"real"`, `"exp(-iwt)"`, `"exp(+iwt)"`), and valid range (`"all"`, or `[from, to]` in its variable) | a bare constant named after a substance is refused; a case outside a property's range is refused when expanded — the case's value of the range's variable is the model's parameter of that name (`wavelength`) |
 | `assign` | a material for every domain region | — |
 | `formulation` | one formulation ID (§ 4) | — |
 | `conventions` | what the formulation requires to be chosen — for a frequency-domain problem, `phasor` (`"exp(-iwt)"` or `"exp(+iwt)"`: the sign s of [`electromagnetics.md`](../science/electromagnetics.md)) and `amplitude` (`"peak"` or `"rms"`) | never defaulted |
@@ -249,8 +248,15 @@ Loading a formulation checks that each ability any environment declares for it
 is exercised by at least one benchmark; one that is not could never be proven,
 and is refused.
 
-`electrostatics` in its keys — abilities name its kinds from each environment's
-definition (§ 6.1), and its benchmark set is a table of its own here:
+`electrostatics` in its keys, in part — the whole file is
+`femkit/data/formulations/electrostatics.toml`, and every key is in
+[`../reference/definitions.md`](../reference/definitions.md). Each property,
+condition, source and derived quantity carries the one plain sentence a person
+reads beside it — a tooltip in the page, a hint in a finding, a line of the
+reference — and the section of the science document that defines it; loading
+refuses a section the document lacks. Abilities name its kinds from each
+environment's definition (§ 6.1), and its benchmark set is a table of its own
+here:
 
 ```toml
 description = "the electrostatic potential: -div(eps grad phi) = rho"
@@ -260,32 +266,21 @@ meanings = { 2 = ["per unit depth", "axisymmetric"], 3 = ["full"] }
 conventions = []
 
 [properties.relative_permittivity]
+description = "the material's relative permittivity, eps_r: a real, positive number"
+section = "1-terms-and-symbols"
 unit = "1"
 complex = false
 
-[conditions.potential]                  # phi = value (Dirichlet)
+[conditions.surface_charge]
+description = "the boundary is the surface of a conductor carrying a free charge; femkit writes n . D = -sigma"
+section = "3-conditions-on-an-outer-boundary"
 on = ["boundary"]
-parameters = { value = "V" }
+parameters.value = { unit = "C/m^2", description = "sigma, the free charge per unit area on the conductor's surface" }
 
-[conditions.insulating]                 # n . D = 0 (natural), stated
-on = ["boundary"]
-
-[conditions.surface_charge]             # n . D = value (Neumann)
-on = ["boundary"]
-parameters = { value = "C/m^2" }
-
-[conditions.interface]                  # continuity of phi and of n . D, stated
-on = ["interface"]
-
-[sources.charge_density]
-on = ["domain"]
-parameters = { value = "C/m^3" }
-
-[derived]                               # what an observable may name, and its unit
-potential = "V"
-electric_field = "V/m"
-displacement = "C/m^2"
-energy_density = "J/m^3"
+[derived.electric_field]
+description = "E = -grad phi"
+section = "7-derived-quantities"
+unit = "V/m"
 ```
 
 **Scope.** One formulation per model. Coupled problems (photothermal heating,
@@ -354,7 +349,25 @@ resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G"
 - `study expand` writes one `case.json` per point it lacks. A case is complete:
   every default the schema has is written into it, and every material
   converted (§ 3), so nothing about a case depends on femkit's version or a
-  person's settings. Its plan lists the cases it adds, those it keeps, and the
+  person's settings. It is refused while `model check` has a finding, and for
+  axes of different classes crossed without a reason.
+- **`case.json`** holds `schema`, `model`, `numerics` and `point`, each
+  resolved: the axis point applied — a parameter's value replaced, and every
+  parameter computed again from it; every quantity — a parameter, a coordinate
+  (a bare number times the frame's unit, so the frame itself is resolved away),
+  a condition's or source's parameter, a material's value or range, a mesh size
+  — written as `{"value": "<p/q>", "dimension": {"<base>": <power>}}`, its exact
+  value in its dimension's canonical units ([`core.md`](core.md) § 11); every
+  other number — a degree, a direction's component — as its exact value in text
+  (`"2"`, `"-1/2"`), so `-1` and `-1.0` are one value; every schema default
+  written; each tabulated property's rows read from its file,
+  checked against its SHA-256, converted to the model's phasor convention, with
+  the conversion recorded beside them. `point` maps each axis's case path to its
+  value in the same form. Only `model`, `numerics` and `point` enter the case:
+  the study's observables, display units and environment bindings never do.
+- **The case ID** is the SHA-256 of `case.json`'s canonical JSON — keys sorted,
+  no whitespace, UTF-8 — so two spellings of one value give one ID, and two
+  studies producing the same point share one case. Its plan lists the cases it adds, those it keeps, and the
   study's preparations of cases it no longer produces, which become `orphaned`
   (§ 9.5) and are never deleted by it.
 - `case list` shows every case with its axis values and, per study and

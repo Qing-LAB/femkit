@@ -222,7 +222,7 @@ One physical problem, stated without reference to any engine (models.md § 4).
 | `properties` | table of text → [PropertySpec](#propertyspec) | required | the material properties it reads |
 | `conditions` | table of text → [KindSpec](#kindspec) | required | the condition kinds it allows |
 | `sources` | table of text → [KindSpec](#kindspec) | empty | the source kinds it allows |
-| `derived` | table of text → text | required | each quantity an observable may name, and its unit |
+| `derived` | table of text → [DerivedSpec](#derivedspec) | required | each quantity an observable may name |
 
 ## Unknown
 
@@ -240,14 +240,37 @@ A material property the formulation reads.
 
 | key | type | default | meaning |
 |---|---|---|---|
+| `description` | text | required | one plain sentence: what it is or states |
+| `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
 | `unit` | text | required | its unit; `1` for a plain number |
 | `complex` | boolean | required | whether its values may be complex |
 
 ## KindSpec
 
-A condition or source kind: where it may stand, and its parameters with their units.
+A condition or source kind: where it may stand, and its parameters.
 
 | key | type | default | meaning |
 |---|---|---|---|
+| `description` | text | required | one plain sentence: what it is or states |
+| `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
 | `on` | list of `domain` \| `boundary` \| `interface` | required | the region kinds it may be stated on |
-| `parameters` | table of text → text | empty | each parameter and its unit |
+| `parameters` | table of text → [ParameterSpec](#parameterspec) | empty | each parameter |
+
+## ParameterSpec
+
+One parameter of a condition or source.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `unit` | text | required | its unit |
+| `description` | text | required | one plain sentence: what the value is |
+
+## DerivedSpec
+
+A quantity an observable may name.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `description` | text | required | one plain sentence: what it is or states |
+| `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
+| `unit` | text | required | its unit |

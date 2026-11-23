@@ -1,4 +1,6 @@
-# The electrostatic potential (docs/science/electrostatics.md): -div(eps0 eps_r grad phi) = rho.
+# The electrostatic potential. Every term, equation and sign is defined in its science
+# document; each description here is the one sentence a person reads beside the choice —
+# a tooltip, a hint, a line of the reference — and `section` points to where it is defined.
 description = "the electrostatic potential: -div(eps grad phi) = rho"
 science = "docs/science/electrostatics.md"
 unknown = { name = "potential", space = "H1", unit = "V" }
@@ -6,29 +8,61 @@ meanings = { 2 = ["per unit depth", "axisymmetric"], 3 = ["full"] }
 conventions = []
 
 [properties.relative_permittivity]
+description = "the material's relative permittivity, eps_r: a real, positive number"
+section = "1-terms-and-symbols"
 unit = "1"
 complex = false
 
-[conditions.potential]                  # phi = value (Dirichlet)
+[conditions.potential]
+description = "the boundary is held at a potential (a Dirichlet condition)"
+section = "3-conditions-on-an-outer-boundary"
 on = ["boundary"]
-parameters = { value = "V" }
+parameters.value = { unit = "V", description = "the potential the boundary is held at" }
 
-[conditions.insulating]                 # n . D = 0 (natural), stated
+[conditions.insulating]
+description = "no field line crosses the boundary: n . D = 0 (the natural condition)"
+section = "3-conditions-on-an-outer-boundary"
 on = ["boundary"]
 
-[conditions.surface_charge]             # n . D = value (Neumann); n points out of the domain
+[conditions.surface_charge]
+description = "the boundary is the surface of a conductor carrying a free charge; femkit writes n . D = -sigma"
+section = "3-conditions-on-an-outer-boundary"
 on = ["boundary"]
-parameters = { value = "C/m^2" }
+parameters.value = { unit = "C/m^2", description = "sigma, the free charge per unit area on the conductor's surface" }
 
-[conditions.interface]                  # continuity of phi and of n . D, stated
+[conditions.normal_flux]
+description = "a known flux crosses the boundary, which is no charged conductor (a cut through a larger problem)"
+section = "3-conditions-on-an-outer-boundary"
+on = ["boundary"]
+parameters.value = { unit = "C/m^2", description = "q = n . D, with n pointing out of the domain" }
+
+[conditions.interface]
+description = "the two domains meet with phi and n . D continuous: no free charge on the face"
+section = "4-between-two-domains"
 on = ["interface"]
 
 [sources.charge_density]
+description = "free charge spread through a domain"
+section = "5-sources"
 on = ["domain"]
-parameters = { value = "C/m^3" }
+parameters.value = { unit = "C/m^3", description = "rho, the free charge per unit volume" }
 
-[derived]                               # what an observable may name, and its unit
-potential = "V"
-electric_field = "V/m"
-displacement = "C/m^2"
-energy_density = "J/m^3"
+[derived.potential]
+description = "phi, the electric potential"
+section = "7-derived-quantities"
+unit = "V"
+
+[derived.electric_field]
+description = "E = -grad phi"
+section = "7-derived-quantities"
+unit = "V/m"
+
+[derived.displacement]
+description = "D = eps_0 eps_r E"
+section = "7-derived-quantities"
+unit = "C/m^2"
+
+[derived.energy_density]
+description = "w = E . D / 2, the field's energy per unit volume"
+section = "7-derived-quantities"
+unit = "J/m^3"

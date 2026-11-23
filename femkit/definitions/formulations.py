@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import Field, ValidationInfo, model_validator
@@ -21,16 +22,35 @@ class Unknown(Model):
     unit: str = Field(description="its unit")
 
 
-class PropertySpec(Model):
+class Described(Model):
+    """What a person reads beside a choice — a tooltip, a hint, a line of the reference: one
+    plain sentence, and the section of the science document that defines it."""
+    description: str = Field(description="one plain sentence: what it is or states")
+    section: str = Field(description="the science document's section that defines it, as its link anchor "
+                                     "(`3-conditions-on-an-outer-boundary`)")
+
+
+class PropertySpec(Described):
     """A material property the formulation reads."""
     unit: str = Field(description="its unit; `1` for a plain number")
     complex: bool = Field(description="whether its values may be complex")
 
 
-class KindSpec(Model):
-    """A condition or source kind: where it may stand, and its parameters with their units."""
+class ParameterSpec(Model):
+    """One parameter of a condition or source."""
+    unit: str = Field(description="its unit")
+    description: str = Field(description="one plain sentence: what the value is")
+
+
+class KindSpec(Described):
+    """A condition or source kind: where it may stand, and its parameters."""
     on: list[Place] = Field(min_length=1, description="the region kinds it may be stated on")
-    parameters: dict[str, str] = Field(default_factory=dict, description="each parameter and its unit")
+    parameters: dict[str, ParameterSpec] = Field(default_factory=dict, description="each parameter")
+
+
+class DerivedSpec(Described):
+    """A quantity an observable may name."""
+    unit: str = Field(description="its unit")
 
 
 class FormulationDefinition(Model):
@@ -45,7 +65,7 @@ class FormulationDefinition(Model):
     properties: dict[str, PropertySpec] = Field(description="the material properties it reads")
     conditions: dict[str, KindSpec] = Field(description="the condition kinds it allows")
     sources: dict[str, KindSpec] = Field(default_factory=dict, description="the source kinds it allows")
-    derived: dict[str, str] = Field(description="each quantity an observable may name, and its unit")
+    derived: dict[str, DerivedSpec] = Field(description="each quantity an observable may name")
 
     @model_validator(mode="after")
     def _units_and_science(self, info: ValidationInfo) -> "FormulationDefinition":
@@ -55,9 +75,9 @@ class FormulationDefinition(Model):
             problems.append((("science",), f"{self.science} does not exist"))
         texts = [(("unknown", "unit"), self.unknown.unit)]
         texts += [(("properties", n, "unit"), p.unit) for n, p in self.properties.items()]
-        texts += [((table, k, "parameters", p), u) for table in ("conditions", "sources")
-                  for k, spec in getattr(self, table).items() for p, u in spec.parameters.items()]
-        texts += [(("derived", n), u) for n, u in self.derived.items()]
+        texts += [((table, k, "parameters", p, "unit"), spec.unit) for table in ("conditions", "sources")
+                  for k, kind in getattr(self, table).items() for p, spec in kind.parameters.items()]
+        texts += [(("derived", n, "unit"), d.unit) for n, d in self.derived.items()]
         for at, text in texts if units is not None else []:
             try:
                 units.parse(text)
@@ -65,5 +85,23 @@ class FormulationDefinition(Model):
                 problems.append((at, str(exc)))
         if self.unknown.name not in self.derived:
             problems.append((("derived",), f"names the unknown, {self.unknown.name!r}, as an observable may"))
+        science = dirs.checkout() / self.science
+        anchors = _anchors(science.read_text(encoding="utf-8")) if science.is_file() else set()
+        described = [((t, k), d) for t in ("properties", "conditions", "sources", "derived")
+                     for k, d in getattr(self, t).items()]
+        for at, d in described if anchors else []:
+            if d.section not in anchors:
+                problems.append(((*at, "section"), f"{self.science} has no section #{d.section}"))
         refuse("FormulationDefinition", problems)
         return self
+
+
+def _anchors(markdown: str) -> set[str]:
+    """Each heading's link anchor, as GitHub writes it: lower case, punctuation dropped,
+    spaces to hyphens."""
+    out = set()
+    for line in markdown.splitlines():
+        if line.startswith("#"):
+            title = line.lstrip("#").strip().lower()
+            out.add(re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", title)))
+    return out

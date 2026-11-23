@@ -240,16 +240,24 @@ def test_a_tool_environment_installs_without_python_and_probes_its_own_version(m
     assert not any(a.startswith("python=") for a in create) and "nodejs=22.23.5" in create
 
 
+DERIVED = {"description": "d", "section": "7-derived-quantities"}
+KIND = {"description": "d", "section": "3-conditions-on-an-outer-boundary", "on": ["boundary"],
+        "parameters": {"value": {"unit": "V", "description": "d"}}}
+
+
 @pytest.mark.parametrize("change, at", [
     ({"science": "docs/science/none.md"}, "science"),                                   # no such document
-    ({"derived": {"potential": "V", "field": "V/mm2"}}, "derived.field"),                # a unit the grammar does not read
-    ({"derived": {"electric_field": "V/m"}}, "derived"),                                 # the unknown not observable
-    ({"conditions": {"potential": {"on": ["edge"], "parameters": {"value": "V"}}}}, "conditions.potential.on[0]"),
+    ({"derived": {"potential": DERIVED | {"unit": "V"}, "field": DERIVED | {"unit": "V/mm2"}}},
+     "derived.field.unit"),                                                               # a unit the grammar does not read
+    ({"derived": {"electric_field": DERIVED | {"unit": "V/m"}}}, "derived"),            # the unknown not observable
+    ({"conditions": {"potential": KIND | {"on": ["edge"]}}}, "conditions.potential.on[0]"),
+    ({"conditions": {"potential": KIND | {"section": "9-nowhere"}}}, "conditions.potential.section"),
 ])
 def test_a_formulation_that_misstates_itself_does_not_load(change, at):
     """Fails if a formulation loads with a science document that does not exist, a unit the
-    grammar does not read, its unknown not among what an observable may name, or a condition
-    on a region kind that does not exist (models.md § 4)."""
+    grammar does not read, its unknown not among what an observable may name, a condition on
+    a region kind that does not exist, or a description pointing to a section its science
+    document lacks (models.md § 4)."""
     import tomllib
     from femkit.core.schema import DefinitionError, validate
     from femkit.core.units import Units

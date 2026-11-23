@@ -140,14 +140,14 @@ def _kinded(finding, at: tuple, item: Kinded, allowed: dict[str, KindSpec], regi
         given.pop("on", None)
     for name in spec.parameters:
         if name not in given:
-            finding(address(*at, name), f"is missing: a {item.kind} states its {name} "
-                    f"(in {spec.parameters[name]})")
+            finding(address(*at, name), f"is missing: a {item.kind} states its {name} — "
+                    f"{spec.parameters[name].description} (in {spec.parameters[name].unit})")
     for name, value in given.items():
         if name not in spec.parameters:
             finding(address(*at, name), f"a {item.kind} takes no {name!r} (it takes: "
                     f"{', '.join(spec.parameters) or 'nothing'})", code="model-invalid")
         else:
-            _dimension(finding, (*at, name), value, spec.parameters[name], params, units)
+            _dimension(finding, (*at, name), value, spec.parameters[name].unit, params, units)
 
 
 def _dimension(finding, at: tuple, value, unit: str, params: dict[str, Quantity], units: Units) -> None:
