@@ -389,14 +389,30 @@ flowchart LR
 
 ### 4.4 Entering a prefix: only the environment and its toolchain
 
+- **The manager runs in femkit's own places.** Every manager command femkit
+  runs — a query, a create, a removal, a `run`, the install script's included
+  (§ 7) — runs with `HOME` set to `<cache>/manager-home/`, its package cache at
+  `<cache>/pkgs/` (`CONDA_PKGS_DIRS`) and environment registration off
+  (`CONDA_REGISTER_ENVS=false`), so nothing it writes lands in the person's
+  home: package downloads, repodata and notice caches, its list of
+  environments, mamba's process records. Measured 2026-11-23 on a workstation:
+  conda 26.7.1 honours both variables; mamba 2.9.0 honours the package cache
+  but registers every environment it creates in `$HOME/.conda/environments.txt`
+  with no setting to stop it, so its `HOME` is femkit's; `conda info` writes
+  `~/.anaconda/keyring` and `~/.conda/aau_token` into whichever `HOME` it has;
+  both report the same root prefix under either `HOME`. The person's
+  `~/.condarc` and `~/.mambarc` are therefore not read by femkit's installs:
+  the channels are femkit's own (below), and a proxy reaches the manager
+  through `HTTPS_PROXY`, which passes. A command inside a prefix inherits that
+  `HOME`, so a build's or a check's own caches stay in femkit's places too.
 - **Nothing outside the definitions enters a prefix.** Every environment,
   the control one included, is created by the manager kind's `create`: the
   channels `channels.txt` names and no others — the person's own conda
   channels are overridden — and, with conda, none of their default packages
   (`--no-default-packages`); a later create installs the exact lock. mamba 2
-  has no such option (measured, 2.9.0: it refuses `--no-default-packages`), so
-  with mamba the `create_default_packages` of the person's own configuration
-  enter the prefix, and its lock. Measured
+  has no such option (measured, 2.9.0: it refuses `--no-default-packages`), and
+  needs none: the person's own configuration, where `create_default_packages`
+  would be set, is not read (above). Measured
   with conda 26.7: `conda env create -f` cannot do this (it adds the person's
   channels, and ignores `nodefaults`), which is why the control environment is
   a package list for `create --file`. The manager kind file declares these
@@ -648,7 +664,9 @@ saying that on a cluster the manager's module is loaded in this shell first.
 
 The script and Python drive the same manager the same way: the script creates
 and removes the control environment with the commands of that manager's kind
-file (`create`, `channel`, `remove`), as Python does every other. The script prints
+file (`create`, `channel`, `remove`), as Python does every other, and in the
+same places: `HOME` at `<cache>/manager-home/`, the package cache at
+`<cache>/pkgs/`, registration off (§ 4.4). The script prints
 the manager and the rule that found it, and hands Python its full path as
 `FEMKIT_ENV_MANAGER`: Python runs it from confined commands whose `PATH` holds
 only the system's (§ 4.4), where a bare name could find another manager or

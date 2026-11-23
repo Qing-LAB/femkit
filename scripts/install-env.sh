@@ -30,6 +30,15 @@ if [[ "$DATA_DIR" != /* ]]; then
     exit 2
 fi
 CONTROL="$DATA_DIR/environments/control"
+CACHE_DIR="${FEMKIT_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/femkit}"
+[[ "$CACHE_DIR" == "~" || "$CACHE_DIR" == "~/"* ]] && CACHE_DIR="$HOME${CACHE_DIR#\~}"
+if [[ "$CACHE_DIR" != /* ]]; then
+    echo "[femkit] refused: the cache directory must be an absolute path, not $CACHE_DIR" >&2
+    exit 2
+fi
+# Every manager command runs in femkit's own places, never the person's home (envs.md § 4.4):
+# its HOME, its package cache and its list of environments.
+MANAGER_ENV=(env "HOME=$CACHE_DIR/manager-home" "CONDA_PKGS_DIRS=$CACHE_DIR/pkgs" "CONDA_REGISTER_ENVS=false")
 STAMP="$CONTROL/.femkit/control.sha256"
 
 AUTO_YES=0
@@ -250,7 +259,8 @@ create_control() {
         kind_argv channel
         for arg in "${ARGV[@]}"; do cmd+=("${arg//\{channel\}/$channel}"); done
     done
-    "${cmd[@]}" --file "$CONTROL_TXT" || { say "creating the control environment failed"; exit 1; }
+    mkdir -p "$CACHE_DIR/manager-home" "$CACHE_DIR/pkgs"
+    "${MANAGER_ENV[@]}" "${cmd[@]}" --file "$CONTROL_TXT" || { say "creating the control environment failed"; exit 1; }
     mkdir -p "$CONTROL/.femkit"
     local digest
     digest="$(control_digest)" || { say "could not hash channels.txt and control.txt; no stamp written"; exit 1; }
@@ -280,7 +290,8 @@ recreate_control() {
     fi
     trap rebuild_failed EXIT
     kind_argv remove
-    "${ARGV[@]}" || { say "removing the control environment failed"; exit 1; }
+    mkdir -p "$CACHE_DIR/manager-home" "$CACHE_DIR/pkgs"
+    "${MANAGER_ENV[@]}" "${ARGV[@]}" || { say "removing the control environment failed"; exit 1; }
     CONTROL_REMOVED=1
     create_control
     CONTROL_REMOVED=0

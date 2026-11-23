@@ -104,6 +104,15 @@ def confined(base: Mapping[str, str], *, checkout: bool = False) -> dict[str, st
 ACTIVATION_VARIABLES = ("MAMBA_EXE", "CONDA_EXE")  # set by the manager's own activation
 
 
+def in_femkit_places(base: Mapping[str, str]) -> dict[str, str]:
+    """``base`` as every manager command runs with it (envs.md § 4.4): its `HOME`, package
+    cache and list of environments in femkit's cache, never in the person's home."""
+    home, packages = dirs.cache_dir() / "manager-home", dirs.cache_dir() / "pkgs"
+    home.mkdir(parents=True, exist_ok=True)
+    packages.mkdir(parents=True, exist_ok=True)
+    return {**base, "HOME": str(home), "CONDA_PKGS_DIRS": str(packages), "CONDA_REGISTER_ENVS": "false"}
+
+
 def resolve(ctx: Context) -> Manager:
     """The manager: FEMKIT_ENV_MANAGER (set by the install script), else the variable the
     manager's activation sets (envs.md § 7.1). Refused when none names a known kind."""
@@ -119,4 +128,4 @@ def resolve(ctx: Context) -> Manager:
     path = Path(named)
     if path.name not in kinds:
         raise Refusal(f"{path} is a manager femkit has no kind file for (it has: {', '.join(sorted(kinds))})")
-    return Manager(path, path.name, kinds[path.name], dict(ctx.env))
+    return Manager(path, path.name, kinds[path.name], in_femkit_places(ctx.env))

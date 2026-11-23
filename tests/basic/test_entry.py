@@ -232,3 +232,17 @@ def test_help_before_control_exists_is_the_scripts_own_and_creates_nothing(manag
     answer (envs.md § 7.3)."""
     assert install_env("bootstrap", "--help").returncode == 0
     assert calls(manager) == [] and not dirs.control_prefix().exists()
+
+
+def femkit_places() -> list[str]:
+    from femkit.core import dirs
+    return [str(dirs.cache_dir() / "manager-home"), str(dirs.cache_dir() / "pkgs"), "false"]
+
+
+def test_the_script_runs_the_manager_in_femkits_places_never_the_persons_home(manager):
+    """Fails if the install script's create runs the manager with the person's HOME, package
+    cache or environment registration: whatever the manager writes would land in their home
+    (envs.md § 4.4, § 7)."""
+    install_env("bootstrap", "--yes")
+    places = [line.split() for line in Path(f"{manager}.places").read_text().splitlines()]
+    assert places and all(p == femkit_places() for p in places), places

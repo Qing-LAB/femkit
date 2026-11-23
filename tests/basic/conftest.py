@@ -82,6 +82,7 @@ def tripwires(tripwire_dir, monkeypatch):
 # (envs.md § 4.4), and a stand-in that read its log path from them would lose it.
 STAND_IN = r"""#!/bin/sh
 printf '%s\n' "$*" >> @LOG@
+printf '%s %s %s\n' "$HOME" "${CONDA_PKGS_DIRS:-unset}" "${CONDA_REGISTER_ENVS:-unset}" >> @LOG@.places
 case "$1 $2" in
 RUN_LINE
   "create -y") prefix="$4"; mkdir -p "$prefix/conda-meta" "$prefix/bin"
