@@ -252,8 +252,12 @@ rtol = 1e-3
 
 [cuda]                                # the CUDA environment, elmer-cuda (definitions.md § 4.5)
 description = "CUDA: the AmgX solver"
+# The toolkit's parts the builds use, not the cuda-toolkit metapackage, whose profiler GUI
+# (nsight-compute) pins a krb5 the toolchain's CMake cannot share (ADR 0004): nvcc and the
+# runtime; cuBLAS, cuSPARSE and cuSOLVER, which AmgX links; NVTX, which Elmer's FindAMGX links.
 packages = [
-  "cuda-toolkit=12.8.1", "cuda-version=12.8", "cuda-cccl_linux-64=12.8",
+  "cuda-version=12.8", "cuda-nvcc=12.8", "cuda-cudart-dev=12.8", "cuda-cccl_linux-64=12.8",
+  "libcublas-dev", "libcusparse-dev", "libcusolver-dev",
   "cuda-nvtx=12.8.90", "cuda-nvtx-dev=12.8.90",
 ]
 executables = ["nvcc"]
