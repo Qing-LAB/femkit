@@ -25,7 +25,16 @@ numerical convergence shown before any physical study (§ 3, after M9).
   2.x); the live line of a running step;
 - the machine probe, its record and `doctor`; per-machine activation settings;
 - exact quantities: the unit table, its one grammar and conversion
-  ([`../contracts/core.md`](../contracts/core.md) § 11).
+  ([`../contracts/core.md`](../contracts/core.md) § 11);
+- the web server: `serve` and its supervisor, the server's state observed from
+  its lock and pidfile, and the routes in token mode
+  ([`../contracts/api.md`](../contracts/api.md) § 5.1, § 5.4, § 5.5); the page's
+  operation and progress views, built by `web build` with the `nodejs` tool
+  environment (§ 5.3, [`../contracts/definitions.md`](../contracts/definitions.md)
+  § 4.7);
+- every manager command run in femkit's own places — its home, package cache
+  and list of environments under `<cache>/`
+  ([`../contracts/envs.md`](../contracts/envs.md) § 4.4).
 
 **Proven**: on a workstation, a clean `env bootstrap` with conda, and again with
 mamba 2.9.0, builds and validates `elmer` (seven checks) and `ngsolve` (six),
@@ -37,7 +46,8 @@ cluster's mamba module inside an allocation, and the CUDA environments.
 **Designed, not built**: describing, matching, preparing and reducing a
 calculation ([`../contracts/models.md`](../contracts/models.md),
 [ADR 0008](../decisions/0008-one-model-declared-abilities.md)); the web
-interface and its server ([`../contracts/api.md`](../contracts/api.md) § 5,
+interface's model graph, match overlay, sign-in, TLS and uploads
+([`../contracts/api.md`](../contracts/api.md) § 5,
 [ADR 0009](../decisions/0009-web-front-end.md)); running jobs (M3, M4).
 
 ## 2. How the work is done
@@ -251,62 +261,43 @@ by the job.
 
 By [`../contracts/api.md`](../contracts/api.md) § 5:
 
-1. **The flask application**: the routes of `api.md` § 5.1. Acceptance: every
-   registered operation served as a form, planned and applied with its digest;
-   a stale digest refused.
-2. **`serve`** (`api.md` § 5.4): the `server` domain's verbs; the runtime directory; the
-   supervisor and its child, the pidfile, the rotated log, the state table.
-   Acceptance: each verb in each state, `elsewhere` included; a child killed by
-   a signal respawned, and the supervisor giving up after two deaths in 30 s
-   and removing its files; a child ending with its supervisor; two `start`s at
-   once, one refused; a port held by another program refused, naming it; a
-   stale pidfile never signalled; `restart` and `stop` refused while an
-   operation holds its lock; a restart over a configuration that does not load
-   refused, the server left running; Ctrl-C in `foreground` exiting 0; the Unix
-   socket on a cluster login node, reached through `ssh -L`.
-3. **Access** (`api.md` § 5.5): the token in the address's fragment, kept in the tab and
-   sent as `Bearer`, never a cookie; the child reading it from its file; the
-   health route's challenge; the `Host`, `Origin`, write and size checks, and
-   failed attempts answered at once and logged; the response headers; TLS from files with the
-   key's mode checked, or behind one proxy; sign-in with PKCE, issuer-bound
-   allow-list entries, the round-trip cookie and server-side sessions; the
-   upload route; the plan digest made of facts, not human text (§ 4).
-   Acceptance: a request without the token refused and one with it served; a
-   request naming another `Host`, or carrying `Origin: null`, refused; a write
-   without JSON refused; `status` telling its own server from an impostor on
-   the address without sending the token; the token in no log, argument or
-   environment of any process; no cookie in token mode; a correct token served
-   while a thousand wrong ones are in flight at once; `--no-auth` on a socket refused; a sign-in
-   configuration without an allow-list refused, and a removed account's session
-   ended at once, and one edit of `config.toml` enough to do it; the CSP
-   holding on a headless load of the built page; a connection from another
-   account on a socket refused (`SO_PEERCRED`); no other program able to take
-   the address while a child respawns; a runtime folder others can enter, or
-   under a folder others can write, refused; a write from another `Origin`
-   refused; `--no-auth` with `web.trust_proxy` refused; a request over its size
-   cap answered 413; an upload over its quota, or naming a project outside the
-   projects folder, refused; `SECURITY.md` saying what femkit then stores
-   — the token, the session key, a provider's client secret — where, and that a
-   browser extension with access to the page can act as the person, so a
-   profile without extensions is used.
-4. **The front end's toolchain** (`api.md` § 5.3): `frontend/` (added to
-   `PROJECT_CONTRACT.md` § 2 with it), React and React Flow, Node.js from
-   conda-forge in a developer's environment; the bundle and `build.json` in
-   `femkit/web/static/`; the basic tests that recompute its hashes and find no
-   inline script or style.
-5. **The model graph view** from `model graph`: the palette, typed
+Built: the routes of `api.md` § 5.1 but uploads and sign-in; `serve`, its
+five verbs as operations, the server's state machine observed from its lock and
+pidfile, the supervisor, the rotated log; token-mode access with the `Host`,
+`Origin`, write and size checks and the response headers; the page's operation
+and progress views, from the registry's schemas, and `web build`. Open:
+
+1. **`serve` on a cluster**: the Unix socket on a login node, reached through
+   `ssh -L`, and the manager's femkit-owned home with the cluster's mamba
+   module — its root prefix unchanged by it (the person's run); two `start`s at
+   the same instant, one refused.
+2. **Access** (`api.md` § 5.5): TLS from files with the key's mode checked, or
+   behind one proxy; sign-in with PKCE, issuer-bound allow-list entries, the
+   round-trip cookie and server-side sessions; `--no-auth`; the upload route;
+   the plan digest made of facts, not human text (§ 4). Acceptance: the token
+   in no log, argument or environment of any process; no cookie in token mode;
+   a correct token served while a thousand wrong ones are in flight at once;
+   `--no-auth` on a socket refused; a sign-in configuration without an
+   allow-list refused, and a removed account's session ended at once, and one
+   edit of `config.toml` enough to do it; the CSP holding on a headless load of
+   the built page; a connection from another account on a socket refused
+   (`SO_PEERCRED`); no other program able to take the address while a child
+   respawns; a runtime folder others can enter, or under a folder others can
+   write, refused; `--no-auth` with `web.trust_proxy` refused; an upload over
+   its quota, or naming a project outside the projects folder, refused;
+   `SECURITY.md` saying what femkit then stores — the token, the session key, a
+   provider's client secret — where, and that a browser extension with access
+   to the page can act as the person, so a profile without extensions is used.
+3. **The model graph view** from `model graph`: the palette, typed
    connections, findings on each node, the selected node's form, positions
    saved. Acceptance: the Laplace model built in the page from an empty
    folder, with no field named in the front-end code.
-6. **The match overlay**: each node marked with its worst match line for a
+4. **The match overlay**: each node marked with its worst match line for a
    chosen environment; an open line offering the decisions that resolve it,
    and, once M8 lands, the customizations.
-7. **Review, progress, jobs and results**, as M3 and M6 land: `job prepare`'s
-   review; an operation's steps live from its event stream, and the running
-   step's last lines; runs and their states; result tables, and where each
+5. **Review, jobs and results**, as M3 and M6 land: `job prepare`'s
+   review; runs and their states; result tables, and where each
    field file is for ParaView.
-8. **On a cluster**: served on the login node's socket and reached through an
-   SSH tunnel, shown once on the cluster.
 
 ### M8 — customizations
 

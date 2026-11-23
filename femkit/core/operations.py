@@ -15,9 +15,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Mapping, Protocol, TypeVar
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from femkit.core import dirs, text
+from femkit.core.errors import UsageError
 from femkit.core.eventlog import EventLog
 from femkit.core.issues import Issue
 from femkit.core.locks import subject_lock
@@ -143,6 +144,32 @@ class SilentObserver:
         pass
 
 
+class _Recording:
+    """The surface's observer, with each step's log also recorded in its run's event log as
+    the step reports it (`step-log`), so another surface can find a running step's log.
+    Wraps every apply's observer (`Operation.apply`), so a step that reports to the apply's
+    observer is recorded as one that reports to `run_steps`'s."""
+
+    def __init__(self, observer: Observer) -> None:
+        self._observer, self._log, self._step = observer, None, None
+
+    def __getattr__(self, name: str):
+        return getattr(self._observer, name)
+
+    def operation_start(self, plan: Plan, where: Path) -> None:
+        self._log, self._step = EventLog(where / "events.jsonl"), None
+        self._observer.operation_start(plan, where)
+
+    def step_start(self, step: Step, index: int, total: int) -> None:
+        self._step = step.id
+        self._observer.step_start(step, index, total)
+
+    def step_log(self, log: Path) -> None:
+        if self._log is not None and self._step is not None:
+            self._log.append("step-log", step=self._step, log=str(log))
+        self._observer.step_log(log)
+
+
 def operations_root(subject: str) -> Path:
     """`<state>/operations/<subject>/`: every operation on a subject (core.md § 6)."""
     return dirs.state_dir() / "operations" / subject
@@ -212,7 +239,17 @@ class Operation:
     changes: bool
     doc: str
     impl: Any  # a function (read-only) or an instance with plan/apply (changing)
-    subject: Callable[[Any], list[str]] | None = None
+    subject: Callable[[Any], list[str]] | Literal["plan"] | None = None  # "plan": the plan names them
+
+    def request_from(self, data: dict) -> Model:
+        """The request model from its JSON form; one that does not validate is a `UsageError`
+        naming each field's problem — on every surface alike."""
+        try:
+            return self.request.model_validate(data)
+        except ValidationError as exc:
+            problems = "; ".join(
+                f"{'.'.join(str(p) for p in e['loc']) or 'request'}: {e['msg']}" for e in exc.errors())
+            raise UsageError(problems) from None
 
     def run(self, req: Model, ctx: Context) -> Result:
         assert not self.changes, f"{self.name} changes things: plan, then apply"
@@ -221,6 +258,8 @@ class Operation:
     def plan(self, req: Model, ctx: Context) -> Plan:
         assert self.changes, f"{self.name} is read-only: run it"
         plan = self.impl.plan(req, ctx)
+        if self.subject == "plan":
+            return plan
         subjects = tuple(self.subject(req)) if self.subject else ()
         return plan.model_copy(update={"subjects": subjects})
 
@@ -230,7 +269,7 @@ class Operation:
         with ExitStack() as stack:
             for subject in plan.subjects:
                 stack.enter_context(subject_lock(subject))
-            return self.impl.apply(plan, ctx, observer or SilentObserver())
+            return self.impl.apply(plan, ctx, _Recording(observer or SilentObserver()))
 
 
 def operation(
@@ -239,7 +278,7 @@ def operation(
     request: type[Model],
     result: type[Result],
     changes: bool = False,
-    subject: Callable[[Any], list[str]] | None = None,
+    subject: Callable[[Any], list[str]] | Literal["plan"] | None = None,
 ) -> Callable[[Any], Operation]:
     """Declare an operation (api.md § 2): decorate a function, or a class with plan/apply."""
 

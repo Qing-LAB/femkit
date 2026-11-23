@@ -41,8 +41,8 @@ device model, site name or credential appears in a committed file.
 | `<config>` | what a person set and what a probe measured: `config.toml`, `machines/`; the web server's secrets, `secrets/` ([`api.md`](api.md) § 5.5; not built yet, plan § 3, M7) | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
 | `<data>` | environments, package locks, subject locks; benchmark projects, `<data>/benchmarks/` ([`models.md`](models.md) § 6.3; not built yet, plan § 3, M6) | `$XDG_DATA_HOME/femkit`, else `~/.local/share/femkit` | `FEMKIT_DATA_DIR` |
 | `<cache>` | downloads femkit can fetch again; may be emptied at any time | `$XDG_CACHE_HOME/femkit`, else `~/.cache/femkit` | `FEMKIT_CACHE_DIR` |
-| `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them; the web server's logs, `<state>/logs/` ([`api.md`](api.md) § 5.4; not built yet, plan § 3, M7) | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
-| `<runtime>` | a running web server's pidfile, token, socket and sign-in session records ([`api.md`](api.md) § 5.4); not built yet (plan § 3, M7) | `<state>/run/<host>/` | `FEMKIT_RUNTIME_DIR` |
+| `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them; the web server's logs, `<state>/logs/` ([`api.md`](api.md) § 5.4) | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
+| `<runtime>` | a running web server's pidfile, token and socket ([`api.md`](api.md) § 5.4); its sign-in session records, not built yet (plan § 3, M7) | `<state>/run/<host>/` | `FEMKIT_RUNTIME_DIR` |
 
 A log is not a cache: emptying a cache must lose nothing but downloads, so the
 logs live apart from it, under `$XDG_STATE_HOME`.

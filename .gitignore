@@ -37,4 +37,4 @@ pip-wheel-metadata/
 # Generated studies and solver output are never source files.
 projects/
 work/
-
+frontend/node_modules/

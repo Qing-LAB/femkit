@@ -6,6 +6,7 @@ Each is read from the environment when asked, never at import.
 from __future__ import annotations
 
 import os
+import socket
 from pathlib import Path
 
 from femkit.core.errors import UsageError
@@ -45,6 +46,22 @@ def cache_dir() -> Path:
 
 def state_dir() -> Path:
     return _resolve("state")
+
+
+def host() -> str:
+    """This machine's name, as the runtime directory is keyed by it."""
+    return socket.gethostname()
+
+
+def runtime_dir() -> Path:
+    """`<state>/run/<host>/`, or `FEMKIT_RUNTIME_DIR` (config.md § 2): a running server's
+    pidfile, token and socket. Host-keyed, because a shared home is seen by every login node."""
+    own = os.environ.get("FEMKIT_RUNTIME_DIR")
+    path = Path(own).expanduser() if own else state_dir() / "run" / host()
+    if not path.is_absolute():
+        raise UsageError(f"the runtime directory must be an absolute path, not {path}",
+                         ("export FEMKIT_RUNTIME_DIR=/absolute/path",))
+    return path
 
 
 CONTROL = "control"  # the control environment's name (envs.md § 1)

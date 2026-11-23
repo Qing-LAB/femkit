@@ -94,7 +94,8 @@ def config_dir() -> Path    # FEMKIT_CONFIG_DIR, else $XDG_CONFIG_HOME/femkit, e
 def data_dir() -> Path      # FEMKIT_DATA_DIR,   else $XDG_DATA_HOME/femkit,   else ~/.local/share/femkit
 def cache_dir() -> Path     # FEMKIT_CACHE_DIR,  else $XDG_CACHE_HOME/femkit,  else ~/.cache/femkit
 def state_dir() -> Path     # FEMKIT_STATE_DIR,  else $XDG_STATE_HOME/femkit,  else ~/.local/state/femkit
-def runtime_dir() -> Path   # FEMKIT_RUNTIME_DIR, else as config.md § 2 says; made 0700 — not built yet (plan § 3, M7)
+def runtime_dir() -> Path   # FEMKIT_RUNTIME_DIR, else as config.md § 2 says; made private by persist.private_dir
+def host() -> str           # this machine's name, which keys the runtime directory
 def control_prefix() -> Path            # <data>/environments/control (envs.md § 1)
 def checkout() -> Path                  # the checkout femkit runs from; it is never installed (envs.md § 7)
 def directory_sources() -> dict[str, tuple[Path, str]]   # each directory and the rule that chose it
@@ -120,7 +121,18 @@ def write_json(path: Path, data: Any) -> Path          # atomic; sorted keys, tw
 def write_toml(path: Path, data: dict) -> Path         # atomic
 def read_toml(path: Path) -> dict
 def read_json(path: Path) -> Any
+def private_dir(path: Path) -> Path     # 0700; refused when another account could enter it or replace it
+def open_private(path: Path, mode: str) -> IO   # 0600 from its first byte, never through a link;
+                                                # "a" appends, "w" truncates, "x" creates exclusively
 ```
+
+`atomic_write_text` and `write_json` take `private=True` for a file only this
+account may read (a pidfile). `private_dir` makes each folder it creates
+`0700`, and refuses a folder above it through which another account could
+replace what is inside: one owned by another account (root aside), or one
+writable by others and not sticky (`/tmp` is sticky) — a group's write counts
+unless the group is this account's own private group, as a `002` umask makes
+every folder.
 
 - Every file femkit writes goes through these. Parent directories are created.
 - A file whose appearance means "done" (a manifest, `prepared.json`) is
@@ -134,7 +146,17 @@ def read_json(path: Path) -> Any
 ```python
 @contextmanager
 def subject_lock(subject: str) -> Iterator[None]    # raises Busy
+def is_held(subject: str) -> bool
+def held_fd(subject: str) -> int        # the descriptor this process holds it on, to hand to a process it starts
+def adopt(fd: int) -> None              # a handed lock: its file now names the receiver
+def holders() -> dict[str, int]         # subject -> pid, from the kernel's lock table (/proc/locks): the
+                                        # process that took the lock, which after a handover is not the holder
 ```
+
+- **A lock can be handed over**: a process started with the descriptor
+  (`process.start_detached(keep_fds=...)`) holds it too, so it stays held for
+  as long as either runs — how `serve start` leaves its lock with the
+  supervisor it detaches ([`api.md`](api.md) § 5.4).
 
 - An exclusive, non-blocking `flock` on `<data>/locks/<subject>.lock` (a
   *subject lock*; the solved package lists beside it are *package locks*,
@@ -173,7 +195,7 @@ operation over several subjects (`env install ngsolve elmer`) writes one
 directory per subject, and its result names each on its row.
 
 Record kinds, each with `time`: `operation-start` (operation, request, pid),
-`step-start` (step), `step-end` (step, outcome, log), `operation-end`
+`step-start` (step), `step-log` (step, log: the running step's log, as it reports it to the observer — the runner wraps every apply's observer to record it), `step-end` (step, outcome, log), `operation-end`
 (outcome). Progress, the failed step, interruption and what a resume may skip
 are folds over the log; nothing else records them. An operation's result
 becomes visible only through its commit write (§ 4), never through the log.
@@ -252,8 +274,27 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
 - A non-zero exit is a result, not an exception; the caller decides.
 - A detached, supervised process — the web server's supervisor and its child
   ([`api.md`](api.md) § 5.4), and a job a person launches — is started through
-  one building block beside `run`, which returns its process ID and start
-  time, the one way a process is identified; not built yet (plan § 3, M3).
+  one building block beside `run`:
+
+  ```python
+  @dataclass(frozen=True)
+  class Identity:
+      pid: int
+      start: int                   # the process's start time, in clock ticks since boot
+      boot: str                    # the kernel's boot ID
+      def alive(self) -> bool      # a process with this pid and start time runs now, on this boot, as this account
+
+  def identify(pid: int) -> Identity | None        # None: no such process of this account
+  def start_detached(argv, *, env=None, cwd=None, keep_fds=(), log=None) -> Identity
+                                                   # a new session, stdin closed; its output to `log` or discarded
+  def end(identity: Identity, *, grace: float = 5.0) -> bool   # SIGTERM, then SIGKILL; only if alive()
+  ```
+
+  A process is identified by its ID and start time on this boot, never by its
+  ID alone: a signal goes only to an `Identity` that is `alive()`. A child that
+  must not outlive its parent sets `PR_SET_PDEATHSIG` and checks `getppid`
+  after, which `start_detached` does not do — the child that needs it sets it
+  itself (`api.md` § 5.4). Jobs will use the same block (plan § 3, M3).
 
 ## 9. Errors — `core/errors.py`
 

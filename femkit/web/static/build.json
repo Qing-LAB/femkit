@@ -1,0 +1,29 @@
+{
+  "bundle": {
+    "THIRD-PARTY-LICENSES.txt": "75486a8ba9459f7a7a81f2909d660c8c0a3f434346954046b6a0d84b4a55dfc7",
+    "assets/index-B4OV8Zc-.js": "445f80402f4eacf87baec4de1b0c51d43bb1203475dd1a738c83f787a64f3665",
+    "assets/index-CDPjuBBp.css": "e25a0f7f2613bf81601db6d71055d89d311585c608c79dd5f55c8eb3224c18c0",
+    "index.html": "edbcdf47eb469176d609021a9720f2fdf782daf6ef5f5427d3731bcbc88f23fe"
+  },
+  "node": "v22.23.5",
+  "npm": "10.9.9",
+  "sources": {
+    "files": {
+      "index.html": "82f15522e308baa5954b09a1a3e95083aaec9fc3b6cdc1a62ea1dbbf67372bf6",
+      "package-lock.json": "89a45d6ab049a314d939fbed83fc0bba09545ad3ae65d4c2d2d28199865271a3",
+      "package.json": "d13cd44af05815c2b3d54b68bbe4541e76f4227a7f6ef82c098c59489e11b97d",
+      "src/App.tsx": "4e07cf1a005ed19d09f0520decf76cbd00eff01125d2834c0c04f474191cb07e",
+      "src/Form.tsx": "9707945b27cf8996f7062db126320bdf99b853e9f85e3f79b954c21ef3730062",
+      "src/OperationView.tsx": "544139ae61b952ca47c530c617836d7a2997fab226058fab4da0e331d029ab10",
+      "src/Progress.tsx": "064f6cfc16cd7eeb2b66161c6df3ba65fab9faa9c19742589a99b9a4978bf73c",
+      "src/Value.tsx": "110938783747190846f3b8176cf495554e0daae7a99b865793644d45c2df1e3e",
+      "src/api.ts": "efd484b2699c07c130d5bc03200ca4c7f9a0f2ba58d437741b76a9fc61b183b2",
+      "src/main.tsx": "a6bcae9c4f04d6ff36406b2966379834342b41b08b83ba7bd0334712d6cf87f0",
+      "src/schema.ts": "d324b8da53eadd3fce3311f35b49b3c89cc7223a8952da1c87a0330156a3c975",
+      "src/styles.css": "fc4a7e2a242bb150bc29637f94215e083d9a624342da4b2bf6f1dcfffce8798c",
+      "tsconfig.json": "231d90c9d10bfb19983a526256cffe9702180a27b7e40237502c05897968567e",
+      "vite.config.ts": "953d47cf40e6bd144d35d08a1375131805732c14d165b3d5bd28d9d867778d1d"
+    },
+    "sha256": "347d93eefa4a060460ba5f7f2548d5e3a0c39e0c190b63c0ef1a40011265638d"
+  }
+}

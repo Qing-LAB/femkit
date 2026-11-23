@@ -9,7 +9,7 @@ from pathlib import Path
 
 from femkit.core.schema import Model
 
-KINDS = ("operation-start", "step-start", "step-end", "operation-end")
+KINDS = ("operation-start", "step-start", "step-log", "step-end", "operation-end")
 
 
 class EventLog:

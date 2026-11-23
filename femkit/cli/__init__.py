@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 import click
-from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 
 from femkit.core import process, text
@@ -89,13 +88,7 @@ def _request(op: Operation, values: dict) -> Any:
         if isinstance(value, tuple):
             value = list(value)
         data[name] = value
-    try:
-        return op.request.model_validate(data)
-    except ValidationError as exc:
-        problems = "; ".join(
-            f"{'.'.join(str(p) for p in e['loc']) or 'request'}: {e['msg']}" for e in exc.errors()
-        )
-        raise UsageError(problems) from None
+    return op.request_from(data)
 
 
 # ------------------------------------------------------------------- output

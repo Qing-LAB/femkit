@@ -72,7 +72,7 @@ class EnvInstall:
 | `request` | a `Model`; its fields are every input the operation takes |
 | `result` | a `Result` subclass (§ 2.3) |
 | `changes` | `False` (default): one function `(req, ctx) -> result`. `True`: a class with `plan` and `apply` (§ 3) |
-| `subject` | for a changing operation: the lock subjects it holds while applying (core.md § 5) |
+| `subject` | for a changing operation: the lock subjects it holds while applying (core.md § 5), from the request; or `"plan"` when they depend on what the plan observes — the plan names them (`serve start`: a login node listens on a socket unless asked otherwise, § 5.4) |
 | docstring | the command's help and the route's description |
 
 The name is unique; the registry refuses a duplicate at start.
@@ -274,8 +274,9 @@ Built from `core/text.py`, so every command reads alike:
 ## 5. The web application — `femkit/web/`
 
 Two parts: a flask application built from the same registry, and a front end
-that runs in the browser. Not built yet (plan § 3, M7); these rules
-hold when one does, and a basic test checks that every registered operation can
+that runs in the browser. The routes and `serve` are built in token mode;
+TLS, sign-in, `--no-auth`, uploads and the front end are not built yet (plan
+§ 3, M7), and these rules hold when they are. A basic test checks that every registered operation can
 be expressed this way (its request and result models produce a JSON schema).
 The reasons for the front end's form are
 [ADR 0009](../decisions/0009-web-front-end.md).
@@ -287,7 +288,7 @@ The reasons for the front end's form are
 | `GET /api/operations` | every operation: name, description, request and result JSON schemas |
 | `POST /api/<name>` | a read-only operation: request JSON in, result JSON out |
 | `POST /api/<name>/plan` | a changing operation: request JSON in, plan JSON out |
-| `POST /api/<name>/apply` | `{"request": …, "digest": …}`: re-plans, refuses with `PlanStale` unless the new plan's digest equals the one the person saw, then applies |
+| `POST /api/<name>/apply` | `{"request": …, "digest": …}`: re-plans, refuses with `PlanStale` unless the new plan's digest equals the one the person saw, then applies. A refusal before the run starts is answered as any other; otherwise the answer is JSON lines: `{"operation": "<subject>/<time>"}` as each run starts — its operation directory, the address `GET /api/events/…` and `GET /api/tail/…` take; an operation over several subjects runs once per subject (core.md § 6) — and last the outcome, or the defect. The apply runs to its end whether or not the page still reads |
 | `GET /api/events/<subject>/<time>` | the event log of the operation in `<state>/operations/<subject>/<time>/`, as a stream from its first line as it grows, ending when the operation ends or is found interrupted: how a long apply's progress reaches the page; each path part must match its pattern and the path must lie inside `<state>/operations/` |
 | `GET /api/health?nonce=<n>` | that the server is up, and an HMAC of the client's nonce keyed with the server's token, which proves the answer comes from this server without the client sending the token; the one `/api` route that needs no token (§ 5.5) |
 | `PUT /api/upload?project=<path>` | streams one file into that project's upload area and answers with its SHA-256 (§ 5.5) |
@@ -333,18 +334,29 @@ names.
 
 ### 5.3 Source and build
 
-- **Source** is a React application whose graph view uses React Flow, in a
-  top-level `frontend/` folder (created with it; `PROJECT_CONTRACT.md` § 2
-  then lists it). It is built with Node.js from conda-forge in a developer's
-  own environment — never in the control environment.
+- **Source** is a React application, in a top-level `frontend/` folder
+  (`PROJECT_CONTRACT.md` § 2); its graph view will use React Flow
+  ([ADR 0009](../decisions/0009-web-front-end.md)). `package.json` declares,
+  under `femkit.sources`, the files the bundle is built from, its lock file
+  included.
+- **Built by `web build`**, an operation like any other, with the Node.js of
+  the `nodejs` tool environment ([`definitions.md`](definitions.md) § 4.7;
+  `env install nodejs`) — never the control environment, and never a Node.js
+  of the person's own. It copies the declared sources into
+  `<cache>/frontend/work/`, runs `npm ci --ignore-scripts` there from the
+  committed lock file, then `npm run build`, each inside the environment
+  through the manager ([`envs.md`](envs.md) § 4.4), with npm's cache and
+  configuration under `<cache>/frontend/`: nothing is read from or written to
+  the person's `~/.npm` or `~/.npmrc`, and no `node_modules` lands in the
+  checkout. `web build --relock` first solves `package-lock.json` again from
+  `package.json` and writes it into `frontend/`.
 - **The built bundle is shipped** in `femkit/web/static/`: generated, never
-  edited by hand. The build writes `static/build.json`: the SHA-256 over the
-  front end's declared source files (the lock file included), the Node.js and
-  npm versions, and the SHA-256 of every bundle file. A basic test recomputes
+  edited by hand. `web build` writes `static/build.json`: the SHA-256 over the
+  declared source files, the Node.js and npm versions, and the SHA-256 of every
+  bundle file; and `static/THIRD-PARTY-LICENSES.txt`, each package the lock
+  file installs for the page, with its license text. A basic test recomputes
   both hashes without Node.js, so a source changed without rebuilding and a
-  bundle edited by hand both fail. It is built with `npm ci --ignore-scripts`
-  from the committed lock file, and ships a third-party licenses file
-  generated from the lock file.
+  bundle edited by hand both fail.
   Installing femkit never needs Node.js, and the page loads nothing from the
   network: scripts, styles and fonts are all in the bundle.
 
@@ -355,16 +367,23 @@ names.
 
 | verb | does |
 |---|---|
-| `serve start` | takes the server's lock; writes its access token (§ 5.5); detaches a supervisor, which runs the web application as its child; releases the lock once the child answers with that token; prints the address to open, with the token |
+| `serve start` | plans the address, the files and the child's command; applying takes the server's lock, opens the listening socket, writes the access token (§ 5.5) and starts the supervisor detached, which inherits the lock and holds it for as long as it runs; returns once the child answers with that token, printing the address to open, with the token |
 | `serve status` | every server this account runs, each with two answers kept apart: is the process up (the pidfile's checks), and does it answer with this server's token (§ 5.5); the address with its token only for one named server (`--port`, `--socket`) |
-| `serve restart` | reads the configuration first, as a fresh child would, and refuses with its reason if it does not load — leaving the running server alone; refuses while the child holds an operation's lock (an install started from the page) unless `--force`, naming each; otherwise signals the supervisor, which replaces its child with the same token |
-| `serve stop` | refuses while the child holds an operation's lock unless `--force`, naming each; otherwise stops the supervisor, which sends its child `SIGTERM`, ends its event streams, waits, then sends `SIGKILL`, and removes the pidfile, the socket and the token |
-| `serve foreground` | the supervisor and its child in this terminal; Ctrl-C stops them, and is a normal stop, exit 0 |
+| `serve restart` | reads the configuration first, as a fresh child would, and refuses with its reason if it does not load — leaving the running server alone; refuses while the child holds an operation's lock (an install started from the page) unless `--force`, naming each; otherwise signals the supervisor (`SIGHUP`), which replaces its child with the same token |
+| `serve stop` | refuses while the child holds an operation's lock unless `--force`, naming each; otherwise stops the supervisor (`SIGTERM`), which sends its child `SIGTERM`, ends its event streams, waits, then sends `SIGKILL`, and removes the pidfile, the socket and the token |
+| `serve foreground` | `start` without detaching: the same lock, checks and files, so `status`, `restart` and `stop` from another terminal act on it; the child's output goes to the terminal as well as the log; Ctrl-C stops them, and is a normal stop, exit 0 |
 
 The supervisor runs `python -m femkit.web` as a child process; the `server`
-domain never imports the web package, as no domain imports a surface. Starting
+domain never imports the web package, as no domain imports a surface. The
+supervisor imports only the standard library and the core's file and process
+building blocks — never flask, the web package or another domain — so a change
+that breaks the application leaves the supervisor running, to start the fixed
+child at the next `restart`. Everything `start` refuses — a server already
+running, a held address, an unsafe runtime folder, a configuration that does
+not load — it refuses before it detaches, with the listening socket already
+open: after that nothing reaches the terminal. Starting
 a detached, supervised process is a core building block
-([`core.md`](core.md) § 8; not built yet, plan § 3, M3): the child is spawned
+([`core.md`](core.md) § 8): the child is spawned
 from the supervisor's main thread, ends when its supervisor ends
 (`PR_SET_PDEATHSIG`, checked again with `getppid` after it is set), and both are
 identified as a run's process is — process ID and start time. **The supervisor
@@ -388,6 +407,7 @@ and opens the printed address there. Elsewhere it listens on TCP, `127.0.0.1` an
 | `<runtime>/serve-<name>.token` | the access token (§ 5.5) | by `start`, before the child runs: created exclusively, never following a link, `0600` |
 | `<runtime>/serve-<name>.sock` | the Unix socket, when it listens on one; its path at most 108 bytes, or `start` refuses, naming it; never an abstract socket, which has no permissions | by the supervisor, `0600` |
 | `<state>/logs/serve-<name>.log` | every event the supervisor and the server report, timestamped: child start, respawn, give-up, stop, a `status` that found it up but not answering; each request's method, path without its query (control characters escaped), status, time and, with sign-in, the account — never a header, a token or a body | by the supervisor alone, `0600` |
+| `<state>/logs/serve-<name>.supervisor.log` | what the detached supervisor itself prints before or outside the server's log — a traceback, an import that failed; `start` shows its last lines when the child never answers | by the supervisor's own output, `0600` |
 | `<state>/logs/serve-<name>.stacks.log` | every thread's stack, appended each time the child receives `SIGUSR1` | by the child, `0600` |
 
 `<name>` is the port, or `sock` for the socket. `<runtime>` is the runtime
@@ -419,14 +439,23 @@ folder above it is writable by others.
   exhaust it. No debugger or code-reloading mode is ever served.
 
 The server is a state machine ([`framework.md`](framework.md) § 3), observed
-from the pidfile and the processes, by these rules in order:
+from its lock, its pidfile and the processes the pidfile names. **The lock is
+the supervisor's liveness**: the subject `server-<host>-<name>`
+([`core.md`](core.md) § 5), taken by `start` and `foreground` through the
+operation runner, and held by the supervisor from then on — the kernel releases
+it however the supervisor ends, so a supervisor that is gone is observed, never
+guessed from a process ID that may have been reused. `restart` and `stop` take
+no lock of their own: they verify the holder and signal it. Which operation
+locks the child holds is read from the kernel's lock table, never from a lock
+file's text. The rules, in order:
 
 | # | observed when | state | `start` | `stop` | `restart` |
 |---|---|---|---|---|---|
-| 1 | no pidfile | `stopped` | starts | nothing to do | refused: offers `start` |
-| 2 | the pidfile was written on another host | `elsewhere` | refused: names the host | refused: names the host | refused: names the host |
-| 3 | the supervisor is gone, not this account's, not a femkit server, or started at another time | `stale` | ends a child still running under the old token, removes the files, starts | the same, without starting | refused: offers `start` |
-| 4 | otherwise | `running` | refused: already running | stops | restarts |
+| 1 | the pidfile was written on another host | `elsewhere` | refused: names the host | refused: names the host | refused: names the host |
+| 2 | the lock is free, and no pidfile | `stopped` | starts | nothing to do | refused: offers `start` |
+| 3 | the lock is free, and a pidfile is left — its supervisor ended without removing it: killed, or the machine restarted | `stale` | ends a child it names that still runs, removes the files, starts | the same, without starting | refused: offers `start` |
+| 4 | the lock is held, and the pidfile names its supervisor, alive with its recorded start time | `running` | refused: already running | stops | restarts |
+| 5 | otherwise: the lock is held, and no pidfile names its holder yet | `starting` | refused: names the holder | refused: names the holder | refused: names the holder |
 
 Whether a `running` server answers is a fact `status` shows, not a state:
 answering can change between two looks.

@@ -35,12 +35,13 @@ femkit/
 │                  preparation (models.md) — not built yet (plan § 3, M5, M6, M8, M9)
 ├── results/       a run's observables, proofs, comparisons, analysis (models.md
 │                  § 6.3, § 10) — not built yet (plan § 3, M6)
-├── server/        `serve`: the web server's supervisor, pidfile and log (api.md
-│                  § 5.4) — not built yet (plan § 3, M7)
+├── server/        `serve`: the web server's verbs, state machine, supervisor,
+│                  pidfile and log (api.md § 5.4); `web build`, the page's
+│                  bundle (§ 5.3)
 ├── registry.py    the one list of operation modules (api.md § 6)
 ├── reference.py   `schema check|docs`: they span every domain (definitions.md § 2.3)
 ├── cli/           the generic command-line adapter (api.md § 4)
-└── web/           the generic flask adapter and its built front end (api.md § 5)
+└── web/           the generic flask adapter (api.md § 5); its built front end
                    — not built yet (plan § 3, M7)
 scripts/install-env.sh  the install script (envs.md § 7) — the only shell code
 tools/             developer tools that import nothing from femkit (testing.md § 4)
@@ -86,10 +87,11 @@ The rules every change follows, whatever package it touches, are
 
 femkit has six: the install script's control environment
 ([`envs.md`](envs.md) § 7), an environment ([`envs.md`](envs.md) § 3), an
-install's steps ([`envs.md`](envs.md) § 4), and, not built yet (plan § 3, M3,
-M6, M7), a run ([`jobs.md`](jobs.md) § 5), a case's preparation
-([`models.md`](models.md) § 9.5) and the web server ([`api.md`](api.md) § 5.4); the test runner's batch states ([`testing.md`](testing.md) § 4.4) are
-a seventh, outside femkit.
+install's steps ([`envs.md`](envs.md) § 4), the web server
+([`api.md`](api.md) § 5.4), and, not built yet (plan § 3, M3, M6), a run
+([`jobs.md`](jobs.md) § 5) and a case's preparation
+([`models.md`](models.md) § 9.5); the test runner's batch states
+([`testing.md`](testing.md) § 4.4) are a seventh, outside femkit.
 
 Every one follows these rules. In Python the primitive that enforces them is
 [`core.md`](core.md) § 7, and an install's steps are a fold over its event log
