@@ -346,10 +346,10 @@ names.
 
 | verb | does |
 |---|---|
-| `serve start` | detaches a supervisor, which runs the web application as its child; writes the pidfile; logs to the server's log |
-| `serve status` | every server this account runs, each with two answers kept apart: is the process up (the pidfile's checks), and is it answering (`GET /api/health`, asked at the address it was started on); `--port` for one |
-| `serve restart` | reads the configuration first, as a fresh child would, and refuses with its reason if it does not load — leaving the running server alone; otherwise signals the supervisor, which replaces its child |
-| `serve stop` | asks the supervisor to stop; it takes its child down and removes the pidfile |
+| `serve start` | detaches a supervisor, which runs the web application as its child; writes the pidfile and a new access token (§ 5.5); prints the address to open, with the token; logs to the server's log |
+| `serve status` | every server this account runs, each with two answers kept apart: is the process up (the pidfile's checks), and is it answering (`GET /api/health`, asked at the address it was started on), and the address to open, with its token; `--port` for one |
+| `serve restart` | reads the configuration first, as a fresh child would, and refuses with its reason if it does not load — leaving the running server alone; otherwise signals the supervisor, which replaces its child with the same access token, so an open page keeps working |
+| `serve stop` | asks the supervisor to stop; it takes its child down and removes the pidfile and the token |
 | `serve foreground` | the supervisor and its child in this terminal, stopped with Ctrl-C: for development |
 
 The supervisor runs `python -m femkit.web` as a child process; the `server`
@@ -360,6 +360,7 @@ domain never imports the web package, as no domain imports a surface.
 | file | holds |
 |---|---|
 | `$XDG_RUNTIME_DIR/femkit/serve-<port>.pid` (`<state>/run/` when that variable is unset) | the supervisor's process ID and the address its server was started on |
+| `serve-<port>.token`, beside the pidfile, mode `0600` | the server's access token (§ 5.5); never written to the log |
 | `<state>/logs/serve-<port>.log` | every line the supervisor and the server print, each event timestamped: child start, respawn, give-up, stop, and a `status` that found the server up but not answering |
 | `<state>/logs/serve-<port>.stacks.log` | every thread's stack, appended each time the child receives `SIGUSR1` |
 
@@ -394,15 +395,33 @@ The state reached by configuring nothing is the safe one: a mistake leaves a
 capability missing, never open to everyone.
 
 - **Loopback by default.** `--host` defaults to `127.0.0.1`. Any other address
-  is refused unless the server serves TLS and sign-in is configured; with
-  neither, the refusal names both.
-- **Sign-in is optional and outsourced.** With no `[web.auth]` section in
-  `config.toml` nobody signs in, which is right for one person on their own
-  machine. A `[web.auth]` section names identity providers (OpenID Connect);
-  femkit learns an account's address and never holds a password. The provider's
-  client secret and the session-signing key are files in
-  `<config>/secrets/` (the folder `0700`, each file `0600`), under fixed names;
-  the session key is created on the first run.
+  is refused unless the server serves TLS; the refusal says so.
+- **Every server needs its access token** unless sign-in is configured. A
+  machine's loopback address is reached by every account on that machine — on
+  a cluster's login node, by every user of the node — so loopback alone keeps
+  nobody out. `serve start` makes a random token of 32 bytes, URL-safe, writes
+  it to `serve-<port>.token` (`0600`, beside the pidfile; § 5.4), and prints the
+  address to open with it, `http://127.0.0.1:<port>/?token=<token>`; `serve
+  status` prints it again, read from that file, which only its owner can read.
+  - The first request carrying the right token gets a session cookie and is
+    redirected to the same address without the token, so the token does not
+    stay in the address bar, the history or a `Referer` header; later requests
+    carry the cookie. A program sends `Authorization: Bearer <token>`.
+  - A request with neither is refused: a page asks for the token, and
+    `/api/*` answers 401 in JSON. `/api/health` answers without it and says
+    nothing but that the server is up.
+  - Tokens are compared in constant time. `serve start` makes a new one; a
+    restart keeps it; `serve stop` deletes it. Its value is never logged.
+  - On a cluster the person opens an SSH tunnel to the login node
+    (`ssh -L <port>:127.0.0.1:<port> <login node>`) and the printed address
+    on their own machine.
+- **Sign-in replaces the token** for a server opened to a group. With no
+  `[web.auth]` section in `config.toml` nobody signs in, and the token keeps
+  the server to its owner. A `[web.auth]` section names identity providers
+  (OpenID Connect); femkit learns an account's address and never holds a
+  password. The provider's client secret and the session-signing key are files
+  in `<config>/secrets/` (the folder `0700`, each file `0600`), under fixed
+  names; the session key is created on the first run.
 - **TLS** directly from PEM files (`--cert`, `--key`, or `web.tls` in
   `config.toml`; the command line wins), or from a reverse proxy in front of a
   loopback server, with `web.trust_proxy` trusting exactly one hop of its
@@ -415,10 +434,9 @@ capability missing, never open to everyone.
   request size. Session cookies are `HttpOnly`, `Secure` over HTTPS and
   `SameSite=Lax`, which is the defense against cross-site requests; no CORS
   headers are sent.
-- `--no-auth` is accepted only with a loopback address.
-
-How access works on a machine whose loopback address is shared by its users —
-a cluster's login node — is open (plan § 7).
+- `--no-auth` turns the token off. It is accepted only with a loopback
+  address, and the server says when it starts that every account on this
+  machine can then reach it.
 
 ## 6. The registry — `femkit/registry.py`
 

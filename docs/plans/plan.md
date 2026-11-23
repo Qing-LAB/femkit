@@ -296,13 +296,14 @@ The rules are [`../contracts/api.md`](../contracts/api.md) § 5, the reasons
    restart over a configuration that does not load refused, the server left
    running; `status` telling up from answering.
 3. **Access** (`api.md` § 5.5): the loopback default and the refusal of another
-   address without TLS and sign-in; sign-in through an identity provider, the
-   secrets folder and its modes; TLS from files or behind one proxy; the
-   response headers, and the basic test that finds no inline script in the
-   bundle. Open: on a cluster's login node every user of the node reaches its
-   loopback address, so a server there needs more than the loopback default —
-   a per-server access token, or sign-in — to be decided; and whether a server
-   opened to a group also needs a rate limiter and an admin list.
+   address without TLS; the access token — a request without it refused, the
+   first with it given a cookie and redirected without it, `/api/health`
+   answering without it, the file `0600`, its value in no log, a restart
+   keeping it and a start replacing it; `--no-auth` refused off loopback;
+   sign-in through an identity provider, the secrets folder and its modes; TLS
+   from files or behind one proxy; the response headers, and the basic test
+   that finds no inline script in the bundle. Open: whether a server opened to
+   a group also needs a rate limiter and an admin list.
 4. **The front end's toolchain**: `frontend/` (added to `PROJECT_CONTRACT.md`
    § 2 with it), React and React Flow, Node.js from conda-forge in a
    developer's environment; the bundle in `femkit/web/static/`, and the basic
@@ -317,5 +318,5 @@ The rules are [`../contracts/api.md`](../contracts/api.md) § 5, the reasons
 7. **Progress, jobs and results**, once local jobs exist (M3): an operation's
    steps live from its event stream; runs and their states; result tables, and
    where each field file is for ParaView.
-8. **On a cluster**: served on the login node and reached through an SSH
-   tunnel, with the access item 3 settles, shown once on the cluster.
+8. **On a cluster**: served on the login node with its access token and
+   reached through an SSH tunnel, shown once on the cluster.
