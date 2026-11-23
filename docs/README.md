@@ -19,7 +19,7 @@ kind of document each is.
 | folder | holds |
 |---|---|
 | *(root)* | this index; [`design.md`](design.md) — mission, design values, scientific-data rules, settled choices |
-| `contracts/` | one contract per package, named after it ([`contracts/framework.md`](contracts/framework.md) § 2) |
+| `contracts/` | one contract per package, named after it ([`contracts/framework.md`](contracts/framework.md) § 1) |
 | `reference/` | pages generated from the schema models by `python -m femkit schema docs`; never edited by hand |
 | `science/` | equations, assumptions, validity limits, citations, observable definitions |
 | `decisions/` | ADRs, `NNNN-short-name.md`, one settled choice each |
@@ -133,6 +133,9 @@ Moving or merging a document is a review, not a file move:
   and what a machine record is.
 - [`contracts/envs.md`](contracts/envs.md) — how an environment is installed,
   validated and entered, and the install script.
+- [`contracts/models.md`](contracts/models.md) — how a calculation is described
+  once, matched against an environment's declared and proven abilities,
+  decided on, customized, prepared and reduced; not built yet (plan § 3).
 - [`contracts/jobs.md`](contracts/jobs.md) — machine records and the probe;
   how a job will be prepared and run.
 - [`contracts/testing.md`](contracts/testing.md) — test tiers, isolation, what
@@ -169,6 +172,12 @@ Moving or merging a document is a review, not a file move:
   fetched.
 - [`decisions/0007-cmake-default-generator.md`](decisions/0007-cmake-default-generator.md)
   — femkit names no CMake generator; each project's default applies.
+- [`decisions/0008-one-model-declared-abilities.md`](decisions/0008-one-model-declared-abilities.md)
+  — one model, translated per engine through declared abilities, with every
+  limitation shown, decided or customized.
+- [`decisions/0009-web-front-end.md`](decisions/0009-web-front-end.md)
+  — the web front end is a React application with React Flow, built and
+  shipped in the package.
 
 ### Plan
 

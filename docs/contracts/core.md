@@ -18,6 +18,7 @@ types in `core/operations.py` are governed by [`api.md`](api.md).
 | A **state machine** is one closed table: ordered observation rules ending in `otherwise`, and the actions each state allows | 7 |
 | Every external command runs through **`process.run`** | 8 |
 | A refusal is one of six **`Refusal`** types (exit 2); any other exception is a defect or an unavailable system (exit 1) | 9 |
+| A dimensional value is an **exact rational** in its dimension's canonical unit, read by one grammar from a unit table that is data | 11 |
 
 The core imports the standard library and declared third-party libraries
 only — never a domain, a surface, a solver or a scheduler. Importing any core
@@ -37,6 +38,7 @@ module reads no file, probes nothing and starts nothing.
 | `process` | `run`, `ProcessResult`, `tail` (a log's last lines) | 8 |
 | `errors` | `Refusal` and its six kinds | 9 |
 | `issues` | `Issue` | 10 |
+| `units` | the unit table's schema, `Quantity`, `Units`: one grammar for a quantity, a unit and an expression of named quantities; conversion | 11 |
 | `text` | how a value, a path (from `~`), a count (`1 step`, `16 steps`), a table, a finding and a "next" block are shown | [`api.md`](api.md) § 4.4 |
 | `operations` | `Context`, `Plan`, `Step`, `Result`, `Outcome`, `Observer`, `operation` | [`api.md`](api.md) |
 
@@ -60,7 +62,10 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   `unset` (what an unset optional key means, [`config.md`](config.md) § 3),
   `declarable` (a machine fact `--set` may declare, [`jobs.md`](jobs.md)
   § 9.2), `cli` (how the command line spells it, [`api.md`](api.md) § 4),
-  `placeholders` (the names a templated field accepts, § 2.1).
+  `placeholders` (the names a templated field accepts, § 2.1), and — not
+  built yet (plan § 3, M5) — `ref` (the type of object a field refers to by name, read by both
+  the cross-reference check and the model graph,
+  [`models.md`](models.md) § 11.2).
 - **Loading fails whole.** Every field problem in a file is reported at once,
   each as `(key path, reason)`; the key path uses dots and `[index]`, e.g.
   `builds[1].options.NETGEN_DIR`. Cross-reference problems (next point) are
@@ -89,6 +94,7 @@ def config_dir() -> Path    # FEMKIT_CONFIG_DIR, else $XDG_CONFIG_HOME/femkit, e
 def data_dir() -> Path      # FEMKIT_DATA_DIR,   else $XDG_DATA_HOME/femkit,   else ~/.local/share/femkit
 def cache_dir() -> Path     # FEMKIT_CACHE_DIR,  else $XDG_CACHE_HOME/femkit,  else ~/.cache/femkit
 def state_dir() -> Path     # FEMKIT_STATE_DIR,  else $XDG_STATE_HOME/femkit,  else ~/.local/state/femkit
+def runtime_dir() -> Path   # FEMKIT_RUNTIME_DIR, else as config.md § 2 says; made 0700 — not built yet (plan § 3, M7)
 def control_prefix() -> Path            # <data>/environments/control (envs.md § 1)
 def checkout() -> Path                  # the checkout femkit runs from; it is never installed (envs.md § 7)
 def directory_sources() -> dict[str, tuple[Path, str]]   # each directory and the rule that chose it
@@ -244,6 +250,10 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
 - Each command runs in its own process group. A timeout or an interrupt stops
   the whole group (`SIGTERM`, then `SIGKILL` after 5 s).
 - A non-zero exit is a result, not an exception; the caller decides.
+- A detached, supervised process — the web server's supervisor and its child
+  ([`api.md`](api.md) § 5.4), and a job a person launches — is started through
+  one building block beside `run`, which returns its process ID and start
+  time, the one way a process is identified; not built yet (plan § 3, M3).
 
 ## 9. Errors — `core/errors.py`
 
@@ -278,3 +288,53 @@ class Issue(Model):
 ```
 
 `code` is what tests and programs match on; `message` is free to change.
+
+## 11. Units — `core/units.py`
+
+```python
+class UnitTable(Model)                         # the schema of femkit/data/units.toml (definitions.md § 1)
+
+@dataclass(frozen=True)
+class Quantity:
+    value: Fraction                                # exact, in the canonical unit of its dimension
+    dimension: tuple[tuple[str, int], ...] = ()    # each base dimension with its power, by name;
+                                                   # no power is zero; empty for a plain number
+
+class Units:
+    def __init__(self, table: UnitTable)
+    def symbols(self) -> list[str]                                 # every symbol read, prefixed ones included
+    def parse(self, text: str, names: Mapping[str, Quantity] = {}) -> Quantity
+    def convert(self, quantity: Quantity, unit: str) -> Fraction   # its value in that unit
+
+class UnitError(ValueError)                    # names the text and what in it is wrong
+```
+
+- **Exact.** A number is read from its decimal text — `500`, `0.5`, `-3`,
+  `1.602176634e-19` — as an exact rational, never through a binary float, and
+  every operation keeps it exact. A value is held in its dimension's canonical
+  unit: coherent SI, with plane angle a base dimension of its own, held in
+  degrees, so that a written angle stays exact; a radian would need π, and the
+  table has none.
+- **One grammar** reads a quantity (`"500 nm"`, `"8.854187817e-12 F/m"`,
+  `"5 W/m^2"`), a unit (`"F/m"`) and an expression of named quantities — a
+  model's parameters (`"gap / 2 + 1 nm"`): numbers, unit symbols and the names
+  given; `+` and `-` between terms of one dimension; `*`, `/` and
+  juxtaposition (`500 nm`, `kg m/s^2`), left to right, binding tighter than
+  `+` and `-`; parentheses; a unary `-`; `^` with an integer, on a unit symbol
+  only. A name given is read before a unit symbol; a model refuses a parameter
+  named like a unit ([`models.md`](models.md) § 3). Nothing else is read.
+- **The table is data**: each base dimension with its canonical unit as
+  written; each unit in order, either a base dimension times an exact `factor`
+  or `equals`, an expression of units above it, and whether SI prefixes apply
+  to it; each prefix with its power of ten. Loading refuses a text that reads
+  two ways — a unit that is also a prefixed unit, or two prefixed readings of
+  one text — a unit that is not positive, and a canonical unit that is not
+  exactly one of its dimension.
+- **Refused**, as a `UnitError` naming the text: a symbol that is neither a
+  unit nor a name given; terms of different dimensions added or subtracted,
+  quoting both; a conversion to a unit of another dimension, naming both; a
+  power on anything but a unit symbol, or one that is not an integer; a
+  division by zero; anything outside the grammar. Raised inside a schema
+  validator, it is that field's problem (§ 2).
+- A value is shown to a person only by a surface: in a study's display units,
+  else in its canonical unit ([`models.md`](models.md) § 5).

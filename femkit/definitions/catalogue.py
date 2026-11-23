@@ -13,6 +13,7 @@ from pathlib import Path
 from femkit.core.dirs import CONTROL
 from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, load_toml, validate
+from femkit.core.units import UnitTable, Units
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 
 
@@ -26,6 +27,7 @@ class Catalogue:
     environments: dict[str, EnvironmentDefinition]
     managers: dict[str, ManagerKind]
     schedulers: dict[str, SchedulerKind]
+    units: UnitTable
 
 
 class CatalogueError(DefinitionError):
@@ -76,6 +78,10 @@ def load_schedulers(root: Path | None = None) -> dict[str, SchedulerKind]:
     return _load_dir((root or data_root()) / "schedulers", SchedulerKind)
 
 
+def load_units(root: Path | None = None) -> UnitTable:
+    return load_toml((root or data_root()) / "units.toml", UnitTable)
+
+
 CUDA_SUFFIX = "-cuda"  # a definition's CUDA environment is named after it with this (definitions.md § 4.5)
 
 
@@ -109,6 +115,11 @@ def schedulers(ctx: Context) -> dict[str, SchedulerKind]:
     return ctx.cached("schedulers", load_schedulers)
 
 
+def units(ctx: Context) -> Units:
+    """The unit table, read once per invocation (core.md § 11); it needs no engine registry."""
+    return ctx.cached("units", lambda: Units(load_units()))
+
+
 def load_catalogue(root: Path | None = None, *, engines: Mapping[str, frozenset[str]]) -> Catalogue:
     """Every definition, or every problem with every file."""
     errors: list[DefinitionError] = []
@@ -118,6 +129,7 @@ def load_catalogue(root: Path | None = None, *, engines: Mapping[str, frozenset[
         "environments": lambda: load_environments(root, engines),
         "managers": lambda: load_managers(root),
         "schedulers": lambda: load_schedulers(root),
+        "units": lambda: load_units(root),
     }
     for name, load in loaders.items():
         try:

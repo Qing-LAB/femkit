@@ -30,10 +30,18 @@ femkit/
 ├── jobs/          machine records and the probe; this machine's setup (`doctor`,
 │                  `env bootstrap`); job requests, preparation, run scripts, runs
 │                  (jobs.md) — records, the probe and setup built, the rest not yet
+├── models/        calculations described once: model, studies, cases, the match
+│                  against an environment's abilities, decisions, customizations,
+│                  preparation (models.md) — not built yet (plan § 3, M5, M6, M8, M9)
+├── results/       a run's observables, proofs, comparisons, analysis (models.md
+│                  § 6.3, § 10) — not built yet (plan § 3, M6)
+├── server/        `serve`: the web server's supervisor, pidfile and log (api.md
+│                  § 5.4) — not built yet (plan § 3, M7)
 ├── registry.py    the one list of operation modules (api.md § 6)
 ├── reference.py   `schema check|docs`: they span every domain (definitions.md § 2.3)
 ├── cli/           the generic command-line adapter (api.md § 4)
-└── web/           the generic flask adapter (api.md § 5) — not built yet
+└── web/           the generic flask adapter and its built front end (api.md § 5)
+                   — not built yet (plan § 3, M7)
 scripts/install-env.sh  the install script (envs.md § 7) — the only shell code
 tools/             developer tools that import nothing from femkit (testing.md § 4)
 ```
@@ -41,7 +49,7 @@ tools/             developer tools that import nothing from femkit (testing.md �
 | layer | packages | may import |
 |---|---|---|
 | core | `core` | the standard library and declared third-party libraries |
-| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `jobs` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
+| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `jobs`, `models`, `results`, `server` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
 | registry | `registry.py`, `reference.py` | every domain |
 | surfaces | `cli`, `web` | everything below; never each other |
 
@@ -55,16 +63,19 @@ tools/             developer tools that import nothing from femkit (testing.md �
   `env bootstrap` are declared in `jobs/setup.py`, because they read and write
   the machine record, and their rules are `envs.md` § 6.1–6.2, because they set
   up environments.
+  Two more exceptions, until their own contracts are written: `results` is
+  governed by `models.md` § 6.3 and § 10, and `server` by `api.md` § 5.4.
 
 ## 2. Where each concern is governed
 
 | concern | contract |
 |---|---|
-| schemas and loading, directories, persistence, locks, event logs, state-machine primitive, process runner, refusals, issues | [`core.md`](core.md) |
+| schemas and loading, directories, persistence, locks, event logs, state-machine primitive, process runner, refusals, issues, units | [`core.md`](core.md) |
 | operation declaration, requests and results, plan/apply, context, CLI and web conventions, exit codes | [`api.md`](api.md) |
 | shipped definitions and kinds | [`definitions.md`](definitions.md) |
 | configuration | [`config.md`](config.md) |
 | environments, installs, the install script | [`envs.md`](envs.md) |
+| calculations: project, model, studies, cases, formulations, meshers, environment abilities and proofs, the match report, decisions, customizations, preparation, results | [`models.md`](models.md) — not built yet (plan § 3, M5–M9) |
 | machine records and the probe, jobs, schedulers | [`jobs.md`](jobs.md) |
 | tests and the test runner | [`testing.md`](testing.md) |
 
@@ -73,11 +84,12 @@ The rules every change follows, whatever package it touches, are
 
 ## 3. State machines
 
-femkit has four: the install script's control environment
+femkit has six: the install script's control environment
 ([`envs.md`](envs.md) § 7), an environment ([`envs.md`](envs.md) § 3), an
-install's steps ([`envs.md`](envs.md) § 4), and a run ([`jobs.md`](jobs.md)
-§ 5); the test runner's batch states ([`testing.md`](testing.md) § 4.4) are
-a fifth, outside femkit.
+install's steps ([`envs.md`](envs.md) § 4), and, not built yet (plan § 3, M3,
+M6, M7), a run ([`jobs.md`](jobs.md) § 5), a case's preparation
+([`models.md`](models.md) § 9.5) and the web server ([`api.md`](api.md) § 5.4); the test runner's batch states ([`testing.md`](testing.md) § 4.4) are
+a seventh, outside femkit.
 
 Every one follows these rules. In Python the primitive that enforces them is
 [`core.md`](core.md) § 7, and an install's steps are a fold over its event log

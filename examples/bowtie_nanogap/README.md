@@ -3,7 +3,7 @@
 **Role:** example
 
 **Status:** current; it holds no solver input yet
-([`../../docs/plans/plan.md`](../../docs/plans/plan.md) § 4)
+([`../../docs/plans/plan.md`](../../docs/plans/plan.md) § 3, after M9; its data: § 5)
 
 **Authority:** example inputs only; scientific and environment contracts remain
 normative

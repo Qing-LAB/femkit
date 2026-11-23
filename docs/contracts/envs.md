@@ -351,6 +351,7 @@ Where every file lives, and what removes it:
 | prefix | `<paths.environments>/<name>/` | `create` | `remove`, `clean` |
 | manifest | `<prefix>/.femkit/manifest.json` | `manifest` | with the prefix |
 | checks | `<prefix>/.femkit/checks.json` | `validate` | with the prefix |
+| proofs | `<prefix>/.femkit/proofs.json` | `formulation verify --record` ([`models.md`](models.md) § 6.3; not built yet, plan § 3, M6) | with the prefix |
 | source tree | `<prefix>/.femkit/src/<source>/` | `unpack` | with the prefix |
 | build tree | `<prefix>/.femkit/build/<build>/` | `configure`, `compile` | with the prefix |
 | toolchain programs | `<prefix>/.femkit/toolchain/` | `toolchain`, emptied first each time | with the prefix |
@@ -409,7 +410,7 @@ flowchart LR
   (measured on mamba 1.5.9 and 2.9.0). Where a machine's `run` still cannot
   start a command, the step would enter through the kind's shell hook (its
   `activate`, § 6.2) and `job probe` would record `manager.run_enters = false`
-  ([`jobs.md`](jobs.md) § 9.1); that fallback is not built yet (step 7).
+  ([`jobs.md`](jobs.md) § 9.1); that fallback is not built yet (plan § 3, M1).
 - **Every command femkit runs inside a prefix starts from an allow-list** —
   `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TERM`, `TMPDIR`,
   `CUDA_VISIBLE_DEVICES`, OpenMPI's two run-as-root variables, and
@@ -536,8 +537,8 @@ has its state and, where something is missing, the next command:
 | subject | ready when | otherwise |
 |---|---|---|
 | control environment | current — `python -m femkit` runs inside it (§ 7.2) | `bash scripts/install-env.sh bootstrap` (never `--clean`, which also rebuilds every default environment) |
-| `config.toml` | found, loads, and states `activation.preamble` ([`config.md`](config.md) § 3.1) | `config init`, or `config init --preamble LINE` / `--no-preamble`; when it does not load, its state names each problem |
-| this machine's record | present, loads, and not `stale` ([`jobs.md`](jobs.md) § 9.3) | `job probe --write` — after `config init --preamble LINE` / `--no-preamble` while the preamble is unset, since the probe is refused until then |
+| `config.toml` | found, loads, and states `activation.preamble` and `activation.command` ([`config.md`](config.md) § 3.1) | `config init`, or `config init --preamble LINE` / `--no-preamble` and `--activation COMMAND` for each key unset; when it does not load, its state names each problem |
+| this machine's record | present, loads, and not `stale` ([`jobs.md`](jobs.md) § 9.3) | `job probe --write` — after stating the activation keys while either is unset, since the probe is refused until then |
 | each default engine environment, and any other once installed | `ready` (§ 3.2); a CUDA environment never installed is not counted | that state's allowed actions (§ 3.3) |
 
 A row that cannot be observed says why as its state; the report never stops
@@ -571,8 +572,8 @@ consent, then four parts in order:
    when it does not load, when it is stale against `config.toml` as bootstrap
    will write it (`jobs.md` § 9.3), or when bootstrap installs any
    environment. A current record is kept only when nothing is installed
-   (`job probe --write` measures it again). While `activation.preamble` stays
-   unset, none is written, and the plan says so.
+   (`job probe --write` measures it again). While `activation.preamble` or
+   `activation.command` stays unset, none is written, and the plan says so.
 4. **`doctor`** (§ 6.1).
 
 The outcome lists every part with its status (`done`, `failed`, `killed`,

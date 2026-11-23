@@ -203,7 +203,7 @@ elmer: the selected Elmer release
 │   └── Zoltan → exact nested source revision pinned in elmer.toml
 ├── Mesh adaptation → Mmg and ParMmg, built from pinned sources (§ Mesh adaptation)
 ├── GPU interface, in elmer-cuda only → AmgX 2.5.0
-│   ├── CUDA toolkit: NVCC, runtime, cuBLAS, cuSPARSE, cuSOLVER and headers
+│   ├── CUDA toolkit as its metapackage composes it, less cuda-tools: NVCC, runtime, every library and header (cuRAND's included)
 │   ├── CCCL → toolkit-compatible C++/Thrust support
 │   ├── NVTX3 headers → AmgX 2.5's profiling interface when enabled
 │   ├── Compatible host C++ compiler
@@ -333,4 +333,4 @@ capability unless a reason says otherwise.
 The shipped checks run Elmer's own CTest cases from its build tree; none runs
 the installed solver on a mesh femkit prepares, and CPU evidence does not
 qualify `elmer-cuda`. What this environment still has to show is in
-[the plan](../plans/plan.md) § 2, M1.
+[the plan](../plans/plan.md) § 3, M1.
