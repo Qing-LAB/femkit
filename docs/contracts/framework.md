@@ -70,7 +70,7 @@ tools/             developer tools that import nothing from femkit (testing.md Â
 
 | concern | contract |
 |---|---|
-| schemas and loading, directories, persistence, locks, event logs, state-machine primitive, process runner, refusals, issues | [`core.md`](core.md) |
+| schemas and loading, directories, persistence, locks, event logs, state-machine primitive, process runner, refusals, issues, units | [`core.md`](core.md) |
 | operation declaration, requests and results, plan/apply, context, CLI and web conventions, exit codes | [`api.md`](api.md) |
 | shipped definitions and kinds | [`definitions.md`](definitions.md) |
 | configuration | [`config.md`](config.md) |

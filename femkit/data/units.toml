@@ -1,0 +1,77 @@
+# The units a value may be written in (core.md § 11). Every factor is exact; a unit's
+# `equals` may use only the units above it. Definitions: the SI Brochure, 9th edition (2019):
+# its base units, its derived units with special names, its prefixes with the four the 27th
+# CGPM added in 2022, and the electronvolt from its exact elementary charge. The ångström is
+# 1e-10 m exactly.
+
+# Each base dimension and its canonical unit: every value of the dimension is held in it.
+# Plane angle is a base dimension here, held in degrees, so that a written angle stays exact.
+[dimensions]
+length = "m"
+mass = "kg"
+time = "s"
+current = "A"
+temperature = "K"
+amount = "mol"
+luminous_intensity = "cd"
+angle = "deg"
+
+# Each SI prefix and its power of ten. The micro sign (U+00B5), the Greek mu (U+03BC) and
+# the ASCII `u` all mean micro.
+[prefixes]
+Q = 30
+R = 27
+Y = 24
+Z = 21
+E = 18
+P = 15
+T = 12
+G = 9
+M = 6
+k = 3
+h = 2
+da = 1
+d = -1
+c = -2
+m = -3
+"µ" = -6
+"μ" = -6
+u = -6
+n = -9
+p = -12
+f = -15
+a = -18
+z = -21
+y = -24
+r = -27
+q = -30
+
+[units]
+# the base units
+m = { dimension = "length", prefixes = true }
+g = { dimension = "mass", factor = "1/1000", prefixes = true }
+s = { dimension = "time", prefixes = true }
+A = { dimension = "current", prefixes = true }
+K = { dimension = "temperature", prefixes = true }
+mol = { dimension = "amount", prefixes = true }
+cd = { dimension = "luminous_intensity", prefixes = true }
+deg = { dimension = "angle", prefixes = false }
+# the coherent derived units with special names
+Hz = { equals = "1/s", prefixes = true }
+N = { equals = "kg m/s^2", prefixes = true }
+Pa = { equals = "N/m^2", prefixes = true }
+J = { equals = "N m", prefixes = true }
+W = { equals = "J/s", prefixes = true }
+C = { equals = "A s", prefixes = true }
+V = { equals = "W/A", prefixes = true }
+F = { equals = "C/V", prefixes = true }
+"Ω" = { equals = "V/A", prefixes = true }
+ohm = { equals = "V/A", prefixes = true }
+S = { equals = "A/V", prefixes = true }
+Wb = { equals = "V s", prefixes = true }
+T = { equals = "Wb/m^2", prefixes = true }
+H = { equals = "Wb/A", prefixes = true }
+# units accepted for use with the SI
+eV = { equals = "1.602176634e-19 J", prefixes = true }
+"Å" = { equals = "1e-10 m", prefixes = false }
+angstrom = { equals = "1e-10 m", prefixes = false }

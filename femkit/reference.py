@@ -24,6 +24,7 @@ from femkit.core.errors import PlanStale
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import atomic_write_text
 from femkit.core.schema import Model
+from femkit.core.units import UnitTable, Units
 from femkit.definitions import catalogue
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 from femkit.jobs.record import Record
@@ -32,7 +33,7 @@ from femkit.engines import registered
 # page name -> (title, the files it describes, models)
 PAGES: dict[str, tuple[str, str, list[type[Model]]]] = {
     "definitions": ("Shipped definitions", "`femkit/data/` (definitions.md)",
-                    [ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind]),
+                    [ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind, UnitTable]),
     "config": ("User configuration", "`<config>/config.toml` (config.md § 3)", [UserConfig]),
     "machines": ("Machine records", "`<config>/machines/<name>.toml` (jobs.md § 9)", [Record]),
 }
@@ -52,6 +53,7 @@ class CheckResult(Result):
     environments: list[str] = Field(default_factory=list, description="engine environments that loaded")
     managers: list[str] = Field(default_factory=list, description="manager kinds that loaded")
     schedulers: list[str] = Field(default_factory=list, description="scheduler kinds that loaded")
+    units: int = Field(0, description="unit symbols the unit table reads, prefixed ones included")
 
     def text(self) -> str:
         if not self.ok():
@@ -61,6 +63,7 @@ class CheckResult(Result):
             ("environments", text.show(self.environments)),
             ("managers", text.show(self.managers)),
             ("schedulers", text.show(self.schedulers)),
+            ("units", f"units.toml, {text.count(self.units, 'symbol')}"),
         ]))
 
 
@@ -77,7 +80,7 @@ def schema_check(req: CheckRequest, ctx: Context) -> CheckResult:
         ]
         return CheckResult(issues=issues)
     return CheckResult(environments=list(cat.environments), managers=list(cat.managers),
-                       schedulers=list(cat.schedulers))
+                       schedulers=list(cat.schedulers), units=len(Units(cat.units).symbols()))
 
 
 # ------------------------------------------------------------------ rendering

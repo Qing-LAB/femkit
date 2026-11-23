@@ -23,7 +23,9 @@ numerical convergence shown before any physical study (§ 3, after M9).
   environments built from pinned sources with their toolchain proven first and
   validated by their checks; the conda and mamba manager kinds (mamba 1.x and
   2.x); the live line of a running step;
-- the machine probe, its record and `doctor`; per-machine activation settings.
+- the machine probe, its record and `doctor`; per-machine activation settings;
+- exact quantities: the unit table, its one grammar and conversion
+  ([`../contracts/core.md`](../contracts/core.md) § 11).
 
 **Proven**: on a workstation, a clean `env bootstrap` with conda, and again with
 mamba 2.9.0, builds and validates `elmer` (seven checks) and `ngsolve` (six),
@@ -37,10 +39,6 @@ calculation ([`../contracts/models.md`](../contracts/models.md),
 [ADR 0008](../decisions/0008-one-model-declared-abilities.md)); the web
 interface and its server ([`../contracts/api.md`](../contracts/api.md) § 5,
 [ADR 0009](../decisions/0009-web-front-end.md)); running jobs (M3, M4).
-
-**Branches.** `main` holds the built framework and is what a cluster pulls;
-engine fixes go there. The M5–M9 design lives on `models-architecture`, kept
-current with `main`, until it is merged (when: § 6).
 
 ## 2. How the work is done
 
@@ -195,10 +193,9 @@ All by [`../contracts/models.md`](../contracts/models.md):
 
 1. **The project, the model, studies and cases.** Their schemas, each
    reference field annotated with its target type (`core.md` § 2); parameters
-   and their arithmetic; units as exact rationals; regions, internal
-   boundaries included; material conventions and their conversion; `radiation`
-   and sources; per-environment bindings; `model check`, `study expand`,
-   `study copy`, `case list`, case IDs.
+   and their arithmetic; regions, interfaces included; material conventions
+   and their conversion; `radiation` and sources; per-environment bindings;
+   `model check`, `study expand`, `study copy`, `case list`, case IDs.
 2. **Formulations and meshers as definition types** (`definitions.md` § 1):
    `electrostatics` first, with its science document
    (`docs/science/electrostatics.md`, not written yet) and the benchmarks
@@ -233,8 +230,9 @@ M5 can reach — `exact`, `approximated`, `unsupported`, `engine-only` — and f
    calculation folder's `job.toml`; `job prepare`'s plan shows the review from
    `job.toml`; `model preview`, now that meshers run.
 4. **The expression language** for spatial functions — sources, boundary
-   values, manufactured solutions, observables such as `|φ − x|` — parsed by
-   femkit, never evaluated as code, translated per engine (§ 6).
+   values, manufactured solutions, observables such as `|φ − x|` — and complex
+   constants (`"-11.7 + 1.26i"`), parsed by femkit, never evaluated as code,
+   translated per engine (§ 6).
 5. **Results**: the `results` domain and its contract; `run reduce`,
    `result show`, `result compare`; `formulation verify` and `--record`, and
    the proof record.
@@ -456,8 +454,6 @@ the contracts):
   (recommended: the pinned engines' evidence, ADRs 0003 and 0004); or try 13 —
   for `ngsolve-cuda` untested, for `elmer-cuda` only after Elmer's
   `FindAMGX.cmake` stops requiring the removed NVTX version 2.
-- **When the design branch merges** into `main`: at M5's start (recommended),
-  or with M5's first code.
 - **The expression language** (M6): a small grammar — numbers, parameters,
   coordinates, `+ − × ÷ ^`, `sin cos exp sqrt abs`, the imaginary unit —
   parsed by femkit and translated per engine (recommended), or each engine's

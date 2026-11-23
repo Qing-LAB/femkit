@@ -108,64 +108,100 @@ numerical choice.
 | part | holds | rule |
 |---|---|---|
 | `parameters` | named quantities with units — a gap, a wavelength, a length — and expressions of them with `+`, `−`, `×`, `÷` and parentheses (`gap / 2`) | the only values a study's axes vary besides numerics (§ 5) |
-| `frame` | the length unit coordinates are written in, the origin, right-handed axes | coordinates are numbers in this unit; a plane is an origin and a normal, never a label |
+| `frame` | the length unit a bare-number coordinate is written in; the axes are Cartesian and right-handed, their origin where coordinates are zero | a coordinate is a number in this unit, a quantity (`"20 nm"`) or an expression of parameters; a plane is a point and a normal, never a label |
 | `geometry` | the dimension (2 or 3) and what it means for the formulation (§ 4), the shapes and how they combine, or an imported CAD file with its SHA-256 | — |
-| `regions` | named domains (top dimension), outer boundaries, and internal boundaries (interfaces between two domains), each selected by an explicit rule: a shape, a plane, a box, the faces shared by two named domains | names match `[a-z][a-z0-9_]*`; every domain and every outer boundary belongs to exactly one region; an overlap or a gap is refused, naming the place |
-| `materials` | named materials; each property with its value or table, unit, source, independent variable, interpolation rule, the complex-value convention of the source data, and valid range | a bare constant named after a substance is refused |
+| `regions` | named domains (top dimension), outer boundaries and interfaces (internal boundaries between two domains), each with its `kind` and exactly one selection rule, under the rule's own key: `shapes` (a domain: named shapes), `plane` (a point and a normal), `box`, `faces_of` (the outer faces of a named shape) or `rest` (the outer boundary no other region selects), `between` (an interface: two named domains) | names match `[a-z][a-z0-9_]*`; every domain and every outer boundary belongs to exactly one region, and an overlap or a gap is refused, naming the place — where a mesher runs (§ 9.2), since it needs the geometry built; a face between two domains is continuous by the formulation's function space, and is named as an interface only to carry a sheet condition or an observable's support |
+| `materials` | named materials; each property with its value or table, unit, source, independent variable, interpolation rule, the complex-value convention of the source data (`"real"`, `"exp(-iwt)"`, `"exp(+iwt)"`), and valid range (`"all"`, or `[from, to]` in its variable) | a bare constant named after a substance is refused; a case outside a property's range is refused when expanded |
 | `assign` | a material for every domain region | — |
 | `formulation` | one formulation ID (§ 4) | — |
-| `conventions` | what the formulation requires to be chosen — for a frequency-domain problem, the phasor sign and whether amplitudes are peak or RMS | never defaulted |
-| `conditions` | for every outer boundary, one condition of a kind the formulation allows; for an internal boundary, `interface` (continuity, stated) or a sheet condition the formulation allows | a natural condition is stated, never implied |
+| `conventions` | what the formulation requires to be chosen — for a frequency-domain problem, `phasor` (`"exp(-iwt)"` or `"exp(+iwt)"`: the sign s of [`electromagnetics.md`](../science/electromagnetics.md)) and `amplitude` (`"peak"` or `"rms"`) | never defaulted |
+| `conditions` | for every outer boundary, one condition of a kind the formulation allows; for every named interface, `interface` (continuity, stated) or a sheet condition the formulation allows | a natural condition on an outer boundary is stated, never implied |
 | `radiation` | for an open problem: the outer boundaries through which waves leave to infinity, and the background medium beyond them | how the domain is truncated there is numerics, chosen per environment (§ 5) |
 | `sources` | excitations of the kinds the formulation allows, attached to regions, with every parameter the formulation lists — for a plane wave: total or scattered field, amplitude, polarization, direction, the background medium, the phase reference point | — |
 
-- **Units.** Every dimensional value is written with its unit (`"1 nm"`), and
-  coordinates in the frame's unit. Internally each quantity has a canonical
+- **Units.** Every dimensional value is written with its unit (`"1 nm"`) or as
+  an expression of parameters (`"gap / 2"`); a coordinate may also be a bare
+  number, in the frame's unit. Internally each quantity has a canonical
   unit — SI, and degrees for angles, so that a written angle stays exact — and
   is held as an exact rational (§ 2); translators convert to what an engine
   reads. Conversion for display happens only at a surface, in the study's
-  display units. Unknown keys are refused.
+  display units. Unknown keys are refused. The grammar, the unit table and the
+  canonical units are [`core.md`](core.md) § 11; a parameter may not be named
+  like a unit.
 - **Complex values follow the model's convention.** Each material table is
   converted from its source's convention to the model's when the case is
   expanded, and the case records the conversion. A passive material whose
   converted loss has the wrong sign — a gain medium made by a convention
   mismatch — is refused, naming the material and its source convention.
-- `model check` applies every rule of this table and of the formulation, and
-  changes nothing.
+- `model check` applies every rule of this table and of the formulation but
+  region coverage, which needs the geometry built, and changes nothing.
 
-An illustrative model — the exact keys are fixed by the schema when built
-([`../reference/`](../reference/)):
+The Laplace check (plan § 3, M6) in the schema's keys; once the schema is
+built, [`../reference/`](../reference/) lists every key:
 
 ```toml
 schema = 1
 formulation = "electrostatics"
 
+[parameters]                    # a quantity, or an expression of parameters above it
+bias = "1 V"
+
 [frame]
-unit = "m"                                      # coordinates below are in metres
-origin = [0, 0]
+unit = "m"                      # bare-number coordinates are in metres
 
 [geometry]
 dimension = 2
-meaning = "per unit depth"                      # what 2-D means for electrostatics (§ 4)
-shapes.square = { kind = "rectangle", corner = [0, 0], size = [1, 1] }
+meaning = "per unit depth"      # what 2-D means for electrostatics (§ 4)
 
-[regions]
+[geometry.shapes]
+square = { kind = "rectangle", corner = [0, 0], size = [1, 1] }
+
+[regions]                       # exactly one selection rule each
 domain = { kind = "domain", shapes = ["square"] }
-left   = { kind = "boundary", on.plane = { origin = [0, 0], normal = [-1, 0] } }
-right  = { kind = "boundary", on.plane = { origin = [1, 0], normal = [1, 0] } }
+left   = { kind = "boundary", plane = { point = [0, 0], normal = [-1, 0] } }
+right  = { kind = "boundary", plane = { point = [1, 0], normal = [1, 0] } }
 sides  = { kind = "boundary", rest = true }
 
-[materials.vacuum]
-relative_permittivity = { value = 1, source = "definition of vacuum", convention = "real", range = "all frequencies" }
+[materials.vacuum.relative_permittivity]
+value = "1"
+convention = "real"
+source = "definition of vacuum"
+range = "all"
 
 [assign]
 domain = "vacuum"
 
 [conditions]
 left  = { kind = "potential", value = "0 V" }
-right = { kind = "potential", value = "1 V" }
+right = { kind = "potential", value = "bias" }
 sides = { kind = "insulating" }
 ```
+
+- **Shapes**: in 2-D `rectangle`, `disk`, `polygon`; in 3-D `box`, `sphere`,
+  `cylinder`, `extrusion` (a polygon swept along a vector); `union`,
+  `difference` and `intersection` of named shapes (`of = [...]`); `import`, a
+  CAD file under `custom/` with its SHA-256. Overlapping domains have no
+  precedence: a medium around bodies is an explicit `difference`.
+- **A tabulated property**, for a frequency-domain model (plan § 3, M9):
+
+  ```toml
+  [conventions]
+  phasor = "exp(-iwt)"
+  amplitude = "peak"
+
+  [materials.gold.relative_permittivity]
+  table = "custom/materials/gold-jc.csv"   # columns: the variable, real part, imaginary part
+  sha256 = "…"
+  variable = { name = "wavelength", unit = "nm" }
+  interpolation = "linear"
+  convention = "exp(-iwt)"                 # the source data's
+  source = "Johnson and Christy, Phys. Rev. B 6, 4370 (1972)"
+  range = ["188 nm", "1937 nm"]
+
+  [radiation]
+  boundaries = ["outer"]
+  background = "water"
+  ```
 
 ## 4. Formulations
 
@@ -210,6 +246,45 @@ Loading a formulation checks that each ability any environment declares for it
 is exercised by at least one benchmark; one that is not could never be proven,
 and is refused.
 
+`electrostatics` in its keys — abilities name its kinds from each environment's
+definition (§ 6.1), and its benchmark set is a table of its own here:
+
+```toml
+description = "the electrostatic potential: -div(eps grad phi) = rho"
+science = "docs/science/electrostatics.md"
+unknown = { name = "potential", space = "H1", unit = "V" }
+meanings = { 2 = ["per unit depth", "axisymmetric"], 3 = ["full"] }
+conventions = []
+
+[properties.relative_permittivity]
+unit = "1"
+complex = false
+
+[conditions.potential]                  # phi = value (Dirichlet)
+on = ["boundary"]
+parameters = { value = "V" }
+
+[conditions.insulating]                 # n . D = 0 (natural), stated
+on = ["boundary"]
+
+[conditions.surface_charge]             # n . D = value (Neumann)
+on = ["boundary"]
+parameters = { value = "C/m^2" }
+
+[conditions.interface]                  # continuity of phi and of n . D, stated
+on = ["interface"]
+
+[sources.charge_density]
+on = ["domain"]
+parameters = { value = "C/m^3" }
+
+[derived]                               # what an observable may name, and its unit
+potential = "V"
+electric_field = "V/m"
+displacement = "C/m^2"
+energy_density = "J/m^3"
+```
+
 **Scope.** One formulation per model. Coupled problems (photothermal heating,
 a field-dependent conductivity), eigenproblems and time-domain problems are
 not stated by these two; each would be a formulation of its own. Symmetry
@@ -228,13 +303,44 @@ everything that is not the physics:
 | part | holds |
 |---|---|
 | `numerics` | the element family, its degree and the geometry order (common fields, each mapped per environment with a match status, § 6.4); the mesh policy — sizes globally and per region, and the length unit geometry is handed to the mesher in (§ 6.5); the linear solver and its tolerance; the adaptivity block — error limit, smallest element, depth, the re-mesher — when the mesh adapts |
-| `axes` | what varies — parameters and numerics only — each axis of one class: **numerical convergence** (mesh, degree, tolerance, the open domain's padding and layer thickness), **geometry convergence** (lengths of the modeled structure that stand for a longer one, such as an electrode's), **physical sweep** (wavelength, material, gap) |
+| `axes` | what varies — parameters and numerics only — each axis keyed by the case path it varies (`parameters.<name>`, `numerics.<path>`), with its values and one class: **numerical convergence** (mesh, degree, tolerance, the open domain's padding and layer thickness), **geometry convergence** (lengths of the modeled structure that stand for a longer one, such as an electrode's), **physical sweep** (wavelength, material, gap) |
 | `observables` | each with a name, the quantity (a derived quantity of the formulation, or an expression of them and of coordinates — `\|φ − x\|`), its support — point, line, surface, volume, by region or explicit geometry; on an internal boundary, the side it is read from — its reduction — value, average, integral, maximum, norm — the source it is normalized by, total or scattered field, unit and complex part |
 | `environments.<environment>` | per engine environment, the study's bindings: its mesher (or the study's shared mesher), its truncation of each radiation boundary — an absorbing condition, or a perfectly matched layer on named layer regions with its profile, its parameters and the condition on its outer face — its engine-only options (§ 6.4), its decisions (§ 7), its customizations (§ 8), and its job's resources ([`jobs.md`](jobs.md) § 2) |
-| `display` | the units numbers are shown in (nm for a nanogap) |
+| `display` | a list of units: a value shows in the first listed unit of its dimension, else in its canonical unit (`["nm"]` for a nanogap) |
 
-- Axes of different classes are never combined silently: a study that crosses
-  them names the classes and says why the full product is needed.
+- Several axes are crossed. Axes of different classes are never crossed
+  silently: the study says why the full product is needed, in `axes.reason`.
+The Laplace check's study:
+
+```toml
+schema = 1
+display = ["m", "V", "V/m"]
+
+[numerics]
+element = { family = "lagrange", degree = 1 }
+geometry_order = 1
+mesh = { unit = "m", size = "0.05 m", regions = { left = "0.01 m" } }
+solver = { kind = "direct" }            # or { kind = "iterative", tolerance = "1e-10" }
+
+[axes."numerics.mesh.size"]             # keyed by the case path it varies
+class = "numerical convergence"         # | "geometry convergence" | "physical sweep"
+values = ["0.1 m", "0.05 m", "0.025 m"]
+
+[observables.midpoint]
+quantity = "potential"
+support = { point = [0.5, 0.5] }
+reduction = "value"
+unit = "V"
+
+[environments.elmer]
+mesher = "gmsh"
+resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G" }   # jobs.md § 2
+
+[environments.ngsolve]
+mesher = "netgen"
+resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G" }
+```
+
 - **A case is the model, the numerics and one axis point.** Nothing bound to an
   environment or a study enters a case: recording a decision changes no case
   ID, two environments prepare the same case, and two studies share it.
@@ -508,7 +614,9 @@ by the environment's own, inside it, as part of its translation; or, for a
 shared mesher, once per geometry and mesh policy, under `<project>/meshes/<key>/`
 with its own manifest, then copied into `generated/`. Each region is a named
 part of the mesh; the manifest records each region's measured area or volume,
-so two meshers' regions can be compared.
+so two meshers' regions can be compared. Region coverage (§ 3) is checked
+here, on the built geometry: a domain or outer boundary in no region, or in
+two, is refused, naming the place.
 
 ### 9.3 prepare and finalize
 
@@ -620,11 +728,11 @@ also the environment's (`env-<name>`), since it writes into the prefix.
 
 | command | does | changes |
 |---|---|---|
-| `model check` | every rule of § 3 and the formulation | nothing |
+| `model check` | every rule of § 3 and the formulation but region coverage (§ 9.2) | nothing |
 | `model graph [--study S] [--environment E] [--mermaid]` | the model and a study as a graph (§ 11.2), with findings and, with an environment, the worst match line per node | nothing |
 | `model set ADDRESS VALUE`, `model unset ADDRESS`, `model rename ADDRESS NAME` | one edit of `model.toml` or a study; a rename changes every reference to the name; removing what others refer to is refused, listing them | the file |
 | `model layout` | saves node positions | `.femkit/layout.json` |
-| `model preview [--mesher M]` | a coarse mesh of the geometry, each region labeled, for ParaView, by the mesher named or the first environment's default | `.femkit/preview/` |
+| `model preview [--mesher M]` | a coarse mesh of the geometry, each region labeled, for ParaView, by the mesher named or the first environment's default; region coverage checked (§ 9.2) | `.femkit/preview/` |
 | `study expand`, `study copy` | write a study's cases; start a study from another | `cases/`, `studies/` |
 | `case list` | every case, its axis values, its match and preparation state per study and environment | nothing |
 | `case match`, `study match` | the match report (§ 6.2) | nothing |
@@ -686,9 +794,10 @@ only through these operations ([`api.md`](api.md) § 5).
 
 | part | home |
 |---|---|
-| model, study and case schemas; expansion, units and case IDs; matching and the match report; decisions; customization resolution; preparation, the manifest and its state; the proof record's schema; the graph | `femkit/models/`, a domain after `jobs` ([`framework.md`](framework.md) § 1) |
+| model, study and case schemas; expansion and case IDs; matching and the match report; decisions; customization resolution; preparation, the manifest and its state; the proof record's schema; the graph | `femkit/models/`, a domain after `jobs` ([`framework.md`](framework.md) § 1) |
 | `run reduce`, `formulation verify`, `result show`, `result compare`, and analysis | `femkit/results/`, a domain after `models`: it reads runs |
 | formulations, meshers | `femkit/data/formulations/`, `femkit/data/meshers/`, under schema ([`definitions.md`](definitions.md) § 1) |
+| units: the grammar, exact values, the unit table | `femkit/core/units.py`, `femkit/data/units.toml` ([`core.md`](core.md) § 11) |
 | abilities, default mesher, extension points, engine-only options | each environment definition, its `[cuda]` part adding to its CUDA environment ([`definitions.md`](definitions.md) § 4) |
 | the documents crossing into an environment | `femkit/engines/`, standard library only (§ 9.1) |
 | translators, parsers, finalizers | `femkit/engines/<engine>/`, run inside the environment |
@@ -700,9 +809,9 @@ only through these operations ([`api.md`](api.md) § 5).
 | refused | names | what resolves it |
 |---|---|---|
 | an unknown key; a dimensional value without its unit | the key | the schema's key; the value with its unit |
-| a domain or outer boundary in no region, or in two | the place | a region rule that covers it once |
-| a domain without a material; a boundary without a condition; an open problem without `radiation`, or a radiation boundary without a truncation in an environment's bindings | the region | an `assign`, a condition, a `radiation` entry, a truncation |
-| a material property without source, convention or range; a passive material made active by its convention | the material and property | the missing field; the source's convention |
+| a domain or outer boundary in no region, or in two (where a mesher runs, § 9.2) | the place | a region rule that covers it once |
+| a domain without a material; an outer boundary or a named interface without a condition; an open problem without `radiation`, or a radiation boundary without a truncation in an environment's bindings | the region | an `assign`, a condition, a `radiation` entry, a truncation |
+| a material property without source, convention or range; a passive material made active by its convention; a case outside a property's range | the material and property | the missing field; the source's convention; a case inside the range |
 | a formulation, condition, source or truncation kind not declared | the ID and the declared ones | a declared kind |
 | a declared ability no benchmark exercises | the ability | a benchmark that exercises it |
 | a convention the formulation requires, left unchosen | the convention | `conventions` |

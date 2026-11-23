@@ -185,3 +185,24 @@ The two ways a shell enters a prefix with this manager; this machine's activatio
 | `mpi_launch` | list of text | required | the launcher `config init` proposes for `launch.mpi` on a machine of this kind. Placeholders: `{ranks}` |
 | `job_variables` | table of text → text | empty | role (id, ranks, cores_per_rank, cores_on_node, gpus, nodes) -&gt; the variable a job sees; `id` set means the process runs inside a job |
 | `interactive` | text, optional | — | the command that opens an interactive allocation, named by bootstrap's login-node warning and when an install step on a login node of this kind is killed (envs.md § 6.2); never with a partition |
+
+## UnitTable
+
+The units a value may be written in (`femkit/data/units.toml`).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `dimensions` | table of text → text | required | each base dimension and its canonical unit, as written; every value of the dimension is held in it |
+| `prefixes` | table of text → integer | required | each SI prefix and its power of ten |
+| `units` | table of text → [UnitEntry](#unitentry) | required | each unit symbol, in order: an `equals` may use only the units above it |
+
+## UnitEntry
+
+One unit: a base dimension times an exact factor, or an expression of units above it.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `dimension` | text, optional | — | the base dimension this unit measures, when it is defined by one; with `factor` |
+| `factor` | text | `'1'` | with `dimension`: how many of the dimension's canonical unit one of this unit is, an exact number (`1/1000`) |
+| `equals` | text, optional | — | otherwise: what one of this unit is, an expression of units above it (`W/A`, `1.602176634e-19 J`) |
+| `prefixes` | boolean | required | whether SI prefixes apply to it (`nm`, `kV`) |
