@@ -1,0 +1,277 @@
+# Elmer built from pinned sources; its CUDA environment adds AmgX.
+# Constraint rationale: docs/decisions/0004-elmer-stability-first-baseline.md
+engine = "elmer"
+version = "26.2"                      # what `ElmerSolver -v` reports for release-26.2.1
+description = "Elmer with MPI and OpenMP"
+maturity = "candidate"
+default = true
+thread_variables = ["OMP_NUM_THREADS"]
+
+[packages]
+conda = [
+  "curl",
+  "openmpi", "mpi4py", "libblas=*=*openblas", "liblapack=*=*openblas", "scalapack",
+  "mumps-mpi", "hypre", "parmetis", "gmsh=4.15.2", "meshio", "numpy",
+]
+pip = []
+forbid = ["rocm", "rocalution", "cudss", "ngsolve", "netgen"]
+
+[toolchain]                           # its own compilers and build tools, proven before any source is fetched (definitions.md § 4.6)
+packages = [
+  # gcc 14: ADR 0004.
+  "gcc_linux-64=14", "gxx_linux-64=14", "gfortran_linux-64=14",
+  # The C library the builds link against: unpinned, the compilers take the newest sysroot (2.39),
+  # whose startup objects need an x86-64-v3 processor; 2.28's need only the baseline (ADR 0006).
+  "sysroot_linux-64=2.28",
+  # What its CMake builds call, from the prefix rather than the host.
+  "cmake", "make", "pkg-config", "git",
+  "bash", "coreutils", "sed", "grep", "gawk", "findutils", "diffutils", "patch", "tar", "gzip", "bzip2", "xz",
+]
+tools = ["cmake", "make", "pkg-config", "git", "bash", "sed", "grep", "gawk", "tar"]
+compilers = { c = "CC", cxx = "CXX", fortran = "FC" }  # language -> the variable the activation sets
+mpi = { c = "mpicc", cxx = "mpicxx", fortran = "mpifort" }  # its MPI's compiler wrappers: two ranks are run
+
+[provides]
+executables = ["python", "cmake", "make", "git", "mpirun", "ElmerGrid", "ElmerSolver", "ElmerSolver_mpi", "gmsh"]
+modules = ["meshio"]
+
+[[sources]]
+id = "elmer"
+archive = "https://codeload.github.com/ElmerCSC/elmerfem/tar.gz/a19504ac53ec222e3355e182b08f2ff280c2203a"
+sha256 = "1451e82f05b9661d82e1ebbf6e90ac373fc1b19482eef3889334a6df5ff0144a"
+commit = "a19504ac53ec222e3355e182b08f2ff280c2203a"
+release = "release-26.2.1"
+into = "elmer"
+
+[[sources]]
+id = "zoltan"
+archive = "https://codeload.github.com/ElmerCSC/Zoltan/tar.gz/977181194024ff63d439b8eed1e343f18a0a5eff"
+sha256 = "f7f092925a2ad037d2eb8678b4151adf1cd842399427f157e543baea450afd1f"
+commit = "977181194024ff63d439b8eed1e343f18a0a5eff"
+release = "elmer-submodule-977181194024"
+into = "elmer/contrib/Zoltan_v3.83"
+
+# Adaptive re-meshing (ADR 0004 § Mesh adaptation): Mmg, and ParMmg for the parallel
+# re-mesh, the pair ParMmg's own build uses. ParMmg is not packaged; Mmg is, without
+# the private headers ParMmg compiles against, so both are built here.
+[[sources]]
+id = "mmg"
+archive = "https://codeload.github.com/MmgTools/mmg/tar.gz/4d8232c8aebfed877935d75d4d4a67e850962422"
+sha256 = "9b2aed342baafbdd2d8aaa847701ebae5a777dcae39a64440a2499a4eeafd4b6"
+commit = "4d8232c8aebfed877935d75d4d4a67e850962422"
+release = "v5.8.0"
+into = "mmg"
+
+[[sources]]
+id = "parmmg"
+archive = "https://codeload.github.com/MmgTools/ParMmg/tar.gz/cd8a6e340e466e857b0bb9952f115d8999337167"
+sha256 = "5400aa0d4acfe3b223aebdd37e06757437804444e4705aef72c5da6fdbf61df2"
+commit = "cd8a6e340e466e857b0bb9952f115d8999337167"
+release = "v1.5.0"
+into = "parmmg"
+
+[[builds]]
+id = "mmg"
+source = "mmg"
+rpath = ["lib"]
+
+[builds.options]
+BUILD = "MMG"                         # 2-D, surface and 3-D: Elmer links the combined libmmg
+BUILD_SHARED_LIBS = true
+MMG_INSTALL_PRIVATE_HEADERS = true    # ParMmg compiles against Mmg's internals
+USE_POINTMAP = true                   # as ParMmg's own build of Mmg: its sources track points
+USE_SCOTCH = "ON"                     # Scotch, already in the environment, renumbers meshes faster
+SCOTCH_DIR = "{prefix}"
+USE_ELAS = "OFF"                      # Lagrangian motion only; Elas is not packaged
+USE_VTK = "OFF"                       # Elmer hands meshes over through the library calls
+ONLY_VERY_SHORT_TESTS = true          # with tests on, Mmg would download its test meshes while configuring
+
+[[builds]]
+id = "parmmg"
+source = "parmmg"
+after = ["mmg"]
+rpath = ["lib"]
+
+[builds.options]
+BUILD_SHARED_LIBS = true
+DOWNLOAD_MMG = false                  # its default clones Mmg while configuring: the pinned build above instead
+MMG_DIR = "{prefix}"
+DOWNLOAD_METIS = false                # likewise Metis: the environment's, from parmetis
+METIS_DIR = "{prefix}"
+USE_VTK = "OFF"
+ONLY_LIBRARY_TESTS = true             # with tests on, it would clone its test meshes while configuring
+
+[[builds]]
+id = "elmer"
+source = "elmer"
+after = ["amgx", "parmmg"]
+rpath = ["lib", "lib/elmersolver"]
+
+[builds.options]
+CMAKE_C_FLAGS = "-Wno-error=incompatible-pointer-types"
+WITH_MPI = true
+WITH_OpenMP = true
+WITH_Mumps = true
+WITH_Hypre = true
+WITH_Zoltan = true
+USE_SYSTEM_ZOLTAN = false
+EXTERNAL_ARPACK = false
+EXTERNAL_PARPACK = false
+WITH_UMFPACK = true
+EXTERNAL_UMFPACK = false
+WITH_ELMERGUI = false
+WITH_ElmerIce = false
+WITH_ROCALUTION = false
+MPI_TEST_MAXPROC = "3"                # ParMmg's re-meshing test runs on three ranks
+WITH_MKL = false
+HAVE_QP = true
+WITH_CHOLMOD = false
+WITH_XIOS = false
+WITH_NETCDF = false
+WITH_ELMERGUITESTER = false
+WITH_ELMERGUILOGGER = false
+WITH_Trilinos = false
+WITH_FETI4I = false
+WITH_ELMERPOST = false
+WITH_CONTRIB = false
+WITH_LUA = false
+WITH_MMG = true                       # adaptive re-meshing, and in parallel by default
+WITH_PARMMG = true
+MMG_ROOT = "{prefix}"
+PARMMG_ROOT = "{prefix}"
+USE_CONTIGUOUS = false
+
+[builds.cuda_options]
+WITH_AMGX = true
+AMGX_ROOT = "{prefix}"
+
+# ---- checks (envs.md § 5).
+# Elmer's own CTest cases, read from the solver's Norm / RefNorm lines: one case
+# with one and two threads must agree; Hypre and MUMPS each over two ranks; AmgX
+# on the GPU must match MUMPS. gmsh and ElmerGrid mesh a square.
+
+[[checks]]
+id = "mesh"
+kind = "command"
+run = ["python", "-m", "femkit.engines.elmer.checks.mesh", "{work}"]
+read = "summary"
+expect = { nodes = { min = 4 }, elements = { min = 2 }, boundary_elements = { min = 4 } }
+timeout = 300
+
+[[checks]]
+id = "helmholtz-one-thread"
+kind = "ctest"
+build = "elmer"
+test = "VectorHelmholtzWaveguide"
+read = "elmer-solver-log"
+expect = { reference_error = { max = 1e-3 } }
+agree = "vector-helmholtz"
+
+[[checks]]
+id = "helmholtz-two-threads"
+kind = "ctest"
+build = "elmer"
+test = "VectorHelmholtzWaveguide"
+threads = 2
+read = "elmer-solver-log"
+expect = { reference_error = { max = 1e-3 }, threads = { equals = 2 } }
+agree = "vector-helmholtz"
+
+[[checks]]
+id = "hypre-mpi"
+kind = "ctest"
+build = "elmer"
+test = "mgdyn_hypre_ams2_np2"
+ranks = 2
+read = "elmer-solver-log"
+expect = { reference_error = { max = 1e-5 }, ranks = { equals = 2 } }
+
+[[checks]]
+id = "mumps-mpi"
+kind = "ctest"
+build = "elmer"
+test = "WinkelBmPoissonMumps_np2"
+ranks = 2
+read = "elmer-solver-log"
+expect = { reference_error = { max = 1e-5 }, ranks = { equals = 2 }, amgx_solves = { equals = 0 } }
+agree = "winkel-poisson"
+
+# Adaptive re-meshing: Elmer's own electrostatic cases, re-meshed by Mmg on one rank and
+# by ParMmg on three. Their own verdict is set aside: each compares its field norm with a
+# stored reference to 1e-4 (serial) or 1e-3 (parallel), while its adaptive loop stops at
+# an element error of 1e-2 and lands on meshes whose field norms differ by a few percent
+# within one run, so the reference pins one Mmg version's mesh (ADR 0004 § Mesh
+# adaptation; reported upstream as ElmerCSC/elmerfem#994 — when fixed there, the
+# verdict counts again). Judged instead: each library re-meshed (its own banner), every
+# adaptive loop met its error limit — none stopped at its depth limit, which Elmer also
+# reports as finished — and the capacitance-matrix norm (solver 2) agrees between the
+# serial and parallel re-meshes.
+[[checks]]
+id = "mmg-adapt"
+kind = "ctest"
+build = "elmer"
+test = "StatElecSolveMMG3D"
+upstream_verdict = false
+read = "elmer-solver-log"
+expect = { mmg_runs = { min = 1 }, adaptive_converged = { min = 1 }, adaptive_depth_limited = { equals = 0 } }
+agree = "adaptive-remesh"
+
+[[checks]]
+id = "parmmg-adapt"
+kind = "ctest"
+build = "elmer"
+test = "StatElecSolveParMMG3D_np3"
+ranks = 3
+upstream_verdict = false
+read = "elmer-solver-log"
+expect = { parmmg_runs = { min = 1 }, adaptive_converged = { min = 1 }, adaptive_depth_limited = { equals = 0 }, ranks = { equals = 3 } }
+agree = "adaptive-remesh"
+
+[[checks]]
+id = "amgx-gpu"
+kind = "ctest"
+build = "elmer"
+test = "WinkelBmPoissonAMGX"
+read = "elmer-solver-log"
+expect = { reference_error = { max = 1e-5 }, amgx_solves = { min = 1 } }
+agree = "winkel-poisson"
+device = true
+
+[agreements.vector-helmholtz]
+quantity = "norms"
+rtol = 1e-4
+
+[agreements.winkel-poisson]
+quantity = "norms"
+rtol = 1e-4
+
+[agreements.adaptive-remesh]           # measured with Mmg 5.8.0 / ParMmg 1.5.0: 1.6e-4 apart
+quantity = "norm_2"
+rtol = 1e-3
+
+[cuda]                                # the CUDA environment, elmer-cuda (definitions.md § 4.5)
+description = "CUDA: the AmgX solver"
+packages = [
+  "cuda-toolkit=12.8.1", "cuda-version=12.8", "cuda-cccl_linux-64=12.8", "cuda-bindings=12.8",
+  "cuda-nvtx=12.8.90", "cuda-nvtx-dev=12.8.90",
+]
+executables = ["nvcc"]
+
+[[cuda.sources]]
+id = "amgx"
+archive = "https://codeload.github.com/NVIDIA/AMGX/tar.gz/cc1cebdbb32b14d33762d4ddabcb2e23c1669f47"
+sha256 = "622cf80bb30d6adf701c9e7587053dc1679043f6b4de9468d75a9e6cfb380601"
+commit = "cc1cebdbb32b14d33762d4ddabcb2e23c1669f47"
+release = "v2.5.0"
+into = "amgx"
+
+[[cuda.builds]]
+id = "amgx"
+source = "amgx"
+cuda_architectures = true
+rpath = ["lib"]
+
+[cuda.builds.options]
+CMAKE_NO_MPI = false
+AMGX_NO_RPATH = false
+AMGX_INCLUDE_EXTERNAL = true

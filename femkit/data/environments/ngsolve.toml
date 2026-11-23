@@ -1,0 +1,200 @@
+# Netgen/NGSolve, built from pinned sources.
+# Constraint rationale: docs/decisions/0003-ngsolve-stability-first-baseline.md
+engine = "ngsolve"
+version = "6.2.2606"
+description = "Netgen/NGSolve with MPI and threads"
+maturity = "candidate"
+default = true
+thread_variables = ["NGS_NUM_THREADS"]
+fixed_variables = { OMP_NUM_THREADS = "1" }
+
+[packages]
+conda = [
+  "curl", "zlib",
+  "openmpi", "mpi4py", "numpy", "scipy", "meshio", "pytest", "pybind11",
+  "libblas=*=*openblas", "liblapack=*=*openblas",
+  "suitesparse", "metis", "parmetis", "mumps-mpi", "hypre",
+]
+pip = []
+forbid = ["rocm", "metal", "elmer", "amgx"]
+
+[provides]
+executables = ["python", "cmake", "make", "git", "bash", "mpirun"]
+modules = ["ngsolve", "ngsolve.ngslib", "netgen", "netgen.libngpy", "pyngcore.pyngcore", "pytest"]
+
+[toolchain]                           # its own compilers and build tools, proven before any source is fetched (definitions.md § 4.6)
+packages = [
+  # gcc 14: ADR 0003.
+  "gcc_linux-64=14", "gxx_linux-64=14", "gfortran_linux-64=14",
+  # The C library the builds link against: unpinned, the compilers take the newest sysroot (2.39),
+  # whose startup objects need an x86-64-v3 processor; 2.28's need only the baseline (ADR 0006).
+  "sysroot_linux-64=2.28",
+  # What its CMake builds call, from the prefix rather than the host.
+  "cmake", "make", "pkg-config", "git",
+  "bash", "coreutils", "sed", "grep", "gawk", "findutils", "diffutils", "patch", "tar", "gzip", "bzip2", "xz",
+]
+tools = ["cmake", "make", "pkg-config", "git", "bash", "sed", "grep", "gawk", "tar"]
+compilers = { c = "CC", cxx = "CXX", fortran = "FC" }  # language -> the variable the activation sets
+mpi = { c = "mpicc", cxx = "mpicxx", fortran = "mpifort" }  # its MPI's compiler wrappers: two ranks are run
+
+[cuda]                                # the CUDA environment, ngsolve-cuda (definitions.md § 4.5)
+description = "CUDA: device matrices and preconditioners for iterative solves"
+packages = ["cuda-toolkit=12.9", "cuda-version=12.9", "cuda-cccl_linux-64=12.9", "cuda-bindings=12.9"]
+executables = ["nvcc"]
+
+[[sources]]
+id = "netgen"
+archive = "https://codeload.github.com/NGSolve/netgen/tar.gz/a3e08f0ec196b442f7de3b9b717ab86c6993f1ab"
+sha256 = "1d008a28af87fe6edd741d205bc7da0bf08e146916cf5358eaec259c9bf03bc4"
+commit = "a3e08f0ec196b442f7de3b9b717ab86c6993f1ab"
+release = "v6.2.2606"
+into = "netgen"
+version_text = "v6.2.2606-0-a3e08f0"
+
+[[sources]]
+id = "ngsolve"
+archive = "https://codeload.github.com/NGSolve/ngsolve/tar.gz/b42211d28ab7a030e4e669ddfc204152aa5674a0"
+sha256 = "56d197d1730a7e3d95952b48286403f5f6ef4816f2bf173136fbb96b39eb5efa"
+commit = "b42211d28ab7a030e4e669ddfc204152aa5674a0"
+release = "v6.2.2606"
+into = "ngsolve"
+version_text = "v6.2.2606-0-b42211d"
+
+[[builds]]
+id = "netgen"
+source = "netgen"
+rpath = ["lib"]
+
+[builds.options]
+USE_SUPERBUILD = false
+USE_PYTHON = true
+USE_MPI = true
+USE_MPI_WRAPPER = false
+USE_OCC = false
+USE_GUI = false
+USE_NATIVE_ARCH = false
+BUILD_FOR_CONDA = false
+PREFER_SYSTEM_PYBIND11 = true
+ENABLE_UNIT_TESTS = false
+USE_STLGEOM = true
+USE_CSG = true
+USE_INTERFACE = true
+USE_GEOM2D = true
+USE_JPEG = false
+USE_MPEG = false
+USE_CGNS = false
+USE_NUMA = false
+INTEL_MIC = false
+INSTALL_PROFILES = false
+USE_CCACHE = false
+USE_INTERNAL_TCL = true
+ENABLE_CPP_CORE_GUIDELINES_CHECK = false
+DEBUG_LOG = false
+CHECK_RANGE = false
+BUILD_STUB_FILES = false
+
+[[builds]]
+id = "ngsolve"
+source = "ngsolve"
+after = ["netgen"]
+cuda_architectures = true
+rpath = ["lib"]
+
+[builds.options]
+USE_SUPERBUILD = false
+BUILD_FOR_CONDA = true
+NETGEN_DIR = "{prefix}/lib/cmake/netgen"
+USE_MPI = true
+USE_LAPACK = true
+USE_UMFPACK = true
+USE_MUMPS = true
+USE_HYPRE = true
+ENABLE_UNIT_TESTS = false
+USE_MKL = false
+USE_PARDISO = false
+INTEL_MIC = false
+USE_VTUNE = false
+USE_CCACHE = false
+INSTALL_DEPENDENCIES = false
+BUILD_STUB_FILES = false
+FAST_COMPILE = false
+
+[builds.cuda_options]
+USE_CUDA = true
+
+# ---- checks (envs.md § 5).
+# Serial, threaded and MPI runs of one H(curl) solve must agree; MUMPS and Hypre
+# each solve over two ranks; NGSolve's own tests run; a CUDA solve matches the CPU.
+
+[[checks]]
+id = "hcurl-serial"
+kind = "command"
+run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}"]
+read = "summary"
+expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 1 }, threads = { equals = 1 } }
+agree = "hcurl-field"
+timeout = 300
+
+[[checks]]
+id = "hcurl-threaded"
+kind = "command"
+run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}"]
+threads = 2
+read = "summary"
+expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 1 }, threads = { equals = 2 } }
+agree = "hcurl-field"
+timeout = 300
+
+[[checks]]
+id = "hcurl-mpi"
+kind = "command"
+run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}"]
+ranks = 2
+read = "summary"
+expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 2 }, threads = { equals = 1 } }
+agree = "hcurl-field"
+timeout = 300
+
+[[checks]]
+id = "mumps-mpi"
+kind = "command"
+run = ["python", "-m", "femkit.engines.ngsolve.checks.linear_backend", "{work}", "mumps"]
+ranks = 2
+read = "summary"
+expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 2 } }
+timeout = 300
+
+[[checks]]
+id = "hypre-mpi"
+kind = "command"
+run = ["python", "-m", "femkit.engines.ngsolve.checks.linear_backend", "{work}", "hypre"]
+ranks = 2
+read = "summary"
+expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 2 } }
+timeout = 300
+
+[[checks]]
+id = "upstream"                       # NGSolve's own assertions own their tolerances
+kind = "pytest"
+source = "ngsolve"
+tests = [
+  "tests/pytest/test_integrate.py::test_integrate_constant",
+  "tests/pytest/test_integrate.py::test_integrate_xy",
+  "tests/pytest/test_solvers.py::test_krylovspace_solvers",
+]
+plugins = ["mpi4py.MPI"]              # MPI starts before the tests import this MPI build
+read = "junit"
+timeout = 300
+
+[[checks]]
+id = "cuda-solve"
+kind = "command"
+run = ["python", "-m", "femkit.engines.ngsolve.checks.cuda", "{work}"]
+read = "summary"
+expect = { relative_difference = { max = 1e-9 }, cpu_relative_residual = { max = 1e-9 }, gpu_relative_residual = { max = 1e-9 } }
+device = true
+timeout = 300
+
+[agreements.hcurl-field]
+quantity = "field_l2_norm"
+rtol = 1e-9

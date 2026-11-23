@@ -1,0 +1,263 @@
+"""The generic check runner and `env validate` (definitions.md § 5; envs.md § 4.1, § 5).
+
+The checks here are real programs run through the stand-in manager, which runs
+what it is given (`running_manager`); a GPU check program stands in for a CUDA one. The engines' own
+check programs and readers run against real solvers in the engine tier.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+
+import pytest
+
+from femkit.config.operations import ConfigSet
+from femkit.core.errors import Refusal, UsageError
+from femkit.core.operations import Context
+from femkit.core.persist import write_json
+from femkit.definitions.models import Agreement, Check, Expectation
+from femkit.envs import checks, layout, operations, state as state_module
+from femkit.envs.operations import EnvInstall, EnvValidate
+from femkit.envs.records import CheckOutcome, ChecksRecord, Manifest, read
+from femkit.envs.state import EnvState, facts, observe
+
+NAME = "ngsolve"  # thread_variables NGS_NUM_THREADS, fixed_variables OMP_NUM_THREADS = "1"
+
+# A check program for femkit: reports what it was started with, and the value it is given.
+PROGRAM = ("import os, sys; from femkit.engines import summary; summary.write(sys.argv[1], dict("
+           "threads=int(os.environ['NGS_NUM_THREADS']), omp=int(os.environ['OMP_NUM_THREADS']), "
+           "ranks=int(os.environ.get('RANKS', '1')), nousersite=int(os.environ.get('PYTHONNOUSERSITE', '0')), "
+           "value=float(sys.argv[2])), dict())")
+
+
+def program(id_: str, value: float = 1.0, **fields) -> Check:
+    return Check(id=id_, kind="command", run=["python", "-c", PROGRAM, "{work}", str(value)], read="summary", **fields)
+
+
+def ctx() -> Context:
+    return Context.from_process()
+
+
+def set_key(key: str, value: str) -> None:
+    c = ctx()
+    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), c), c)
+
+
+@pytest.fixture
+def declared(monkeypatch, running_manager):
+    """Give the environment these checks (a fixture, not shipped data), installed and unchecked."""
+    def declare(*declared_checks: Check, agreements: dict | None = None, launcher: bool = True):
+        real = state_module.definition
+        fake = lambda c, name: real(c, name).model_copy(update={  # noqa: E731
+            "checks": list(declared_checks), "agreements": agreements or {}})
+        monkeypatch.setattr(state_module, "definition", fake)
+        monkeypatch.setattr(operations, "definition", fake)
+        if launcher:
+            set_key("launch.mpi", '["env", "RANKS={ranks}"]')  # a launcher that starts nothing else
+        f = facts(ctx(), NAME)
+        (f.prefix / "conda-meta").mkdir(parents=True)
+        write_json(layout.manifest_file(f.prefix), Manifest(
+            install_fingerprint=f.install_fingerprint, lock_sha256="0" * 64, manager_kind="conda",
+            manager_version="0", solver_version="0", time="t").model_dump())
+        return f
+    return declare
+
+
+def validate(**fields):
+    c = ctx()
+    return EnvValidate.apply(EnvValidate.plan(EnvValidate.request(name=NAME, **fields), c), c)
+
+
+def recorded() -> dict[str, CheckOutcome]:
+    record = read(layout.checks_file(facts(ctx(), NAME).prefix), ChecksRecord)
+    return {o.id: o for o in record.outcomes}
+
+
+def test_a_check_runs_in_its_environment_with_its_threads_ranks_and_fixed_variables(declared, running_manager):
+    """Fails if a check does not run through the manager in the prefix, or misses its thread
+    variables, the fixed ones, the launcher for several ranks, or runs with the user's own
+    site-packages on (definitions.md § 5.1)."""
+    f = declared(program("serial", expect={"threads": Expectation(equals=1)}),
+                 program("threaded", threads=2, expect={"threads": Expectation(equals=2)}),
+                 program("mpi", ranks=2, expect={"ranks": Expectation(equals=2)}))
+    outcome = validate()
+    assert outcome.ok() and outcome.state is EnvState.ready
+    got = recorded()
+    assert {i: o.outcome for i, o in got.items()} == {"serial": "passed", "threaded": "passed", "mpi": "passed"}
+    assert all(o.quantities["omp"] == 1 and o.quantities["nousersite"] == 1 for o in got.values())
+    assert all(line.startswith(f"run --no-capture-output -p {f.prefix} ") for line in running_manager.read_text().splitlines())
+
+
+def test_every_check_runs_and_a_failed_one_makes_the_environment_failing(declared):
+    """Fails if a failed check stops the rest — leaving the environment unchecked instead of
+    failing — a missing quantity counts as met, or a check that ran another version of the
+    engine than the pinned one passes (envs.md § 5; definitions.md § 5.2, § 5.3)."""
+    other_version = Check(id="other-version", kind="command", read="summary", run=[
+        "python", "-c", "import sys; from femkit.engines import summary; "
+        "summary.write(sys.argv[1], dict(value=1.0), dict(ngsolve='0.0'))", "{work}"])
+    declared(program("too-big", value=2.0, expect={"value": Expectation(max=1.0)}),
+             program("missing", expect={"absent": Expectation(min=0)}),
+             other_version,
+             program("fine", expect={"value": Expectation(max=1.0)}))
+    outcome = validate()
+    assert not outcome.ok() and outcome.state is EnvState.failing
+    assert {i: o.outcome for i, o in recorded().items()} == {
+        "too-big": "failed", "missing": "failed", "other-version": "failed", "fine": "passed"}
+
+
+# A GPU check program for femkit: fails, as a CUDA program does, where no GPU is allocated.
+GPU_PROGRAM = ("import os, sys; from femkit.engines import summary\n"
+               "if not os.environ.get('CUDA_VISIBLE_DEVICES'): sys.exit('no CUDA device is visible')\n"
+               "summary.write(sys.argv[1], dict(value=1.0), dict())")
+
+
+def gpu_program(id_: str, **fields) -> Check:
+    return Check(id=id_, kind="command", run=["python", "-c", GPU_PROGRAM, "{work}"], read="summary", device=True,
+                 **fields)
+
+
+def test_validate_runs_the_gpu_checks_only_when_asked_and_reports_what_the_machine_did(declared, monkeypatch):
+    """Fails if a plain validate runs a GPU check the user did not ask for, if a GPU check that
+    was asked for is skipped rather than run, or if its failure where no GPU is allocated is
+    not its own failure in the result — or makes a CPU environment unusable (envs.md § 5)."""
+    declared(program("cpu"), gpu_program("gpu"))
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    outcome = validate()
+    assert outcome.ok() and outcome.state is EnvState.ready and outcome.gpu == "not-run"
+    assert set(recorded()) == {"cpu"}
+    outcome = validate(gpu=True)
+    assert not outcome.ok() and outcome.state is EnvState.ready and outcome.gpu == "failed"
+    assert recorded()["gpu"].reason == "exited with 1"
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    assert validate(gpu=True).gpu == "passed"
+
+
+def test_each_validate_keeps_the_outcomes_of_the_checks_it_did_not_run(declared, monkeypatch):
+    """Fails if `validate --gpu` drops the CPU outcomes it did not rerun — the environment then
+    unchecked — or judges an agreement against a stale reference; or if a plain validate drops
+    the GPU outcomes (envs.md § 5)."""
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    declared(program("cpu-only"), program("reference", agree="pair"), gpu_program("gpu", agree="pair"),
+             agreements={"pair": Agreement(quantity="value", rtol=1e-9)})
+    validate()
+    first = recorded()
+    validate(gpu=True)
+    after = recorded()
+    assert after["cpu-only"] == first["cpu-only"] and after["reference"].log != first["reference"].log
+    assert observe(ctx(), NAME)[1] is EnvState.ready
+    validate()
+    assert recorded()["gpu"] == after["gpu"] and facts(ctx(), NAME).gpu == "passed"
+
+
+def test_a_reference_that_fails_later_fails_the_gpu_result_kept_with_it(declared, monkeypatch, tmp_path):
+    """Fails if a GPU outcome kept from an earlier `validate --gpu` stays passed after its CPU
+    reference fails, or if `validate --gpu` that leaves the environment failing — through a
+    reference it ran again — says only that the GPU path failed (definitions.md § 5.2; envs.md § 5)."""
+    broken = tmp_path / "reference-broken"  # a flag file: a check sees no variable of the invocation (envs.md § 4.4)
+    reference = Check(id="reference", kind="command", read="summary", agree="pair", run=[
+        "python", "-c", "import os, sys; from femkit.engines import summary\n"
+        f"if os.path.exists({str(broken)!r}): sys.exit('broken')\n"
+        "summary.write(sys.argv[1], dict(value=1.0), dict())", "{work}"])
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    declared(reference, gpu_program("gpu", agree="pair"), agreements={"pair": Agreement(quantity="value", rtol=1e-9)})
+    validate()
+    assert validate(gpu=True).gpu == "passed"
+    broken.touch()
+    outcome = validate()
+    assert outcome.state is EnvState.failing and outcome.gpu == "failed"
+    assert [i.code for i in outcome.issues] == ["not-ready"]
+    outcome = validate(gpu=True)
+    assert sorted(i.code for i in outcome.issues) == ["gpu-not-qualified", "not-ready"]
+
+
+@pytest.mark.parametrize("members, results, failed", [
+    ({"a": False, "b": False}, {"a": 1.0, "b": 1.0 + 1e-6}, {"a", "b"}),                   # CPU only: every member
+    ({"a": False, "g": True}, {"a": 1.0, "g": 1.0 + 1e-6}, {"g"}),                         # the device side is charged
+    ({"a": False, "g": True}, {"a": None, "g": 1.0}, {"a", "g"}),                          # reference failed: device too
+    ({"a": False, "b": False}, {"a": [1.0, 2.0], "b": [1.0]}, {"a", "b"}),                 # cannot be compared
+    ({"a": False, "b": False}, {"a": [1.0, 2.0], "b": [1.0, 2.0 + 1e-12]}, set()),          # within rtol
+    ({"a": False, "b": False, "c": False}, {"a": 1.0, "b": 1.0 + 8e-10, "c": 1.0 - 8e-10}, {"a", "b", "c"}),  # pairs
+], ids=["cpu-group", "device-group", "lost-reference", "list-lengths", "agree", "every-pair"])
+def test_a_disagreement_fails_the_members_the_contract_charges(members, results, failed):
+    """Fails if an agreement group misjudges values, or charges a disagreement to the wrong
+    members (definitions.md § 5.2). A result of None is a check that failed on its own."""
+    env = state_module.definition(ctx(), NAME).model_copy(update={
+        "checks": [Check(id=i, kind="command", run=["x"], read="summary", agree="g1", device=d) for i, d in members.items()],
+        "agreements": {"g1": Agreement(quantity="q", rtol=1e-9)}})
+    outcomes = {i: CheckOutcome(id=i, outcome="failed") if v is None else CheckOutcome(id=i, outcome="passed", quantities={"q": v})
+                for i, v in results.items()}
+    judged = checks.agree(env, outcomes)
+    assert {i for i, o in judged.items() if o.outcome == "failed"} == failed
+
+
+def test_validate_gpu_is_refused_without_current_cpu_results(declared):
+    """Fails if `validate --gpu` runs on an unchecked environment, recording GPU results that
+    cannot qualify it and reporting no GPU qualification at all (envs.md § 5)."""
+    declared(program("cpu"), gpu_program("gpu"))
+    with pytest.raises(Refusal):
+        validate(gpu=True)
+
+
+def test_validate_gpu_is_refused_where_no_gpu_check_is_declared(declared):
+    """Fails if `validate --gpu` on an environment that declares no GPU check runs and reports
+    success, as if its GPU path were qualified, or on a CPU environment does not name its CUDA
+    environment — before its first validate too, not after sending the person through a CPU
+    one (envs.md § 5; definitions.md § 4.5)."""
+    declared(program("cpu"))
+    for when in ("before its first validate", "once validated"):
+        with pytest.raises(UsageError) as caught:
+            validate(gpu=True)
+        assert caught.value.next == (f"python -m femkit env validate {NAME}-cuda --gpu",), when
+        validate()
+
+
+@pytest.mark.parametrize("value, ready", [(1.0, True), (2.0, False)], ids=["passes", "fails"])
+def test_an_unchecked_environment_installs_by_validating(declared, value, ready):
+    """Fails if `install` on an installed, unchecked environment does anything but validate,
+    does not run it, runs a GPU check nobody asked for, or succeeds when it leaves the
+    environment failing — without naming the check (envs.md § 3.3, § 4.1, § 5)."""
+    declared(program("cpu", value=value, expect={"value": Expectation(max=1.0)}), gpu_program("gpu"))
+    c = ctx()
+    plan = EnvInstall.plan(EnvInstall.request(names=[NAME]), c)
+    assert [s.id for s in plan.steps] == [f"{NAME}/validate"]
+    result = EnvInstall.apply(plan, c)
+    assert result.ok() is ready
+    assert result.environments[0].state is (EnvState.ready if ready else EnvState.failing)
+    assert ready or [i.subject for i in result.issues] == [NAME]
+    assert set(recorded()) == {"cpu"}
+
+
+def test_a_check_on_several_ranks_is_refused_before_anything_runs_without_a_launcher(declared):
+    """Fails if validate or install starts with launch.mpi unset and an MPI check to run,
+    finding out only when that check fails (envs.md § 5)."""
+    declared(program("mpi", ranks=2), launcher=False)
+    c = ctx()
+    with pytest.raises(Refusal):
+        EnvValidate.plan(EnvValidate.request(name=NAME), c)
+    with pytest.raises(Refusal):
+        EnvInstall.plan(EnvInstall.request(names=[NAME]), c)
+
+
+def _junit(tmp_path, body: str, nodes: list[str]) -> dict:
+    """Run real pytest on a real test file; read its real JUnit report."""
+    tests = tmp_path / "src" / "tests"
+    tests.mkdir(parents=True)
+    (tests / "test_x.py").write_text(body)
+    report = tmp_path / "junit.xml"
+    subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "junit_family=xunit2",
+                    "--rootdir", str(tests), "--junitxml", str(report), *[str(tests / n.split("/")[-1]) for n in nodes]],
+                   cwd=tmp_path, capture_output=True, env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"})
+    return checks.read_junit(report, nodes)
+
+
+def test_the_junit_reader_passes_only_exactly_the_named_tests_all_passing(tmp_path):
+    """Fails if a skipped, missing or extra upstream test counts as passed (definitions.md § 5.3)."""
+    body = "import pytest\ndef test_a(): pass\ndef test_b(): pass\n@pytest.mark.skip\ndef test_s(): pass\n"
+    named = ["tests/test_x.py::test_a", "tests/test_x.py::test_b"]
+    assert _junit(tmp_path / "1", body, named) == {"tests": 2, "passed": 2}
+    with pytest.raises(ValueError):
+        _junit(tmp_path / "2", body, named + ["tests/test_x.py::test_s"])
+    with pytest.raises(ValueError):
+        checks.read_junit(tmp_path / "1" / "junit.xml", named[:1])

@@ -1,0 +1,26 @@
+# SLURM, after molbuilder's scheduler/kinds.toml. The header, submission, query and
+# cancel lines arrive with their users (jobs.md § 7; milestones M3, M4).
+# The environment's own mpirun, never srun: the environment's MPI and the
+# cluster's process manager need not agree (jobs.md § 7).
+mpi_launch = ["mpirun", "-np", "{ranks}"]
+interactive = "salloc"
+
+[commands]
+submit = "sbatch"
+query = "squeue"
+cancel = "scancel"
+cluster = "scontrol"
+
+# Read by femkit/schedulers/slurm.py: scontrol for the cluster name, the partitions and
+# every node; sacctmgr for the QOS limits and the account's associations.
+[probe]
+control = "scontrol"
+accounts = "sacctmgr"
+
+[job_variables]
+id = "SLURM_JOB_ID"
+ranks = "SLURM_NTASKS"
+cores_per_rank = "SLURM_CPUS_PER_TASK"
+cores_on_node = "SLURM_CPUS_ON_NODE"
+gpus = "SLURM_JOB_GPUS"
+nodes = "SLURM_JOB_NODELIST"

@@ -1,0 +1,10 @@
+# The control environment: Python and the libraries the femkit command needs; no solver.
+# One package per line, as `conda create --file` reads it (definitions.md § 3); its
+# `python=` line is the Python minor every environment shares.
+python=3.12
+click>=8.1,<9
+flask>=3,<4
+pydantic>=2,<3
+tomlkit>=0.13,<1
+pytest>=8,<9
+pytest-xdist>=3,<4

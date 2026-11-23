@@ -1,0 +1,8 @@
+# Developer-tool configuration only: femkit runs from its checkout and is
+# never installed (docs/contracts/envs.md § 7).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".git", ".test-progress", "*.egg-info"]
+addopts = "-ra"
+xfail_strict = true

@@ -1,0 +1,14 @@
+version = ["{exe}", "--version"]
+version_pattern = '(\d+\.\d+(?:\.\d+)?)'
+root = { argv = ["{exe}", "info", "--json"], key = "root_prefix" }
+platform = { argv = ["{exe}", "info", "--json"], key = "platform" }
+run = ["{exe}", "run", "--no-capture-output", "-p", "{prefix}"]
+activate = { hook = "{root}/etc/profile.d/conda.sh", with_hook = ["conda", "activate", "{prefix}"], without_hook = ["source", "activate", "{prefix}"] }
+# Nothing from the person's own conda settings enters a prefix (envs.md § 4.4): a create
+# overrides their channels with the declared ones and adds none of their default packages.
+# The control environment is this create too, its packages read from control.txt (`--file`).
+create = ["{exe}", "create", "-y", "-p", "{prefix}", "--override-channels", "--no-default-packages"]
+channel = ["-c", "{channel}"]
+create_from_lock = ["{exe}", "create", "-y", "-p", "{prefix}", "--file", "{file}", "--no-default-packages"]
+export_lock = ["{exe}", "list", "--explicit", "--md5", "-p", "{prefix}"]
+remove = ["{exe}", "env", "remove", "-y", "-p", "{prefix}"]

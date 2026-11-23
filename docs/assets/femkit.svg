@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="femkit">
+  <title>femkit</title>
+  <rect x="1" y="1" width="126" height="126" rx="27" fill="#13213a" stroke="#3a5a8c" stroke-width="2"/>
+  <g stroke="#ffffff" stroke-opacity="0.9" stroke-width="2" stroke-linejoin="round">
+    <polygon points="28,32 64,24 48,58" fill="#277da1"/>
+    <polygon points="64,24 80,60 48,58" fill="#43aa8b"/>
+    <polygon points="64,24 100,32 80,60" fill="#277da1"/>
+    <polygon points="100,32 106,68 80,60" fill="#4d908e"/>
+    <polygon points="28,32 48,58 22,68" fill="#4d908e"/>
+    <polygon points="22,68 48,58 30,102" fill="#43aa8b"/>
+    <polygon points="48,58 64,96 30,102" fill="#90be6d"/>
+    <polygon points="48,58 80,60 64,96" fill="#f9c74f"/>
+    <polygon points="80,60 98,102 64,96" fill="#f8961e"/>
+    <polygon points="80,60 106,68 98,102" fill="#90be6d"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="28" cy="32" r="3"/><circle cx="64" cy="24" r="3"/><circle cx="100" cy="32" r="3"/>
+    <circle cx="22" cy="68" r="3"/><circle cx="48" cy="58" r="3"/><circle cx="80" cy="60" r="3"/>
+    <circle cx="106" cy="68" r="3"/><circle cx="30" cy="102" r="3"/><circle cx="64" cy="96" r="3"/>
+    <circle cx="98" cy="102" r="3"/>
+  </g>
+</svg>

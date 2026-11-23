@@ -1,0 +1,18 @@
+# femkit user configuration: choices for this machine.
+# Every key is optional; `python -m femkit config show` prints what an unset key means.
+# The keys and their types: docs/reference/config.md.
+
+[paths]
+# environments = "/project/storage/femkit-environments"
+
+[build]
+# cuda_architectures = ["80", "90"]
+# jobs = 8
+
+[launch]
+# mpi = ["mpirun", "-np", "{ranks}"]
+
+[activation]
+# How a job's shell gets ready on this machine before it enters an environment.
+# preamble = ["module load mamba"]
+# preamble = []          # states that nothing is needed

@@ -1,0 +1,40 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.venv/
+dist/
+build/
+_build/
+cmake-build-*/
+*.egg-info/
+*.whl
+pip-wheel-metadata/
+
+# Credentials are not repository data.
+/.aws/
+.env
+.env.*
+
+# If FEMKIT_*_DIR points into the checkout, none of the environments, records,
+# caches or logs it holds may become source files.
+/environments/
+/config/
+/cache/
+/logs/
+/state/
+/.test-progress/
+/test-artifacts/
+
+# Generated studies and solver output are never source files.
+projects/
+work/
+

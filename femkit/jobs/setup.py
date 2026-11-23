@@ -1,0 +1,317 @@
+"""This machine's setup: `doctor` and `env bootstrap` (envs.md § 6.1, § 6.2).
+
+They live in `jobs`, the top domain, because both read or write this machine's record
+(jobs.md § 9) besides the configuration and the environments below it. `env bootstrap`
+follows molbuilder's `envs bootstrap`: configuration first, every default environment
+installed one after another — a failed one does not stop the next — this machine's
+record, then `doctor`, the entry line, and one verdict.
+"""
+
+from __future__ import annotations
+
+import os
+import shlex
+from pathlib import Path
+
+from pydantic import Field
+
+from femkit.config import settings
+from femkit.config.operations import ConfigInit, where_environments_go
+from femkit.config.probe import place
+from femkit.core import dirs, text
+from femkit.core.errors import Refusal
+from femkit.core.issues import Issue
+from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
+from femkit.core.schema import DefinitionError, Model
+from femkit.definitions import catalogue
+from femkit.engines import registered
+from femkit.envs import layout
+from femkit.envs.manager import resolve
+from femkit.envs.operations import EnvInstall, default_environments
+from femkit.envs.state import MACHINE, EnvState, observe
+from femkit.jobs import record
+from femkit.jobs.operations import JobProbe
+from femkit.jobs.record import LOCAL
+
+
+# ------------------------------------------------------------------ doctor
+
+class DoctorRequest(Model):
+    """No inputs."""
+
+
+class DoctorRow(Model):
+    subject: str = Field(description="what is checked")
+    state: str = Field(description="its state")
+    ready: bool = Field(description="whether it is ready")
+    next: list[str] = Field(default_factory=list, description="the commands that make it ready")
+
+
+class DoctorResult(Result):
+    rows: list[DoctorRow] = Field(description="every subject of envs.md § 6.1")
+
+    def ok(self) -> bool:
+        return all(r.ready for r in self.rows) and super().ok()
+
+    def text(self) -> str:
+        lines = ["this machine is ready" if self.ok() else "this machine is not ready"]
+        lines += text.table(("-" if r.ready else "!", r.subject, r.state) for r in self.rows)
+        for r in self.rows:
+            lines += text.next_block(f"for {r.subject}", r.next) if not r.ready else []
+        return "\n".join(lines)
+
+
+CONTROL_STAMP = "control.sha256"  # in the control prefix's records; written last by the install script
+
+
+def _control_row() -> DoctorRow:
+    """The control environment, observed by the rules of envs.md § 7.2, with the command § 7.3 allows."""
+    prefix = dirs.control_prefix()
+    stamp = layout.records(prefix) / CONTROL_STAMP
+    if not prefix.exists():
+        state = "absent"
+    elif not (prefix / "conda-meta").is_dir() or not os.access(prefix / "bin" / "python", os.X_OK) \
+            or not stamp.is_file():
+        state = "broken"
+    elif stamp.read_text().strip() != catalogue.control_digest():
+        state = "outdated"
+    else:
+        state = "current"
+    return DoctorRow(subject="control environment", state=state, ready=state == "current",
+                     next=[] if state == "current" else ["bash scripts/install-env.sh bootstrap"])
+
+
+STATE_PREAMBLE = (text.typed("config", "init", "--preamble", "LINE") + "   # once per line",
+                  text.typed("config", "init", "--no-preamble") + "   # none is needed here")
+
+
+def _config_row(loaded: settings.Loaded) -> DoctorRow:
+    preamble = loaded.config.activation.preamble is not None
+    return DoctorRow(
+        subject="config.toml",
+        state=("found" if loaded.file else "absent") + (", preamble stated" if preamble else ", preamble unset"),
+        ready=loaded.file is not None and preamble, next=[] if preamble else list(STATE_PREAMBLE))
+
+
+def _record_row(config: settings.UserConfig) -> DoctorRow:
+    """This machine's record: present, loads, and not stale (jobs.md § 9.3). The probe that
+    writes it is refused while the preamble is unset, so that comes first."""
+    status, detail = record.status(record.path(LOCAL), config)
+    state = f"{status}: {detail}" if detail else status
+    first = list(STATE_PREAMBLE) if config.activation.preamble is None else []
+    return DoctorRow(subject="this machine's record", state=state, ready=state == "current",
+                     next=[] if state == "current" else [*first, text.typed("job", "probe", "--write")])
+
+
+ENGINES = "engine environments"  # the one row for them all while none can be observed
+
+
+@operation("doctor", request=DoctorRequest, result=DoctorResult)
+def doctor(req: DoctorRequest, ctx: Context) -> DoctorResult:
+    """Whether this machine is ready: control environment, configuration, this machine's record, every engine environment."""
+    rows = [_control_row()]
+    try:
+        loaded = settings.load(ctx)
+    except DefinitionError as exc:  # said as the row's state: doctor always reports (envs.md § 6.1)
+        unknown = "unknown: config.toml does not load"
+        return DoctorResult(rows=[*rows, DoctorRow(subject="config.toml", state=f"does not load: {exc.summary()}",
+                                                   ready=False),
+                                  DoctorRow(subject="this machine's record", state=unknown, ready=False),
+                                  DoctorRow(subject=ENGINES, state=unknown, ready=False)])
+    rows += [_config_row(loaded), _record_row(loaded.config)]
+    try:
+        resolve(ctx)  # every environment's install fingerprint names the manager's kind
+    except Refusal as exc:
+        return DoctorResult(rows=[*rows, DoctorRow(subject=ENGINES, state=f"unknown: {exc}", ready=False,
+                                                   next=list(exc.next))])
+    for name, env in catalogue.load(ctx, engines=registered()).environments.items():
+        _, state = observe(ctx, name)
+        on_request = not env.default and state is EnvState.absent  # never installed: not this machine's lack
+        rows.append(DoctorRow(subject=name, state=state.value + (", installed on request" if on_request else ""),
+                              ready=state is EnvState.ready or on_request,
+                              next=[] if state is EnvState.ready or on_request else list(MACHINE.next_commands(state, name))))
+    return DoctorResult(rows=rows)
+
+
+# ------------------------------------------------------------------ env bootstrap
+
+class BootstrapRequest(ConfigInit.request):
+    """config init's values, and whether to rebuild every environment."""
+
+    clean: bool = Field(default=False, description="remove and rebuild every default environment")
+
+
+class BootstrapRow(Model):
+    part: str = Field(description="config.toml, an environment, or this machine's record")
+    status: str = Field(description="done, failed, killed, refused, or left alone")
+    detail: str = Field(default="", description="its state afterwards, its file, or why it did not finish")
+    log: str | None = Field(default=None, description="its operation directory")
+
+
+class BootstrapOutcome(Outcome):
+    rows: list[BootstrapRow] = Field(default_factory=list, description="each part, in order")
+    doctor: DoctorResult | None = Field(default=None, description="doctor, run last")
+    entry: list[str] = Field(default_factory=list, description="the lines that enter femkit day to day here")
+
+    def ok(self) -> bool:
+        return super().ok() and self.doctor is not None and self.doctor.ok()
+
+    def text(self) -> str:
+        failed = [r.part for r in self.rows if r.status not in ("done", "left alone")]
+        problems = ([f"{text.count(len(failed), 'part')} did not finish ({', '.join(failed)})"]
+                    if failed else []) + (["doctor reports a problem"] if self.doctor and not self.doctor.ok() else [])
+        lines = ["bootstrap did not finish: " + "; ".join(problems) if problems
+                 else "bootstrap complete: every part done and this machine is ready"]
+        lines += text.table((r.part, r.status, r.detail, f"# {r.log}" if r.log else "") for r in self.rows)
+        if self.doctor is not None:
+            lines += ["doctor: " + self.doctor.text().replace("\n", "\n  ")]
+        lines += text.findings(self.issues)
+        if self.entry:
+            lines += text.next_block("enter femkit day to day on this machine", self.entry)
+        return "\n".join(lines)
+
+
+def _as_bootstrap(issue: Issue) -> Issue:
+    """A config init finding as bootstrap says it: bootstrap takes config init's options, so
+    the `config init …` it names is `env bootstrap …`."""
+    init, boot = text.typed("config", "init"), text.typed("env", "bootstrap")
+    return issue.model_copy(update={"next": tuple(boot + n[len(init):] if n.startswith(init + " ") else n
+                                                  for n in issue.next)})
+
+
+def _login_node(ctx: Context) -> list[Issue]:
+    """A machine with a scheduler, outside any job: most likely a login node, whose limits
+    kill large builds (envs.md § 6.2)."""
+    here = place(catalogue.schedulers(ctx), ctx.env)
+    if here.where != "login node" or not here.kind.interactive:
+        return []
+    return [Issue(severity="warning", code="login-node", subject=here.scheduler,
+                  message=f"this {here.scheduler} machine runs no job here, so this is most likely a login node, "
+                          "whose limits kill large builds; run bootstrap inside an interactive allocation",
+                  next=(f"{here.kind.interactive}   # then, inside it: bash scripts/install-env.sh bootstrap",))]
+
+
+def entry_lines(ctx: Context, config: settings.UserConfig) -> list[str]:
+    """This machine's day-to-day entry (envs.md § 6.2): the preamble, the manager kind's
+    activation of the real control prefix, the checkout, and the first command."""
+    try:
+        m = resolve(ctx)
+    except Refusal:
+        return []
+    return [*(config.activation.preamble or []), *m.activation(dirs.control_prefix()),
+            f"cd {shlex.quote(str(dirs.checkout()))}", text.typed("doctor")]
+
+
+@operation("env.bootstrap", request=BootstrapRequest, result=BootstrapOutcome, changes=True,
+           subject=lambda req: ["bootstrap"])
+class EnvBootstrap:
+    """Set up this machine: config init, every default environment installed (a failed one does not stop the next), this machine's record, then doctor."""
+
+    def plan(self, req: BootstrapRequest, ctx: Context) -> Plan:
+        init = ConfigInit.request.model_validate(req.model_dump(exclude={"clean"}))
+        config_plan = ConfigInit.plan(init, ctx)
+        values = config_plan.basis["values"]
+        planned = settings.as_planned(ctx, values)  # every install is planned against config.toml as it will be
+        steps, issues = [], [_as_bootstrap(i) for i in config_plan.issues
+                             if i.code != "preamble-unset"]  # said below, with what it blocks
+        if config_plan.steps:
+            added = [s.id.removeprefix("add:") for s in config_plan.steps]  # config init's steps, without their whys
+            steps.append(Step(id="config", describe="config.toml: add " + "; ".join(
+                f"{k} = {text.show(values[k])}" for k in added)))
+        if not any(i.code == "default" for i in issues):
+            root = settings.environments_root(settings.load(planned).config)
+            issues.append(Issue(severity="info", code="environments", subject="paths.environments",
+                                message=f"environments go to {where_environments_go(root)}"))
+        installs, refused = {}, {}
+        for name in default_environments():
+            try:
+                sub = EnvInstall.plan(EnvInstall.request(names=[name], clean=req.clean), planned)
+            except Refusal as exc:  # said now, not after the other installs (molbuilder's bootstrap)
+                refused[name] = str(exc)
+                issues.append(Issue(severity="error", code="refused", subject=name,
+                                    message=f"{name} will not be installed: {exc}", next=exc.next))
+                continue
+            if not sub.steps:
+                issues.append(Issue(severity="info", code="ready", subject=name, message=f"{name} is ready; left alone"))
+                continue
+            installs[name] = sub.model_dump(mode="json")
+            f, state = observe(planned, name)
+            steps.append(Step(id=f"install:{name}", describe=f"install {name} ({state.value}) into {f.prefix}: "
+                                                             f"{text.count(len(sub.steps), 'step')}"))
+        if installs:
+            issues += _login_node(ctx)
+        will_be = settings.load(planned).config
+        file = record.path(LOCAL)
+        status, detail = record.status(file, will_be)
+        why = {"absent": "a new record", "stale": f"measured again: stale, {detail}",
+               "does not load": "measured again: the file there does not load",
+               "current": "measured again: environments are installed" if installs else ""}[status]
+        if not why:
+            issues.append(Issue(severity="info", code="record-kept", subject=str(file),
+                                message=f"this machine's record is kept: {file}",
+                                next=(text.typed("job", "probe", "--write") + "   # to measure it again",)))
+        elif will_be.activation.preamble is None:
+            issues.append(Issue(severity="warning", code="no-record", subject="activation.preamble",
+                                message="activation.preamble stays unset, so this machine's record is not written "
+                                        "and no job can be prepared for it",
+                                next=(text.typed("env", "bootstrap", "--preamble", "LINE") + "   # once per line",
+                                      text.typed("env", "bootstrap", "--no-preamble") + "   # none is needed here")))
+        else:
+            steps.append(Step(id="record", describe=f"write this machine's record, {file} ({why})"))
+        return Plan(operation="env.bootstrap", request=req.model_dump(mode="json"),
+                    basis={"config_plan": config_plan.model_dump(mode="json"), "installs": installs,
+                           "refused": refused},
+                    steps=tuple(steps), issues=issues, asks=config_plan.asks)
+
+    def apply(self, plan: Plan, ctx: Context, observer) -> BootstrapOutcome:
+        config_plan = Plan.model_validate(plan.basis["config_plan"])
+        rows = [BootstrapRow(part=name, status="refused", detail=why) for name, why in plan.basis["refused"].items()]
+        # The plan's findings come with the outcome, as api.md § 4 says for --yes; a ready environment is a
+        # row of its own.
+        issues: list[Issue] = [i for i in plan.issues if i.code != "ready"]
+
+        def again() -> Context:
+            return Context(env=ctx.env, now=ctx.now)  # a new invocation's view: reads config.toml as written
+
+        def do(step: Step, where: Path):
+            if step.id == "config":
+                out = ConfigInit.apply(config_plan, ctx, observer)
+                rows.append(BootstrapRow(part="config.toml", status=out.status, detail=out.file, log=out.log))
+                return out.status, Path(out.log) if out.log else None
+            if step.id.startswith("install:"):
+                name = step.id.split(":", 1)[1]
+                try:  # the install plan shown, applied as the config now written reads (PlanStale otherwise)
+                    out = EnvInstall.apply(Plan.model_validate(plan.basis["installs"][name]), again(), observer)
+                except Refusal as exc:
+                    rows.append(BootstrapRow(part=name, status="refused", detail=str(exc)))
+                    issues.append(Issue(severity="error", code="refused", subject=name, message=f"{name}: {exc}",
+                                        next=exc.next))
+                    return "refused", None
+                env = out.environments[0]
+                status = "killed" if any(i.code == "killed" for i in out.issues) else \
+                    "done" if out.ok() else "failed"
+                rows.append(BootstrapRow(part=name, status=status, detail=env.state.value if env.state else "",
+                                         log=env.validation or env.log))
+                issues.extend(out.issues)
+                if env.status == "failed":
+                    issues.append(Issue(severity="error", code="failed", subject=name, message=f"{name}: a step failed",
+                                        next=(text.typed("env", "log", name),)))
+                return status, Path(env.log) if env.log else None
+            c = again()  # the record: after the installs, so its environments are what is here now
+            try:
+                out = JobProbe.apply(JobProbe.plan(JobProbe.request(write=True), c), c, observer)
+            except Refusal as exc:
+                rows.append(BootstrapRow(part="this machine's record", status="refused", detail=str(exc)))
+                issues.append(Issue(severity="error", code="refused", subject="record", message=str(exc), next=exc.next))
+                return "refused", None
+            rows.append(BootstrapRow(part="this machine's record", status=out.status, detail=out.file or ""))
+            return out.status, None
+
+        status, where = run_steps(plan, ctx, observer, do, keep_going=True)
+        rows += [BootstrapRow(part=i.subject, status="left alone", detail="ready") for i in plan.issues if i.code == "ready"]
+        order = ["config.toml", *default_environments(), "this machine's record"]
+        rows.sort(key=lambda r: order.index(r.part))
+        c = again()
+        return BootstrapOutcome(plan=plan, status=status, log=str(where), rows=rows, issues=issues,
+                                doctor=doctor.run(doctor.request(), c),
+                                entry=entry_lines(c, settings.load(c).config))

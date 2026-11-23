@@ -1,0 +1,173 @@
+"""The toolchain: declared by each environment, proven before any source is fetched, and every
+command in a prefix confined to it (definitions.md § 4.6; envs.md § 4.1, § 4.4).
+
+The program that runs inside an environment is exercised in the field tier
+(tests/field/test_toolchain.py); here, femkit's side: the plan, the confinement, the judgement.
+"""
+
+from __future__ import annotations
+
+import shlex
+from pathlib import Path
+
+import pytest
+
+import femkit.engines
+from femkit.config.operations import ConfigSet
+from femkit.core.errors import Refusal
+from femkit.core.operations import Context, Step
+from femkit.core import process as process_module
+from femkit.core import text
+from femkit.core.process import ProcessResult
+from femkit.definitions.catalogue import load_environments
+from femkit.engines import registered
+from femkit.envs import checks, install, manager, toolchain
+from femkit.envs.operations import EnvInstall
+
+
+def ctx() -> Context:
+    return Context.from_process()
+
+
+def test_every_environment_with_builds_solves_its_own_toolchain():
+    """Fails if an engine environment's solve lacks its toolchain's compilers, sysroot or build
+    tools — they would come from wherever the solver or the host chose (definitions.md § 4.6)."""
+    for name, env in load_environments(None, registered()).items():
+        if env.builds:
+            assert env.toolchain and set(env.toolchain.packages) <= set(env.packages.conda), name
+
+
+def test_the_toolchain_is_proven_before_any_source_is_fetched(manager):
+    """Fails if the toolchain check is missing from an install, or comes after a download
+    (envs.md § 4.1)."""
+    c = ctx()
+    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="launch.mpi", value='["mpirun", "-np", "{ranks}"]'), c), c)
+    ids = [s.id.split("/", 1)[1] for s in EnvInstall.plan(EnvInstall.request(names=["elmer"]), ctx()).steps]
+    assert ids.index("forbid") < ids.index("toolchain") < min(i for i, s in enumerate(ids) if s.startswith("fetch:"))
+
+
+def test_an_mpi_environment_is_refused_while_launch_mpi_is_unset_and_told_how_to_set_it(manager):
+    """Fails if an install of an MPI environment is planned with no launcher for its
+    toolchain check's two ranks, or the command the refusal names does not make it plannable
+    (envs.md § 4.1)."""
+    with pytest.raises(Refusal) as refused:
+        EnvInstall.plan(EnvInstall.request(names=["elmer"]), ctx())
+    argv = shlex.split(refused.value.next[0], comments=True)
+    prog = shlex.split(text.PROG)
+    assert argv[:len(prog) + 2] == [*prog, "config", "set"]
+    key, value = argv[len(prog) + 2:]
+    c = ctx()
+    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), c), c)
+    assert EnvInstall.plan(EnvInstall.request(names=["elmer"]), ctx()).steps
+
+
+LEAKS = {"CC": "/opt/site/gcc", "LD_LIBRARY_PATH": "/opt/site/lib", "HYPRE_ROOT": "/opt/site",
+         "CMAKE_PREFIX_PATH": "/opt/site", "CPATH": "/opt/site/include"}  # what a module may set
+
+
+INSIDE = ("toolchain", "configure", "compile", "install", "audit", "manifest")  # step kinds run in the prefix
+
+
+def test_every_command_in_the_prefix_sees_none_of_the_shells_build_settings(monkeypatch, tmp_path):
+    """Fails if a command femkit runs inside the prefix — the toolchain check, configure,
+    compile, install, the audit, the version probe, a check — sees a compiler, search path or
+    package root the person's shell set, or loses the locale; or if the manager's own create
+    loses the person's variables, which its configuration needs (envs.md § 4.4)."""
+    for name, value in {**LEAKS, "LC_ALL": "C.UTF-8"}.items():
+        monkeypatch.setenv(name, value)
+    ran: list[dict] = []
+    monkeypatch.setattr(process_module, "run", lambda argv, log=None, env=None, **kw:
+                        ran.append(env) or ProcessResult(tuple(argv), 1, "", "", log))  # each fails at once
+    c = ctx()
+    env = load_environments(None, registered())["ngsolve"]
+    t = install.Target(name="ngsolve", env=env, prefix=tmp_path / "p", manager=manager.resolve(c), channels=[],
+                       python_minor="3.12", cuda_architectures=None, jobs=1, install_fingerprint="f",
+                       launcher=["mpirun", "-np", "{ranks}"])
+
+    def seen(step: Step) -> list[dict]:
+        ran.clear()
+        install.run_step(t, step, tmp_path / "logs")
+        return list(ran)
+
+    steps = install.plan_steps(t, remove_first=False, discard_lock=True)
+    confined = {s.id: seen(s) for s in steps if s.id.split(":")[0] in INSIDE}
+    confined["check"] = [checks._variables(checks.Runner(env=env, prefix=t.prefix, manager=t.manager, launcher=None),
+                                           env.checks[0])]
+    assert {i.split(":")[0] for i, envs in confined.items() if envs} == {*INSIDE, "check"}  # every kind ran something
+    for step_id, envs in confined.items():
+        for variables in envs:
+            assert not set(LEAKS) & set(variables) and variables["LC_ALL"] == "C.UTF-8", step_id
+    assert all(set(LEAKS) <= set(v) for v in seen(next(s for s in steps if s.id == "create")))  # the manager's own
+
+
+def _report(prefix) -> dict:
+    """A report in the program's own format: everything inside the prefix, and working."""
+    works = {"compiled": True, "ran": True, "error": ""}
+    return {"tools": {"cmake": str(prefix / "bin" / "cmake")},
+            "compilers": {"c": {"variable": "CC", "value": "cc", "command": str(prefix / "bin" / "cc"),
+                                "version": "cc 14.4.0", **works}},
+            "mpi": {"c": {"wrapper": "mpicc", "command": str(prefix / "bin" / "mpicc"), **works}},
+            "launcher": str(prefix / "bin" / "mpirun")}
+
+
+BROKEN = {  # what the toolchain check exists to catch
+    "a build tool from the host": lambda r: r["tools"].update(cmake="/usr/bin/cmake"),
+    "the host's compiler": lambda r: r["compilers"]["c"].update(command="/usr/bin/cc"),
+    "a compiler that is not found": lambda r: r["compilers"]["c"].update(command=None),
+    "no compiler set": lambda r: r["compilers"]["c"].update(value="", command=None),
+    "a program that does not run here": lambda r: r["compilers"]["c"].update(
+        ran=False, error="CPU ISA level is lower than required"),
+    "a program that does not link": lambda r: r["compilers"]["c"].update(
+        compiled=False, ran=False, error="cannot find -lgfortran"),
+    "the host's MPI wrapper": lambda r: r["mpi"]["c"].update(command="/usr/bin/mpicc"),
+    "an MPI program that does not run on two ranks": lambda r: r["mpi"]["c"].update(
+        ran=False, error="orted: not found"),
+}
+
+
+@pytest.mark.parametrize("broken", BROKEN.values(), ids=BROKEN.keys())
+def test_the_toolchain_is_not_proven_by_anything_outside_the_prefix_or_a_program_that_does_not_run(tmp_path,
+                                                                                                    broken):
+    """Fails if a build tool, compiler or MPI wrapper outside the prefix, or a trivial program
+    that does not build or run, passes the toolchain check (envs.md § 4.1)."""
+    report = _report(tmp_path)
+    assert not toolchain.judge(report, tmp_path).problems
+    broken(report)
+    assert toolchain.judge(report, tmp_path).problems
+
+
+def test_the_check_fingerprint_covers_the_shared_judging_code_and_not_the_toolchain_program():
+    """Fails if a shared module under femkit/engines/ is left out of the check fingerprint, so
+    editing it would not re-validate; or if the toolchain's program is in it, so editing that
+    would mark every environment unchecked though it checks nothing (envs.md § 2)."""
+    from femkit.engines import toolchain as program
+    shared = {p.resolve() for p in Path(femkit.engines.__file__).parent.glob("*.py")}
+    assert Path(checks.__file__).resolve() in checks.JUDGING
+    assert shared - set(checks.JUDGING) == {Path(program.__file__).resolve()}
+
+
+def test_every_language_a_toolchain_may_name_is_one_the_program_can_prove():
+    """Fails if a toolchain may name a language the toolchain program has no trivial program for
+    — its step would crash instead of judging — or the program proves one no toolchain may name;
+    the two lists live apart because the program runs inside an environment (definitions.md § 4.6)."""
+    from femkit.definitions.models import LANGUAGES
+    from femkit.engines.toolchain import LANGUAGES as PROVABLE
+    assert set(LANGUAGES) == set(PROVABLE)
+
+
+def test_a_program_that_cannot_start_is_a_finding_not_a_crash(tmp_path, monkeypatch):
+    """Fails if a compiler the kernel cannot run, or a launcher not on the confined PATH,
+    crashes the toolchain program — losing every finding already made — instead of being
+    reported as a program that does not build or run (envs.md § 4.1)."""
+    import sys
+    from femkit.engines import toolchain as program
+    broken = tmp_path / "cc"
+    broken.write_text("#!/no/such/interpreter\n")
+    broken.chmod(0o755)
+    monkeypatch.setenv("CC", str(broken))
+    work = tmp_path / "work"
+    work.mkdir()
+    report = program.check({"compilers": {"c": "CC"}, "mpi": {}, "launcher": None, "tools": []}, work)
+    assert not report["compilers"]["c"]["compiled"] and report["compilers"]["c"]["error"]
+    found = program._try([sys.executable, "-c", ""], [str(tmp_path / "no-such-launcher"), "./a.out"], work)
+    assert found["compiled"] and not found["ran"] and found["error"]

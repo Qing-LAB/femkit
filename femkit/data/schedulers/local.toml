@@ -1,0 +1,2 @@
+# No scheduler: jobs start directly on this machine.
+mpi_launch = ["mpirun", "-np", "{ranks}"]

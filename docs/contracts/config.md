@@ -1,0 +1,122 @@
+# Configuration — what is set, what is measured, and where each lives
+
+**Role:** contract
+**Status:** current; what is not built yet is marked so
+**Authority:** the homes of every non-source file femkit reads or writes,
+who writes each, how each is found, and the user configuration
+
+## The short version
+
+| rule | § |
+|---|---|
+| Information has **five homes**: shipped definitions, user configuration, machine records, install records, run files. Each has one kind of writer | 1 |
+| Nothing a person sets and nothing a machine reports is in the repository; it lives in the user's own directories | 1, 2 |
+| Each directory is chosen by **the first rule that is set** — its own variable, the XDG variable, the default — and a file is read from that directory only, never from another; files are never merged; `config path` says which rule chose each | 2 |
+| `config.toml` holds **choices**: where environments go, CUDA targets, the MPI launcher, the activation preamble | 3 |
+| How a job's shell gets ready on a machine (`activation.preamble`) has **no default**: `config init` asks for it on a terminal and proposes nothing; no record is written and no job prepared until it is stated | 3.1, 3.2 |
+| A **default is never written**: `paths.environments` unset means the default, which `config init` shows and asks to change | 3.2 |
+| A **machine record** holds **facts**, written only by `job probe` on that machine; a choice is never measured into it, only copied. Its contents are [`jobs.md`](jobs.md) § 9 | 1 |
+| The repository ships **templates**; `config init` turns them into the person's files and never overwrites what a person set | 3.2 |
+
+## 1. The five homes
+
+| home | holds | lives in | written by |
+|---|---|---|---|
+| shipped definitions | `channels.txt`, `control.txt`, environments, manager and scheduler kinds, templates | the repository, `femkit/data/` | a femkit change, reviewed ([`definitions.md`](definitions.md)) |
+| user configuration | choices for this machine | `<config>/config.toml` | the person, through `config init` / `config set` |
+| machine records | measured facts of a machine | `<config>/machines/<name>.toml` | `job probe`, run on that machine ([`jobs.md`](jobs.md) § 9) |
+| install records | what was installed and what its checks showed | inside each prefix, plus package locks under `<data>` | the installer and validator ([`envs.md`](envs.md) § 4) |
+| run files | a calculation's request, scripts and runs | the calculation folder | `job prepare`, the run script ([`jobs.md`](jobs.md)) |
+
+A writer never writes another's home: a probe never writes a choice, `config
+set` never writes a fact, and preparing a job never edits configuration.
+
+The repository holds none of the last four: no home path, host name, user name,
+device model, site name or credential appears in a committed file.
+
+## 2. Directories and lookup
+
+| directory | holds | default | override |
+|---|---|---|---|
+| `<config>` | what a person set and what a probe measured: `config.toml`, `machines/` | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
+| `<data>` | environments, package locks, subject locks | `$XDG_DATA_HOME/femkit`, else `~/.local/share/femkit` | `FEMKIT_DATA_DIR` |
+| `<cache>` | downloads femkit can fetch again; may be emptied at any time | `$XDG_CACHE_HOME/femkit`, else `~/.cache/femkit` | `FEMKIT_CACHE_DIR` |
+| `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
+
+A log is not a cache: emptying a cache must lose nothing but downloads, so the
+logs live apart from it, as molbuilder keeps its logs under `$XDG_STATE_HOME`.
+
+Each variable chooses a directory; the file is the one in it. `~` is expanded;
+a directory that is still relative is refused, so no file is read from the
+working directory. No two files of one kind are combined. `scripts/install-env.sh`
+resolves the data directory by the same rule, because it must find the control
+environment before Python runs.
+`python -m femkit config path` prints the four directories, the rule that chose each,
+every file under the configuration directory and the top-level entries of the
+other three, so which file is in effect is never a guess.
+
+`FEMKIT_ENV_MANAGER` is set by the install script to the manager it found; it
+is not a setting. How Python learns the manager without it is
+[`envs.md`](envs.md) § 7.1.
+
+## 3. User configuration — `config.toml`
+
+### 3.1 What it holds
+
+| key | meaning | when unset |
+|---|---|---|
+| `paths.environments` | where engine environment prefixes are created (the control environment's place is fixed, [`envs.md`](envs.md) § 1) — on a cluster, typically project storage rather than a small home quota | `<data>/environments` |
+| `build.cuda_architectures` | GPU architectures the CUDA environments target, e.g. `["80", "90"]` ([`definitions.md`](definitions.md) § 4.5); the default environments never read it | installing an environment with a build compiled for CUDA (both CUDA environments have one) is refused, naming this key |
+| `build.jobs` | parallel compile jobs | the CPUs this process may use (its CPU affinity: on a cluster, the allocation's share, never the whole login node) |
+| `launch.mpi` | how a multi-rank process starts, e.g. `["mpirun", "-np", "{ranks}"]` — the environment's own `mpirun` ([`jobs.md`](jobs.md) § 7). It must pass `{ranks}` and may not be empty: a launcher without it would run every job on the wrong number of processes. The same rule holds for a scheduler kind's `mpi_launch` | a multi-rank check or job, and installing an environment with MPI (its toolchain check runs two ranks, [`envs.md`](envs.md) § 4.1), are refused, naming this key |
+| `activation.preamble` | the shell lines a run script runs on this machine before it enters an environment — `module load` lines that put the manager on `PATH`, for instance; `[]` states that none are needed | `job probe --write` and `job prepare` are refused, naming this key |
+
+Every key is optional in the file, and its absence has the one consequence the
+table states. Unknown keys are refused at load. The schema model is the
+authority for types and allowed values (`docs/reference/`).
+
+`activation.preamble` has no default because nothing on the machine can
+reveal it: a login shell may have the manager on `PATH` through a module that a
+batch job does not load. Unset and `[]` are different answers — unset means
+nobody has said, `[]` means someone said nothing is needed.
+
+### 3.2 How it is made
+
+- `config init` writes the file from `femkit/data/templates/config.toml`,
+  a commented template. Like every changing command it first shows its plan
+  ([`api.md`](api.md) § 3): each key it will add and where the value came
+  from — given as an option (`--environments`, `--cuda-architectures`,
+  `--jobs`, `--mpi`, `--preamble`, `--no-preamble`) or measured here (the GPU
+  architectures the driver reports, the scheduler kind's launcher). The person
+  consents to the plan, or runs it again with an option to change a value.
+- **A default is never written.** It applies while its key is unset, so an
+  unattended run never fixes multi-gigabyte builds in a home directory for
+  good. While `paths.environments` is unset the plan shows where environments
+  will go — the default, whether it is writable and its filesystem's free
+  space (a quota is not measured; on a cluster the home quota is often too
+  small) — and on a terminal `config init` asks for another place, as
+  molbuilder asks for its project tree; an empty answer keeps the default,
+  unwritten.
+- `activation.preamble` is never proposed. While it is unset, `config init`
+  asks for its lines on a terminal, showing beside the question the loaded
+  modules when the shell lists them; an empty answer leaves it unset. `--preamble LINE` (repeatable) or
+  `--no-preamble` state it without the question. Left unset, the report says
+  what that blocks, naming both options.
+- Both are asked as [`api.md`](api.md) § 3.1 states: never under `--yes` or
+  `--dry-run`, or without a terminal.
+- Re-running `config init` adds only keys the file lacks and reports each as
+  `added` or `kept`; it never replaces a value.
+- `config set KEY VALUE` validates and writes one key, keeping the file's
+  comments and layout. `config show` prints every key with its value and where
+  it came from: the file, or the "when unset" rule.
+
+## 4. Install records and run files
+
+Their contents are owned by their domain contracts; their homes are:
+
+| file | home |
+|---|---|
+| manifest and check results of an environment | `<prefix>/.femkit/` — removed with the prefix |
+| package lock (the solved package list) | `<data>/locks/<environment>/` — kept, so an environment can be recreated exactly |
+| operation event logs and command logs | the operation directory ([`core.md`](core.md) § 6) |
+| job request, run script, scheduler header, machine record copy, runs | the calculation folder |

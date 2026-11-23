@@ -1,0 +1,203 @@
+"""Shipped definitions and their loader (definitions.md § 2)."""
+
+from __future__ import annotations
+
+import tomllib
+from pathlib import Path
+
+import pytest
+
+from femkit.core.dirs import CONTROL
+from femkit.core.operations import Context
+from femkit.core.schema import DefinitionError, load_toml
+from femkit.definitions.catalogue import CUDA_SUFFIX, CatalogueError, data_root, load_environments
+from femkit.definitions.models import EnvironmentDefinition
+from femkit.engines import registered
+from femkit.reference import SchemaDocs, schema_check
+
+
+def test_every_shipped_definition_loads():
+    """Fails if any shipped file stops loading (definitions.md § 2.3: a test runs schema check)."""
+    result = schema_check.run(schema_check.request(), Context.from_process())
+    assert result.ok(), result.text()
+
+
+def test_the_reference_pages_match_the_models():
+    """Fails if docs/reference/ differs from what the models render (definitions.md § 2.3)."""
+    plan = SchemaDocs.plan(SchemaDocs.request(), Context.from_process())
+    assert plan.steps == (), "docs/reference/ is stale: run `python -m femkit schema docs`"
+
+
+def _load_problems(tmp_path, text: str) -> dict[str, str]:
+    path = tmp_path / "environment.toml"
+    path.write_text(text)
+    try:
+        load_toml(path, EnvironmentDefinition, {"engines": registered()})
+    except DefinitionError as exc:
+        return dict(exc.problems)
+    return {}
+
+
+def _shipped(name: str) -> str:
+    return (data_root() / "environments" / f"{name}.toml").read_text()
+
+
+def test_field_problems_are_reported_together_by_key_path(tmp_path):
+    """Fails if a typo or a framework-owned option loads, is reported without its key
+    path, or one hides the other (definitions.md § 2.2, § 4.2; core.md § 2)."""
+    src = _shipped("ngsolve")
+    n = len(tomllib.loads(src)["builds"])
+    text = (src.replace('maturity = "candidate"\n', 'maturity = "candidate"\nmaturty = "x"\n', 1)
+            + '\n[[builds]]\nid = "x"\nsource = "netgen"\n[builds.options]\nCMAKE_BUILD_TYPE = "Debug"\n'
+            + '\n[[builds]]\nid = "y"\nsource = "netgen"\n[builds.options]\nX = [1]\n')
+    problems = _load_problems(tmp_path, text)
+    assert {"maturty", f"builds[{n}].options", f"builds[{n + 1}].options.X"} <= set(problems)
+    assert not [p for p in problems if p.startswith(f"builds[{n + 1}].options.X.")]  # one problem, at its key
+
+
+def test_a_dangling_reference_is_refused_at_its_key_path(tmp_path):
+    """Fails if a build may name a source or build nobody declared, or the problem loses
+    its key path (definitions.md § 2.2)."""
+    src = _shipped("ngsolve")
+    n = len(tomllib.loads(src)["builds"])
+    problems = _load_problems(tmp_path, src + '\n[[builds]]\nid = "x"\nsource = "nope"\nafter = ["nothing"]\n')
+    assert {f"builds[{n}].source", f"builds[{n}].after[0]"} <= set(problems)
+
+
+def test_a_repeated_id_is_refused_at_the_entry_that_repeats(tmp_path):
+    """Fails if an ID declared again — here, a [cuda] source with the name of one every Elmer
+    environment has — loads, or is reported without the entry that repeats it (definitions.md § 2.2)."""
+    src = _shipped("elmer").replace('[[cuda.sources]]\nid = "amgx"', '[[cuda.sources]]\nid = "zoltan"')
+    assert "cuda.sources[0].id" in _load_problems(tmp_path, src)
+
+
+def test_a_check_may_name_only_its_own_engines_readers_and_the_runners(tmp_path):
+    """Fails if an environment loads naming a reader its engine does not register — another
+    engine's, or none at all — instead of being refused at the check's key path
+    (definitions.md § 5.3)."""
+    src = _shipped("ngsolve")
+    n = len(tomllib.loads(src)["checks"])
+    problems = _load_problems(tmp_path, src + '\n[[checks]]\nid = "x"\nkind = "ctest"\nbuild = "ngsolve"\n'
+                                              'test = "t"\nread = "elmer-solver-log"\n')
+    assert f"checks[{n}].read" in problems
+
+
+def test_a_definition_with_a_cuda_part_is_two_environments_and_only_one_has_cuda():
+    """Fails if the CPU environment still solves a CUDA package, builds AmgX, sets a CUDA
+    option or runs a GPU check, or loses a CPU part such as the bundled Zoltan source no build
+    names; or if the CUDA environment lacks its CUDA part — packages, nvcc, AmgX, its CUDA
+    options switched on — or is a default (definitions.md § 4.5)."""
+    declared = load_toml(data_root() / "environments" / "elmer.toml", EnvironmentDefinition)
+    envs = load_environments(None, registered())
+    cpu, gpu = envs["elmer"], envs["elmer-cuda"]
+    assert not set(declared.cuda.packages) & set(cpu.packages.conda)
+    assert set(declared.cuda.packages) <= set(gpu.packages.conda) and not gpu.default
+    cpu_elmer = next(b for b in cpu.builds if b.id == "elmer")
+    assert "amgx" not in {b.id for b in cpu.builds} and "amgx" not in cpu_elmer.after
+    assert cpu_elmer.options["WITH_AMGX"] is False and "AMGX_ROOT" not in cpu_elmer.options
+    assert {b.id for b in gpu.builds} == {b.id for b in cpu.builds} | {"amgx"}
+    elmer = next(b for b in gpu.builds if b.id == "elmer")
+    assert elmer.options["WITH_AMGX"] is True and elmer.options["AMGX_ROOT"] == "{prefix}"
+    assert "amgx" in elmer.after and "nvcc" in gpu.provides.executables
+    assert [s.id for s in cpu.sources] == [s.id for s in declared.sources]  # zoltan kept; amgx is [cuda]'s
+    assert {s.id for s in gpu.sources} == {s.id for s in declared.sources} | {"amgx"}
+    assert not [c for c in cpu.checks if c.device] and "nvcc" not in cpu.provides.executables
+    ngsolve = {name: next(b for b in envs[name].builds if b.id == "ngsolve") for name in ("ngsolve", "ngsolve-cuda")}
+    assert ngsolve["ngsolve"].options["USE_CUDA"] is False and not ngsolve["ngsolve"].cuda_architectures
+    assert ngsolve["ngsolve-cuda"].options["USE_CUDA"] is True and ngsolve["ngsolve-cuda"].cuda_architectures
+
+
+def _without_cuda(src: str) -> str:
+    """The shipped ngsolve file without its [cuda] part and everything that needs one."""
+    src = src[:src.index("[cuda]")] + src[src.index("[[sources]]"):]
+    src = src.replace("[builds.cuda_options]\nUSE_CUDA = true\n", "").replace("cuda_architectures = true\n", "")
+    return "\n".join(line for line in src.splitlines() if "device = true" not in line) + "\n"
+
+
+@pytest.mark.parametrize("addition", [
+    '\n[[checks]]\nid = "g"\nkind = "command"\nrun = ["true"]\nread = "summary"\ndevice = true\n',
+    '\n[[builds]]\nid = "x"\nsource = "netgen"\ncuda_architectures = true\n',
+])
+def test_a_cuda_part_needs_the_cuda_table(tmp_path, addition):
+    """Fails if an environment with a GPU check or a build compiled for CUDA loads without the
+    [cuda] part that says what the CUDA environment adds (definitions.md § 4.5)."""
+    src = _without_cuda(_shipped("ngsolve"))
+    assert _load_problems(tmp_path, src) == {}  # what is left loads: only the addition can be the problem
+    assert "cuda" in _load_problems(tmp_path, src + addition)
+
+
+@pytest.mark.parametrize("name, text, at", [
+    ("elmer", lambda s: s + "\n[cuda.builds.cuda_options]\nX = true\n", "cuda.builds[0].cuda_options"),
+    ("ngsolve", lambda s: _without_cuda(s) + '\n[cuda]\ndescription = "x"\n', "cuda"),
+    ("ngsolve", lambda s: s.replace('compilers = { c = "CC", cxx = "CXX", fortran = "FC" }', "compilers = {}"),
+     "toolchain.compilers"),
+    ("ngsolve", lambda s: s + '\n[[checks]]\nid = "x"\nkind = "command"\nrun = ["true"]\nread = "summary"\n'
+                          'expect = { error = { max = inf } }\n',
+     f"checks[{len(tomllib.loads(_shipped('ngsolve'))['checks'])}].expect.error.max"),
+    ("ngsolve", lambda s: s + '\n[[checks]]\nid = "x"\nkind = "command"\nrun = ["true"]\nread = "summary"\n'
+                          'upstream_verdict = false\n', f"checks[{len(tomllib.loads(_shipped('ngsolve'))['checks'])}].upstream_verdict"),
+    ("ngsolve", lambda s: s.replace("[builds.cuda_options]\nUSE_CUDA = true\n",
+                                    "[builds.cuda_options]\nUSE_CUDA = true\nUSE_MPI = false\n"), "builds[1]"),
+])
+def test_a_declaration_that_would_be_ignored_guessed_or_prove_nothing_is_refused(tmp_path, name, text, at):
+    """Fails if a definition loads with options on a [cuda] build, which would never reach CMake;
+    a [cuda] part that adds nothing, whose environment would be the CPU one under another name;
+    a toolchain naming no compiler, whose check would prove nothing; one cache entry in both a
+    build's options and its cuda_options, whose CUDA value would be a guess; an upstream verdict
+    set aside on a check that has none; or an infinite bound, which bounds nothing (definitions.md
+    § 4.5, § 4.6, § 5.1, § 5.2)."""
+    assert _load_problems(tmp_path, _shipped(name)) == {}
+    assert at in _load_problems(tmp_path, text(_shipped(name)))
+
+
+_ELMER_CHECKS = len(tomllib.loads(_shipped("elmer"))["checks"])
+
+
+@pytest.mark.parametrize("text, at", [
+    (lambda s: s + '\n[[checks]]\nid = "x"\nkind = "ctest"\nbuild = "amgx"\ntest = "t"\nread = "summary"\n',
+     f"checks[{_ELMER_CHECKS}].build"),
+    (lambda s: s + '\n[[checks]]\nid = "x"\nkind = "pytest"\nsource = "amgx"\ntests = ["t"]\nread = "summary"\n',
+     f"checks[{_ELMER_CHECKS}].source"),
+    (lambda s: s.replace("\n[builds.options]\n", '\n[builds.options]\nX = "{build:amgx}"\n'), "builds[0].options.X"),
+], ids=["a check names a [cuda] build", "a check names a [cuda] source", "a plain option names a [cuda] build"])
+def test_what_the_cpu_environment_runs_may_not_name_what_only_cuda_declares(tmp_path, text, at):
+    """Fails if a check without `device`, or a build's plain option, loads naming AmgX, which only
+    elmer-cuda has: elmer would then fail deep in an install or a validate instead of the file
+    being refused (definitions.md § 4.5)."""
+    assert _load_problems(tmp_path, _shipped("elmer")) == {}
+    assert at in _load_problems(tmp_path, text(_shipped("elmer")))
+
+
+@pytest.mark.parametrize("name", [CONTROL, "ngsolve" + CUDA_SUFFIX])
+def test_a_definition_may_not_take_another_environments_name(tmp_path, name):
+    """Fails if a definition named `control` or `<name>-cuda` loads: installing it would remove
+    femkit's own control environment, or take a definition's CUDA environment's place
+    (definitions.md § 4.5)."""
+    (tmp_path / "environments").mkdir()
+    (tmp_path / "environments" / f"{name}.toml").write_text(_shipped("ngsolve"))
+    with pytest.raises(CatalogueError) as refused:
+        load_environments(tmp_path, registered())
+    assert [Path(e.file).stem for e in refused.value.errors] == [name]
+
+
+@pytest.mark.parametrize("line", ["", "# the channel femkit uses", "conda-forge  "])
+def test_channels_hold_one_bare_name_a_line(tmp_path, line):
+    """Fails if channels.txt loads holding a blank line, a comment or stray spaces: the install
+    script passes each line to the manager as a channel exactly as it stands, so femkit and the
+    script would solve with different channels (definitions.md § 3)."""
+    from femkit.definitions.catalogue import control_files, load_control
+    channels, packages = control_files()
+    (tmp_path / packages.name).write_text(packages.read_text())
+    (tmp_path / channels.name).write_text(channels.read_text() + line + "\n")
+    with pytest.raises(DefinitionError):
+        load_control(tmp_path)
+    assert load_control().channels and load_control().python_minor
+
+
+def test_an_environment_with_builds_declares_its_toolchain(tmp_path):
+    """Fails if an environment with builds loads without its own [toolchain]: its compilers and
+    build tools would come from wherever the solver or the host chose (definitions.md § 4.6)."""
+    src = _shipped("ngsolve")
+    start = src.index("[toolchain]")
+    without = src[:start] + src[src.index("\n[", start + 1) + 1:]
+    assert "toolchain" in _load_problems(tmp_path, without)
