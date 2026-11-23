@@ -7,6 +7,11 @@ unknown = { name = "potential", space = "H1", unit = "V" }
 meanings = { 2 = ["per unit depth", "axisymmetric"], 3 = ["full"] }
 conventions = []
 
+[constants.vacuum_permittivity]
+description = "eps_0, the vacuum permittivity (CODATA 2022), given to every engine as stated here"
+section = "1-terms-and-symbols"
+value = "8.8541878188e-12 F/m"
+
 [properties.relative_permittivity]
 description = "the material's relative permittivity, eps_r: a real, positive number"
 section = "1-terms-and-symbols"
@@ -66,3 +71,19 @@ unit = "C/m^2"
 description = "w = E . D / 2, the field's energy per unit volume"
 section = "7-derived-quantities"
 unit = "J/m^3"
+
+# The benchmark set (models.md § 4, § 6.3): problems with known answers, each a project of its
+# own beside this file, and the exact value each observable must reproduce.
+[benchmarks.two_material]
+description = "a layered capacitor: two materials in series between two held potentials, a named interface between them"
+section = "91-two_material-a-layered-capacitor"
+project = "electrostatics/benchmarks/two_material"
+exercises = ["potential", "insulating", "interface", "relative_permittivity"]
+tolerance = "1e-9"   # relative: first-order elements reproduce the piecewise-linear solution (§ 9)
+
+[benchmarks.two_material.reference]
+potential_low = "2/5 V"
+potential_middle = "4/5 V"
+potential_high = "9/10 V"
+energy_low = "5.666680204032e-12 J/m"      # 0.64 eps_0, eps_0 as [constants] states it
+energy_high = "1.416670051008e-12 J/m"     # 0.16 eps_0

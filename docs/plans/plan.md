@@ -214,10 +214,10 @@ All by [`../contracts/models.md`](../contracts/models.md):
    property's range refused; `study copy`; `case list`. Open: `case list`'s
    match and preparation columns, which come with step 3 and M6.
 2. **Formulations and meshers as definition types** (`definitions.md` § 1).
-   Built: the formulation type, and `electrostatics` with its science document.
-   Open: its benchmarks that need no expressions — the two-material case —
-   declared (the manufactured ones come with the expression language, M6); the
-   mesher type, and the `netgen` and `gmsh` meshers.
+   Built: the formulation type, and `electrostatics` with its science document,
+   its constants, and its first benchmark, `two_material`, checked by
+   `schema check`; the mesher type, `gmsh` and `netgen`. The manufactured
+   benchmarks come with the expression language (M6).
 3. **Abilities**: their schema; each one's digest; the abilities, default
    mesher, extension points and engine-only options of `elmer` and `ngsolve`
    for `electrostatics`; the proof record's schema; `case match` and

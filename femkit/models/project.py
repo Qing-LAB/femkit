@@ -30,4 +30,9 @@ def load_model(project: Path, ctx: Context) -> ModelFile:
 
 def load_study(project: Path, study: str, ctx: Context, model: ModelFile) -> StudyFile:
     """A study, read against its project's model: its references name the model's objects."""
-    return load_toml(study_file(project, study), StudyFile, {"units": catalogue.units(ctx), "model": model}, exact=True)
+    return read_study(study_file(project, study), ctx, model)
+
+
+def read_study(path: Path, ctx: Context, model: ModelFile) -> StudyFile:
+    """A study file wherever it lies — a project's, or a benchmark's beside its formulation."""
+    return load_toml(path, StudyFile, {"units": catalogue.units(ctx), "model": model}, exact=True)

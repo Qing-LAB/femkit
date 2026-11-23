@@ -219,10 +219,12 @@ One physical problem, stated without reference to any engine (models.md § 4).
 | `unknown` | [Unknown](#unknown) | required | what it solves for |
 | `meanings` | table of `2` \| `3` → list of text | required | what each dimension may mean; a model chooses one |
 | `conventions` | list of `phasor` \| `amplitude` | empty | the conventions a model must choose |
+| `constants` | table of text → [Constant](#constant) | empty | the physical constants its equation uses, each given to every engine as stated here |
 | `properties` | table of text → [PropertySpec](#propertyspec) | required | the material properties it reads |
 | `conditions` | table of text → [KindSpec](#kindspec) | required | the condition kinds it allows |
 | `sources` | table of text → [KindSpec](#kindspec) | empty | the source kinds it allows |
 | `derived` | table of text → [DerivedSpec](#derivedspec) | required | each quantity an observable may name |
+| `benchmarks` | table of text → [Benchmark](#benchmark) | empty | its benchmark set: problems with known answers (models.md § 6.3) |
 
 ## Unknown
 
@@ -233,6 +235,16 @@ What the formulation solves for.
 | `name` | text | required | its name (`potential`) |
 | `space` | `H1` \| `Hcurl` | required | its function space |
 | `unit` | text | required | its unit |
+
+## Constant
+
+A physical constant the formulation's equation uses, as every engine must be given it.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `description` | text | required | one plain sentence: what it is or states |
+| `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
+| `value` | text | required | its value, with its unit |
 
 ## PropertySpec
 
@@ -274,6 +286,19 @@ A quantity an observable may name.
 | `description` | text | required | one plain sentence: what it is or states |
 | `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
 | `unit` | text | required | its unit |
+
+## Benchmark
+
+A problem with a known answer (models.md § 4, § 6.3): a project of its own, and the exact value each of its observables must reproduce.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `description` | text | required | one plain sentence: what it is or states |
+| `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
+| `project` | text | required | its folder, from femkit/data/formulations/, holding model.toml and study.toml |
+| `exercises` | list of text | required | the formulation's condition, source and property kinds it exercises |
+| `tolerance` | text | required | the relative difference a run may show from each reference value, a plain number; its basis is in the science document's section |
+| `reference` | table of text → text | required | each observable of its study, and its exact value |
 
 ## MesherDefinition
 

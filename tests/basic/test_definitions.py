@@ -297,3 +297,23 @@ def test_a_mesher_that_misstates_itself_does_not_load(change, at):
     with pytest.raises(DefinitionError) as caught:
         validate(MesherDefinition, data, "m.toml", {"environments": {"elmer", "ngsolve"}})
     assert at in [path for path, _ in caught.value.problems]
+
+
+@pytest.mark.parametrize("change, at", [
+    ({"exercises": ["potential", "tunneling"]}, "benchmarks.two_material.exercises[1]"),   # no such kind
+    ({"project": "electrostatics/benchmarks/none"}, "benchmarks.two_material.project"),     # no such project
+    ({"reference": {"potential_low": "2/5 VV"}}, "benchmarks.two_material.reference.potential_low"),
+])
+def test_a_benchmark_that_misstates_itself_does_not_load(change, at):
+    """Fails if a benchmark exercises a kind its formulation lacks, names a project that does not
+    exist, or a reference value the unit grammar does not read (models.md § 4)."""
+    import tomllib
+    from femkit.core.schema import DefinitionError, validate
+    from femkit.core.units import Units
+    from femkit.definitions.catalogue import data_root, load_units
+    from femkit.definitions.formulations import FormulationDefinition
+    data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text())
+    data["benchmarks"]["two_material"] |= change
+    with pytest.raises(DefinitionError) as caught:
+        validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units()), "root": data_root() / "formulations"})
+    assert at in [path for path, _ in caught.value.problems]

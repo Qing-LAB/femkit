@@ -136,8 +136,62 @@ potential (`potential`) or carrying a charge (`surface_charge`).
 
 ## 9. Benchmarks
 
-What proves an environment's translation is listed in the formulation and
-explained here as each is added ([`../contracts/models.md`](../contracts/models.md)
-§ 6.3). First comes a two-material case, where $\phi$ depends on $\epsilon_r$
-and on the interface. Manufactured solutions follow with the expression
-language ([`../plans/plan.md`](../plans/plan.md) § 3, M6).
+A benchmark is a problem with a known answer that an environment's translation
+must reproduce before its abilities count as proven
+([`../contracts/models.md`](../contracts/models.md) § 6.3). Each is chosen so
+that the error it guards against would show: $\phi=x$ on a square, say, is
+reproduced exactly by first-order elements whatever $\epsilon_r$ is taken to
+be, and proves nothing about materials. The formulation lists each
+(`femkit/data/formulations/electrostatics.toml`, `[benchmarks]`) with its
+model, its study and its reference values; manufactured solutions follow with
+the expression language ([`../plans/plan.md`](../plans/plan.md) § 3, M6).
+
+### 9.1 `two_material`: a layered capacitor
+
+**The problem.** In 2-D, per unit depth (§ 6), $\Omega$ is the unit square
+$0\le x\le 1$ m, $0\le y\le 1$ m, split at $x=a=\tfrac12$ m into two domains:
+`low` ($x<a$), with $\epsilon_{r,1}=1$, and `high` ($x>a$), with
+$\epsilon_{r,2}=4$. The face between them is named as an interface and
+carries `interface`. The left side is held at $\phi=0$, the right side at
+$\phi=V=1$ V (`potential`), and the top and bottom are `insulating`.
+
+**The exact solution.** Nothing varies with $y$, so $\mathbf{D}=D\,\hat{\mathbf{x}}$
+with $D$ the same in both layers (§ 4: no charge on the interface), and
+$\phi$ is linear in each layer:
+
+$$
+D=\frac{\epsilon_0\,V}{a/\epsilon_{r,1}+(1-a)/\epsilon_{r,2}}
+=\frac{\epsilon_0\cdot 1}{0.5+0.125}=1.6\,\epsilon_0\ \mathrm{C/m^2},
+$$
+
+$$
+\phi(x)=\frac{D\,x}{\epsilon_0\epsilon_{r,1}}\ \ (x\le a),\qquad
+\phi(x)=\phi(a)+\frac{D\,(x-a)}{\epsilon_0\epsilon_{r,2}}\ \ (x\ge a),
+$$
+
+so the field is 1.6 V/m in `low` and 0.4 V/m in `high`.
+
+**Reference values**, each an observable of its study:
+
+| observable | where | value |
+|---|---|---|
+| `potential_low` | $\phi(0.25, 0.5)$ | $\tfrac25$ V |
+| `potential_middle` | $\phi(0.5, 0.5)$, on the interface | $\tfrac45$ V |
+| `potential_high` | $\phi(0.75, 0.5)$ | $\tfrac{9}{10}$ V |
+| `energy_low` | $\int_{\text{low}} w$ | $\tfrac12\,\epsilon_0\,(1.6)^2\cdot\tfrac12=0.64\,\epsilon_0$ J/m |
+| `energy_high` | $\int_{\text{high}} w$ | $\tfrac12\,4\epsilon_0\,(0.4)^2\cdot\tfrac12=0.16\,\epsilon_0$ J/m |
+
+The energies sum to $0.8\,\epsilon_0=\tfrac12 C V^2$, with $C=D/V=1.6\,\epsilon_0$
+F/m per unit depth, as they must. In the formulation they are written with
+$\epsilon_0$ of § 1.
+
+**What it catches.** A translation that ignores $\epsilon_r$ gives
+$\phi(a)=\tfrac12$ V; one that swaps the materials, $\tfrac15$ V; one that
+loses the interface's continuity, a jump there. One whose $\epsilon_0$
+differs from § 1's moves both energies by the same factor while leaving the
+potentials alone.
+
+**Tolerance.** The solution is piecewise linear, and a mesh with a node line
+on the interface — every mesh of this geometry, as the interface is a face —
+holds it exactly in first-order elements; what remains is the linear solver's
+rounding. The reference values must be reproduced to a relative $10^{-9}$.

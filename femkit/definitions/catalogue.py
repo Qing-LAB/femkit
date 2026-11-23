@@ -89,7 +89,7 @@ def load_units(root: Path | None = None) -> UnitTable:
 def load_formulations(root: Path | None = None) -> dict[str, FormulationDefinition]:
     """Every formulation, its units read by the unit table (models.md § 4)."""
     return _load_dir((root or data_root()) / "formulations", FormulationDefinition,
-                     {"units": Units(load_units(root))})
+                     {"units": Units(load_units(root)), "root": (root or data_root()) / "formulations"})
 
 
 CUDA_SUFFIX = "-cuda"  # a definition's CUDA environment is named after it with this (definitions.md § 4.5)

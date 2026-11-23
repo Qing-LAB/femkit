@@ -4,8 +4,9 @@
 **Status:** current; of what it describes, the units ([`core.md`](core.md)
 § 11), the model and study schemas with their first tier of validity
 (§ 11.2; [`../reference/models.md`](../reference/models.md)), the formulation
-type with `electrostatics`, `model check`, `study expand`, `study copy`,
-`case list` and case IDs are built — the rest is
+type with `electrostatics` and its first benchmark, the mesher type with
+`gmsh` and `netgen`, `model check`, `study expand`, `study copy`, `case list`
+and case IDs are built — the rest is
 [`../plans/plan.md`](../plans/plan.md) § 3, M5, M6, M8, M9
 **Authority:** how a calculation is described independently of any engine; how
 it is matched against an engine environment's declared abilities, with every
@@ -281,7 +282,28 @@ parameters.value = { unit = "C/m^2", description = "sigma, the free charge per u
 description = "E = -grad phi"
 section = "7-derived-quantities"
 unit = "V/m"
+
+[benchmarks.two_material]
+description = "a layered capacitor: two materials in series between two held potentials, a named interface between them"
+section = "91-two_material-a-layered-capacitor"
+project = "electrostatics/benchmarks/two_material"
+exercises = ["potential", "insulating", "interface", "relative_permittivity"]
+tolerance = "1e-9"
+
+[benchmarks.two_material.reference]
+potential_middle = "4/5 V"
+energy_low = "5.666680204032e-12 J/m"
 ```
+
+- **`constants`**: each physical constant the equation uses — `vacuum_permittivity`
+  — given to every engine as stated there, never an engine's own value.
+- **A benchmark** is a project beside the formulation — a folder holding
+  `model.toml` and `study.toml` — with the kinds and properties it exercises, a
+  relative tolerance whose basis is in its section of the science document,
+  and the exact value each observable of its study must reproduce.
+  `schema check` loads each project and refuses one that `model check` faults,
+  or a reference that names no observable of its study, or is in another
+  dimension than the observable.
 
 **Scope.** One formulation per model. Coupled problems (photothermal heating,
 a field-dependent conductivity), eigenproblems and time-domain problems are

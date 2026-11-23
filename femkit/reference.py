@@ -89,9 +89,49 @@ def schema_check(req: CheckRequest, ctx: Context) -> CheckResult:
             for err in exc.errors for path, reason in err.problems
         ]
         return CheckResult(issues=issues)
+    issues = _benchmark_issues(cat, ctx)
+    if issues:
+        return CheckResult(issues=issues)
     return CheckResult(environments=list(cat.environments), managers=list(cat.managers),
                        schedulers=list(cat.schedulers), units=len(Units(cat.units).symbols()),
                        formulations=list(cat.formulations), meshers=list(cat.meshers))
+
+
+def _benchmark_issues(cat, ctx: Context) -> list[Issue]:
+    """Each benchmark's project loads, is complete for its formulation (`model check`), and
+    its reference names its study's observables, each in its observable's dimension
+    (models.md § 4). Here, above both layers, as the definitions may not import `models`."""
+    from femkit.core.errors import Refusal
+    from femkit.models import check as model_check
+    from femkit.models.project import load_model, read_study
+    units = Units(cat.units)
+    out: list[Issue] = []
+    for fid, f in cat.formulations.items():
+        for name, b in f.benchmarks.items():
+            where = catalogue.data_root() / "formulations" / b.project
+            subject = f"formulations/{fid}.toml: benchmarks.{name}"
+
+            def problem(message: str) -> None:
+                out.append(Issue(severity="error", code="benchmark-invalid", subject=subject,
+                                 message=f"{subject}: {message}"))
+            try:
+                model = load_model(where, ctx)
+                study = read_study(where / "study.toml", ctx, model)
+            except Refusal as exc:
+                problem(str(exc))
+                continue
+            if model.formulation != fid:
+                problem(f"its model names the formulation {model.formulation!r}")
+            for finding in model_check.findings(model, cat.formulations, units):
+                problem(f"{finding.subject} {finding.message}")
+            for observable, value in b.reference.items():
+                spec = study.observables.get(observable)
+                if spec is None:
+                    problem(f"reference.{observable}: its study has no such observable")
+                elif spec.unit is not None and units.parse(value).dimension != units.parse(spec.unit).dimension:
+                    problem(f"reference.{observable}: {value!r} is not in the dimension of {spec.unit}")
+    return out
+
 
 
 # ------------------------------------------------------------------ rendering
