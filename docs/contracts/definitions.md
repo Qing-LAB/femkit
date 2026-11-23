@@ -24,13 +24,16 @@ What is configured per user or per machine is not here: it is
 ## 1. What a shipped definition is
 
 femkit ships four types of definition under `femkit/data/`, beside the
-templates for user configuration:
+templates for user configuration — six once formulations and meshers are
+built:
 
 ```text
 femkit/data/
 ├── channels.txt               the channel order every environment is solved with
 ├── control.txt                the control environment's packages, as `conda create --file` reads them
 ├── environments/<name>.toml   one per engine environment
+├── formulations/<id>.toml     a physical problem stated for every engine (models.md § 4; not built yet, plan § 3, M5)
+├── meshers/<id>.toml          a mesher and what it builds (models.md § 6.5; not built yet, plan § 3, M5)
 ├── managers/<kind>.toml       how to drive a package manager (conda today)
 ├── schedulers/<kind>.toml     how to talk to a scheduler (local, slurm)
 └── templates/                 starting text for user configuration files
@@ -52,6 +55,12 @@ Engine code lives in `femkit/engines/<engine>/` and provides only:
 - **version probe** — report the installed solver version;
 - **check programs** — small numerical problems that run inside the engine's
   environment and write the common summary (§ 5.3).
+- **translators, parsers and finalizers** — not built yet (plan § 3, M6): per formulation
+  the engine declares, turn a case into input files, a run's output into
+  observations, and apply each kind of customization
+  ([`models.md`](models.md) § 9.1). An environment definition also declares
+  its abilities, default mesher, extension points and engine-only options —
+  not built yet (plan § 3, M5) ([`models.md`](models.md) § 6.1).
 
 ## 2. Schemas
 
@@ -143,7 +152,7 @@ modules = ["ngsolve", "netgen"]
 
 [cuda]                                 # the CUDA environment, ngsolve-cuda (§ 4.5)
 description = "CUDA: device matrices and preconditioners for iterative solves"
-packages = ["cuda-toolkit=12.9", "..."]
+packages = ["cuda-version=12.9", "cuda-nvcc=12.9", "..."]
 executables = ["nvcc"]
 
 [[sources]]

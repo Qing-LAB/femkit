@@ -26,7 +26,7 @@ who writes each, how each is found, and the user configuration
 | user configuration | choices for this machine | `<config>/config.toml` | the person, through `config init` / `config set` |
 | machine records | measured facts of a machine | `<config>/machines/<name>.toml` | `job probe`, run on that machine ([`jobs.md`](jobs.md) § 9) |
 | install records | what was installed and what its checks showed | inside each prefix, plus package locks under `<data>` | the installer and validator ([`envs.md`](envs.md) § 4) |
-| run files | a calculation's request, scripts and runs | the calculation folder | `job prepare`, the run script ([`jobs.md`](jobs.md)) |
+| run files | a calculation's request, scripts and runs | the calculation folder | `job prepare`, the run script ([`jobs.md`](jobs.md)); `case prepare` for a prepared case ([`models.md`](models.md) § 2; not built yet, plan § 3, M6) |
 
 A writer never writes another's home: a probe never writes a choice, `config
 set` never writes a fact, and preparing a job never edits configuration.
@@ -38,10 +38,11 @@ device model, site name or credential appears in a committed file.
 
 | directory | holds | default | override |
 |---|---|---|---|
-| `<config>` | what a person set and what a probe measured: `config.toml`, `machines/`; the web server's secrets, `secrets/` ([`api.md`](api.md) § 5.5) | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
-| `<data>` | environments, package locks, subject locks | `$XDG_DATA_HOME/femkit`, else `~/.local/share/femkit` | `FEMKIT_DATA_DIR` |
+| `<config>` | what a person set and what a probe measured: `config.toml`, `machines/`; the web server's secrets, `secrets/` ([`api.md`](api.md) § 5.5; not built yet, plan § 3, M7) | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
+| `<data>` | environments, package locks, subject locks; benchmark projects, `<data>/benchmarks/` ([`models.md`](models.md) § 6.3; not built yet, plan § 3, M6) | `$XDG_DATA_HOME/femkit`, else `~/.local/share/femkit` | `FEMKIT_DATA_DIR` |
 | `<cache>` | downloads femkit can fetch again; may be emptied at any time | `$XDG_CACHE_HOME/femkit`, else `~/.cache/femkit` | `FEMKIT_CACHE_DIR` |
-| `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them; the web server's logs, `<state>/logs/` ([`api.md`](api.md) § 5.4) | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
+| `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them; the web server's logs, `<state>/logs/` ([`api.md`](api.md) § 5.4; not built yet, plan § 3, M7) | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
+| `<runtime>` | a running web server's pidfile, token, socket and sign-in session records ([`api.md`](api.md) § 5.4); not built yet (plan § 3, M7) | `<state>/run/<host>/` | `FEMKIT_RUNTIME_DIR` |
 
 A log is not a cache: emptying a cache must lose nothing but downloads, so the
 logs live apart from it, under `$XDG_STATE_HOME`.
@@ -51,9 +52,9 @@ a directory that is still relative is refused, so no file is read from the
 working directory. No two files of one kind are combined. `scripts/install-env.sh`
 resolves the data directory by the same rule, because it must find the control
 environment before Python runs.
-`python -m femkit config path` prints the four directories, the rule that chose each,
-every file under the configuration directory and the top-level entries of the
-other three, so which file is in effect is never a guess.
+`python -m femkit config path` prints the four directories (five once the runtime
+directory is built, plan § 3, M7), the rule that chose each,
+every file under the configuration directory and the top-level entries of the others, so which file is in effect is never a guess.
 
 `FEMKIT_ENV_MANAGER` is set by the install script to the manager it found; it
 is not a setting. How Python learns the manager without it is
@@ -72,8 +73,9 @@ is not a setting. How Python learns the manager without it is
 | `activation.preamble` | the shell lines a run script runs on this machine before it enters an environment — `module load` lines that put the manager on `PATH`, for instance; `[]` states that none are needed | `job probe --write` and `job prepare` are refused, naming this key |
 | `activation.command` | how a shell on this machine then enters an environment: `source activate`, the activate script on `PATH` (a cluster's `module load mamba` puts it there); or `conda activate` / `mamba activate`, the manager's shell function, which exists only once the manager's hook file is sourced — femkit sources it first, from the kind's `activate.hook` under the manager's root ([`definitions.md`](definitions.md) § 6) | `job probe --write` and `job prepare` are refused, naming this key |
 
-The web server's keys — `[web.auth]`, `web.tls`, `web.trust_proxy` — are
-[`api.md`](api.md) § 5.5's, not built yet.
+The web server's keys — `[web.auth]`, `web.tls`, `web.trust_proxy`,
+`web.public_name`, `web.projects`, `web.upload_max_mb` — are
+[`api.md`](api.md) § 5.5's; not built yet (plan § 3, M7).
 
 Every key is optional in the file, and its absence has the one consequence the
 table states. Unknown keys are refused at load. The schema model is the

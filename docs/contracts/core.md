@@ -60,7 +60,10 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   `unset` (what an unset optional key means, [`config.md`](config.md) § 3),
   `declarable` (a machine fact `--set` may declare, [`jobs.md`](jobs.md)
   § 9.2), `cli` (how the command line spells it, [`api.md`](api.md) § 4),
-  `placeholders` (the names a templated field accepts, § 2.1).
+  `placeholders` (the names a templated field accepts, § 2.1), and — not
+  built yet (plan § 3, M5) — `ref` (the type of object a field refers to by name, read by both
+  the cross-reference check and the model graph,
+  [`models.md`](models.md) § 11.2).
 - **Loading fails whole.** Every field problem in a file is reported at once,
   each as `(key path, reason)`; the key path uses dots and `[index]`, e.g.
   `builds[1].options.NETGEN_DIR`. Cross-reference problems (next point) are
@@ -89,6 +92,7 @@ def config_dir() -> Path    # FEMKIT_CONFIG_DIR, else $XDG_CONFIG_HOME/femkit, e
 def data_dir() -> Path      # FEMKIT_DATA_DIR,   else $XDG_DATA_HOME/femkit,   else ~/.local/share/femkit
 def cache_dir() -> Path     # FEMKIT_CACHE_DIR,  else $XDG_CACHE_HOME/femkit,  else ~/.cache/femkit
 def state_dir() -> Path     # FEMKIT_STATE_DIR,  else $XDG_STATE_HOME/femkit,  else ~/.local/state/femkit
+def runtime_dir() -> Path   # FEMKIT_RUNTIME_DIR, else as config.md § 2 says; made 0700 — not built yet (plan § 3, M7)
 def control_prefix() -> Path            # <data>/environments/control (envs.md § 1)
 def checkout() -> Path                  # the checkout femkit runs from; it is never installed (envs.md § 7)
 def directory_sources() -> dict[str, tuple[Path, str]]   # each directory and the rule that chose it
@@ -244,6 +248,10 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
 - Each command runs in its own process group. A timeout or an interrupt stops
   the whole group (`SIGTERM`, then `SIGKILL` after 5 s).
 - A non-zero exit is a result, not an exception; the caller decides.
+- A detached, supervised process — the web server's supervisor and its child
+  ([`api.md`](api.md) § 5.4), and a job a person launches — is started through
+  one building block beside `run`, which returns its process ID and start
+  time, the one way a process is identified; not built yet (plan § 3, M3).
 
 ## 9. Errors — `core/errors.py`
 

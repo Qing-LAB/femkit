@@ -3,7 +3,7 @@
 **Role:** scientific background
 
 **Status:** current; no rung of the validation ladder has been run yet
-([`../plans/plan.md`](../plans/plan.md) § 4)
+([`../plans/plan.md`](../plans/plan.md) § 3, M9)
 
 **Authority:** electromagnetic equations, assumptions, and validation ladder
 
@@ -28,11 +28,12 @@ A phasor convention also needs an explicit choice:
 $\mathbf{E}_{\mathrm{physical}}(\mathbf{x},t)=
 \operatorname{Re}[\mathbf{E}(\mathbf{x})e^{s i\omega t}]$, with $s=+1$ or
 $s=-1$ and time $t$ in seconds. The homogeneous equation above does not select
-that sign. Selection and loss-sign conversion for material/excitation data
-remain reserved for the scientific preparation milestone; no implicit
-convention is supplied by the current generic model scaffold. Before a complex
-physical case is prepared, its convention and each backend's matching
-translation must be specified and validated together. Installation smoke
+that sign. Selection and loss-sign conversion for material and excitation data are the
+model's: it states the phasor sign and the amplitude convention, and each
+material's source convention is converted to it with a passivity check
+([`../contracts/models.md`](../contracts/models.md) § 3); each engine's
+matching translation is proven by the formulation's benchmarks
+([`../contracts/models.md`](../contracts/models.md) § 6.3). Installation smoke
 calculations do not establish that portable scientific translation.
 
 Metal permittivity is complex and wavelength-dependent. A material record must

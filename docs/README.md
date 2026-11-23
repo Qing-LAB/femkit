@@ -134,8 +134,8 @@ Moving or merging a document is a review, not a file move:
 - [`contracts/envs.md`](contracts/envs.md) — how an environment is installed,
   validated and entered, and the install script.
 - [`contracts/models.md`](contracts/models.md) — how a calculation is described
-  once, matched against an engine's declared abilities, decided on,
-  customized and prepared; not built yet.
+  once, matched against an environment's declared and proven abilities,
+  decided on, customized, prepared and reduced; not built yet (plan § 3).
 - [`contracts/jobs.md`](contracts/jobs.md) — machine records and the probe;
   how a job will be prepared and run.
 - [`contracts/testing.md`](contracts/testing.md) — test tiers, isolation, what

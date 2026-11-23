@@ -351,6 +351,7 @@ Where every file lives, and what removes it:
 | prefix | `<paths.environments>/<name>/` | `create` | `remove`, `clean` |
 | manifest | `<prefix>/.femkit/manifest.json` | `manifest` | with the prefix |
 | checks | `<prefix>/.femkit/checks.json` | `validate` | with the prefix |
+| proofs | `<prefix>/.femkit/proofs.json` | `formulation verify --record` ([`models.md`](models.md) § 6.3; not built yet, plan § 3, M6) | with the prefix |
 | source tree | `<prefix>/.femkit/src/<source>/` | `unpack` | with the prefix |
 | build tree | `<prefix>/.femkit/build/<build>/` | `configure`, `compile` | with the prefix |
 | toolchain programs | `<prefix>/.femkit/toolchain/` | `toolchain`, emptied first each time | with the prefix |
@@ -409,7 +410,7 @@ flowchart LR
   (measured on mamba 1.5.9 and 2.9.0). Where a machine's `run` still cannot
   start a command, the step would enter through the kind's shell hook (its
   `activate`, § 6.2) and `job probe` would record `manager.run_enters = false`
-  ([`jobs.md`](jobs.md) § 9.1); that fallback is not built yet (step 7).
+  ([`jobs.md`](jobs.md) § 9.1); that fallback is not built yet (plan § 3, M1).
 - **Every command femkit runs inside a prefix starts from an allow-list** —
   `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TERM`, `TMPDIR`,
   `CUDA_VISIBLE_DEVICES`, OpenMPI's two run-as-root variables, and

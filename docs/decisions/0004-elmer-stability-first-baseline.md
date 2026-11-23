@@ -156,6 +156,17 @@ program calls the CUDA runtime from Python.
 Toolkit release and component versions differ; not every CUDA library is
 pinned to one number.
 
+`[cuda]` lists the toolkit's parts the builds use — nvcc and the runtime;
+cuBLAS, cuSPARSE and cuSOLVER, which the pinned
+[AmgX build](https://github.com/NVIDIA/AMGX/blob/cc1cebdbb32b14d33762d4ddabcb2e23c1669f47/CMakeLists.txt)
+links; CCCL; and NVTX — never the `cuda-toolkit` metapackage. Measured with
+mamba 2.9.0 on 2026-11-22, on a cluster and on a workstation alike: the
+metapackage brings `cuda-visual-tools`, whose `nsight-compute 2025.1.1.2` pins
+`krb5 < 1.22`, while the toolchain's CMake 4.5
+([ADR 0006](0006-toolchain-first.md)) needs `libcurl >= 8.23` and with it
+`krb5 >= 1.22.2`, so the environment does not solve. A build never runs the
+profiler GUI.
+
 Not chosen:
 
 - **CUDA 12.9, NGSolve's toolkit**: it lacks the legacy NVTX library Elmer's
@@ -318,4 +329,4 @@ capability unless a reason says otherwise.
 The shipped checks run Elmer's own CTest cases from its build tree; none runs
 the installed solver on a mesh femkit prepares, and CPU evidence does not
 qualify `elmer-cuda`. What this environment still has to show is in
-[the plan](../plans/plan.md) § 2, M1.
+[the plan](../plans/plan.md) § 3, M1.

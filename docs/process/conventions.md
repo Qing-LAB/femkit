@@ -61,6 +61,15 @@ A change that crosses a public or persisted boundary then continues:
 7. Review with fresh eyes, widening each pass: the unit against its contract,
    then its callers and readers, then the whole domain for duplicated facts and
    leftovers. Every finding is fixed in the contract and the code.
+   A milestone ends with an independent review: reviewers each given one
+   aspect — the documents' rules and consistency, the fit with the framework,
+   scientific soundness, security for anything that serves requests or runs a
+   person's code, and the person's workflow — and the documents and code, not
+   the author's conclusions. Each finding is verified against the repository
+   before it is fixed; the person agrees before work that depends on the
+   milestone starts. Before a branch merges into `main`: the whole basic tier,
+   the field tier where the change reaches it, and a consistency review of every
+   merged document; the person agrees.
 8. Remove what landed from the plan.
 
 A change is incomplete if it adds any of these without registering its owner
@@ -103,7 +112,7 @@ top-level directory, a scientific observable or unit convention.
   ParMmg beside Mmg); a serial-only build states why.
 - **Scientific correctness before convenience.** Physical intent reaches the
   solver input with nothing absorbed silently; what an engine cannot do is
-  refused, never approximated ([`design.md`](../design.md)). Clarity beats
+  refused, never approximated silently ([`design.md`](../design.md)). Clarity beats
   cleverness.
 
 ## 3. Rules for code
@@ -156,6 +165,15 @@ environment, through the runner: `python tools/testrun.py run basic`.
 - **Environment changes are agreed first.** Installing into or changing a
   managed environment, or editing a definition's packages or pins, is a
   deployment change: it is proposed and agreed before it is made.
+- **A changed definition is solved whole before it is pushed.** After any
+  change to a definition's packages or pins, every environment that includes
+  it — each `-cuda` one too — is solved as a dry run with the manager kinds
+  femkit drives; a pin proven on one environment can make another unsolvable
+  (a CMake pin once made both CUDA environments unsolvable through a profiler's
+  `krb5` pin).
+- **A note is a lead, not evidence.** An old note, a code comment or another
+  project's record is checked by a measurement now before anything is argued
+  from it; what is not measured is said to be not measured.
 - **One cluster job per submission**, submitted deliberately, never a burst.
 - **Facts are checked, not assumed.** A claim about an upstream project, a
   tool or a machine is checked against its source, its documentation or a

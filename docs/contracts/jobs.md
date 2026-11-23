@@ -10,7 +10,7 @@ the run script, the run state machine, and how femkit uses a scheduler
 | rule | § |
 |---|---|
 | A **job** runs one command in one engine environment with stated resources, on one node; a **calculation folder** holds its request, its scripts and its runs | 1, 2 |
-| `job prepare` reads the request, the **target's machine record** and the scheduler kind, writes a self-contained run script for the request as stated, and shows how it fits the record — refusing only a missing statement, or one that contradicts the record | 3 |
+| `job prepare` reads the request, the **target's machine record** and the scheduler kind, writes a self-contained run script for the request as stated, and shows how it fits the record — refusing only a missing statement, one that contradicts the record, or a prepared case's input whose hash differs from its request | 3 |
 | The run script is a **closed list of blocks**; every fact about the machine is fixed in it at preparation, and it arranges no file | 4 |
 | A run is **one start**: each launch fills a new `run-NNN/` and starts it there; nothing is overwritten | 5 |
 | A run's state is **observed** from its markers, its facts and, when asked, the scheduler; six ordered rules decide it | 5 |
@@ -34,6 +34,12 @@ the inputs a job request names.
 └── run-001/          one start: copies of the inputs, run.sh and submit.sh;
                       its outputs, logs and markers
 ```
+
+A calculation folder is written by a person, or by `case prepare` for a
+prepared case, whose `studies/<study>/prepared/<case id>/<environment>/` holds
+its `job.toml` (§ 2) beside the prepared `final/` inputs; a job reads nothing
+else of the preparation ([`models.md`](models.md) § 9.3; not built yet, plan
+§ 3, M3).
 
 ## 2. The job request — `job.toml`
 
@@ -73,15 +79,26 @@ request holds only what this calculation asks for; nothing about a machine.
 - `partition` and `qos` together name one of the target's queues
   (§ 9.1); which queue to spend the wall time in is
   the person's judgement.
+- **A prepared case's request** (not built yet, plan § 3, M3) lists each input
+  with its SHA-256 and whether it was generated or customized
+  (`{ path = "case.sif", sha256 = "…", origin = "customized" }`), the steps
+  to run before and after the command (`steps.before`, `steps.after`), and the
+  environment's install fingerprint and lock hash it was prepared for
+  (`prepared_for`). `job prepare` refuses an input whose hash differs, naming
+  `case prepare`; a target whose record lists the environment with another
+  fingerprint is a warning (§ 3, step 4), and the run script stops before the
+  command when the prefix is not the one prepared for (§ 4).
 
 ## 3. Prepare
 
 `job prepare DIR [--target NAME]` runs these steps. A refusal — a missing
-statement, or one that contradicts the record ([`framework.md`](framework.md) § 4) —
+statement, one that contradicts the record ([`framework.md`](framework.md) § 4),
+or a prepared case's input whose hash differs from its request —
 writes nothing; everything the record says about the request is shown as a
 warning, and the job is prepared as asked. Nothing here probes a machine.
 
-1. **Request** — load `job.toml`.
+1. **Request** — load `job.toml`; for a prepared case (§ 2), refuse an input whose
+   SHA-256 differs from the request's, naming `case prepare`.
 2. **Target** — the record named by `--target`; otherwise the target named in
    the folder's `prepared.json`; otherwise `local`, but only when no record of
    another machine is present in `<config>/machines/`. When one is, the first
@@ -91,7 +108,7 @@ warning, and the job is prepared as asked. Nothing here probes a machine.
    an explicit `--target`. The record is always read again from
    `<config>/machines/`, so a newer probe is used; `machine.toml` is the copy
    the runs read.
-   - A target with no record, `local` included, is refused, naming `machine
+   - A target with no record, `local` included, is refused, naming `job
      probe --write`. A record that does not load is refused with its reason,
      never replaced by the next source.
    - A record whose identity is this machine and whose `settings` no longer
@@ -109,8 +126,10 @@ warning, and the job is prepared as asked. Nothing here probes a machine.
    (§ 9.1): the environment not installed there, in a
    state other than `ready`, built for another platform than the partition's
    nodes, or — with `gpus > 0` — not GPU-qualified (`passed`,
-   [`envs.md`](envs.md) § 5) is a warning naming the command that settles it on
-   the target (`env install NAME`, `env validate NAME --gpu` on a GPU node).
+   [`envs.md`](envs.md) § 5), or, for a prepared case, listed with an install
+   fingerprint other than the request's `prepared_for`, is a warning naming the
+   command that settles it on the target (`env install NAME`,
+   `env validate NAME --gpu` on a GPU node, `case prepare` again).
    When the record could not list environments, nothing is said. The run
    script stops, saying so, if the prefix is not there (§ 4).
 5. **Fit** — shown: how the request sits on the record, as one node must hold
@@ -145,10 +164,10 @@ directory, copies no file and changes directory nowhere. Its blocks, in order:
 | 3 | traps. On the script's own exit, write `ended.json`: exit code, time, and the reason when the script stopped itself. On a stop signal (HUP, INT, QUIT, TERM, XCPU and the like), log the signal and exit 128 + its number **without** `ended.json`: a forced stop — a cancel, the wall time, a node failure — is told by the scheduler or by `cancel.json`, never by a marker |
 | 4 | write `started.json`: time, host, and from the kind's job variables the scheduler job ID, ranks, cores per rank, cores on the node, GPUs and nodes granted; with `gpus > 0`, the GPU model the driver reports (no count). With `gpus > 0` and no device visible — the scheduler's GPU grant, else `CUDA_VISIBLE_DEVICES`, else the driver's own list — stop with that reason |
 | 5 | the target's `activation.preamble`, from the record's `settings`, with unset variables allowed (`set +u`, restored after; `-e` stays on): a site's or a package's activation scripts read variables that may be unset |
-| 6 | enter the exact prefix with the target's `activation.command`, from the record's `settings` — `source activate <prefix>`, or the manager kind's hook sourced then `conda activate` / `mamba activate <prefix>` (`set +u` as in 5) — then verify the active prefix is that one and that the command's executable resolves inside it; stop with the reason otherwise |
+| 6 | enter the exact prefix with the target's `activation.command`, from the record's `settings` — `source activate <prefix>`, or the manager kind's hook sourced then `conda activate` / `mamba activate <prefix>` (`set +u` as in 5) — then verify the active prefix is that one, that the command's executable resolves inside it, and, for a prepared case, that the prefix's install fingerprint and lock hash are the request's `prepared_for`; stop with the reason otherwise |
 | 7 | set each of the environment's `thread_variables` to `threads` and its `fixed_variables` to their values ([`definitions.md`](definitions.md) § 4.4) |
 | 8 | verify every input the request lists is present in the run directory; stop naming any that is missing |
-| 9 | run the command — through `launch.mpi` when `ranks > 1` — with output to the run's log. Under a scheduler no binding or mapping options are added: the scheduler has placed the job |
+| 9 | run the command — through `launch.mpi` when `ranks > 1` — with output to the run's log. Under a scheduler no binding or mapping options are added: the scheduler has placed the job. For a prepared case, the steps its request lists run before and after the command, each with its own log ([`models.md`](models.md) § 8.3; not built yet, plan § 3, M8) |
 | 10 | exit with the command's status |
 
 ## 5. Runs
