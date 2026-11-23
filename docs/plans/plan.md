@@ -11,7 +11,11 @@ The framework, the installer and the machine probe are built, and the basic test
 tier covers them. On a workstation, `env bootstrap` from a clean slate builds and
 validates `elmer` (seven checks, adaptive re-meshing with Mmg and ParMmg among
 them) and `ngsolve` (six checks), writes the machine record, and `doctor` reports
-the machine ready. Running a job is not built yet (M3, M4).
+the machine ready. Running a job is not built yet (M3, M4). How a calculation
+is described, matched against an engine and prepared
+([`../contracts/models.md`](../contracts/models.md)), and the web interface
+([`../contracts/api.md`](../contracts/api.md) § 5), are designed and not built
+(M5–M9).
 
 Each milestone ends with its tier green and a review before the next starts.
 
@@ -98,27 +102,47 @@ milestone that first needs it starts, or sooner if cheap.
 - **State tables are not rendered** into `docs/reference/`, so each contract's
   table is a second copy of its code (`core.md` § 7).
 - **The web's plan digest covers human text** (a step's `describe` carries the
-  free space), so it can call a plan stale when no fact changed; and the web has
-  no route for a long apply's progress (`api.md` § 5).
+  free space), so it can call a plan stale when no fact changed.
 - **`maturity` has no reader**; **`env plan` repeats `install --dry-run`**;
   **`doctor` prints the preamble's two commands under both the configuration
   and the record row**. Each is deleted, given its one use, or said once.
 
-## 4. After the framework
+## 4. After the framework: the order
 
-1. **Model preparation and headless analysis** (§ 6), reworked into a contract
-   first: strict geometry, material, mesh, study and observable schemas,
-   deterministic cases, engine preparation, parsers, reductions, pattern-aware
-   convergence, ParaView-readable output ([`../design.md`](../design.md),
-   scientific data). No solver-model work starts before the CPU environments
-   validate.
-2. One analytic Maxwell benchmark end to end in both engines, through those
-   contracts.
-3. A focused web interface for preparation, job status and numerical tables;
-   interactive field visualization stays in ParaView (ADR 0002).
-4. The bowtie model and its numerical convergence ladder.
-5. Water and effective-tunneling studies, only after the classical model is
-   converged and cross-checked.
+The framework milestones (§ 2) continue as M5–M9: describing calculations
+([`../contracts/models.md`](../contracts/models.md),
+[ADR 0008](../decisions/0008-one-model-declared-abilities.md)) and the web
+interface ([`../contracts/api.md`](../contracts/api.md) § 5,
+[ADR 0009](../decisions/0009-web-front-end.md)). No solver-model work starts
+before the CPU environments validate.
+
+```mermaid
+flowchart LR
+    M1["M1 framework<br/>(the Laplace check)"] --> M6
+    M2["M2 machines"] --> M4["M4 SLURM"]
+    M3["M3 local jobs"] --> M4
+    M3 --> M6
+    M5["M5 models I<br/>schemas, fit, graph"] --> M6["M6 the Laplace case<br/>through the chain"]
+    M5 --> M7["M7 web interface"]
+    M3 -.->|"its progress and<br/>job views"| M7
+    M6 --> M8["M8 customizations"]
+    M6 --> M9["M9 Maxwell<br/>and analysis"]
+    M8 --> M9
+    M9 --> B["the bowtie model<br/>and its convergence ladder"]
+    B --> S["water and effective-<br/>tunneling studies"]
+```
+
+| milestone | what | needs | where |
+|---|---|---|---|
+| **M5 — models I** | model, study and case schemas; formulations, meshers and abilities as data; `model check`, `model graph`, `model set`/`unset`, `study expand`, `case fit` | nothing beyond M1–M4's framework; can start now | § 6.1 |
+| **M6 — the Laplace case through the chain** | the `electrostatics` translators and parsers; `case prepare`; a job runs `final/`; results in both engines | M1's exact-answer check, M3, M5 | § 6.2 |
+| **M7 — web interface** | the flask routes, the built front end, the model graph, forms, review, progress, jobs and results | M5; its progress and job views M3 | § 7 |
+| **M8 — customizations** | `overlay`, `replace`, `step`; `hook` and `custom-input` at first need | M6 | § 6.3 |
+| **M9 — Maxwell and analysis** | `maxwell-frequency` and its analytic benchmark in both engines; analysis | M6, M8 | § 6.4 |
+
+Then the bowtie model and its numerical convergence ladder (its data: § 6.5),
+and only after the classical model is converged and cross-checked, the water
+and effective-tunneling studies.
 
 ## 5. Not scheduled: jobs across several nodes
 
@@ -139,187 +163,145 @@ the scheduler and use the cluster's fast network, not quietly fall back to TCP.
 Showing that it does needs a validation job that runs across several nodes. That
 may mean building against the cluster's own MPI, which is a deployment decision.
 
-## 6. Model preparation and analysis
+## 6. Models, preparation and analysis
 
-The work order and acceptance for solver-neutral input preparation and headless
-result analysis, reworked into a contract before its code starts. Governing
-documents: [`../design.md`](../design.md) (scientific data) and ADR 0002.
+The architecture and its rules are [`../contracts/models.md`](../contracts/models.md),
+the reasons [ADR 0008](../decisions/0008-one-model-declared-abilities.md). None
+of it is built.
 
-### 6.1 Outcome
+### 6.1 M5 — models I
 
-Given one versioned physical model and study, femkit will produce:
+1. **Model, study and case.** Their schemas, each reference field annotated
+   with its target type (`models.md` § 11.2); formulations as data
+   (`femkit/data/formulations/`), `electrostatics` first with its science
+   document (`docs/science/electrostatics.md`, not written yet); `model check`,
+   `study expand`, case IDs.
+2. **Meshers.** Their schema and the two first declarations, `netgen` and
+   `gmsh` (`models.md` § 6.4); each engine's default mesher; a shared mesh
+   made in the `elmer` environment and read by NGSolve as a file.
+3. **Abilities.** Their schema in `definitions.md`; the abilities, default
+   mesher, extension points and engine-only options of `elmer` and `ngsolve`
+   for `electrostatics`; `case fit` and the fit report.
+4. **The graph and its edits.** `model graph` (with `--engine` and
+   `--mermaid`), `model set`, `model unset`, and the layout file's operation.
+   Acceptance: the Laplace model built from an empty folder by `model set`
+   alone, each intermediate state loadable, its findings shrinking to none.
 
-1. validated, explicit geometry/material/excitation/boundary records;
-2. deterministic resolved cases for each study point;
-3. named-region and mesh manifests suitable for either backend;
-4. complete solver-specific input directories;
-5. structured numerical summaries from completed runs;
-6. convergence and cross-case comparison tables;
-7. unmodified or exported ParaView-readable field artifacts for optional visual
-   inspection.
+### 6.2 M6 — the Laplace case through the chain
 
-No analysis result will depend on manually clicking a plot, reading a screenshot,
-or selecting an unnamed solver dataset.
+1. The `electrostatics` translator and parser for both engines; `case prepare`
+   — prepare, finalize, review — with no customization; the result document.
+2. **Jobs run `final/`.** How a job request names a prepared case is settled
+   in `jobs.md` with local jobs (§ 2, M3).
 
-### 6.2 Preparation authorities
+Acceptance: M1's (§ 2): every nodal |φ − x| ≤ 1e-7, at least 200 cells and 50
+interior points, area 1 ± 1e-8, in both engines, each result `exact`, once
+with each engine's own mesher and once with a shared mesh. M1's installed-solver
+check runs the same case before this chain exists.
 
-These solver-neutral packages come after the framework:
+### 6.3 M8 — customizations
 
-```text
-femkit/
-├── geometry/       dimensions, coordinate frames, named regions and topology
-├── materials/      complex dispersive properties and source provenance
-├── physics/        excitation, boundaries, open-domain treatment and equations
-├── mesh/           mesh policy, region-size rules, quality and fingerprints
-├── studies/        sweep axes, deterministic case expansion and identifiers
-├── observables/    definitions of points, lines, regions and reductions
-└── analysis/       parsers, reductions, convergence and comparisons
-```
+`overlay`, `replace` and `step` first; `hook` and `custom-input` when a first
+real case needs them (`models.md` § 8.1). Acceptance: a case with an
+`unsupported` line prepared with a customization covering it, its result
+`customized`; a changed customization file refused at the job.
 
-Each package owns typed schemas plus validation. Backend adapters consume the
-resolved forms; they do not invent missing values.
+### 6.4 M9 — Maxwell and analysis
 
-### 6.3 Explicit data required before preparation
+1. **`maxwell-frequency`.** Its data file, the phasor convention
+   ([`../science/electromagnetics.md`](../science/electromagnetics.md)), each
+   engine's abilities with their approximations, the translators and parsers,
+   and an analytic Maxwell benchmark in both engines.
+2. **Analysis**, with its own contract when it is built. Open:
 
-#### Geometry
+   - **Products.** Beside each result document, ordinary tables and field files,
+     for example `scalar-metrics.csv` (one row per case or frequency), probe
+     profiles under `probes/`, `convergence.csv`, `mesh-summary.json` and the
+     ParaView-readable fields under `fields/`. Their names become contractual
+     with their schemas; large arrays stay in field and table files, never in
+     JSON.
+   - **Pattern-aware convergence.** Whether the spatial pattern of the solution
+     changes, not only its maximum. On matched physical probes it reports the
+     relative change of integrated and averaged observables, the normalized
+     correlation of complex field or intensity profiles, the shift of dominant
+     peaks, sign and phase consistency where meaningful, the energy-balance or
+     power residual, and for spectral studies the change of resonance wavelength
+     and linewidth.
+   - **Discipline.** Detection, parsing and scientific interpretation are separate
+     steps; every reduction records the field source and the expression used;
+     failed and unconverged attempts stay analyzable, labeled as such.
+   - **Expressions.** A language for observables such as `|φ − x|` or `|E/E₀|⁴`
+     is not chosen.
 
-- length unit and right-handed coordinate frame;
-- bowtie main axis and polarization axis;
-- complete dimensions and construction method;
-- named volumes, surfaces, edges, points and probe planes;
-- topology checks for unwanted buried or overlapping interfaces;
-- expected material assignment for every volume.
+### 6.5 The bowtie model's data
 
-#### Materials
+What the bowtie model must state before it is prepared, beyond what every
+model states (`models.md` § 3, § 5):
 
-- complex relative permittivity or constitutive model;
-- wavelength/frequency convention and interpolation rule;
-- source citation and valid range;
-- water/air selection;
-- effective tunneling region and conductivity-law parameters, clearly marked
-  as a phenomenological model.
+- **Geometry:** the main axis and the polarization axis; every dimension and
+  the construction; named volumes, surfaces, edges, points and probe planes;
+  no unwanted buried or overlapping interfaces.
+- **Materials:** the complex relative permittivity of each metal with its
+  source, wavelength range and interpolation rule; water or air; the effective
+  tunneling region and its conductivity law, marked as a phenomenological
+  model.
+- **Numerical policy:** the outer-domain extent and the open-boundary or PML
+  treatment; the element order; the gap, metal-surface, bulk and PML mesh
+  sizes; mesh growth and quality limits; solver tolerance and iteration
+  limits.
+- **Observables:** the complex field and its amplitude enhancement at the gap
+  center; the gap-volume means of amplitude and intensity enhancement and of
+  the |E/E₀|⁴ proxy; field profiles along the main axis and through the gap
+  normal; samples on explicitly defined vertical center planes; the power
+  absorbed in each metal body and the leakage region; the resonance wavelength
+  and linewidth when a spectral study exists. A point maximum may be reported
+  as a diagnostic, never as the only convergence criterion.
 
-#### Numerical policy
-
-- outer-domain extent and open-boundary/PML policy;
-- element-order policy;
-- gap, metal-surface, bulk and PML mesh constraints;
-- mesh growth and quality thresholds;
-- solver tolerance and iteration limits;
-- resource request kept separate from numerical physics.
-
-#### Observables
-
-Every observable states a name, expression, support, reduction, normalization,
-unit, and complex-value convention. Initial bowtie observables are:
-
-- complex electric field and amplitude enhancement at the gap center;
-- gap-volume mean of amplitude and intensity enhancement;
-- gap-volume mean of the $|E/E_0|^4$ proxy;
-- field profile along the bowtie main axis;
-- field profile through the gap normal direction;
-- explicitly defined vertical center-plane samples;
-- absorbed power in each metal body and leakage region;
-- resonance wavelength and linewidth when a spectral study exists.
-
-Point maxima may be reported diagnostically but cannot be the sole convergence
-criterion.
-
-### 6.4 Study separation
-
-The study schema distinguishes:
-
-- **numerical convergence:** mesh resolution/order, outer padding, PML thickness
-  and solver tolerance;
-- **geometry convergence:** electrode length and other truncation dimensions;
-- **physical sweep:** wavelength, water/air, gap, material model and tunneling
-  conductivity;
-- **execution benchmark:** ranks, threads, memory and solver implementation.
-
-Axes from different classes are not silently combined. A mixed study must name
-the classes and explain why the Cartesian product is required.
-
-### 6.5 Canonical analysis products
-
-Every successful parser produces `result.json` plus ordinary tabular files:
-
-```text
-results/
-├── result.json             status, provenance, metrics and artifact catalogue
-├── scalar-metrics.csv      one row per case/frequency
-├── probes/
-│   ├── gap-axis.csv
-│   ├── gap-normal.csv
-│   └── center-plane.csv
-├── convergence.csv         parameter, observable, relative change, pattern score
-├── mesh-summary.json       counts, quality, named-region coverage, fingerprint
-└── fields/                 retained ParaView-readable VTU/PVD artifacts
-```
-
-The exact filenames become contractual only when their schemas are implemented.
-Large arrays stay in standard field/tabular artifacts rather than being embedded
-in JSON.
-
-### 6.6 Pattern-aware convergence
-
-Convergence analysis must test whether the spatial solution pattern changes,
-not only whether its maximum changes. For matched physical probes it reports:
-
-- relative change in integrated/averaged observables;
-- normalized correlation of complex field or intensity profiles;
-- location shift of dominant peaks;
-- sign/phase consistency where meaningful;
-- energy-balance or power residual;
-- changes in resonance wavelength and linewidth for spectral studies.
-
-Comparison across nonidentical meshes occurs on declared physical probe lines,
-planes, or integration regions. It does not compare raw node indices.
-
-### 6.7 Backend preparation boundary
-
-Both adapters receive the same resolved case and return a preparation manifest:
-
-- backend name/version requirement;
-- complete generated-file inventory and hashes;
-- geometry/mesh fingerprints;
-- named-region mapping from common names to backend identifiers;
-- exact command vector and controlled environment additions;
-- declared expected products.
-
-Elmer emits Gmsh/ElmerGrid artifacts and a readable SIF. NGSolve emits a
-standalone Python solve script and resolved input record. Generated inputs carry
-provenance and are inspectable, but edits to them do not alter the authoritative
-model.
-
-### 6.8 Parser and analysis discipline
-
-- Detection, parsing, and scientific interpretation are separate steps.
-- A parser never silently substitutes zero or an empty array for missing output.
-- Complex fields retain real and imaginary components until a named reduction
-  requests magnitude, phase, real part, or imaginary part.
-- Every reduction records the mesh/field source and expression used.
-- Failed and unconverged attempts remain analyzable but are labeled as such.
-- Cross-backend comparison is refused when coordinate frames, excitation
-  normalization, material convention, or observable support do not agree.
-
-### 6.9 Tests and validation
+### 6.6 Tests and acceptance
 
 - strict schema round trips and unknown-key refusal;
 - unit conversion and coordinate-frame tests;
-- deterministic case identifiers independent of dictionary ordering;
-- geometry-region coverage and topology checks;
+- case IDs independent of the order values were written in;
+- region coverage, overlap and gap refusals;
 - material interpolation against fixed reference points;
-- mesh-manifest and region-map completeness;
+- a fit report for each status, and a refusal for each open line;
+- stale decisions and every customization refusal (`models.md` § 13);
+- mesh manifest and region-map completeness;
 - parser fixtures for successful, failed and truncated solver output;
-- analytic probe/reduction tests using synthetic complex fields;
-- convergence tests that distinguish amplitude agreement from pattern change;
-- cross-backend normalization refusal tests;
-- ParaView artifact catalogue test without importing VTK in the host process.
+- reductions tested on synthetic complex fields with known answers;
+- convergence tests that tell amplitude agreement from pattern change;
+- comparison refused across different normalization or fidelity;
+- the ParaView artifact catalogue, without importing VTK in the control process.
 
-### 6.10 Completion gate
+### 6.7 Completion gate
 
-This milestone is complete when a small analytic Maxwell model can be described
-once, prepared reproducibly for both backends, run through the common attempt
-contract, and reduced to comparable numerical tables—with its raw field files
-ready for ParaView—without any manual GUI action.
+A small analytic Maxwell model is described once, matched against both
+engines with every fit-report line resolved, prepared reproducibly for both,
+run as jobs, and reduced to comparable numerical tables — with its field files
+ready for ParaView — without any manual GUI action.
 
+## 7. M7 — the web interface
+
+The rules are [`../contracts/api.md`](../contracts/api.md) § 5, the reasons
+[ADR 0009](../decisions/0009-web-front-end.md). None of it is built.
+
+1. **The flask application**: the routes of `api.md` § 5.1, the event stream
+   of an operation's log included; `python -m femkit web` on the loopback
+   address. Acceptance: every registered operation served as a form, planned
+   and applied with its digest; a stale digest refused.
+2. **The front end's toolchain**: `frontend/` (added to `PROJECT_CONTRACT.md`
+   § 2 with it), React and React Flow, Node.js from conda-forge in a
+   developer's environment; the bundle in `femkit/web/static/`, and the basic
+   test that refuses a bundle older than its sources.
+3. **The model graph view** from `model graph`: the palette, typed
+   connections, findings on each node, the selected node's form, positions
+   saved. Acceptance: the Laplace model built in the page from an empty
+   folder, with no field named in the front-end code.
+4. **The fit overlay and the review**: each node marked with its fit status
+   for a chosen engine; an open line offering the decisions and customizations
+   that resolve it; `case prepare`'s plan reviewed and applied.
+5. **Progress, jobs and results**, once local jobs exist (M3): an operation's
+   steps live from its event stream; runs and their states; result tables, and
+   where each field file is for ParaView.
+6. **On a cluster**: served on the login node and reached through an SSH
+   tunnel, shown once on the cluster.

@@ -25,8 +25,8 @@ from physical intent through visualization, on a workstation or an HPC cluster.
 ## Scientific data
 
 These rules hold for every model, study and result femkit stores; the contract
-that defines those files (open work, [`plans/plan.md`](plans/plan.md) § 6)
-follows them.
+that defines those files, [`contracts/models.md`](contracts/models.md) (not
+built yet), follows them.
 
 - Physical intent, a study's questions, one resolved case, the solver input
   prepared from it, one run and its interpretation are separate files, each
@@ -60,6 +60,7 @@ follows them.
 | package manager | the conda family (conda; mamba and micromamba once their kind files are written), driven only through declared manager kinds |
 | design basis | state machines: state observed from durable facts, one closed table per machine, operations as event logs |
 | definitions | engines, environments, managers and schedulers are data under a schema; adding an engine adds data and one small adapter |
+| calculations | one solver-neutral model in a closed list of formulations, matched against each engine's declared abilities; every limitation is shown, decided or customized at a declared extension point ([ADR 0008](decisions/0008-one-model-declared-abilities.md)) |
 | schedulers | SLURM first, its language declared in a scheduler kind file |
-| surfaces | the command line (click) and, to come, a web interface (flask), both generic adapters over the same operations |
+| surfaces | the command line (click) and, to come, a web interface (flask, with a React front end built and shipped in the package, [ADR 0009](decisions/0009-web-front-end.md)), both generic adapters over the same operations |
 | a shipped definition | is never overridden by a person's copy; a machine that needs another value gets it as a declared option, chosen in `config.toml` |

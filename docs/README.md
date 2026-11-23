@@ -133,6 +133,9 @@ Moving or merging a document is a review, not a file move:
   and what a machine record is.
 - [`contracts/envs.md`](contracts/envs.md) — how an environment is installed,
   validated and entered, and the install script.
+- [`contracts/models.md`](contracts/models.md) — how a calculation is described
+  once, matched against an engine's declared abilities, decided on,
+  customized and prepared; not built yet.
 - [`contracts/jobs.md`](contracts/jobs.md) — machine records and the probe;
   how a job will be prepared and run.
 - [`contracts/testing.md`](contracts/testing.md) — test tiers, isolation, what
@@ -169,6 +172,12 @@ Moving or merging a document is a review, not a file move:
   fetched.
 - [`decisions/0007-cmake-default-generator.md`](decisions/0007-cmake-default-generator.md)
   — femkit names no CMake generator; each project's default applies.
+- [`decisions/0008-one-model-declared-abilities.md`](decisions/0008-one-model-declared-abilities.md)
+  — one model, translated per engine through declared abilities, with every
+  limitation shown, decided or customized.
+- [`decisions/0009-web-front-end.md`](decisions/0009-web-front-end.md)
+  — the web front end is a React application with React Flow, built and
+  shipped in the package.
 
 ### Plan
 

@@ -273,10 +273,14 @@ Built from `core/text.py`, so every command reads alike:
 
 ## 5. The web application — `femkit/web/`
 
-A flask application built from the same registry. No milestone builds it yet;
-these rules hold when one does, and a basic test checks that every registered
-operation can be expressed this way (its request and result models produce a
-JSON schema).
+Two parts: a flask application built from the same registry, and a front end
+that runs in the browser. No milestone builds them yet (plan § 7); these rules
+hold when one does, and a basic test checks that every registered operation can
+be expressed this way (its request and result models produce a JSON schema).
+The reasons for the front end's form are
+[ADR 0009](../decisions/0009-web-front-end.md).
+
+### 5.1 Routes
 
 | route | does |
 |---|---|
@@ -284,12 +288,59 @@ JSON schema).
 | `POST /api/<name>` | a read-only operation: request JSON in, result JSON out |
 | `POST /api/<name>/plan` | a changing operation: request JSON in, plan JSON out |
 | `POST /api/<name>/apply` | `{"request": …, "digest": …}`: re-plans, refuses with `PlanStale` unless the new plan's digest equals the one the person saw, then applies |
+| `GET /api/events/<operation directory>` | the operation's event log as a stream of server-sent events, from its first line, as it grows: how a long apply's progress reaches the page |
+| `GET /` and `/static/…` | the built front end |
 
 HTTP status follows § 4.3: 200 for a result, exit 0 or 1 (the body says `ok`);
-409 for a refusal; 500 for a defect, with the log path. Forms are rendered from the JSON schemas; the web holds no field list.
-A request body is the request model and nothing else: no field takes executable
-text, a shell fragment, an environment variable or a path outside the folders
-the operation names.
+409 for a refusal; 500 for a defect, with the log path. A request body is the
+request model and nothing else: no field takes executable text, a shell
+fragment, an environment variable or a path outside the folders the operation
+names.
+
+### 5.2 The front end
+
+- **Built from the registry and the schemas, never from a list of its own.**
+  Forms are rendered from the JSON schemas; the model graph from the graph
+  document `model graph` returns ([`models.md`](models.md) § 11.2); the
+  palette, the port types and the statuses come from that document. Adding a
+  field, an operation or a node kind changes no front-end code.
+- **Writes only through plan and apply.** Every change the page makes — an
+  edit of the model, a decision, preparing a case — is an operation, shown as
+  its plan and applied with its digest; the page holds no state the files do
+  not.
+- **Its views:**
+
+  | view | shows | acts through |
+  |---|---|---|
+  | operation | any operation as a form, its plan, its outcome | the routes of § 5.1 |
+  | model graph | the model and study as nodes and typed wires; findings on each node; with an engine chosen, each node's fit status | `model graph`, `model check`, `model set`, `model unset`; positions saved by their own operation |
+  | node | the selected node's form, from its kind's schema; for an open fit line, the decisions and customizations that resolve it | `model set`, `model unset` |
+  | review | `case prepare`'s plan: the fit report, each decision, each customization with its hash, the files `final/` changes, the command | apply with the digest |
+  | progress | an operation's steps as they run, and each step's log's last line | `GET /api/events/…` |
+  | jobs and results | runs, their states, the result tables; where each field file is, for ParaView | the job and result operations |
+
+- **Code is a file.** A customization is uploaded as a file into the
+  calculation folder by an operation that records its hash; the page shows it
+  and never runs or edits code typed into a form.
+- **Fields are viewed in ParaView**
+  ([ADR 0002](../decisions/0002-paraview-visualization-boundary.md)); the page
+  shows numbers, tables and where the field files are.
+
+### 5.3 Source, build and serving
+
+- **Source** is a React application whose graph view uses React Flow, in a
+  top-level `frontend/` folder (created with it; `PROJECT_CONTRACT.md` § 2
+  then lists it). It is built with Node.js from conda-forge in a developer's
+  own environment — never in the control environment.
+- **The built bundle is shipped** in `femkit/web/static/`: generated, never
+  edited by hand, and checked by a basic test against the hash of its sources,
+  as the reference pages are ([`definitions.md`](definitions.md) § 2.3).
+  Installing femkit never needs Node.js, and the page loads nothing from the
+  network: scripts, styles and fonts are all in the bundle.
+- **Serving**: `python -m femkit web` runs the flask application on the
+  loopback address of the machine the calculation folders are on; femkit has
+  one user and no sign-in, and offers no other address. On a cluster it runs on
+  the login node, and the person reaches it through an SSH tunnel.
 
 ## 6. The registry — `femkit/registry.py`
 

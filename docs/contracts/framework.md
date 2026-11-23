@@ -27,13 +27,17 @@ femkit/
 ├── schedulers/    readers of each scheduler kind's answers (jobs.md § 7)
 ├── config/        user configuration (config.md)
 ├── envs/          environment lifecycle (envs.md)
+├── models/        calculations described once: model, study, cases, the fit
+│                  against an engine's abilities, decisions, customizations,
+│                  preparation (models.md) — not built yet
 ├── jobs/          machine records and the probe; this machine's setup (`doctor`,
 │                  `env bootstrap`); job requests, preparation, run scripts, runs
 │                  (jobs.md) — records, the probe and setup built, the rest not yet
 ├── registry.py    the one list of operation modules (api.md § 6)
 ├── reference.py   `schema check|docs`: they span every domain (definitions.md § 2.3)
 ├── cli/           the generic command-line adapter (api.md § 4)
-└── web/           the generic flask adapter (api.md § 5) — not built yet
+└── web/           the generic flask adapter and its built front end (api.md § 5)
+                   — not built yet
 scripts/install-env.sh  the install script (envs.md § 7) — the only shell code
 tools/             developer tools that import nothing from femkit (testing.md § 4)
 ```
@@ -41,7 +45,7 @@ tools/             developer tools that import nothing from femkit (testing.md �
 | layer | packages | may import |
 |---|---|---|
 | core | `core` | the standard library and declared third-party libraries |
-| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `jobs` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
+| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `models`, `jobs` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
 | registry | `registry.py`, `reference.py` | every domain |
 | surfaces | `cli`, `web` | everything below; never each other |
 
@@ -65,6 +69,7 @@ tools/             developer tools that import nothing from femkit (testing.md �
 | shipped definitions and kinds | [`definitions.md`](definitions.md) |
 | configuration | [`config.md`](config.md) |
 | environments, installs, the install script | [`envs.md`](envs.md) |
+| calculations: model, study, cases, formulations, engine abilities, the fit report, decisions, customizations, preparation, results | [`models.md`](models.md) — not built yet |
 | machine records and the probe, jobs, schedulers | [`jobs.md`](jobs.md) |
 | tests and the test runner | [`testing.md`](testing.md) |
 
