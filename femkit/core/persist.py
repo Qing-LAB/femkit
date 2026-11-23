@@ -112,3 +112,88 @@ def open_private(path: Path, mode: str) -> IO:
     binary = "b" in mode
     return os.fdopen(fd, "ab" if binary and "a" in mode else "wb" if binary else "a" if "a" in mode else "w",
                      **({} if binary else {"encoding": "utf-8"}))
+
+
+# ------------------------------------------------------------ editing TOML in place
+#
+# A person's file keeps its comments, its order and its layout through every edit a
+# command makes (config set, model set): read as a document, changed key by key, written
+# whole and atomically.
+
+Key = tuple[str, ...]
+
+
+def read_document(path: Path, empty: str = "") -> tomlkit.TOMLDocument:
+    """``path`` as an editable document, its comments kept; ``empty`` when it does not exist."""
+    path = Path(path)
+    return tomlkit.parse(path.read_text(encoding="utf-8") if path.exists() else empty)
+
+
+def write_document(path: Path, doc: tomlkit.TOMLDocument) -> Path:
+    return atomic_write_text(path, tomlkit.dumps(doc))
+
+
+def parse_value(text: str) -> Any:
+    """A TOML inline value as a person types it — `"1 nm"`, `2`, `[0, 0]`, `{ kind = "x" }` —
+    or ValueError."""
+    try:
+        doc = tomlkit.parse(f"value = {text}")
+    except tomlkit.exceptions.TOMLKitError as exc:
+        raise ValueError(f"{text!r} is not a TOML value: {exc}") from None
+    if list(doc) != ["value"]:
+        raise ValueError(f"{text!r} is not one TOML value")
+    return doc["value"]
+
+
+def _parent(doc: Any, key: Key, create: bool) -> Any:
+    node = doc
+    for part in key[:-1]:
+        if part not in node:
+            if not create:
+                raise KeyError(".".join(key))
+            node[part] = tomlkit.table() if isinstance(node, (tomlkit.TOMLDocument, tomlkit.items.Table)) \
+                else tomlkit.inline_table()
+        node = node[part]
+        if not isinstance(node, (dict, tomlkit.items.Table, tomlkit.items.InlineTable)):
+            raise KeyError(f"{'.'.join(key)}: {part} is a value, not a table")
+    return node
+
+
+def document_has(doc: Any, key: Key) -> bool:
+    try:
+        return key[-1] in _parent(doc, key, create=False)
+    except KeyError:
+        return False
+
+
+def document_set(doc: Any, key: Key, value: Any) -> None:
+    """``key`` set to ``value``, every table on the way made when absent."""
+    _parent(doc, key, create=True)[key[-1]] = value
+
+
+def document_unset(doc: Any, key: Key) -> None:
+    del _parent(doc, key, create=False)[key[-1]]
+
+
+def document_rename(doc: Any, key: Key, new: str) -> None:
+    """The entry at ``key`` renamed ``new``, in its place, its comment kept. tomlkit offers
+    this only as `Container._replace` (tomlkit < 1, control.txt); a test holds it to it."""
+    parent = _parent(doc, key, create=False)
+    container = parent if isinstance(parent, tomlkit.container.Container) else parent.value
+    if new in container:
+        raise KeyError(f"{new!r} is taken")
+    item = container[key[-1]]
+    container._replace(key[-1], new, item)
+    _headers_from_keys(item)
+
+
+def _headers_from_keys(item: Any) -> None:
+    """A parsed table keeps its header's text (`[axes."parameters.bias"]`); forgetting it, in
+    the renamed table and every table under it, has each header written from its keys again."""
+    if isinstance(item, tomlkit.items.Table):
+        item.display_name = None
+        for _, child in item.value.body:
+            _headers_from_keys(child)
+    elif isinstance(item, tomlkit.items.AoT):
+        for table in item.body:
+            _headers_from_keys(table)

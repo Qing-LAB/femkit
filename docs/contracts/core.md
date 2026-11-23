@@ -132,10 +132,21 @@ def write_json(path: Path, data: Any) -> Path          # atomic; sorted keys, tw
 def write_toml(path: Path, data: dict) -> Path         # atomic
 def read_toml(path: Path) -> dict
 def read_json(path: Path) -> Any
+def read_document(path, empty="") -> TOMLDocument     # a TOML file to edit, its comments and order kept
+def write_document(path, doc) -> Path                  # atomic
+def parse_value(text) -> Any                           # a TOML inline value as a person types it
+def document_has(doc, key) -> bool; document_set(doc, key, value); document_unset(doc, key)
+def document_rename(doc, key, new)                     # in place, its comment kept; headers rewritten from keys
 def private_dir(path: Path) -> Path     # 0700; refused when another account could enter it or replace it
 def open_private(path: Path, mode: str) -> IO   # 0600 from its first byte, never through a link;
                                                 # "a" appends, "w" truncates, "x" creates exclusively
 ```
+
+A person's TOML file keeps its comments, its order and its layout through every
+edit a command makes — `config set`, `model set` — read as a document, changed
+key by key, and written whole and atomically. tomlkit renames a key in place
+only through `Container._replace`, held to it by tomlkit's version range in
+`control.txt` and a test.
 
 `atomic_write_text` and `write_json` take `private=True` for a file only this
 account may read (a pidfile). `private_dir` makes each folder it creates

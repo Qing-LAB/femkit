@@ -75,7 +75,7 @@ def findings(m: ModelFile, formulations: dict[str, FormulationDefinition], units
     domains = [n for n, r in m.regions.items() if r.kind == "domain"]
     if not domains:
         finding(address("regions"), "has no domain region", _set("model:regions.<name>",
-                '\'{ kind = "domain", shapes = ["<shape>"] }\''))
+                '{ kind = "domain", shapes = ["<shape>"] }'))
     for name in domains:
         if name not in m.assign:
             finding(address("regions", name), "is a domain with no material", _set(f"model:assign.{name}", '"<material>"'))
@@ -84,7 +84,7 @@ def findings(m: ModelFile, formulations: dict[str, FormulationDefinition], units
             what = "an outer boundary" if region.kind == "boundary" else "a named interface"
             kinds = [k for k, s in f.conditions.items() if region.kind in s.on]
             finding(address("regions", name), f"is {what} with no condition (allowed: {', '.join(kinds)})",
-                    _set(f"model:conditions.{name}", f'\'{{ kind = "{kinds[0]}" }}\'' if kinds else '"<kind>"'))
+                    _set(f"model:conditions.{name}", f'{{ kind = "{kinds[0]}" }}' if kinds else '"<kind>"'))
     for name, condition in m.conditions.items():
         _kinded(finding, ("conditions", name), condition, f.conditions, m.regions[name].kind, params, units)
     for name, source in m.sources.items():

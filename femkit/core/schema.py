@@ -145,25 +145,27 @@ def field_extras(field: FieldInfo) -> dict:
     return found
 
 
-def references(instance: BaseModel, at: tuple = ()) -> Iterator[tuple[tuple, str, str]]:
-    """Every name ``instance`` refers to, as ``(location, type, name)``, from its fields' `ref`
+def references(instance: BaseModel, at: tuple = ()) -> Iterator[tuple[tuple, str, str, str]]:
+    """Every name ``instance`` refers to, as ``(location, type, name, held)``, from its fields' `ref`
     annotations (core.md § 2): on a text or a list of texts, ``ref`` is the type its values
     name; on a table, ``ref`` is ``{"key": type, "value": type}``, either part optional. A
-    type may offer alternatives, `region:boundary|region:interface`."""
+    type may offer alternatives, `region:boundary|region:interface`. ``held`` says how: `key`
+    (the table key at the location), `value` (the text there) or `item` (a list's item)."""
     for name, field in type(instance).model_fields.items():
         value = getattr(instance, name)
         key = field.alias or name
         ref = field_extras(field).get("ref")
         if isinstance(ref, str):
-            for i, item in enumerate(value if isinstance(value, (list, tuple)) else [value]):
+            listed = isinstance(value, (list, tuple))
+            for i, item in enumerate(value if listed else [value]):
                 if isinstance(item, str):
-                    yield ((*at, key, i) if isinstance(value, (list, tuple)) else (*at, key)), ref, item
+                    yield ((*at, key, i) if listed else (*at, key)), ref, item, ("item" if listed else "value")
         elif isinstance(ref, dict) and isinstance(value, dict):
             for k, v in value.items():
                 if "key" in ref:
-                    yield (*at, key, k), ref["key"], k
+                    yield (*at, key, k), ref["key"], k, "key"
                 if "value" in ref and isinstance(v, str):
-                    yield (*at, key, k), ref["value"], v
+                    yield (*at, key, k), ref["value"], v, "value"
         for loc, item in _children(value, (*at, key)):
             yield from references(item, loc)
 

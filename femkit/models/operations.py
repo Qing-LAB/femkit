@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from femkit.core import text
 from femkit.core.errors import PlanStale, Refusal, Refused, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.persist import atomic_write_text, write_json
+from femkit.core.persist import atomic_write_text, write_document, write_json
 from femkit.core.schema import Model
 from femkit.definitions import catalogue
-from femkit.models import cases, check
-from femkit.models.project import load_model, load_study, studies, study_file
+from femkit.models import address, cases, check, edit, graph
+from femkit.models.project import load_model, load_study, model_file, studies, study_file
 
 
 class ProjectRequest(Model):
@@ -200,3 +201,220 @@ def case_list(req: ProjectRequest, ctx: Context) -> CaseListResult:
                 by_case[c.id][0].append(name)
                 by_case[c.id][1].update({k: str(v) for k, v in c.point.items()})
     return CaseListResult(cases=[CaseRow(id=cid, studies=s, point=p) for cid, (s, p) in sorted(by_case.items())])
+
+
+# ------------------------------------------------------------------ edits
+
+class SetRequest(ProjectRequest):
+    """One value of the model or a study."""
+
+    address: str = Field(description="what to set, `model:<path>` or `study:<study>:<path>` (models.md § 11.1)",
+                         json_schema_extra={"cli": "argument"})
+    value: str = Field(description="a TOML inline value: '\"1 nm\"', '2', '[0, 0]', '{ kind = \"potential\" }'",
+                       json_schema_extra={"cli": "argument"})
+
+
+class UnsetRequest(ProjectRequest):
+    """One entry of the model or a study to remove."""
+
+    address: str = Field(description="what to remove (models.md § 11.1)", json_schema_extra={"cli": "argument"})
+
+
+class RenameRequest(ProjectRequest):
+    """A named object and its new name."""
+
+    address: str = Field(description="the object: a parameter, shape, region, material, source, observable or "
+                                     "binding", json_schema_extra={"cli": "argument"})
+    name: str = Field(description="its new name", json_schema_extra={"cli": "argument"})
+
+
+class EditOutcome(Outcome):
+    written: list[str] = Field(default_factory=list, description="the files the edit changed")
+
+    def text(self) -> str:
+        lines = [f"wrote {', '.join(Path(w).name for w in self.written) or 'nothing'}"]
+        findings = [i for i in self.issues if i.code.startswith("model-")]
+        lines.append(f"{text.count(len(findings), 'finding')} left" if findings else "the model is complete")
+        return "\n".join(lines + text.findings([i.model_copy(update={"message": f"{i.subject} {i.message}"})
+                                                for i in findings]))
+
+
+def _edited(req, ctx: Context) -> "edit.Project":
+    project = edit.Project.read(_project(req), catalogue.units(ctx),
+                                extra_study=_address_of(req).study if isinstance(req, SetRequest) else None)
+    a = _address_of(req)
+    if isinstance(req, SetRequest):
+        edit.set_value(project, a, req.value)
+    elif isinstance(req, RenameRequest):
+        edit.rename(project, a, req.name)
+    else:
+        edit.unset(project, a)
+    return project
+
+
+def _address_of(req) -> address.Address:
+    return address.parse(req.address)
+
+
+def _findings_after(project: "edit.Project", ctx: Context) -> list[Issue]:
+    """What `model check` would find once the edit is made: shown, never refused (§ 11.2)."""
+    model, _ = project.load()
+    return [i.model_copy(update={"severity": "info"})
+            for i in check.findings(model, catalogue.formulations(ctx), catalogue.units(ctx))]
+
+
+class _Edit:
+    verb = ""
+
+    def plan(self, req, ctx: Context) -> Plan:
+        project = _edited(req, ctx)
+        changed = edit.written(project)
+        what = {"set": f"set {req.address} = {getattr(req, 'value', '')}", "unset": f"remove {req.address}",
+                "rename": f"rename {req.address} to {getattr(req, 'name', '')}, and every reference to it"}[self.verb]
+        steps = tuple(Step(id=str(p.relative_to(project.root)), describe=f"{p.relative_to(project.root)}: {what}")
+                      for p in changed)
+        return Plan(operation=f"model.{self.verb}", request=req.model_dump(mode="json"), steps=steps,
+                    issues=_findings_after(project, ctx),
+                    basis={"files": {str(k): v for k, v in edit.Project.read(project.root, project.units,
+                                                                            None).digests.items()}})
+
+    def apply(self, plan: Plan, ctx: Context, observer) -> EditOutcome:
+        req = type(self).request_model.model_validate(plan.request)
+        now = {str(k): v for k, v in edit.Project.read(_project(req), catalogue.units(ctx), None).digests.items()}
+        if now != plan.basis["files"]:
+            raise PlanStale("a file of the project changed since the plan; plan again")
+        project = _edited(req, ctx)
+        files = {str(p.relative_to(project.root)): p for p in edit.written(project)}
+
+        def do(step: Step, where: Path):
+            study = next(s for s in project.docs if project.path(s) == files[step.id])
+            write_document(files[step.id], project.docs[study])
+            return "done", None
+
+        status, where = run_steps(plan, ctx, observer, do)
+        return EditOutcome(plan=plan, status=status, log=str(where), written=[str(p) for p in files.values()],
+                           issues=_findings_after(project, ctx))
+
+
+@operation("model.set", request=SetRequest, result=EditOutcome, changes=True,
+           subject=lambda req: [_subject(_project(req))])
+class ModelSet(_Edit):
+    """Set one value of the model or a study, keeping the file's comments; refused when the
+    file would no longer load (models.md § 11.1). The first set in an empty folder creates
+    model.toml."""
+    verb, request_model = "set", SetRequest
+
+
+@operation("model.unset", request=UnsetRequest, result=EditOutcome, changes=True,
+           subject=lambda req: [_subject(_project(req))])
+class ModelUnset(_Edit):
+    """Remove one entry of the model or a study; refused while anything refers to it, listing
+    each place (models.md § 11.1)."""
+    verb, request_model = "unset", UnsetRequest
+
+
+@operation("model.rename", request=RenameRequest, result=EditOutcome, changes=True,
+           subject=lambda req: [_subject(_project(req))])
+class ModelRename(_Edit):
+    """Rename a named object, and every reference to it: in the model, in every study, in
+    every expression using a renamed parameter (models.md § 11.1)."""
+    verb, request_model = "rename", RenameRequest
+
+
+# ------------------------------------------------------------------ the graph
+
+class GraphRequest(ProjectRequest):
+    """The model, and optionally one study, as a graph."""
+
+    study: str | None = Field(default=None, description="a study to show beside the model")
+    mermaid: bool = Field(default=False, description="also as Mermaid text")
+
+
+class GraphResult(Result):
+    project: str = Field(description="the project")
+    study: str | None = Field(default=None, description="the study shown")
+    formulation: str | None = Field(default=None, description="the model's formulation")
+    science: str | None = Field(default=None, description="its science document, for the palette's sections")
+    nodes: list[graph.GraphNode] = Field(default_factory=list)
+    edges: list[graph.GraphEdge] = Field(default_factory=list)
+    palette: list[graph.PaletteEntry] = Field(default_factory=list)
+    mermaid: str | None = Field(default=None, description="the graph as Mermaid text, when asked")
+
+    def text(self) -> str:
+        if self.mermaid is not None:
+            return self.mermaid
+        lines = [f"{text.count(len(self.nodes), 'node')}, {text.count(len(self.edges), 'reference')}"]
+        lines += text.table([(n.address, n.kind + (f": {n.type}" if n.type else ""),
+                              f"{len(n.findings)} findings" if n.findings else "") for n in self.nodes])
+        return "\n".join(lines + text.findings(self.issues))
+
+
+@operation("model.graph", request=GraphRequest, result=GraphResult)
+def model_graph(req: GraphRequest, ctx: Context) -> GraphResult:
+    """The model and a study as nodes and typed wires, with `model check`'s findings on each
+    node and the formulation's palette (models.md § 11.2); `--mermaid` for a terminal."""
+    project = _project(req)
+    formulations = catalogue.formulations(ctx)
+    if not model_file(project).is_file():
+        return GraphResult(project=str(project), study=req.study, palette=graph.palette(None, req.study))
+    model = load_model(project, ctx)
+    s = load_study(project, req.study, ctx, model) if req.study else None
+    issues = check.findings(model, formulations, catalogue.units(ctx))
+    nodes, edges, loose = graph.build(model, req.study, s, issues, project)
+    f = formulations.get(model.formulation or "")
+    return GraphResult(project=str(project), study=req.study, formulation=model.formulation,
+                       science=f.science if f else None, nodes=nodes, edges=edges, issues=loose,
+                       palette=graph.palette(f, req.study),
+                       mermaid=graph.mermaid(nodes, edges) if req.mermaid else None)
+
+
+class LayoutRequest(ProjectRequest):
+    """Where the page placed nodes."""
+
+    positions: dict[str, list[float]] = Field(description="each node's address and its [x, y]")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_text(cls, data):
+        if isinstance(data, dict) and isinstance(data.get("positions"), str):
+            data = {**data, "positions": json.loads(data["positions"])}
+        return data
+
+
+class LayoutOutcome(Outcome):
+    def text(self) -> str:
+        return "positions saved" if self.status == "done" else "positions not saved"
+
+
+@operation("model.layout", request=LayoutRequest, result=LayoutOutcome, changes=True,
+           subject=lambda req: [_subject(_project(req))])
+class ModelLayout:
+    """Save where the page placed the graph's nodes, in .femkit/layout.json; read by no other
+    step (models.md § 11.2)."""
+
+    def plan(self, req: LayoutRequest, ctx: Context) -> Plan:
+        project = _project(req)
+        model = load_model(project, ctx)
+        known = {n.address for n in graph.build(model, None, None, [], project)[0]}
+        for name in studies(project):
+            s = load_study(project, name, ctx, model)
+            known |= {n.address for n in graph.build(model, name, s, [], project)[0]}
+        unknown = sorted(set(req.positions) - known)
+        if unknown:
+            raise UsageError(f"no node is at {', '.join(unknown)}")
+        return Plan(operation="model.layout", request=req.model_dump(mode="json"),
+                    steps=(Step(id="layout", describe=f"save {text.count(len(req.positions), 'position')} in "
+                                                      f"{graph.LAYOUT}"),),
+                    basis={"known": sorted(known)})
+
+    def apply(self, plan: Plan, ctx: Context, observer) -> LayoutOutcome:
+        req = LayoutRequest.model_validate(plan.request)
+        project = _project(req)
+
+        def do(step: Step, where: Path):
+            kept = {a: p for a, p in graph.positions(project).items() if a in set(plan.basis["known"])}
+            write_json(project / graph.LAYOUT, {"schema": 1, "positions": {**kept, **req.positions}})
+            return "done", None
+
+        status, where = run_steps(plan, ctx, observer, do)
+        return LayoutOutcome(plan=plan, status=status, log=str(where))

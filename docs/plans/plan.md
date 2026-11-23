@@ -222,10 +222,11 @@ All by [`../contracts/models.md`](../contracts/models.md):
    mesher, extension points and engine-only options of `elmer` and `ngsolve`
    for `electrostatics`; the proof record's schema; `case match` and
    `study match`; decisions and their staleness.
-4. **The graph and its edits**: the address grammar; comment-preserving TOML
-   editing moved into `core/persist.py` (§ 4); `model graph` (with
-   `--environment` and `--mermaid`), `model set`, `model unset`,
-   `model rename`, `model layout`.
+4. **The graph and its edits.** Built: the address grammar; comment-preserving
+   TOML editing in `core/persist.py`; `model graph` with `--mermaid`,
+   `model set`, `model unset`, `model rename`, `model layout`; the Laplace model
+   built from an empty folder by `model set` alone. Open: `model graph
+   --environment`, which overlays the match report (step 3).
 
 Acceptance: the Laplace model built from an empty folder by `model set` alone,
 each intermediate state loadable, its findings shrinking to none; "500 nm" and
@@ -395,8 +396,6 @@ milestone that first needs it starts, or sooner if cheap.
   Elmer's mesh check writes none.
 - **State tables are not rendered** into `docs/reference/`, so each contract's
   table is a second copy of its code (`core.md` § 7).
-- **Comment-preserving TOML editing** lives in `config/settings.py`; `model set`
-  needs it too, so it moves into `core/persist.py` with M5.
 - **The web's plan digest covers human text** (a step's `describe` carries the
   free space), so it can call a plan stale when no fact changed — first needed
   by M7.

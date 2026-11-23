@@ -19,7 +19,7 @@ from typing import Annotated
 from femkit.core import dirs, paths, text
 from femkit.core.errors import Refusal, UsageError
 from femkit.core.operations import Context
-from femkit.core.persist import atomic_write_text
+from femkit.core.persist import document_set, read_document, write_document
 from femkit.core.schema import DefinitionError, Model, load_toml, validate
 from femkit.definitions.catalogue import data_root
 from femkit.definitions.models import Launcher
@@ -225,10 +225,10 @@ def with_values(values: dict[str, Any]) -> tomlkit.TOMLDocument:
     ``values`` (dotted key -> value) set and the whole validated. A value the
     model rejects is a request that does not validate: `UsageError`."""
     path = config_file()
-    doc = tomlkit.parse(path.read_text(encoding="utf-8") if path.exists() else template_text())
+    doc = read_document(path, empty=template_text())
     for dotted, value in values.items():
         k = key(dotted)
-        doc.setdefault(k.section, tomlkit.table())[k.name] = value
+        document_set(doc, (k.section, k.name), value)
     try:
         validate(UserConfig, doc.unwrap(), path)
     except DefinitionError as exc:
@@ -237,7 +237,7 @@ def with_values(values: dict[str, Any]) -> tomlkit.TOMLDocument:
 
 
 def write(doc: tomlkit.TOMLDocument) -> Path:
-    return atomic_write_text(config_file(), tomlkit.dumps(doc))
+    return write_document(config_file(), doc)
 
 
 def free_space(path: Path) -> int | None:

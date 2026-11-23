@@ -481,7 +481,7 @@ def objects(m: ModelFile) -> dict[str, set[str]]:
 
 def _references(instance: BaseModel, known: dict[str, set[str]]) -> list[tuple[tuple, str]]:
     out = []
-    for at, target, name in references(instance):
+    for at, target, name, _held in references(instance):
         options = target.split("|")
         if any(o not in known for o in options):
             continue  # resolved against the formulation, by model check

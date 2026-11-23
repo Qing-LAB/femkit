@@ -276,6 +276,15 @@ class _Parser:
         return value, token.start, end
 
 
+def name_spans(text: str) -> list[tuple[int, int, str]]:
+    """Each name a quantity text uses — a parameter, or a unit symbol — with its span; empty
+    when the text is not one the grammar reads."""
+    try:
+        return [(t.start, t.end, t.text) for t in _tokens(text) if t.kind == "name"]
+    except UnitError:
+        return []
+
+
 class Units:
     """The unit table, read: every symbol it holds, each prefixed form included."""
 

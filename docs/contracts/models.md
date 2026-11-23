@@ -5,8 +5,8 @@
 § 11), the model and study schemas with their first tier of validity
 (§ 11.2; [`../reference/models.md`](../reference/models.md)), the formulation
 type with `electrostatics` and its first benchmark, the mesher type with
-`gmsh` and `netgen`, `model check`, `study expand`, `study copy`, `case list`
-and case IDs are built — the rest is
+`gmsh` and `netgen`, `model check`, `study expand`, `study copy`, `case list`,
+case IDs, and the graph with its edits are built — the rest is
 [`../plans/plan.md`](../plans/plan.md) § 3, M5, M6, M8, M9
 **Authority:** how a calculation is described independently of any engine; how
 it is matched against an engine environment's declared abilities, with every
