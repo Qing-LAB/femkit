@@ -59,7 +59,9 @@ class Manager:
             data = json.loads(result.stdout)
         except ValueError:
             return None, f"`{shlex.join(argv[1:])}` printed no JSON"
-        return (data[q.key], None) if q.key in data else (None, f"`{shlex.join(argv[1:])}` has no {q.key}")
+        keys = [q.key] if isinstance(q.key, str) else q.key
+        found = next((k for k in keys if k in data), None)
+        return (data[found], None) if found else (None, f"`{shlex.join(argv[1:])}` has no {' or '.join(keys)}")
 
     def activation(self, prefix: Path) -> list[str]:
         """The shell lines that enter ``prefix`` (envs.md § 4.4, § 6.2): the kind's hook,

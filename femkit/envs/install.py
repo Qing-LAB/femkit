@@ -227,8 +227,23 @@ def step_lock(t: Target, step: Step, log: Path, say: Say) -> str:
     _note(log, result.stdout + result.stderr)
     if not result.ok:
         return _ended(result, log)
-    atomic_write_text(t.lock, result.stdout)
+    lock = explicit(result.stdout)
+    if lock == EXPLICIT:
+        _note(log, "the package list holds no package URL")
+        return "failed"
+    atomic_write_text(t.lock, lock)
     return "done"
+
+
+EXPLICIT = "@EXPLICIT\n"
+
+
+def explicit(listing: str) -> str:
+    """The exact package list as every manager's `create --file` reads it: `@EXPLICIT`, then one
+    URL a line (envs.md § 4.1). The manager's own header goes: mamba 2's is not a comment, and its
+    create reads it as a constraint and fails (measured, 2.9.0)."""
+    urls = [line.strip() for line in listing.splitlines() if line.strip().startswith(("https://", "http://", "file://"))]
+    return EXPLICIT + "".join(f"{u}\n" for u in urls)
 
 
 def locked(lock_text: str) -> set[str]:

@@ -162,7 +162,7 @@ Checks that must give the same quantity (definitions.md § 5.2).
 | key | type | default | meaning |
 |---|---|---|---|
 | `argv` | list of text | required | the command; it prints one JSON object. Placeholders: `{exe}`, `{file}`, `{prefix}` |
-| `key` | text | required | the key of the object that holds the answer |
+| `key` | text or list of text | required | the key of the object that holds the answer; a list: the first of them the object has, where versions of a manager differ |
 
 ## Activation
 

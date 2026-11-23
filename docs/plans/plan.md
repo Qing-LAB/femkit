@@ -43,10 +43,11 @@ Each milestone ends with its tier green and a review before the next starts.
       of device memory, and ranks mapped to GPUs in a multi-rank GPU run (every
       shipped device check uses one rank and one device, while `jobs.md` § 2
       allows `gpus > 1`);
-    - the `mamba` and `micromamba` kind files, written against that cluster's
-      module; until then the install script refuses a manager without a kind
-      file. A kind is chosen by more than the executable's file name: a `mamba`
-      link to micromamba would otherwise get the wrong kind file.
+    - the `mamba` kind on that cluster's module (its forms measured here on
+      mamba 1.5.9 and 2.9.0), and the `micromamba` kind file; until then the
+      install script lists micromamba as one it cannot drive. A kind is chosen
+      by more than the executable's file name: a `mamba` link to micromamba
+      would otherwise get the wrong kind file.
 - **M2 — machines.** `job probe` and `job machines` are built. Open: the SLURM
   readers (`femkit/schedulers/slurm.py`) have read only made-up text; the field
   test on the cluster's login node (`tests/field/test_job_probe.py`) is their

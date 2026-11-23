@@ -1,0 +1,18 @@
+# mamba, 1.x and 2.x alike: every form measured on mamba 1.5.9 and 2.9.0 (definitions.md § 6).
+version = ["{exe}", "--version"]
+version_pattern = '(\d+\.\d+(?:\.\d+)?)'
+# The root is `root_prefix` in 1.x's answer and `base environment` in 2.x's.
+root = { argv = ["{exe}", "info", "--json"], key = ["root_prefix", "base environment"] }
+platform = { argv = ["{exe}", "info", "--json"], key = "platform" }
+# No --no-capture-output: 2.x writes it into its run script as `exec --`, which bash refuses, and
+# the command never starts. Without it, both run the command with the prefix's activation and pass
+# its exit status.
+run = ["{exe}", "run", "-p", "{prefix}"]
+activate = { hook = "{root}/etc/profile.d/mamba.sh", with_hook = ["mamba", "activate", "{prefix}"], without_hook = ["source", "activate", "{prefix}"] }
+# A create overrides the person's channels with the declared ones. 2.x has no option that leaves out
+# the person's create_default_packages (it refuses --no-default-packages), and adds them (envs.md § 4.4).
+create = ["{exe}", "create", "-y", "-p", "{prefix}", "--override-channels"]
+channel = ["-c", "{channel}"]
+create_from_lock = ["{exe}", "create", "-y", "-p", "{prefix}", "--file", "{file}"]
+export_lock = ["{exe}", "list", "--explicit", "--md5", "-p", "{prefix}"]
+remove = ["{exe}", "env", "remove", "-y", "-p", "{prefix}"]

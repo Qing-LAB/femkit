@@ -42,8 +42,8 @@ usage() {
     cat <<'EOF'
 femkit environment installer -- thin shim over `python -m femkit env ...`.
 
-Needs conda on the system (mamba and micromamba are found, and listed, but
-femkit cannot drive them yet). Looks on PATH, at MAMBA_EXE / CONDA_EXE, above an
+Needs conda or mamba on the system (micromamba is found, and listed, but
+femkit cannot drive it yet). Looks on PATH, at MAMBA_EXE / CONDA_EXE, above an
 active CONDA_PREFIX and in the usual install folders, lists every manager found,
 and proposes the first femkit can drive; you choose, or --yes takes the proposal.
 FEMKIT_ENV_MANAGER=conda (a name on PATH, or a path) makes the choice up front.
@@ -225,15 +225,32 @@ control_state() {
     else echo current; fi
 }
 
+ARGV=()
+kind_argv() {  # kind_argv KEY: the chosen manager's kind-file command KEY, its {exe} and {prefix} filled
+    # The kind file is the one home of the manager's commands (definitions.md § 6); each is a
+    # one-line list of plain strings, read here without a TOML parser.
+    local file line rest arg
+    file="$REPO_ROOT/femkit/data/managers/$(basename "$ENV_MGR").toml"
+    line="$(grep -E "^$1 = \[" "$file")" || { say "$file has no one-line $1"; exit 1; }
+    rest="${line#*[}"; rest="${rest%%]*}"; ARGV=()
+    while [[ "$rest" =~ ^[^\"]*\"([^\"]*)\"(.*)$ ]]; do
+        arg="${BASH_REMATCH[1]}"; rest="${BASH_REMATCH[2]}"
+        arg="${arg//\{exe\}/$ENV_MGR}"; ARGV+=("${arg//\{prefix\}/$CONTROL}")
+    done
+}
+
 create_control() {
     say "creating the control environment at $CONTROL from femkit/data/control.txt"
-    # The conda kind's `create`: the declared channels only, none of the person's own settings
-    # (envs.md § 4.4). channels.txt holds one bare name a line, so each line is a channel as it stands.
-    local channels=() channel_args=() channel
+    # The kind's `create`: the declared channels only (envs.md § 4.4), then control.txt.
+    # channels.txt holds one bare name a line, so each line is a channel as it stands.
+    local channels=() cmd=() channel arg
     mapfile -t channels < "$CHANNELS_TXT"
-    for channel in "${channels[@]}"; do channel_args+=(-c "$channel"); done
-    "$ENV_MGR" create -y -p "$CONTROL" --override-channels --no-default-packages "${channel_args[@]}" \
-        --file "$CONTROL_TXT" || { say "creating the control environment failed"; exit 1; }
+    kind_argv create; cmd=("${ARGV[@]}")
+    for channel in "${channels[@]}"; do
+        kind_argv channel
+        for arg in "${ARGV[@]}"; do cmd+=("${arg//\{channel\}/$channel}"); done
+    done
+    "${cmd[@]}" --file "$CONTROL_TXT" || { say "creating the control environment failed"; exit 1; }
     mkdir -p "$CONTROL/.femkit"
     local digest
     digest="$(control_digest)" || { say "could not hash channels.txt and control.txt; no stamp written"; exit 1; }
@@ -262,7 +279,8 @@ recreate_control() {
         case "$answer" in y|Y|yes) ;; *) refuse "declined; nothing was changed" ;; esac
     fi
     trap rebuild_failed EXIT
-    "$ENV_MGR" env remove -y -p "$CONTROL" || { say "removing the control environment failed"; exit 1; }
+    kind_argv remove
+    "${ARGV[@]}" || { say "removing the control environment failed"; exit 1; }
     CONTROL_REMOVED=1
     create_control
     CONTROL_REMOVED=0

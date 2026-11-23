@@ -214,7 +214,7 @@ that validate did not run or did not finish.
 | `remove` | remove the prefix first, when it is replaced: `outdated`, `--clean`, or an `incomplete` one that cannot resume | environment |
 | `discard-lock` | with `--clean` only: delete the saved lock, so the constraints are solved again | environment |
 | `create` | create the prefix from the saved lock for the current install fingerprint if there is one, otherwise from the declared constraints | environment |
-| `lock` | export the exact package list; save it under `<data>/locks/<name>/<install fingerprint>.txt` | environment |
+| `lock` | export the exact package list; save it as `@EXPLICIT` and one package URL a line — the form every manager's `create --file` reads, without the manager's own header — under `<data>/locks/<name>/<install fingerprint>.txt` | environment |
 | `forbid` | refuse if the lock contains a forbidden package family | environment |
 | `toolchain` | prove the toolchain inside the prefix before any source is fetched (§ 4.5): every tool and compiler resolves inside it; a trivial program in each language its `compilers` names — C, C++ and Fortran for both shipped engines — compiles, links and runs; when the toolchain names MPI wrappers, a program built with each runs on two ranks with `launch.mpi`. Each finding is said when the program ends: what was proven, then each problem | environment with builds |
 | `fetch:<source>` | download the archive into the cache and verify its SHA-256 | source |
@@ -391,21 +391,25 @@ flowchart LR
 - **Nothing outside the definitions enters a prefix.** Every environment,
   the control one included, is created by the manager kind's `create`: the
   channels `channels.txt` names and no others — the person's own conda
-  channels are overridden — and none of their default packages
-  (`--no-default-packages`); a later create installs the exact lock. Measured
+  channels are overridden — and, with conda, none of their default packages
+  (`--no-default-packages`); a later create installs the exact lock. mamba 2
+  has no such option (measured, 2.9.0: it refuses `--no-default-packages`), so
+  with mamba the `create_default_packages` of the person's own configuration
+  enter the prefix, and its lock. Measured
   with conda 26.7: `conda env create -f` cannot do this (it adds the person's
   channels, and ignores `nodefaults`), which is why the control environment is
   a package list for `create --file`. The manager kind file declares these
   commands ([`definitions.md`](definitions.md) § 3, § 6).
 - Every step that runs inside a prefix — `configure`, `compile`, `install`,
-  the version probe, a check — goes through the manager kind's `run`. Where
-  that `run` cannot start a command (some managers' `run` writes a shell stub
-  that fails before the command starts; the kind declares the text that
-  failure prints), the step enters through the kind's shell hook instead, the
-  operation says so once, and `job probe` records it as
-  `manager.run_enters = false` ([`jobs.md`](jobs.md) § 9.1). It is never a
-  step's outcome. The hook is the kind's `activate` (§ 6.2); the fallback
-  through it is not built yet (step 7), since the conda kind's `run` works.
+  the version probe, a check — goes through the manager kind's `run`. Each
+  kind's `run` is a form measured to start the command with the prefix's
+  activation and pass its exit status: mamba 2.9.0's `run` given conda's
+  `--no-capture-output` writes `exec -- …` into its run script, which bash
+  refuses, and the command never starts, so the mamba kind leaves it out
+  (measured on mamba 1.5.9 and 2.9.0). Where a machine's `run` still cannot
+  start a command, the step would enter through the kind's shell hook (its
+  `activate`, § 6.2) and `job probe` would record `manager.run_enters = false`
+  ([`jobs.md`](jobs.md) § 9.1); that fallback is not built yet (step 7).
 - **Every command femkit runs inside a prefix starts from an allow-list** —
   `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TERM`, `TMPDIR`,
   `CUDA_VISIBLE_DEVICES`, OpenMPI's two run-as-root variables, and
@@ -636,7 +640,9 @@ never replaced silently: a terminal asks, and `--yes` is refused. None that can
 be driven: exit 2, listing what was found and where the script looked, and
 saying that on a cluster the manager's module is loaded in this shell first.
 
-The script and Python drive the same manager the same way. The script prints
+The script and Python drive the same manager the same way: the script creates
+and removes the control environment with the commands of that manager's kind
+file (`create`, `channel`, `remove`), as Python does every other. The script prints
 the manager and the rule that found it, and hands Python its full path as
 `FEMKIT_ENV_MANAGER`: Python runs it from confined commands whose `PATH` holds
 only the system's (§ 4.4), where a bare name could find another manager or

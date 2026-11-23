@@ -161,7 +161,7 @@ def test_a_verb_that_changes_nothing_needs_no_confirmation(manager):
 def test_a_manager_femkit_has_no_kind_file_for_is_refused_before_it_runs(manager, monkeypatch):
     """Fails if the script drives a manager Python has no kind file for (envs.md § 7.1):
     it would build control with one manager's syntax and Python would then refuse it."""
-    other = manager.parent / "no-kind" / "mamba"
+    other = manager.parent / "no-kind" / "micromamba"
     other.parent.mkdir()
     other.write_text((manager.parent / "stand-in" / "conda").read_text())  # the same stand-in, renamed
     other.chmod(0o755)
@@ -197,17 +197,34 @@ def test_a_manager_named_without_a_path_is_found_on_path(manager, monkeypatch):
     assert calls(manager)[0] == declared("create")[0]
 
 
-def test_a_mamba_beside_conda_is_listed_and_conda_is_proposed(manager, monkeypatch):
+def test_a_manager_femkit_cannot_drive_is_listed_and_one_it_can_is_proposed(manager, monkeypatch):
     """Fails if a manager femkit cannot drive is chosen, or goes unmentioned, when one it can
     drive is in reach too (envs.md § 7.1)."""
     on_path = manager.parent / "stand-in"
-    (on_path / "mamba").write_text("#!/bin/sh\nexit 97\n")
-    (on_path / "mamba").chmod(0o755)
+    (on_path / "micromamba").write_text("#!/bin/sh\nexit 97\n")
+    (on_path / "micromamba").chmod(0o755)
     monkeypatch.delenv("FEMKIT_ENV_MANAGER")
     monkeypatch.setenv("PATH", f"{on_path}:/usr/bin:/bin")
     out = install_env("bootstrap", "--yes")
-    assert out.returncode == 0 and "femkit has no kind file for mamba" in out.stderr
+    assert out.returncode == 0 and "femkit has no kind file for micromamba" in out.stderr
     assert calls(manager)[0] == declared("create")[0]
+
+
+def test_control_is_created_and_removed_with_the_chosen_managers_own_commands(manager, monkeypatch):
+    """Fails if the script spells conda's commands whatever the manager: mamba 2 refuses conda's
+    --no-default-packages, so its control environment would never be created (definitions.md § 6)."""
+    mamba = manager.parent / "stand-in" / "mamba"
+    mamba.write_text((manager.parent / "stand-in" / "conda").read_text())  # the same stand-in, as mamba
+    mamba.chmod(0o755)
+    monkeypatch.setenv("FEMKIT_ENV_MANAGER", str(mamba))
+    kind, prefix = load_managers()["mamba"], str(dirs.control_prefix())
+    create = [render(a, {"exe": "", "prefix": prefix}) for a in kind.create[1:]]
+    create += [render(a, {"channel": c}) for c in load_control().channels for a in kind.channel]
+    assert install_env("bootstrap", "--yes").returncode == 0
+    assert calls(manager)[0] == create + ["--file", str(control_files()[1])]
+    (dirs.control_prefix() / ".femkit" / "control.sha256").write_text("outdated\n")
+    assert install_env("bootstrap", "--yes").returncode == 0
+    assert [render(a, {"exe": "", "prefix": prefix}) for a in kind.remove[1:]] in calls(manager)
 
 
 def test_help_before_control_exists_is_the_scripts_own_and_creates_nothing(manager):

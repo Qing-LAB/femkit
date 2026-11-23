@@ -131,3 +131,19 @@ def test_a_scheduler_kind_names_only_femkits_roles_and_its_submit_and_job_id(dat
     submit command or no job-ID variable (jobs.md § 7)."""
     with pytest.raises(DefinitionError):
         validate(SchedulerKind, data, "kind.toml")
+
+
+@pytest.mark.parametrize("answer", [{"root_prefix": "/r", "platform": "linux-64"},  # mamba 1.5.9
+                                    {"base environment": "/r", "platform": "linux-64"}],  # mamba 2.9.0
+                         ids=["mamba 1", "mamba 2"])
+def test_the_mamba_kind_reads_its_root_from_either_versions_answer(answer, tmp_path):
+    """Fails if the mamba kind finds its root under one version's key only: 1.x answers
+    `root_prefix`, 2.x `base environment` (definitions.md § 6; both measured)."""
+    import json
+    from femkit.core.process import ProcessResult
+    from femkit.definitions.catalogue import load_managers
+    from femkit.envs.manager import Manager
+    m = Manager(tmp_path / "mamba", "mamba", load_managers()["mamba"], {})
+    argv = tuple(m.argv(m.kind.root.argv))
+    m.printed[argv] = ProcessResult(argv=argv, returncode=0, stdout=json.dumps(answer), stderr="", log=None)
+    assert m.query(m.kind.root) == ("/r", None)

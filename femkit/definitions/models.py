@@ -504,7 +504,8 @@ ManagerArgv = Annotated[
 
 class JsonQuery(Model):
     argv: ManagerArgv = Field(description="the command; it prints one JSON object")
-    key: str = Field(description="the key of the object that holds the answer")
+    key: str | list[str] = Field(description="the key of the object that holds the answer; a list: the first "
+                                             "of them the object has, where versions of a manager differ")
 
 
 def _activation_line(argv: list[str]) -> list[str]:

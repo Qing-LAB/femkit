@@ -140,3 +140,17 @@ def test_a_step_writes_a_path_under_the_home_directory_from_tilde_and_its_comman
     assert not [s.describe for s in steps if f"{home}/" in s.describe]
     assert next(s for s in steps if s.id.endswith("/create")).describe.startswith(f"{NAME}: create ~/")
     assert f"{home}/" in " ".join(next(s for s in steps if s.id.endswith("/create")).argv)
+
+
+URL = "https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_7.conda#" + "0" * 32
+
+
+@pytest.mark.parametrize("listing", [
+    f'List of packages in environment: "/p"\n\n{URL}\n',  # mamba 2.9.0's own header
+    f"# This file may be used to create an environment using:\n# platform: linux-64\n@EXPLICIT\n{URL}\n",  # conda's
+], ids=["mamba 2", "conda"])
+def test_the_saved_lock_is_the_list_every_manager_creates_from(listing):
+    """Fails if a manager's own header reaches the saved lock: mamba 2's is not a comment, and its
+    create reads it as a constraint and fails (envs.md § 4.1; measured on 2.9.0)."""
+    from femkit.envs.install import explicit
+    assert explicit(listing) == f"@EXPLICIT\n{URL}\n"
