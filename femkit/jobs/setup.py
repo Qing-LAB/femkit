@@ -236,7 +236,7 @@ class EnvBootstrap:
                 continue
             installs[name] = sub.model_dump(mode="json")
             f, state = observe(planned, name)
-            steps.append(Step(id=f"install:{name}", describe=f"install {name} ({state.value}) into {f.prefix}: "
+            steps.append(Step(id=f"install:{name}", describe=f"install {name} ({state.value}) into {text.path(f.prefix)}: "
                                                              f"{text.count(len(sub.steps), 'step')}"))
         if installs:
             issues += _login_node(ctx)
@@ -257,7 +257,7 @@ class EnvBootstrap:
                                 next=(text.typed("env", "bootstrap", "--preamble", "LINE") + "   # once per line",
                                       text.typed("env", "bootstrap", "--no-preamble") + "   # none is needed here")))
         else:
-            steps.append(Step(id="record", describe=f"write this machine's record, {file} ({why})"))
+            steps.append(Step(id="record", describe=f"write this machine's record, {text.path(file)} ({why})"))
         return Plan(operation="env.bootstrap", request=req.model_dump(mode="json"),
                     basis={"config_plan": config_plan.model_dump(mode="json"), "installs": installs,
                            "refused": refused},

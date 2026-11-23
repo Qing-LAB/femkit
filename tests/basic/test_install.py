@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import pytest
 
 from femkit.config.operations import ConfigSet
@@ -126,3 +129,14 @@ def test_an_engine_create_names_only_the_declared_channels(manager, cuda):
     from femkit.definitions.catalogue import load_control
     create = list(next(s for s in plan(clean=True).steps if s.id.endswith("/create")).argv)
     assert [create[i + 1] for i, a in enumerate(create) if a == "-c"] == load_control().channels
+
+
+def test_a_step_writes_a_path_under_the_home_directory_from_tilde_and_its_command_in_full(manager, cuda, monkeypatch):
+    """Fails if a step's line prints a path under the home directory in full, or if its
+    command loses the full path a person pastes (api.md § 4.4)."""
+    home = Path(os.environ["FEMKIT_DATA_DIR"]).parent
+    monkeypatch.setenv("HOME", str(home))
+    steps = plan(clean=True).steps
+    assert not [s.describe for s in steps if f"{home}/" in s.describe]
+    assert next(s for s in steps if s.id.endswith("/create")).describe.startswith(f"{NAME}: create ~/")
+    assert f"{home}/" in " ".join(next(s for s in steps if s.id.endswith("/create")).argv)

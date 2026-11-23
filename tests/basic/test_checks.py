@@ -15,7 +15,7 @@ import pytest
 
 from femkit.config.operations import ConfigSet
 from femkit.core.errors import Refusal, UsageError
-from femkit.core.operations import Context
+from femkit.core.operations import Context, SilentObserver
 from femkit.core.persist import write_json
 from femkit.definitions.models import Agreement, Check, Expectation
 from femkit.envs import checks, layout, operations, state as state_module
@@ -227,6 +227,40 @@ def test_an_unchecked_environment_installs_by_validating(declared, value, ready)
     assert result.environments[0].state is (EnvState.ready if ready else EnvState.failing)
     assert ready or [i.subject for i in result.issues] == [NAME]
     assert set(recorded()) == {"cpu"}
+
+
+class Recorder(SilentObserver):
+    """What a surface is told: each operation's name and step count, and each step's start
+    and end, in order."""
+
+    def __init__(self):
+        self.said = []
+
+    def operation_start(self, plan, where):
+        self.said.append(("start", plan.operation, len(plan.steps)))
+
+    def step_start(self, step, index, total):
+        self.said.append(("step", step.id, index, total))
+
+    def step_end(self, step, outcome, log):
+        self.said.append(("end", step.id, outcome))
+
+    def operation_end(self, plan, status):
+        self.said.append(("stop", plan.operation))
+
+
+def test_install_numbers_its_validate_as_its_last_step_with_the_checks_run_under_it(declared):
+    """Fails if an install runs a different number of steps than its plan shows, or runs its
+    validate anywhere but inside its own last step (envs.md § 4.1; api.md § 4.4)."""
+    declared(program("cpu", value=2.0, expect={"value": Expectation(max=1.0)}))
+    c, seen = ctx(), Recorder()
+    plan = EnvInstall.plan(EnvInstall.request(names=[NAME]), c)
+    result = EnvInstall.apply(plan, c, seen)
+    n = len(plan.steps)
+    assert seen.said[0] == ("start", "env.install", n)
+    assert seen.said[1] == ("step", "validate", n, n) and seen.said[2] == ("start", "env.validate", 2)
+    assert seen.said[-3:] == [("stop", "env.validate"), ("end", "validate", "done"), ("stop", "env.install")]
+    assert result.environments[0].state is EnvState.failing and not result.ok()  # done, not ready
 
 
 def test_a_check_on_several_ranks_is_refused_before_anything_runs_without_a_launcher(declared):

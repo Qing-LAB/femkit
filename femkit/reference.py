@@ -224,7 +224,7 @@ class SchemaDocs:
 
     def plan(self, req: DocsRequest, ctx: Context) -> Plan:
         stale = _stale()
-        steps = tuple(Step(id=name, describe=f"write {reference_dir() / name}") for name in sorted(stale))
+        steps = tuple(Step(id=name, describe=f"write {text.path(reference_dir() / name)}") for name in sorted(stale))
         return Plan(operation="schema.docs", request=req.model_dump(mode="json"),
                     basis={"stale": sorted(stale)}, steps=steps)
 

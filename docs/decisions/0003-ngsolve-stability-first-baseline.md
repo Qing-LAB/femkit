@@ -166,7 +166,7 @@ ngsolve: the selected NGSolve release
 │   └── pytest → the selected upstream NGSolve tests
 └── Toolchain ([toolchain], proven before any source is fetched)
     ├── gcc 14 C/C++/Fortran compilers and runtimes; sysroot 2.28
-    ├── CMake + make
+    ├── CMake 4.5 + make
     └── pkg-config, git, bash and the shell utilities
 ```
 

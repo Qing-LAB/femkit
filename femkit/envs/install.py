@@ -148,17 +148,17 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
     m, p = t.manager, t.prefix
     steps: list[Step] = []
     if remove_first:
-        steps.append(Step(id="remove", describe=f"remove {p}", argv=tuple(m.argv(m.kind.remove, prefix=str(p)))))
+        steps.append(Step(id="remove", describe=f"remove {text.path(p)}", argv=tuple(m.argv(m.kind.remove, prefix=str(p)))))
     if discard_lock:
-        steps.append(Step(id="discard-lock", describe=f"discard the saved lock {t.lock}"))
+        steps.append(Step(id="discard-lock", describe=f"discard the saved lock {text.path(t.lock)}"))
     if t.lock.exists() and not discard_lock:
         create = m.argv(m.kind.create_from_lock, prefix=str(p), file=str(t.lock))
         how = "from the saved lock"
     else:
         create = m.create(p, t.channels, [*t.env.packages.conda, f"python={t.python_minor}"])
         how = "from the declared constraints"
-    steps.append(Step(id="create", describe=f"create {p} {how}", argv=tuple(create)))
-    steps.append(Step(id="lock", describe=f"save the exact package list to {t.lock}",
+    steps.append(Step(id="create", describe=f"create {text.path(p)} {how}", argv=tuple(create)))
+    steps.append(Step(id="lock", describe=f"save the exact package list to {text.path(t.lock)}",
                       argv=tuple(m.argv(m.kind.export_lock, prefix=str(p)))))
     steps.append(Step(id="forbid", describe=f"refuse a lock holding {', '.join(t.env.packages.forbid) or 'nothing forbidden'}"))
     if t.env.proven_toolchain:  # before any source is fetched (envs.md § 4.1)
@@ -166,13 +166,13 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
     for s in t.env.sources:
         steps.append(Step(id=f"fetch:{s.id}", describe=f"download {s.id} {s.release} and verify its SHA-256"))
     for s in sorted(t.env.sources, key=lambda s: len(PurePosixPath(s.into).parts)):
-        steps.append(Step(id=f"unpack:{s.id}", describe=f"unpack {s.id} into {t.source_dir(s.id)}"))
+        steps.append(Step(id=f"unpack:{s.id}", describe=f"unpack {s.id} into {text.path(t.source_dir(s.id))}"))
     for b in _order_builds(t.env.builds):
         steps.append(Step(id=f"configure:{b.id}", describe=f"configure {b.id}",
                           argv=tuple(m.in_prefix(p, configure_argv(t, b)))))
         steps.append(Step(id=f"compile:{b.id}", describe=f"compile {b.id} with {text.count(t.jobs, 'job')}",
                           argv=tuple(m.in_prefix(p, ["cmake", "--build", str(t.build_dir(b.id)), "--parallel", str(t.jobs)]))))
-        steps.append(Step(id=f"install:{b.id}", describe=f"install {b.id} into {p}",
+        steps.append(Step(id=f"install:{b.id}", describe=f"install {b.id} into {text.path(p)}",
                           argv=tuple(m.in_prefix(p, ["cmake", "--install", str(t.build_dir(b.id))]))))
     steps.append(Step(id="audit", describe="find every provided executable and module inside the prefix"))
     steps.append(Step(id="manifest", describe="probe the solver version and write the manifest"))

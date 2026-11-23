@@ -203,7 +203,7 @@ elmer: the selected Elmer release
 │   └── mpi4py → same prefix MPI provider
 └── Toolchain ([toolchain], proven before any source is fetched)
     ├── gcc 14 C/C++/Fortran compilers and runtimes; sysroot 2.28
-    ├── CMake / CTest + make
+    ├── CMake / CTest 4.5 + make
     └── pkg-config, git, bash and the shell utilities
 ```
 

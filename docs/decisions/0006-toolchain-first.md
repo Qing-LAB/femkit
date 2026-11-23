@@ -22,6 +22,8 @@
 - **Confined.** Every command femkit runs inside a prefix starts from a fixed
   allow-list of variables, and the manager's activation adds the prefix's own.
 - **The sysroot is pinned at 2.28.**
+- **CMake is pinned to the 4.5 series,** the one both environments were proven
+  with.
 
 ## What an unproven toolchain does
 
@@ -57,6 +59,25 @@ trivial program stops the install there, in seconds, with the real reason.
   than 2.28 — its toolchain step would stop, saying so. It has the same
   processor reach and keeps the floor at 2.25.
 
+## Why CMake is pinned
+
+Unpinned, `cmake` is whatever release is newest on the day of a fresh solve.
+Measured: such a solve took CMake 4.5.1, and both environments built with it
+and passed every check.
+
+CMake drops support for old projects on a schedule. 3.27 deprecated
+compatibility with CMake versions before 3.5, and 4.0 removed it; 3.31
+deprecated compatibility with versions before 3.10
+([`cmake_minimum_required`, CMake 4.5](https://cmake.org/cmake/help/v4.5/command/cmake_minimum_required.html)).
+The pinned Mmg 5.8.0 and ParMmg 1.5.0 declare 3.5
+([Mmg](https://github.com/MmgTools/mmg/blob/4d8232c8aebfed877935d75d4d4a67e850962422/CMakeLists.txt),
+[ParMmg](https://github.com/MmgTools/ParMmg/blob/cd8a6e340e466e857b0bb9952f115d8999337167/CMakeLists.txt)),
+so the CMake release that removes what 3.31 deprecated stops their configure,
+and with it every Elmer install. Elmer declares 3.10, Netgen 3.16 and NGSolve
+3.18; their builds are pinned the same way, so that every fresh solve builds
+with the CMake the checks passed under. Patch releases within 4.5 are taken; the
+saved lock records the exact one.
+
 ## Why an allow-list
 
 A deny-list has to know every variable a build reads, for these two builds:
@@ -83,3 +104,5 @@ system `PATH` stays, after the prefix's `bin`.
   on that machine is the whole guarantee.
 - **On resume:** the check runs again on every resume, because an install may
   resume on another node.
+- **A new CMake is a change of definition:** moving the pin changes each
+  environment's install fingerprint, so each is rebuilt and proven again.

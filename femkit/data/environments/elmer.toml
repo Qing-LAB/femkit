@@ -23,8 +23,9 @@ packages = [
   # The C library the builds link against: unpinned, the compilers take the newest sysroot (2.39),
   # whose startup objects need an x86-64-v3 processor; 2.28's need only the baseline (ADR 0006).
   "sysroot_linux-64=2.28",
-  # What its CMake builds call, from the prefix rather than the host.
-  "cmake", "make", "pkg-config", "git",
+  # What its CMake builds call, from the prefix rather than the host; CMake held to the 4.5 series
+  # its builds were proven with (ADR 0006).
+  "cmake=4.5", "make", "pkg-config", "git",
   "bash", "coreutils", "sed", "grep", "gawk", "findutils", "diffutils", "patch", "tar", "gzip", "bzip2", "xz",
 ]
 tools = ["cmake", "make", "pkg-config", "git", "bash", "sed", "grep", "gawk", "tar"]

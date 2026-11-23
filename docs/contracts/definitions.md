@@ -132,7 +132,7 @@ pip = []
 forbid = ["elmer", "amgx", "rocm"]     # families that must be absent from the solved lock
 
 [toolchain]                            # its own compilers and build tools (§ 4.6)
-packages = ["gcc_linux-64=14", "gxx_linux-64=14", "gfortran_linux-64=14", "sysroot_linux-64=2.28", "cmake", "..."]
+packages = ["gcc_linux-64=14", "gxx_linux-64=14", "gfortran_linux-64=14", "sysroot_linux-64=2.28", "cmake=4.5", "..."]
 tools = ["cmake", "make", "..."]
 compilers = { c = "CC", cxx = "CXX", fortran = "FC" }
 mpi = { c = "mpicc", cxx = "mpicxx", fortran = "mpifort" }
@@ -276,9 +276,9 @@ another's ([ADR 0006](../decisions/0006-toolchain-first.md)):
 Its packages are solved with the environment's, so they enter its lock and its
 install fingerprint. The `toolchain` install step proves it on the machine
 before any source is fetched ([`envs.md`](envs.md) § 4.1, § 4.5). Both shipped
-engines pin gcc 14 (ADRs 0003, 0004) and `sysroot_linux-64=2.28`: unpinned, the
+engines pin gcc 14 (ADRs 0003, 0004), `sysroot_linux-64=2.28` — unpinned, the
 compilers take the newest sysroot, whose startup objects need an x86-64-v3
-processor (ADR 0006).
+processor — and CMake to its 4.5 series (ADR 0006).
 
 ## 5. Checks
 

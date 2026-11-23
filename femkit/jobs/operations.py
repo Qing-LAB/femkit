@@ -122,7 +122,7 @@ class JobProbe:
                    for where, why in record.unknowns(new)]
         steps: tuple[Step, ...] = ()
         if req.write:
-            describe = f"write {file}"
+            describe = f"write {text.path(file)}"
             if file.exists():
                 try:
                     changed = record.differences(record.read(file), new)

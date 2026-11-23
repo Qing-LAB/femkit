@@ -4,7 +4,8 @@
 #
 # It does ONE thing: solve "you cannot run `femkit env ...` until the control
 # environment exists". So it
-#   1. finds conda / mamba / micromamba and asks you to confirm it (--yes skips);
+#   1. finds every conda / mamba / micromamba in reach and proposes the first femkit
+#      can drive; you choose (--yes takes the proposal);
 #   2. makes sure the control environment exists and is current
 #      (`bootstrap` creates or rebuilds it; every other verb requires it);
 #   3. forwards "$@" verbatim to its own `python -m femkit env ...`.
@@ -41,9 +42,11 @@ usage() {
     cat <<'EOF'
 femkit environment installer -- thin shim over `python -m femkit env ...`.
 
-Needs conda, mamba or micromamba on the system; finds it on PATH, through
-MAMBA_EXE / CONDA_EXE, above an active CONDA_PREFIX, or in the usual install
-folders, and asks you to confirm it unless you pass --yes.
+Needs conda on the system (mamba and micromamba are found, and listed, but
+femkit cannot drive them yet). Looks on PATH, at MAMBA_EXE / CONDA_EXE, above an
+active CONDA_PREFIX and in the usual install folders, lists every manager found,
+and proposes the first femkit can drive; you choose, or --yes takes the proposal.
+FEMKIT_ENV_MANAGER=conda (a name on PATH, or a path) makes the choice up front.
 
 COMMON TASKS:
     bash scripts/install-env.sh bootstrap           # control env, config (asked), both engines, record, doctor
@@ -75,57 +78,81 @@ refuse()  {  # refuse REASON NEXT...: exit 2 with the commands to run instead
 
 ENV_MGR=""
 FOUND_BY=""
+FOUND=()      # every manager found, once each: "path|how"
+LOOKED=""     # where the search looked, for a refusal
+
 has_kind() {  # femkit has a kind file for this manager (definitions.md § 6)
     [[ -f "$REPO_ROOT/femkit/data/managers/$(basename "$1").toml" ]]
 }
 
-detect_env_mgr() {
-    # The first manager found that femkit has a kind file for (envs.md § 7.1); one found
-    # without a kind file is passed over, and named if nothing else is found.
-    local path name root passed_over=""
-    if [[ -n "${FEMKIT_ENV_MANAGER:-}" ]]; then
-        [[ -f "$FEMKIT_ENV_MANAGER" && -x "$FEMKIT_ENV_MANAGER" ]] \
-            || refuse "FEMKIT_ENV_MANAGER is not an executable file: $FEMKIT_ENV_MANAGER"
-        ENV_MGR="$FEMKIT_ENV_MANAGER"; FOUND_BY="FEMKIT_ENV_MANAGER"; return 0
-    fi
-    found() {  # found PATH HOW: take it if femkit can drive it, else remember it
-        if has_kind "$1"; then ENV_MGR="$1"; FOUND_BY="$2"; return 0; fi
-        passed_over="${passed_over:-$1}"; return 1
-    }
-    # PATH first: the manager loaded in this shell (a cluster's module) is the one meant;
-    # MAMBA_EXE/CONDA_EXE may be left over from an old `conda init`.
-    for name in mamba micromamba conda; do
+kinds_list() {
+    (cd "$REPO_ROOT/femkit/data/managers" && ls -- *.toml | sed 's/\.toml$//' | tr '\n' ' ' | sed 's/ $//')
+}
+
+same_file() {  # the file a path reaches, so a manager reached two ways is listed once
+    readlink -f -- "$1" 2>/dev/null || printf '%s\n' "$1"
+}
+
+add_found() {  # add_found PATH HOW
+    local real entry
+    real="$(same_file "$1")"
+    for entry in "${FOUND[@]+"${FOUND[@]}"}"; do
+        [[ "$(same_file "${entry%%|*}")" == "$real" ]] && return 0
+    done
+    FOUND+=("$1|$2")
+}
+
+find_env_mgrs() {
+    # Every manager in reach, in the order of envs.md § 7.1: PATH first -- the manager
+    # loaded in this shell (a cluster's module) is the one meant; MAMBA_EXE/CONDA_EXE may
+    # be left over from an old `conda init`. `type -P` finds files, never shell functions.
+    local path name root
+    for name in conda mamba micromamba; do
         path="$(type -P "$name" 2>/dev/null || true)"
-        [[ -n "$path" ]] && found "$path" "PATH" && return 0
+        [[ -n "$path" ]] && add_found "$path" "PATH"
     done
     for name in MAMBA_EXE CONDA_EXE; do
         path="${!name:-}"
-        [[ -n "$path" && -f "$path" && -x "$path" ]] && found "$path" "$name" && return 0
+        [[ -n "$path" && -f "$path" && -x "$path" ]] && add_found "$path" "$name"
     done
     if [[ -n "${CONDA_PREFIX:-}" ]]; then
         root="${CONDA_PREFIX%%/envs/*}"
         for name in conda mamba micromamba; do
-            [[ -f "$root/bin/$name" && -x "$root/bin/$name" ]] \
-                && found "$root/bin/$name" "the root above CONDA_PREFIX" && return 0
+            [[ -f "$root/bin/$name" && -x "$root/bin/$name" ]] && add_found "$root/bin/$name" "the root above CONDA_PREFIX"
         done
     fi
     for root in "$HOME/miniforge3" "$HOME/miniforge" "$HOME/mambaforge" "$HOME/miniconda3" \
                 "$HOME/anaconda3" "$HOME/conda" /opt/miniforge3 /opt/miniforge /opt/mambaforge \
                 /opt/miniconda3 /opt/anaconda3 /opt/conda; do
         for name in conda mamba micromamba; do
-            [[ -f "$root/bin/$name" && -x "$root/bin/$name" ]] && found "$root/bin/$name" "$root" && return 0
+            [[ -f "$root/bin/$name" && -x "$root/bin/$name" ]] && add_found "$root/bin/$name" "$root"
         done
     done
-    if [[ -n "$passed_over" ]]; then
-        refuse "found $passed_over, but femkit has no kind file for $(basename "$passed_over") (it has: $(kinds_list))" \
-            "FEMKIT_ENV_MANAGER=/path/to/conda bash scripts/install-env.sh bootstrap"
-    fi
-    refuse "no conda, mamba or micromamba found (looked at FEMKIT_ENV_MANAGER, PATH, MAMBA_EXE, CONDA_EXE, the root above CONDA_PREFIX, ~/{miniforge3,miniforge,mambaforge,miniconda3,anaconda3,conda}, /opt/{miniforge3,miniforge,mambaforge,miniconda3,anaconda3,conda}); on a cluster, load the manager's module in this shell first" \
-        "FEMKIT_ENV_MANAGER=/path/to/conda bash scripts/install-env.sh bootstrap"
+    LOOKED="PATH, MAMBA_EXE, CONDA_EXE, the root above CONDA_PREFIX, ~/{miniforge3,miniforge,mambaforge,miniconda3,anaconda3,conda}, /opt/{miniforge3,miniforge,mambaforge,miniconda3,anaconda3,conda}"
 }
 
-kinds_list() {
-    (cd "$REPO_ROOT/femkit/data/managers" && ls -- *.toml | sed 's/\.toml$//' | tr '\n' ' ' | sed 's/ $//')
+show_found() {  # each manager found: a number when femkit can drive it, else why not
+    local i=0 entry path
+    say "package managers found:"
+    for entry in "${FOUND[@]}"; do
+        path="${entry%%|*}"
+        if has_kind "$path"; then
+            i=$((i + 1))
+            printf '    %s  %-10s %s   # %s\n' "$i" "$(basename "$path")" "$path" "${entry#*|}" >&2
+        else
+            printf '    -  %-10s %s   # %s; femkit has no kind file for %s yet (it has: %s)\n' \
+                "$(basename "$path")" "$path" "${entry#*|}" "$(basename "$path")" "$(kinds_list)" >&2
+        fi
+    done
+}
+
+named_env_mgr() {  # FEMKIT_ENV_MANAGER: a path, or a name looked up on PATH
+    local named="$FEMKIT_ENV_MANAGER" path
+    if [[ "$named" == */* ]]; then path="$named"; else path="$(type -P "$named" 2>/dev/null || true)"; fi
+    [[ -n "$path" && -f "$path" && -x "$path" ]] \
+        || refuse "FEMKIT_ENV_MANAGER=$named is not an executable file${path:+: $path}, nor a name on PATH"
+    [[ "$path" == /* ]] || path="$(cd "$(dirname "$path")" && pwd -P)/$(basename "$path")"
+    printf '%s\n' "$path"
 }
 
 verb_changes_envs() {  # the verbs whose run creates or removes an environment
@@ -136,19 +163,52 @@ verb_changes_envs() {  # the verbs whose run creates or removes an environment
 }
 
 require_conda() {
-    detect_env_mgr
-    say "env manager: $ENV_MGR   # found by $FOUND_BY"
-    # The script and Python drive the same manager the same way: one named with no kind file is refused.
-    if ! has_kind "$ENV_MGR"; then
-        refuse "femkit has no kind file for $(basename "$ENV_MGR") (it has: $(kinds_list))" \
+    # One manager for everything after (envs.md § 7.1). Every manager found is listed, the one
+    # FEMKIT_ENV_MANAGER names first, and the first femkit can drive is proposed: a verb that
+    # creates or removes an environment asks on a terminal, --yes takes the proposal. One named
+    # that femkit cannot drive is never replaced silently.
+    local named="" blocked="" drivable=() entry answer=""
+    if [[ -n "${FEMKIT_ENV_MANAGER:-}" ]]; then
+        named="$(named_env_mgr)"
+        add_found "$named" "FEMKIT_ENV_MANAGER"
+        has_kind "$named" || blocked="$named"
+    fi
+    find_env_mgrs
+    for entry in "${FOUND[@]+"${FOUND[@]}"}"; do
+        has_kind "${entry%%|*}" && drivable+=("$entry")
+    done
+    if ((${#drivable[@]} == 0)); then
+        if ((${#FOUND[@]})); then
+            show_found
+            refuse "femkit can drive none of these (it has kind files for: $(kinds_list)); looked at $LOOKED" \
+                "FEMKIT_ENV_MANAGER=/path/to/conda bash scripts/install-env.sh $*"
+        fi
+        refuse "no conda, mamba or micromamba found (looked at $LOOKED); on a cluster, load the manager's module in this shell first" \
             "FEMKIT_ENV_MANAGER=/path/to/conda bash scripts/install-env.sh $*"
     fi
-    ((AUTO_YES)) && return 0
-    verb_changes_envs "${1:-}" || return 0
-    [[ -t 0 ]] || refuse "no terminal to confirm the env manager on" "bash scripts/install-env.sh $* --yes"
-    local answer=""
-    read -r -p "[femkit] use this env manager? [Y/n] " answer || refuse "no answer"
-    case "$answer" in ""|y|Y|yes) ;; *) refuse "declined" ;; esac
+    entry="${drivable[0]}"   # the proposal
+    local ask=0
+    if ! ((AUTO_YES)) && { verb_changes_envs "${1:-}" || [[ -n "$blocked" ]]; }; then ask=1; fi
+    # The list is shown with every question, and whenever a verb that creates or removes an
+    # environment had more than one to choose from; a verb that only looks says its one line.
+    if ((ask)) || [[ -n "$blocked" ]] || { verb_changes_envs "${1:-}" && ((${#FOUND[@]} > 1)); }; then
+        show_found
+    fi
+    if [[ -n "$blocked" ]] && ((AUTO_YES)); then
+        refuse "FEMKIT_ENV_MANAGER names $(basename "$blocked"), which femkit cannot drive yet; with --yes nothing is chosen in its place" \
+            "FEMKIT_ENV_MANAGER=${entry%%|*} bash scripts/install-env.sh $*" \
+            "unset FEMKIT_ENV_MANAGER   # then run it again, and choose"
+    fi
+    if ((ask)); then
+        [[ -t 0 ]] || refuse "no terminal to choose the env manager on" "bash scripts/install-env.sh $* --yes"
+        read -r -p "[femkit] use which env manager? [1] " answer || refuse "no answer"
+        answer="${answer:-1}"
+        [[ "$answer" =~ ^[0-9]+$ ]] && ((answer >= 1 && answer <= ${#drivable[@]})) \
+            || refuse "no manager numbered $answer; nothing was changed"
+        entry="${drivable[$((answer - 1))]}"
+    fi
+    ENV_MGR="${entry%%|*}"; FOUND_BY="${entry#*|}"
+    say "env manager: $ENV_MGR   # found by $FOUND_BY"
 }
 
 # ------------------------------------------------------------------ the control environment (§ 7.2)
@@ -211,11 +271,9 @@ recreate_control() {
 
 # ------------------------------------------------------------------ forwarding
 
-# The control environment's own python, never `<manager> run`:
-# some managers' `run` (a cluster's mamba module among them) writes a stub that dies on
-# `exec: --: invalid option`, and `run` stands between Python and the terminal it asks
-# on. femkit needs no activation to run: it is pure Python, from this checkout
-# (envs.md § 7.3).
+# The control environment's own python, never `<manager> run`: `run` would stand between
+# Python and the terminal it asks on, and femkit needs no activation to run -- it is pure
+# Python, from this checkout (envs.md § 7.3).
 dispatch() {
     FEMKIT_ENV_MANAGER="$ENV_MGR" PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
         "$CONTROL/bin/python" -m femkit env "$@"

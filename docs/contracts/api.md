@@ -255,7 +255,8 @@ Built from `core/text.py`, so every command reads alike:
   (`[ 3/16] configure netgen`) and ends with its outcome and the time it took
   (one line only, for a step done at once); a step that did not finish shows
   its log's path and last lines. An operation run inside another's step
-  (`env bootstrap`'s installs) is indented under that step. Paths under the
+  (`env bootstrap`'s installs, `env install`'s validate) is indented under
+  that step. Paths under the
   home directory are written from `~`. With `--yes` the plan is printed first,
   its steps only; its findings come with the outcome.
 

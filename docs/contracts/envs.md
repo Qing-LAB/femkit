@@ -224,10 +224,11 @@ that validate did not run or did not finish.
 | `install:<build>` | install into the prefix | build |
 | `audit` | every `provides` executable and module is found **inside** the prefix; for an environment with builds, each of its toolchain's compiler variables resolves inside it | environment |
 | `manifest` | write the manifest (§ 4.3) — the commit point | environment |
+| `validate` | run the CPU checks (§ 5) as their own operation, with its own event log, shown indented under this step; done once every check has run, whatever its verdict | environment |
 
-After `manifest`, the same command runs `validate` (§ 5) as its own operation,
-with its own event log; the plan shows it as a last step `validate`. An install
-exits 1 when an environment it finished is not then `ready`.
+A failed check leaves the environment installed but not `ready`: the step
+`validate` is done, and the install exits 1 when an environment it finished is
+not then `ready`, naming each check that failed.
 
 The build steps — `configure`, `compile`, `install` — have no time limit: a
 build takes as long as the machine needs, and femkit never cuts one off. Only
@@ -617,19 +618,29 @@ the form every printed command uses ([`api.md`](api.md) § 4.4).
 
 ### 7.1 Finding the manager
 
-In order, the first that answers and that femkit has a kind file for:
-`FEMKIT_ENV_MANAGER`; `mamba`, `micromamba`,
-`conda` on `PATH` — the manager loaded in this shell, by a cluster's module for
-instance, is the strongest sign of the one meant; `MAMBA_EXE` / `CONDA_EXE`,
-which an old `conda init` may have left behind; the root above an active
-`CONDA_PREFIX`; the usual install roots under `$HOME` and `/opt`. None found:
-exit 2, listing where it looked and saying that on a cluster the manager's
-module is loaded in this shell first. A manager found without a kind file in
-`femkit/data/managers/` is passed over — a Miniforge install puts `mamba`
-beside `conda` — and named in the refusal if nothing else answers;
-`FEMKIT_ENV_MANAGER` naming one is refused. The script and Python drive the
-same manager the same way, and pass over the same ones. The script prints the manager
-and the rule that found it, and hands it to Python as `FEMKIT_ENV_MANAGER`. Run
+The script lists every manager in reach, in this order: `FEMKIT_ENV_MANAGER`
+(a path, or a name looked up on `PATH`); `conda`, `mamba`, `micromamba` on
+`PATH` — the manager loaded in this shell, by a cluster's module for instance,
+is the strongest sign of the one meant; `MAMBA_EXE` / `CONDA_EXE`, which an old
+`conda init` may have left behind; the root above an active `CONDA_PREFIX`; the
+usual install roots under `$HOME` and `/opt`. A file reached two ways is listed
+once. Only a manager with a kind file in `femkit/data/managers/` can be driven;
+the others are listed with that reason — a Miniforge install puts `mamba`
+beside `conda`.
+
+The first manager that can be driven is proposed. For a verb that creates or
+removes an environment (`bootstrap`, `install`, `clean`), a terminal asks which
+to use, the proposal taken on Enter; `--yes` takes the proposal; other verbs
+take it and say so. `FEMKIT_ENV_MANAGER` naming one that cannot be driven is
+never replaced silently: a terminal asks, and `--yes` is refused. None that can
+be driven: exit 2, listing what was found and where the script looked, and
+saying that on a cluster the manager's module is loaded in this shell first.
+
+The script and Python drive the same manager the same way. The script prints
+the manager and the rule that found it, and hands Python its full path as
+`FEMKIT_ENV_MANAGER`: Python runs it from confined commands whose `PATH` holds
+only the system's (§ 4.4), where a bare name could find another manager or
+none. Run
 day to day in the activated control environment, Python reads the `MAMBA_EXE`
 or `CONDA_EXE` the manager's own activation set. Python never searches.
 

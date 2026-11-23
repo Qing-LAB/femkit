@@ -186,6 +186,30 @@ def test_the_manager_on_path_wins_over_a_leftover_conda_exe(manager, monkeypatch
     assert not marker.exists() and calls(manager)[0] == declared("create")[0]
 
 
+def test_a_manager_named_without_a_path_is_found_on_path(manager, monkeypatch):
+    """Fails if FEMKIT_ENV_MANAGER=conda, a name rather than a path, is refused instead of
+    being looked up on PATH and used by its full path (envs.md § 7.1)."""
+    on_path = manager.parent / "stand-in"
+    monkeypatch.setenv("FEMKIT_ENV_MANAGER", "conda")
+    monkeypatch.setenv("PATH", f"{on_path}:/usr/bin:/bin")
+    out = install_env("bootstrap", "--yes")
+    assert out.returncode == 0 and f"env manager: {on_path / 'conda'}   # found by FEMKIT_ENV_MANAGER" in out.stderr
+    assert calls(manager)[0] == declared("create")[0]
+
+
+def test_a_mamba_beside_conda_is_listed_and_conda_is_proposed(manager, monkeypatch):
+    """Fails if a manager femkit cannot drive is chosen, or goes unmentioned, when one it can
+    drive is in reach too (envs.md § 7.1)."""
+    on_path = manager.parent / "stand-in"
+    (on_path / "mamba").write_text("#!/bin/sh\nexit 97\n")
+    (on_path / "mamba").chmod(0o755)
+    monkeypatch.delenv("FEMKIT_ENV_MANAGER")
+    monkeypatch.setenv("PATH", f"{on_path}:/usr/bin:/bin")
+    out = install_env("bootstrap", "--yes")
+    assert out.returncode == 0 and "femkit has no kind file for mamba" in out.stderr
+    assert calls(manager)[0] == declared("create")[0]
+
+
 def test_help_before_control_exists_is_the_scripts_own_and_creates_nothing(manager):
     """Fails if `bootstrap --help` on a fresh machine refuses, or creates control to
     answer (envs.md § 7.3)."""

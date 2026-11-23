@@ -36,7 +36,7 @@ Each milestone ends with its tier green and a review before the next starts.
       host compiler and CMake's CUDA toolkit are found inside the prefix without
       `CMAKE_CUDA_HOST_COMPILER` and `CUDAToolkit_ROOT` — Elmer finds AmgX
       through CMake's old FindCUDA module (`CUDA_TOOLKIT_ROOT_DIR`, policy
-      CMP0146) while the toolchain's CMake is unpinned — and whether a CUDA build
+      CMP0146), which the pinned CMake 4.5 still offers — and whether a CUDA build
       starts on a node without the NVIDIA driver;
     - the GPU failure cases, each a failed check with its reason, never a false
       pass: a GPU whose architecture the build was not compiled for, running out

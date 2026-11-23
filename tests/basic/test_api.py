@@ -10,6 +10,7 @@ from click.testing import CliRunner
 from pydantic import Field
 
 from femkit.cli import build
+from femkit.core import text
 from femkit.core.errors import Refused
 from femkit.core.eventlog import EventLog, fold
 from femkit.core.operations import Ask, Context, Outcome, Plan, Result, SilentObserver, Step, operation, run_steps
@@ -206,3 +207,12 @@ def test_a_plans_question_is_asked_on_a_terminal_and_never_under_yes(monkeypatch
     monkeypatch.setattr(femkit.cli, "_can_ask", lambda: True)
     assert run("toy", "sign", input="Ada\ny\n").exit_code == 0 and WRITTEN == ["Ada"]
     assert run("toy", "sign", "--yes", input="Ada\n").exit_code == 0 and WRITTEN == [None]
+
+
+def test_a_command_line_is_shown_as_typed_its_placeholders_bare_and_its_shell_words_quoted():
+    """Fails if a placeholder is shown quoted, so a template no longer reads as it was typed
+    (`mpirun -np {ranks}`), or if a word the shell would split or expand loses its quotes
+    (api.md § 4.4)."""
+    assert text.show(["mpirun", "-np", "{ranks}"]) == "mpirun -np {ranks}"
+    assert text.show(["srun", "--ntasks={ranks}", "{prefix}/bin/x"]) == "srun --ntasks={ranks} {prefix}/bin/x"
+    assert text.show(["a b", "$HOME", "{a,b}", "{ranks} x", ""]) == "'a b' '$HOME' '{a,b}' '{ranks} x' ''"

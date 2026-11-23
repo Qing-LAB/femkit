@@ -98,7 +98,7 @@ class EnvClean:
         manager = resolve(ctx)
         argv = tuple(manager.argv(manager.kind.remove, prefix=str(f.prefix)))
         return Plan(operation="env.clean", request=req.model_dump(), basis=basis,
-                    steps=(Step(id="remove", describe=f"remove {f.prefix}", argv=argv),))
+                    steps=(Step(id="remove", describe=f"remove {text.path(f.prefix)}", argv=argv),))
 
     def apply(self, plan: Plan, ctx: Context, observer) -> CleanOutcome:
         req = CleanRequest.model_validate(plan.request)
@@ -315,15 +315,20 @@ class EnvInstall:
                 results.append(EnvResult(name=name, status="not reached"))
                 continue
             f = facts(ctx, name, holding_lock=True)
-            mine = [s.model_copy(update={"id": s.id.split("/", 1)[1]}) for s in plan.steps if s.id.startswith(f"{name}/")]
-            steps = tuple(s for s in mine if s.id != "validate")
-            env_status, where, killed = "done", None, []
-            if steps:
-                sub = plan.model_copy(update={"subjects": (layout.subject(name),), "steps": steps,
+            mine = tuple(s.model_copy(update={"id": s.id.split("/", 1)[1]}) for s in plan.steps if s.id.startswith(f"{name}/"))
+            env_status, where, killed, outcomes, validated = "done", None, [], [], None
+            if mine:
+                sub = plan.model_copy(update={"subjects": (layout.subject(name),), "steps": mine,
                                               "basis": {"install_fingerprint": f.install_fingerprint}})
                 t = target(ctx, name, f.install_fingerprint)
 
                 def do(step, where):
+                    nonlocal outcomes, validated
+                    if step.id == "validate":  # envs.md § 4.1: its own operation, shown under this step
+                        ran, validated, outcomes = checks.run_validation(
+                            ctx, name, False, tuple(checks.steps(checks.selected(definition(ctx, name), gpu=False))),
+                            observer)
+                        return ran, validated  # done once every check ran, whatever its verdict
                     outcome, log = run_step(t, step, where, observer.note)
                     if outcome == KILLED:
                         killed.append(step.id)
@@ -332,10 +337,6 @@ class EnvInstall:
                 env_status, where = run_steps(sub, ctx, observer, do)
                 if killed:
                     issues.append(_killed(ctx, name, killed))
-            outcomes, validated = [], None
-            if env_status == "done" and len(steps) < len(mine):  # envs.md § 4.1: validate after manifest
-                _, validated, outcomes = checks.run_validation(
-                    ctx, name, False, tuple(checks.steps(checks.selected(definition(ctx, name), gpu=False))), observer)
             after, state = observe(ctx, name, holding_lock=True)
             results.append(EnvResult(name=name, status=env_status if mine else "nothing to do", state=state,
                                      log=str(where) if where else None,

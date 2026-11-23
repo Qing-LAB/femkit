@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from femkit.core.issues import Issue
+from femkit.core.schema import PLACEHOLDER
 
 PAD = "    "
 
@@ -19,6 +20,14 @@ PAD = "    "
 #: repository folder (envs.md § 7). Every printed command starts with it.
 PROG = "python -m femkit"
 MARK = {"error": "x", "warning": "!", "info": "-"}
+
+
+def word(value: Any) -> str:
+    """One word of a command line, quoted for the shell only when it needs it; a
+    placeholder (`{ranks}`) is part of the template, written as it is typed."""
+    shown = str(value)
+    bare = PLACEHOLDER.sub(lambda m: "x" if m.group(1).isidentifier() and m.group(2) is None else m.group(0), shown)
+    return shown if shlex.quote(bare) == bare else shlex.quote(shown)
 
 
 def show(value: Any) -> str:
@@ -30,7 +39,7 @@ def show(value: Any) -> str:
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, (list, tuple)):
-        return "none" if not value else shlex.join(str(v) for v in value)
+        return "none" if not value else " ".join(word(v) for v in value)
     return str(value)
 
 
