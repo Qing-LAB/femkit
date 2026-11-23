@@ -27,6 +27,8 @@ femkit/
 ├── schedulers/    readers of each scheduler kind's answers (jobs.md § 7)
 ├── config/        user configuration (config.md)
 ├── envs/          environment lifecycle (envs.md)
+├── server/        `serve`: the web server's supervisor, pidfile and log (api.md
+│                  § 5.4) — not built yet
 ├── models/        calculations described once: model, study, cases, the fit
 │                  against an engine's abilities, decisions, customizations,
 │                  preparation (models.md) — not built yet
@@ -45,7 +47,7 @@ tools/             developer tools that import nothing from femkit (testing.md �
 | layer | packages | may import |
 |---|---|---|
 | core | `core` | the standard library and declared third-party libraries |
-| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `models`, `jobs` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
+| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `models`, `jobs`, `server` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
 | registry | `registry.py`, `reference.py` | every domain |
 | surfaces | `cli`, `web` | everything below; never each other |
 
@@ -78,10 +80,10 @@ The rules every change follows, whatever package it touches, are
 
 ## 3. State machines
 
-femkit has four: the install script's control environment
+femkit has five: the install script's control environment
 ([`envs.md`](envs.md) § 7), an environment ([`envs.md`](envs.md) § 3), an
-install's steps ([`envs.md`](envs.md) § 4), and a run ([`jobs.md`](jobs.md)
-§ 5); the test runner's batch states ([`testing.md`](testing.md) § 4.4) are
+install's steps ([`envs.md`](envs.md) § 4), a run ([`jobs.md`](jobs.md)
+§ 5), and the web server ([`api.md`](api.md) § 5.4, not built yet); the test runner's batch states ([`testing.md`](testing.md) § 4.4) are
 a fifth, outside femkit.
 
 Every one follows these rules. In Python the primitive that enforces them is

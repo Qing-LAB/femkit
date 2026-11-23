@@ -38,10 +38,10 @@ device model, site name or credential appears in a committed file.
 
 | directory | holds | default | override |
 |---|---|---|---|
-| `<config>` | what a person set and what a probe measured: `config.toml`, `machines/` | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
+| `<config>` | what a person set and what a probe measured: `config.toml`, `machines/`; the web server's secrets, `secrets/` ([`api.md`](api.md) § 5.5) | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
 | `<data>` | environments, package locks, subject locks | `$XDG_DATA_HOME/femkit`, else `~/.local/share/femkit` | `FEMKIT_DATA_DIR` |
 | `<cache>` | downloads femkit can fetch again; may be emptied at any time | `$XDG_CACHE_HOME/femkit`, else `~/.cache/femkit` | `FEMKIT_CACHE_DIR` |
-| `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
+| `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them; the web server's logs, `<state>/logs/` ([`api.md`](api.md) § 5.4) | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
 
 A log is not a cache: emptying a cache must lose nothing but downloads, so the
 logs live apart from it, under `$XDG_STATE_HOME`.
@@ -71,6 +71,9 @@ is not a setting. How Python learns the manager without it is
 | `launch.mpi` | how a multi-rank process starts, e.g. `["mpirun", "-np", "{ranks}"]` — the environment's own `mpirun` ([`jobs.md`](jobs.md) § 7). It must pass `{ranks}` and may not be empty: a launcher without it would run every job on the wrong number of processes. The same rule holds for a scheduler kind's `mpi_launch` | a multi-rank check or job, and installing an environment with MPI (its toolchain check runs two ranks, [`envs.md`](envs.md) § 4.1), are refused, naming this key |
 | `activation.preamble` | the shell lines a run script runs on this machine before it enters an environment — `module load` lines that put the manager on `PATH`, for instance; `[]` states that none are needed | `job probe --write` and `job prepare` are refused, naming this key |
 | `activation.command` | how a shell on this machine then enters an environment: `source activate`, the activate script on `PATH` (a cluster's `module load mamba` puts it there); or `conda activate` / `mamba activate`, the manager's shell function, which exists only once the manager's hook file is sourced — femkit sources it first, from the kind's `activate.hook` under the manager's root ([`definitions.md`](definitions.md) § 6) | `job probe --write` and `job prepare` are refused, naming this key |
+
+The web server's keys — `[web.auth]`, `web.tls`, `web.trust_proxy` — are
+[`api.md`](api.md) § 5.5's, not built yet.
 
 Every key is optional in the file, and its absence has the one consequence the
 table states. Unknown keys are refused at load. The schema model is the

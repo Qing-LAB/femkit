@@ -136,7 +136,7 @@ flowchart LR
 |---|---|---|---|
 | **M5 — models I** | model, study and case schemas; formulations, meshers and abilities as data; `model check`, `model graph`, `model set`/`unset`, `study expand`, `case fit` | nothing beyond M1–M4's framework; can start now | § 6.1 |
 | **M6 — the Laplace case through the chain** | the `electrostatics` translators and parsers; `case prepare`; a job runs `final/`; results in both engines | M1's exact-answer check, M3, M5 | § 6.2 |
-| **M7 — web interface** | the flask routes, the built front end, the model graph, forms, review, progress, jobs and results | M5; its progress and job views M3 | § 7 |
+| **M7 — web interface** | the flask routes; `serve` and its supervisor, pidfile and log; access: sign-in, TLS, headers; the built front end; the model graph, forms, review, progress, jobs and results | M5; its progress and job views M3 | § 7 |
 | **M8 — customizations** | `overlay`, `replace`, `step`; `hook` and `custom-input` at first need | M6 | § 6.3 |
 | **M9 — Maxwell and analysis** | `maxwell-frequency` and its analytic benchmark in both engines; analysis | M6, M8 | § 6.4 |
 
@@ -286,22 +286,36 @@ The rules are [`../contracts/api.md`](../contracts/api.md) § 5, the reasons
 [ADR 0009](../decisions/0009-web-front-end.md). None of it is built.
 
 1. **The flask application**: the routes of `api.md` § 5.1, the event stream
-   of an operation's log included; `python -m femkit web` on the loopback
-   address. Acceptance: every registered operation served as a form, planned
-   and applied with its digest; a stale digest refused.
-2. **The front end's toolchain**: `frontend/` (added to `PROJECT_CONTRACT.md`
+   of an operation's log and the health route included. Acceptance: every
+   registered operation served as a form, planned and applied with its digest;
+   a stale digest refused.
+2. **`serve`** (`api.md` § 5.4): the `server` domain's verbs, the supervisor and
+   its child, the pidfile and the rotated log, the state table. Acceptance: each
+   verb in each state; a child killed by a signal respawned, and the supervisor
+   giving up after two deaths in 30 s; a stale pidfile never signalled; a
+   restart over a configuration that does not load refused, the server left
+   running; `status` telling up from answering.
+3. **Access** (`api.md` § 5.5): the loopback default and the refusal of another
+   address without TLS and sign-in; sign-in through an identity provider, the
+   secrets folder and its modes; TLS from files or behind one proxy; the
+   response headers, and the basic test that finds no inline script in the
+   bundle. Open: on a cluster's login node every user of the node reaches its
+   loopback address, so a server there needs more than the loopback default —
+   a per-server access token, or sign-in — to be decided; and whether a server
+   opened to a group also needs a rate limiter and an admin list.
+4. **The front end's toolchain**: `frontend/` (added to `PROJECT_CONTRACT.md`
    § 2 with it), React and React Flow, Node.js from conda-forge in a
    developer's environment; the bundle in `femkit/web/static/`, and the basic
    test that refuses a bundle older than its sources.
-3. **The model graph view** from `model graph`: the palette, typed
+5. **The model graph view** from `model graph`: the palette, typed
    connections, findings on each node, the selected node's form, positions
    saved. Acceptance: the Laplace model built in the page from an empty
    folder, with no field named in the front-end code.
-4. **The fit overlay and the review**: each node marked with its fit status
+6. **The fit overlay and the review**: each node marked with its fit status
    for a chosen engine; an open line offering the decisions and customizations
    that resolve it; `case prepare`'s plan reviewed and applied.
-5. **Progress, jobs and results**, once local jobs exist (M3): an operation's
+7. **Progress, jobs and results**, once local jobs exist (M3): an operation's
    steps live from its event stream; runs and their states; result tables, and
    where each field file is for ParaView.
-6. **On a cluster**: served on the login node and reached through an SSH
-   tunnel, shown once on the cluster.
+8. **On a cluster**: served on the login node and reached through an SSH
+   tunnel, with the access item 3 settles, shown once on the cluster.

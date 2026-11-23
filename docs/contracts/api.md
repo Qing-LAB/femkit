@@ -289,6 +289,7 @@ The reasons for the front end's form are
 | `POST /api/<name>/plan` | a changing operation: request JSON in, plan JSON out |
 | `POST /api/<name>/apply` | `{"request": …, "digest": …}`: re-plans, refuses with `PlanStale` unless the new plan's digest equals the one the person saw, then applies |
 | `GET /api/events/<operation directory>` | the operation's event log as a stream of server-sent events, from its first line, as it grows: how a long apply's progress reaches the page |
+| `GET /api/health` | answers when the server is serving; `serve status` asks it (§ 5.4) |
 | `GET /` and `/static/…` | the built front end |
 
 HTTP status follows § 4.3: 200 for a result, exit 0 or 1 (the body says `ok`);
@@ -326,7 +327,7 @@ names.
   ([ADR 0002](../decisions/0002-paraview-visualization-boundary.md)); the page
   shows numbers, tables and where the field files are.
 
-### 5.3 Source, build and serving
+### 5.3 Source and build
 
 - **Source** is a React application whose graph view uses React Flow, in a
   top-level `frontend/` folder (created with it; `PROJECT_CONTRACT.md` § 2
@@ -337,10 +338,87 @@ names.
   as the reference pages are ([`definitions.md`](definitions.md) § 2.3).
   Installing femkit never needs Node.js, and the page loads nothing from the
   network: scripts, styles and fonts are all in the bundle.
-- **Serving**: `python -m femkit web` runs the flask application on the
-  loopback address of the machine the calculation folders are on; femkit has
-  one user and no sign-in, and offers no other address. On a cluster it runs on
-  the login node, and the person reaches it through an SSH tunnel.
+
+### 5.4 Serving — `serve`
+
+`serve` is a group of verbs, declared as operations of the `server` domain
+([`framework.md`](framework.md) § 1); a verb is always named, never implied:
+
+| verb | does |
+|---|---|
+| `serve start` | detaches a supervisor, which runs the web application as its child; writes the pidfile; logs to the server's log |
+| `serve status` | every server this account runs, each with two answers kept apart: is the process up (the pidfile's checks), and is it answering (`GET /api/health`, asked at the address it was started on); `--port` for one |
+| `serve restart` | reads the configuration first, as a fresh child would, and refuses with its reason if it does not load — leaving the running server alone; otherwise signals the supervisor, which replaces its child |
+| `serve stop` | asks the supervisor to stop; it takes its child down and removes the pidfile |
+| `serve foreground` | the supervisor and its child in this terminal, stopped with Ctrl-C: for development |
+
+The supervisor runs `python -m femkit.web` as a child process; the `server`
+domain never imports the web package, as no domain imports a surface.
+
+**Files**, each in a directory of the person's own account:
+
+| file | holds |
+|---|---|
+| `$XDG_RUNTIME_DIR/femkit/serve-<port>.pid` (`<state>/run/` when that variable is unset) | the supervisor's process ID and the address its server was started on |
+| `<state>/logs/serve-<port>.log` | every line the supervisor and the server print, each event timestamped: child start, respawn, give-up, stop, and a `status` that found the server up but not answering |
+| `<state>/logs/serve-<port>.stacks.log` | every thread's stack, appended each time the child receives `SIGUSR1` |
+
+- **The log is capped and rotated**: over its size limit it is closed and
+  compressed to `serve-<port>.log.1.gz`, older archives shift up, and only the
+  newest few are kept (`--log-max-mb`, `--log-keep`), so a long-lived server
+  cannot fill a disk.
+- **Every verb checks before it acts**: the process the pidfile names is alive,
+  belongs to this account, and is a femkit server; a pidfile naming anything
+  else is reported stale and never signalled.
+- **The supervisor respawns a child that dies by a signal**, and gives up,
+  saying so in the log, after two such deaths within 30 s. A child that exits
+  with an error — a configuration it cannot load — is not respawned, since
+  restarting it would only fail again.
+- **It never kills a child that is running.** A server that is up but not
+  answering is a question, not a verdict: its stacks are dumped and read
+  (`kill -USR1`), and a person decides on `serve restart`.
+
+The server is a state machine ([`framework.md`](framework.md) § 3), observed
+from the pidfile, the process and the health route:
+
+| state | observed when | `start` | `stop` | `restart` |
+|---|---|---|---|---|
+| `stopped` | no pidfile | starts | nothing to do | refused: offers `start` |
+| `stale` | a pidfile whose process is gone, not this account's, or not a femkit server | removes the pidfile, starts | removes the pidfile | refused: offers `start` |
+| `answering` | the process is up and `/api/health` answers | refused: already running | stops | restarts |
+| `not answering` | the process is up and `/api/health` does not answer | refused: already running | stops | restarts |
+
+### 5.5 Access
+
+The state reached by configuring nothing is the safe one: a mistake leaves a
+capability missing, never open to everyone.
+
+- **Loopback by default.** `--host` defaults to `127.0.0.1`. Any other address
+  is refused unless the server serves TLS and sign-in is configured; with
+  neither, the refusal names both.
+- **Sign-in is optional and outsourced.** With no `[web.auth]` section in
+  `config.toml` nobody signs in, which is right for one person on their own
+  machine. A `[web.auth]` section names identity providers (OpenID Connect);
+  femkit learns an account's address and never holds a password. The provider's
+  client secret and the session-signing key are files in
+  `<config>/secrets/` (the folder `0700`, each file `0600`), under fixed names;
+  the session key is created on the first run.
+- **TLS** directly from PEM files (`--cert`, `--key`, or `web.tls` in
+  `config.toml`; the command line wins), or from a reverse proxy in front of a
+  loopback server, with `web.trust_proxy` trusting exactly one hop of its
+  forwarded headers.
+- **Every response** carries a content security policy that allows scripts
+  only from the server itself — no inline script, which a basic test checks
+  across the bundle — and no other origin, together with
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: same-origin`, HSTS once served over HTTPS, and a cap on
+  request size. Session cookies are `HttpOnly`, `Secure` over HTTPS and
+  `SameSite=Lax`, which is the defense against cross-site requests; no CORS
+  headers are sent.
+- `--no-auth` is accepted only with a loopback address.
+
+How access works on a machine whose loopback address is shared by its users —
+a cluster's login node — is open (plan § 7).
 
 ## 6. The registry — `femkit/registry.py`
 
