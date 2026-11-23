@@ -520,8 +520,7 @@ ActivationLine = Annotated[list[str], AfterValidator(_activation_line),
 
 
 class Activation(Model):
-    """How a shell enters a prefix with this manager (envs.md § 4.4, § 6.2), after molbuilder:
-    the hook sourced first when its file exists, else the form that needs none."""
+    """How a shell enters a prefix with this manager (envs.md § 4.4, § 6.2): the hook sourced first when its file exists, else the form that needs none."""
 
     hook: str = Field(description="the file whose sourcing defines the activation in a fresh shell, under {root} "
                                   "(the manager's root query); checked on disk, never derived from the "

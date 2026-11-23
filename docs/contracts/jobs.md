@@ -19,9 +19,7 @@ the run script, the run state machine, and how femkit uses a scheduler
 | A **machine record** holds what one machine offers, measured by `job probe` on it: scheduler, queues, node groups, installed environments, and the settings a run script needs. It is shown, never a veto | 9 |
 
 Turning a scientific model into solver input is not this contract; it produces
-the inputs a job request names. This contract follows molbuilder's job system
-(`docs/execution/scheduler.md`, `running-a-job.md`, `scheduler/kinds.toml`),
-which runs on a real SLURM cluster; where it differs, the difference is stated.
+the inputs a job request names.
 
 ## 1. The calculation folder
 
@@ -230,7 +228,7 @@ its schema model holds:
 | `cancel` | its line |
 | `interactive` | the command that opens an interactive allocation (`salloc`): `env bootstrap` names it in its plan when it runs outside any job on a machine of this kind, and an install names it after a step was killed ([`envs.md`](envs.md) § 6.2); never with a partition |
 | `job_variables` | the scheduler's variable for each of femkit's job roles: job ID, ranks, cores per rank, cores on the node, GPUs, nodes |
-| `mpi_launch` | the launcher `config init` proposes for `launch.mpi`: the environment's own `mpirun -np {ranks}`. `srun` is not proposed: the environment's MPI and the cluster's process manager need not agree, and the cluster run in molbuilder settled on the environment's `mpirun` |
+| `mpi_launch` | the launcher `config init` proposes for `launch.mpi`: the environment's own `mpirun -np {ranks}`. `srun` is not proposed: the environment's MPI and the cluster's process manager need not agree |
 
 `local` declares no commands, header, submission or probe. Adding a scheduler is
 one kind file and its readers: the readers of its answers live in
@@ -255,10 +253,6 @@ here too, in `femkit/jobs/setup.py`: `doctor` reads this machine's record, and
 `env bootstrap` writes it with `job probe --write` after its installs.
 
 ## 9. Machine records — `<config>/machines/<name>.toml`
-
-The record follows molbuilder's `jobset probe` (`scheduler/record.py`,
-`scheduler/probe.py`), which measures a real SLURM cluster; where it differs,
-the difference is stated.
 
 ### 9.1 What a record holds
 
@@ -316,8 +310,7 @@ Rules the record follows:
 - **One schema version.** A record states its version; a record of another
   version does not load, and `job machines` names its version and the probe
   that rewrites it, run on that machine. Unknown keys do not load: only the
-  probe writes records. (molbuilder keeps unknown columns in an `extra` part
-  because its records were once written by hand; femkit's never are.)
+  probe writes records, never a person.
 - The probe copies `settings` as they are; it does not choose them. They let a
   job be prepared on one machine for another. After a change to the machine's
   `config.toml` or its environments, the record is probed again.

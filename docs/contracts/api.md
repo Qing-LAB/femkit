@@ -170,8 +170,8 @@ nothing to add still reports every key it kept.
 
 ### 3.1 Questions
 
-Some values only the person can give, and install time is when they are there
-(molbuilder's `init-config`): the activation preamble, where environments go.
+Some values only the person can give, and install time is when they are there:
+the activation preamble, where environments go.
 A plan names each such request field it lacks in `asks`:
 
 ```python
@@ -231,8 +231,7 @@ to stderr through a terminal observer, so stdout holds only the result.
 
 ### 4.4 The text a person reads
 
-Modelled on molbuilder's terminal, built from `core/text.py` so every command
-reads alike:
+Built from `core/text.py`, so every command reads alike:
 
 - **The first line is tagged** `[group verb]` — `[config init] …` — and says
   the outcome in a few words; the details follow, indented.
@@ -250,7 +249,7 @@ reads alike:
   (`env install NAME`) where the context makes it plain.
 - **A refusal** is `[group verb] refused: <reason>` and `next -- instead:`
   with the commands its state allows.
-- **Progress** goes to stderr, after molbuilder's install output. An operation
+- **Progress** goes to stderr. An operation
   with steps first says, as `[group verb]`, how many and where its logs are
   (the log folder names what it acts on); each step is numbered
   (`[ 3/16] configure netgen`) and ends with its outcome and the time it took

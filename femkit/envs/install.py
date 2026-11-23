@@ -182,7 +182,7 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
 # ------------------------------------------------------------------ the steps
 
 KILLED = "killed"
-SIGKILL_CODES = (-9, 137)  # killed by SIGKILL: directly, or as a shell reports it (after molbuilder)
+SIGKILL_CODES = (-9, 137)  # killed by SIGKILL: directly, or as a shell reports it
 
 
 def _ended(result: process.ProcessResult, log: Path) -> str:

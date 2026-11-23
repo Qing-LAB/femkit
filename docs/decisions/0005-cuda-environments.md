@@ -105,17 +105,12 @@ those GPU nodes, alongside CPU work on the same cluster.
 
 ### How others package a CPU and a GPU build
 
-- **molbuilder** has `molbuilder-siesta`, packages only, in the default set,
-  and `molbuilder-siesta-gpu`, built from source and installed on request. Its
-  recipe says why: the CPU environment "exists to be installable ANYWHERE …
-  `molbuilder-siesta-gpu` must be built from source, which some HPC sites do
-  not permit. That, not hardware, is why there are two."
 - **Spack** gives a package a `cuda` variant, off by default, and a
   `cuda_arch` variant [12].
 - **conda-forge** builds CPU and CUDA variants of one package, and the solver
   chooses between them through a variant or mutex package [13].
 
-Each of the three keeps one recipe and builds it twice.
+Both keep one recipe and build it twice.
 
 ## Alternatives
 

@@ -16,9 +16,9 @@ the same name.
 ## Reason
 
 The name is typed constantly — as the command, in paths, and in variable names.
-`femkit` is six letters with no awkward key sequence, keeps the meaning of a
-workbench (a kit of tools to build, run and check finite-element studies), and
-pairs with the sibling project `molbuilder`. It was unused on PyPI and
+`femkit` is six letters with no awkward key sequence and keeps the meaning of a
+workbench: a kit of tools to build, run and check finite-element studies. It
+was unused on PyPI and
 conda-forge when chosen.
 
 ## Consequences

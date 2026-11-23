@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/install-env.sh -- thin bootstrap shim for `python -m femkit env ...`
-# (docs/contracts/envs.md § 7; modelled on molbuilder's scripts/install-env.sh).
+# (docs/contracts/envs.md § 7).
 #
 # It does ONE thing: solve "you cannot run `femkit env ...` until the control
 # environment exists". So it
@@ -35,7 +35,7 @@ AUTO_YES=0
 DRY_RUN=0
 CLEAN=0
 WANT_HELP=0
-NO_ACTION=0   # --dry-run / --help: look, never create or remove (molbuilder's MB_NO_ACTION)
+NO_ACTION=0   # --dry-run / --help: look, never create or remove
 
 usage() {
     cat <<'EOF'
@@ -211,7 +211,7 @@ recreate_control() {
 
 # ------------------------------------------------------------------ forwarding
 
-# The control environment's own python, never `<manager> run` -- molbuilder's dispatch:
+# The control environment's own python, never `<manager> run`:
 # some managers' `run` (a cluster's mamba module among them) writes a stub that dies on
 # `exec: --: invalid option`, and `run` stands between Python and the terminal it asks
 # on. femkit needs no activation to run: it is pure Python, from this checkout
@@ -258,7 +258,7 @@ case "$1" in
         fi
         ((NO_ACTION)) && CLEAN=0   # look at a rebuild, never do one
         # A broken control environment is rebuilt like an outdated one, never by --clean,
-        # which also rebuilds every engine environment (molbuilder: bootstrap repairs).
+        # which also rebuilds every engine environment.
         case "$state:$CLEAN" in
             absent:*)                         create_control ;;
             outdated:*|broken:*|current:1)    recreate_control ;;

@@ -166,7 +166,7 @@ Checks that must give the same quantity (definitions.md § 5.2).
 
 ## Activation
 
-How a shell enters a prefix with this manager (envs.md § 4.4, § 6.2), after molbuilder: the hook sourced first when its file exists, else the form that needs none.
+How a shell enters a prefix with this manager (envs.md § 4.4, § 6.2): the hook sourced first when its file exists, else the form that needs none.
 
 | key | type | default | meaning |
 |---|---|---|---|

@@ -547,8 +547,7 @@ script can ask. It is the last step of `env bootstrap` (§ 6.2).
 
 ### 6.2 `env bootstrap` — set up this machine
 
-It follows molbuilder's bootstrap (`envs bootstrap`, `envs/initconfig.py`):
-install time is when the person who knows the answers is there. One plan, one
+Install time is when the person who knows the answers is there. One plan, one
 consent, then four parts in order:
 
 1. **`config init`**, with bootstrap's own copies of its options, and its
@@ -577,8 +576,8 @@ only when every part is done and `doctor` finds the machine ready.
 
 It ends with the lines that enter femkit day to day on this machine: the
 preamble, the manager kind's activation of the real control prefix, the
-checkout, and `doctor`. The activation is the kind's two forms, after
-molbuilder: its shell hook sourced, then `conda activate <prefix>`, when the
+checkout, and `doctor`. The activation is the kind's two forms: its shell hook
+sourced, then `conda activate <prefix>`, when the
 hook file exists under the manager's root; otherwise `source activate
 <prefix>`, the activate script a cluster's module puts on `PATH`.
 
@@ -587,7 +586,7 @@ not on a login node, whose limits kill large builds. When the machine's
 scheduler kind declares `interactive` ([`jobs.md`](jobs.md) § 7) and the
 process is in no job (the kind's job-ID variable is unset), bootstrap's plan
 warns before any install, naming that command — never a partition. A step
-whose own command ends by `SIGKILL` (exit `-9` or `137`, molbuilder's test) is
+whose own command ends by `SIGKILL` (exit `-9`, or `137` as a shell reports it) is
 `killed`. Where the process runs is read as the machine record reads it
 ([`jobs.md`](jobs.md) § 9.1). On a login node, the finding names the same
 command (or, for a kind that declares none, says to run inside a job); inside a
@@ -599,8 +598,7 @@ installs is what covers it.
 
 ## 7. The install script and the control environment
 
-`scripts/install-env.sh` is the one shell program, modelled on molbuilder's
-script of the same name. It exists because the control environment must exist
+`scripts/install-env.sh` is the one shell program. It exists because the control environment must exist
 before Python can run, and it does only that:
 
 1. find the package manager (§ 7.1) and ask the person to confirm it (`--yes`
@@ -677,7 +675,7 @@ flowchart TD
 | `current` | forward | remove, create, then forward | forward |
 
 `--clean` is forwarded too, so `bootstrap --clean` also rebuilds every default
-environment (`env bootstrap --clean`, as molbuilder's `--clean` does; a `-cuda`
+environment (`env bootstrap --clean`; a `-cuda`
 environment is rebuilt only by its own `env install NAME --clean`). No repair
 the script or `doctor` prints carries it. Only a line that repeats the person's
 own command carries their `--clean`: after a failed control rebuild (never with
@@ -692,8 +690,7 @@ the consent the question would have asked for).
 - **Forward** is `<control prefix>/bin/python -m femkit env <the arguments>`,
   with the repository root on `PYTHONPATH` and `FEMKIT_ENV_MANAGER` set:
   femkit runs from its checkout and is never installed into an environment.
-  This is molbuilder's dispatch, which never goes through `<manager> run`.
-  Some managers' `run` writes a shell stub that dies on `exec: --: invalid
+  It never goes through `<manager> run`: some managers' `run` writes a shell stub that dies on `exec: --: invalid
   option`, a cluster's mamba module among them, and `run` stands between
   Python and the terminal it asks on (§ 6.2). femkit is pure Python and needs
   no activation to run. `bootstrap` is forwarded as `env bootstrap`, which

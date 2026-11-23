@@ -1,7 +1,6 @@
 """Machine records — `<config>/machines/<name>.toml` (jobs.md § 9).
 
-The one model of a record, and its one reader and writer. After molbuilder's
-`scheduler/record.py`; the differences are jobs.md § 9's. Reading a record never probes.
+The one model of a record, and its one reader and writer. Reading a record never probes.
 """
 
 from __future__ import annotations

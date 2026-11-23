@@ -64,8 +64,7 @@ Each milestone ends with its tier green and a review before the next starts.
 - **M4 — SLURM.** The `slurm` kind's remaining parts and its readers in
   `femkit/schedulers/` (`jobs.md` § 7); cluster probing and carrying a record;
   header, submission, query, cancel, `launch --check`. The fit and its wording
-  follow molbuilder's `docs/execution/scheduler.md` (R2a–R4, R6, R10) and
-  `gpu.md`, which `framework.md` § 4 states. Field tier on the cluster: the
+  follow `framework.md` § 4. Field tier on the cluster: the
   readers' first real reading is M2's field test there.
 
 ## 3. Framework debts, not yet scheduled

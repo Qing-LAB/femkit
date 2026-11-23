@@ -150,7 +150,9 @@ within AmgX's supported range. NVIDIA's official `nvidia-nvtx-cu12==12.8.90`
 archive, checksum-verified and inspected, contains `libnvToolsExt.so.1` and the
 NVTX3 headers — evidence of NVIDIA's packaging, not of our package solve or an
 Elmer run. `[cuda]` requests the NVTX runtime and development packages
-explicitly, with CCCL and the Python bindings in the same 12.8 toolkit family.
+explicitly, with CCCL in the same 12.8 toolkit family. No Python CUDA bindings
+are installed: Elmer's GPU check reads AmgX's own solver output, and no check
+program calls the CUDA runtime from Python.
 Toolkit release and component versions differ; not every CUDA library is
 pinned to one number.
 
@@ -198,8 +200,7 @@ elmer: the selected Elmer release
 │   └── ElmerGrid → mesh conversion, built from Elmer source
 ├── Python scientific/validation support
 │   ├── Python + numpy / meshio
-│   ├── mpi4py → same prefix MPI provider
-│   └── cuda-bindings, in elmer-cuda only → NVIDIA's CUDA runtime bindings
+│   └── mpi4py → same prefix MPI provider
 └── Toolchain ([toolchain], proven before any source is fetched)
     ├── gcc 14 C/C++/Fortran compilers and runtimes; sysroot 2.28
     ├── CMake / CTest + make
@@ -223,7 +224,7 @@ rocALUTION, cuDSS, MKL and other solver stacks are not selected.
 | Zoltan C source → compiler diagnostics | The pinned source has an older pointer interface rejected by newer GNU defaults | The Elmer-only C diagnostic demotion is configuration, not a source patch. Review whether it is still needed after a source or compiler change; never apply it to AmgX or another environment. |
 | MPI consumers → MPI/numerical variants | Elmer, AmgX, MUMPS, ScaLAPACK, Hypre, ParMETIS and mpi4py must use compatible provider/build interfaces | The prefix's OpenMPI and OpenBLAS are the providers. A provider, Fortran or integer-interface change reviews the whole dependent group and reruns the MPI checks. |
 | Mesh tools → engine inputs | Generated meshes must convert and solve in the installed Elmer | Gmsh serves the model-input pipeline; a mesh-tool version change verifies generation, ElmerGrid conversion and solving together. |
-| Validation support → Python/bindings | femkit's field and device helpers must work with the selected package APIs | The Python minor is shared (`control.txt`); numpy, meshio and the CUDA bindings are the environment's own. Binding versions are independent component numbers, not a match to the toolkit's version. |
+| Validation support → Python packages | femkit's field helpers must work with the selected package APIs | The Python minor is shared (`control.txt`); numpy and meshio are the environment's own. |
 
 Primary references for these edges are the selected
 [Elmer finder](https://github.com/ElmerCSC/elmerfem/blob/a19504ac53ec222e3355e182b08f2ff280c2203a/cmake/Modules/FindAMGX.cmake),

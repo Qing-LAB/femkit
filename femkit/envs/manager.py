@@ -64,7 +64,7 @@ class Manager:
     def activation(self, prefix: Path) -> list[str]:
         """The shell lines that enter ``prefix`` (envs.md § 4.4, § 6.2): the kind's hook,
         sourced when its file exists under the manager's root, then the line that needs
-        it; else the line that needs none. After molbuilder's two forms."""
+        it; else the line that needs none."""
         a = self.kind.activate
         root, why = self.query(self.kind.root)
         hook = Path(render(a.hook, {"root": str(root)})) if root else None

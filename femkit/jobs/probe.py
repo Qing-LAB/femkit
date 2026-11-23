@@ -1,6 +1,6 @@
 """`job probe`: measure the machine this runs on into a record (jobs.md § 9.1, § 9.2).
 
-After molbuilder's `jobset probe`. Every outside command runs through `core.process`;
+Every outside command runs through `core.process`;
 one that is missing or fails makes the facts it measures unknown, with the reason —
 never an exception, never a guess.
 """

@@ -44,7 +44,7 @@ device model, site name or credential appears in a committed file.
 | `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
 
 A log is not a cache: emptying a cache must lose nothing but downloads, so the
-logs live apart from it, as molbuilder keeps its logs under `$XDG_STATE_HOME`.
+logs live apart from it, under `$XDG_STATE_HOME`.
 
 Each variable chooses a directory; the file is the one in it. `~` is expanded;
 a directory that is still relative is refused, so no file is read from the
@@ -94,9 +94,8 @@ nobody has said, `[]` means someone said nothing is needed.
   good. While `paths.environments` is unset the plan shows where environments
   will go — the default, whether it is writable and its filesystem's free
   space (a quota is not measured; on a cluster the home quota is often too
-  small) — and on a terminal `config init` asks for another place, as
-  molbuilder asks for its project tree; an empty answer keeps the default,
-  unwritten.
+  small) — and on a terminal `config init` asks for another place; an empty
+  answer keeps the default, unwritten.
 - `activation.preamble` is never proposed. While it is unset, `config init`
   asks for its lines on a terminal, showing beside the question the loaded
   modules when the shell lists them; an empty answer leaves it unset. `--preamble LINE` (repeatable) or

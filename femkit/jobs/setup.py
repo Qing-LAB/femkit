@@ -2,7 +2,7 @@
 
 They live in `jobs`, the top domain, because both read or write this machine's record
 (jobs.md § 9) besides the configuration and the environments below it. `env bootstrap`
-follows molbuilder's `envs bootstrap`: configuration first, every default environment
+does configuration first, every default environment
 installed one after another — a failed one does not stop the next — this machine's
 record, then `doctor`, the entry line, and one verdict.
 """
@@ -226,7 +226,7 @@ class EnvBootstrap:
         for name in default_environments():
             try:
                 sub = EnvInstall.plan(EnvInstall.request(names=[name], clean=req.clean), planned)
-            except Refusal as exc:  # said now, not after the other installs (molbuilder's bootstrap)
+            except Refusal as exc:  # said now, not after the other installs
                 refused[name] = str(exc)
                 issues.append(Issue(severity="error", code="refused", subject=name,
                                     message=f"{name} will not be installed: {exc}", next=exc.next))

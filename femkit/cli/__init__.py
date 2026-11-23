@@ -132,8 +132,7 @@ def _tail(log: Path) -> list[str]:
 
 
 class TerminalObserver:
-    """Progress to stderr, so stdout holds only the result (api.md § 4.4). After molbuilder's
-    install output: each operation says how many steps it has and where its logs are; each
+    """Progress to stderr, so stdout holds only the result (api.md § 4.4): each operation says how many steps it has and where its logs are; each
     step is numbered, says what it does, and ends with its outcome and how long it took; a
     step that did not finish shows where its log is and how the log ends. An operation run
     inside another's step is indented under it."""

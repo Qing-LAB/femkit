@@ -1,7 +1,6 @@
 """SLURM: the commands that measure a machine, and the readers of their answers (jobs.md § 7, § 9.1).
 
-After molbuilder's `scheduler/probe.py` and `scheduler/record.py`, with these differences:
-nodes are read one by one (`scontrol show node`), so node groups are exact and carry their
+Nodes are read one by one (`scontrol show node`), so node groups are exact and carry their
 architecture, never a `48+` range; each QOS column is its own query beside the QOS name,
 so a column one site's SLURM does not know costs no other; a pair a partition denies is
 not a queue; and no queue is named or preferred.
@@ -94,8 +93,7 @@ def mib(text: str) -> int:
 
 def gres(text: str | None) -> dict[str, int]:
     """SLURM's gres spelling -> {type: count}: the affinity tail dropped, other generic
-    resources ignored, an untyped count is type `gpu`, `(null)` is none (molbuilder's
-    `quantities.parse_gres`)."""
+    resources ignored, an untyped count is type `gpu`, `(null)` is none."""
     out: dict[str, int] = {}
     g = (text or "").strip()
     if not g or g.lower() in ("(null)", "none"):
