@@ -205,8 +205,9 @@ def test_a_step_ended_by_sigkill_is_killed_and_names_the_interactive_allocation(
 
 @pytest.mark.parametrize("log_line, expected", [
     ("x86_64-conda-linux-gnu-gfortran: fatal error: Killed signal terminated program f951", "killed"),
+    ("nvcc error   : 'cudafe++' died due to signal 9 (Kill signal)", "killed"),
     ("Acoustics.F90:12:3: Error: Symbol 'x' at (1) has no IMPLICIT type", "failed"),
-], ids=["compiler killed", "compile error"])
+], ids=["gcc compiler killed", "nvcc front end killed", "compile error"])
 def test_a_compiler_killed_under_the_build_tool_makes_its_step_killed(log_line, expected, tmp_path, monkeypatch):
     """Fails if a compile whose compiler the system killed reads as an ordinary failure, so the
     login-node advice never shows, or if a real compile error reads as killed: make exits 2 either

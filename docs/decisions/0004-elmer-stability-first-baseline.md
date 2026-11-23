@@ -150,22 +150,26 @@ within AmgX's supported range. NVIDIA's official `nvidia-nvtx-cu12==12.8.90`
 archive, checksum-verified and inspected, contains `libnvToolsExt.so.1` and the
 NVTX3 headers — evidence of NVIDIA's packaging, not of our package solve or an
 Elmer run. `[cuda]` requests the NVTX runtime and development packages
-explicitly, with CCCL in the same 12.8 toolkit family. No Python CUDA bindings
+explicitly, in the same 12.8 toolkit family. No Python CUDA bindings
 are installed: Elmer's GPU check reads AmgX's own solver output, and no check
 program calls the CUDA runtime from Python.
 Toolkit release and component versions differ; not every CUDA library is
 pinned to one number.
 
-`[cuda]` lists the toolkit's parts the builds use — nvcc and the runtime;
-cuBLAS, cuSPARSE and cuSOLVER, which the pinned
+`[cuda]` installs the toolkit as NVIDIA's `cuda-toolkit` metapackage composes
+it — `cuda-compiler`, `cuda-libraries`, `cuda-libraries-dev` and
+`cuda-nvml-dev` — less its fifth part, `cuda-tools`. The pinned
 [AmgX build](https://github.com/NVIDIA/AMGX/blob/cc1cebdbb32b14d33762d4ddabcb2e23c1669f47/CMakeLists.txt)
-links; CCCL; and NVTX — never the `cuda-toolkit` metapackage. Measured with
-mamba 2.9.0 on 2026-11-22, on a cluster and on a workstation alike: the
-metapackage brings `cuda-visual-tools`, whose `nsight-compute 2025.1.1.2` pins
-`krb5 < 1.22`, while the toolchain's CMake 4.5
+assumes a whole toolkit: it links cuBLAS, cuSPARSE and cuSOLVER by target, but
+includes `curand.h` and calls cuRAND without naming it, so a hand-picked list of
+libraries misses headers the source uses; on a cluster, on 2026-11-22, the
+AmgX compile stopped at `curand.h: No such file or directory`. `cuda-tools` is
+left out because, measured with mamba 2.9.0 on 2026-11-22 on a cluster and on a
+workstation alike, it brings `cuda-visual-tools`, whose
+`nsight-compute 2025.1.1.2` pins `krb5 < 1.22`, while the toolchain's CMake 4.5
 ([ADR 0006](0006-toolchain-first.md)) needs `libcurl >= 8.23` and with it
 `krb5 >= 1.22.2`, so the environment does not solve. A build never runs the
-profiler GUI.
+profilers.
 
 Not chosen:
 
