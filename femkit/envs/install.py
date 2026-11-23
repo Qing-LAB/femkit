@@ -468,11 +468,13 @@ STEP_KINDS: dict[str, Callable[[Target, Step, Path, Say], str]] = {
 }
 
 
-def run_step(t: Target, step: Step, where: Path, say: Say = lambda line: None) -> tuple[str, Path]:
+def run_step(t: Target, step: Step, where: Path, say: Say = lambda line: None,
+             watch: Callable[[Path], None] = lambda log: None) -> tuple[str, Path]:
     """The one door every install step goes through; ``say`` hears what a step reports as it
-    runs. A file, network or archive error is the step's failure, said in its log; anything
-    else is a defect and propagates."""
+    runs, and ``watch`` where its log grows. A file, network or archive error is the step's
+    failure, said in its log; anything else is a defect and propagates."""
     log = where / f"{step.id.replace(':', '-')}.log"
+    watch(log)
     try:
         return STEP_KINDS[step.id.split(":", 1)[0]](t, step, log, say), log
     except (OSError, tarfile.TarError, urllib.error.URLError) as exc:

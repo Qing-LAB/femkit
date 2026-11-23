@@ -8,7 +8,10 @@ operation.
 from __future__ import annotations
 
 import json
+import re
+import shutil
 import sys
+import threading
 import time
 import traceback
 import types
@@ -131,19 +134,77 @@ def _tail(log: Path) -> list[str]:
         return []
 
 
+CONTROL = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|[\x00-\x1f\x7f]")  # a terminal's escapes and control characters
+EVERY = 1.0  # seconds between two refreshes of the live line
+
+
+def last_line(log: Path) -> str:
+    """The log's last line as a person reads it: a progress bar's last frame, without the
+    terminal's codes."""
+    try:
+        lines = [CONTROL.sub("", part).strip() for line in process.tail(log, 3) for part in line.split("\r")]
+    except OSError:
+        return ""
+    return next((line for line in reversed(lines) if line), "")
+
+
 class TerminalObserver:
     """Progress to stderr, so stdout holds only the result (api.md § 4.4): each operation says how many steps it has and where its logs are; each
     step is numbered, says what it does, and ends with its outcome and how long it took; a
     step that did not finish shows where its log is and how the log ends. An operation run
-    inside another's step is indented under it."""
+    inside another's step is indented under it. On a terminal, a running step whose log it
+    was told of shows one live line — its time so far and its log's last line — rewritten in
+    place and erased before anything else is printed."""
 
-    def __init__(self) -> None:
+    def __init__(self, live: bool | None = None) -> None:
         self.runs: list[dict] = []  # one per operation in progress, innermost last
+        self.live = sys.stderr.isatty() if live is None else live
+        self.lock = threading.Lock()
+        self.shown = False  # a live line is on the screen
+        self.watching: tuple[Path, float, str] | None = None  # (log, started, indent)
+        self.stop = threading.Event()
+        self.ticker: threading.Thread | None = None
+
+    def _erase(self) -> None:
+        if self.shown:
+            click.echo("\r\x1b[K", nl=False, err=True, color=True)  # its codes kept: shown only on a terminal
+            self.shown = False
 
     def _say(self, text: str) -> None:
-        click.echo("    " * (len(self.runs) - 1) + text, err=True)
+        with self.lock:
+            self._erase()
+            click.echo("    " * (len(self.runs) - 1) + text, err=True)
+
+    def refresh(self) -> None:
+        """Rewrite the live line: the running step's time so far and its log's last line."""
+        with self.lock:
+            if not self.watching:
+                return
+            log, started, indent = self.watching
+            line = f"{indent}{took(time.monotonic() - started)} | {last_line(log)}"
+            width = shutil.get_terminal_size().columns - 1
+            click.echo("\r\x1b[K" + (line if len(line) <= width else line[:width - 1] + "…"), nl=False, err=True, color=True)
+            self.shown = True
+
+    def _tick(self) -> None:
+        while not self.stop.wait(EVERY):
+            self.refresh()
+
+    def step_log(self, log: Path) -> None:
+        if not self.live:
+            return
+        self.watching = (log, self.runs[-1].get("started", time.monotonic()), "    " * (len(self.runs) - 1) + "      ")
+        if self.ticker is None:
+            self.ticker = threading.Thread(target=self._tick, daemon=True)
+            self.ticker.start()
+
+    def _unwatch(self) -> None:
+        with self.lock:
+            self.watching = None
+            self._erase()
 
     def operation_start(self, plan: Plan, where: Path) -> None:
+        self._unwatch()  # the live line belongs to the innermost running step
         self.runs.append({"total": len(plan.steps)})
         if plan.steps:  # `[group verb]`, as a refusal reads; the log folder names what it acts on
             n = len(plan.steps)
@@ -156,6 +217,7 @@ class TerminalObserver:
         self._say(f"{run['head']} {step.describe}")
 
     def step_end(self, step: Step, outcome: str, log: Path | None) -> None:
+        self._unwatch()
         run = self.runs[-1]
         seconds = time.monotonic() - run.get("started", time.monotonic())
         if outcome == "done":
@@ -170,33 +232,55 @@ class TerminalObserver:
         self._say(f"      {text}")
 
     def operation_end(self, plan: Plan, status: str) -> None:
+        self._unwatch()
         self.runs.pop()
+        if not self.runs and self.ticker is not None:
+            self.stop.set()
+            self.ticker = None
+            self.stop = threading.Event()
 
 
 def _can_ask() -> bool:
     return sys.stdin.isatty()
 
 
-def _answer(op: Operation, ask: Ask) -> Any:
-    """Ask one question on the terminal (api.md § 3.1). A list field takes a line per
-    item, ended by an empty line; an empty answer is no answer."""
-    _, is_list = _unwrap(op.request.model_fields[ask.key].annotation)
-    click.echo("", err=True)
-    for line in ask.context:
-        click.echo(f"  {line}", err=True)
-    click.echo(ask.question, err=True)
+def _read(is_list: bool) -> Any:
+    """One answer as typed: a line, or for a list a line per item ended by an empty line."""
     if not is_list:
-        given = click.prompt(" ", default="", show_default=False, err=True).strip()
-        return given or None
+        return click.prompt(" ", default="", show_default=False, err=True).strip() or None
     lines = []
     while given := click.prompt(" ", default="", show_default=False, err=True).strip():
         lines.append(given)
     return lines or None
 
 
+def _answer(op: Operation, ask: Ask, req: Any) -> Any:
+    """Ask one question on the terminal (api.md § 3.1); an empty answer is no answer. An answer
+    is checked as it is given: one holding characters that are not text — an arrow or erase key
+    the terminal passed through — or one the request refuses is said, visibly, and asked again."""
+    _, is_list = _unwrap(op.request.model_fields[ask.key].annotation)
+    click.echo("", err=True)
+    for line in ask.context:
+        click.echo(f"  {line}", err=True)
+    while True:
+        click.echo(ask.question, err=True)
+        given = _read(is_list)
+        if given is None:
+            return None
+        if bad := [v for v in (given if is_list else [given]) if not v.isprintable()]:
+            click.echo(f"  ! {bad[0]!r} holds characters that are not text (an arrow or erase key?); "
+                       "type it again, or nothing for no answer", err=True)
+            continue
+        try:
+            _request(op, {**req.model_dump(), ask.key: given})
+            return given
+        except UsageError as exc:
+            click.echo(f"  ! {exc}; type it again, or nothing for no answer", err=True)
+
+
 def _asked(op: Operation, req: Any, plan: Plan, ctx: Context) -> tuple[Any, Plan]:
     """The plan's questions answered, and the plan made again from the answers."""
-    answers = {a.key: v for a in plan.asks if (v := _answer(op, a)) is not None}
+    answers = {a.key: v for a in plan.asks if (v := _answer(op, a, req)) is not None}
     if not answers:
         return req, plan
     req = _request(op, {**req.model_dump(), **answers})

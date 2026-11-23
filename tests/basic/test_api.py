@@ -78,7 +78,7 @@ class Write:
 class SignRequest(Model):
     """Sign the book."""
 
-    name: str | None = Field(default=None, description="who signs; asked on a terminal when not given")
+    name: str | None = Field(default=None, pattern=r"^[A-Z]", description="who signs, capitalized; asked on a terminal when not given")
 
 
 @operation("toy.sign", request=SignRequest, result=WriteOutcome, changes=True, subject=lambda r: ["toy"])
@@ -209,6 +209,18 @@ def test_a_plans_question_is_asked_on_a_terminal_and_never_under_yes(monkeypatch
     assert run("toy", "sign", "--yes", input="Ada\n").exit_code == 0 and WRITTEN == [None]
 
 
+@pytest.mark.parametrize("first", ["\x1b[A", "ada"], ids=["an arrow key's code", "a value the request refuses"])
+def test_an_answer_that_is_not_text_or_is_refused_is_said_and_asked_again(first, monkeypatch):
+    """Fails if an answer holding a terminal's control characters, or one the request refuses,
+    ends the command instead of being said and asked again — a bootstrap lost to one keystroke
+    (api.md § 3.1)."""
+    import femkit.cli
+    monkeypatch.setattr(femkit.cli, "_can_ask", lambda: True)
+    out = run("toy", "sign", input=f"{first}\nAda\ny\n")
+    assert out.exit_code == 0 and WRITTEN == ["Ada"] and out.output.count("Who signs?") == 2
+    assert repr(first) in out.output or "pattern" in out.output
+
+
 def test_a_command_line_is_shown_as_typed_its_placeholders_bare_and_its_shell_words_quoted():
     """Fails if a placeholder is shown quoted, so a template no longer reads as it was typed
     (`mpirun -np {ranks}`), or if a word the shell would split or expand loses its quotes
@@ -216,3 +228,28 @@ def test_a_command_line_is_shown_as_typed_its_placeholders_bare_and_its_shell_wo
     assert text.show(["mpirun", "-np", "{ranks}"]) == "mpirun -np {ranks}"
     assert text.show(["srun", "--ntasks={ranks}", "{prefix}/bin/x"]) == "srun --ntasks={ranks} {prefix}/bin/x"
     assert text.show(["a b", "$HOME", "{a,b}", "{ranks} x", ""]) == "'a b' '$HOME' '{a,b}' '{ranks} x' ''"
+
+
+def test_a_running_steps_live_line_shows_its_log_and_is_erased_before_anything_else(tmp_path, capsys):
+    """Fails if a running step's live line does not show its log's last line without the terminal
+    codes the log holds, if it stays on screen under the next line, or if output that is not a
+    terminal gets it (api.md § 4.4)."""
+    from femkit.cli import TerminalObserver
+    plan = Plan(operation="env.install", request={}, steps=(Step(id="compile", describe="compile elmer"),))
+    log = tmp_path / "compile.log"
+    log.write_text("[ 62%] Building\n\x1b[1m[ 63%] Linking Fortran shared library CoilSolver.so\x1b[0m\n")
+    for live in (True, False):
+        obs = TerminalObserver(live=live)
+        obs.operation_start(plan, tmp_path)
+        obs.step_start(plan.steps[0], 1, 1)
+        obs.step_log(log)
+        obs.refresh() if live else None
+        obs.note("verdict: passed")
+        obs.step_end(plan.steps[0], "done", log)
+        obs.operation_end(plan, "done")
+        err = capsys.readouterr().err
+        shown = "\r\x1b[K      0 s | [ 63%] Linking Fortran shared library CoilSolver.so"
+        if live:
+            assert shown in err and err.index(shown) < err.index("\r\x1b[K", err.index(shown) + 1) < err.index("verdict")
+        else:
+            assert "\x1b" not in err and "verdict: passed" in err

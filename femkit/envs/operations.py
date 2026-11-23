@@ -329,7 +329,7 @@ class EnvInstall:
                             ctx, name, False, tuple(checks.steps(checks.selected(definition(ctx, name), gpu=False))),
                             observer)
                         return ran, validated  # done once every check ran, whatever its verdict
-                    outcome, log = run_step(t, step, where, observer.note)
+                    outcome, log = run_step(t, step, where, observer.note, observer.step_log)
                     if outcome == KILLED:
                         killed.append(step.id)
                     return outcome, log

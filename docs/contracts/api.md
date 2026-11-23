@@ -158,6 +158,7 @@ class Plan(Model):
 class Observer(Protocol):
     def operation_start(self, plan: Plan, where: Path) -> None   # where: the operation directory
     def step_start(self, step: Step, index: int, total: int) -> None
+    def step_log(self, log: Path) -> None   # the running step writes its log here, as it runs
     def step_end(self, step: Step, outcome: str, log: Path | None) -> None
     def note(self, text: str) -> None
     def operation_end(self, plan: Plan, status: str) -> None
@@ -183,7 +184,11 @@ class Ask(Model):
 
 The CLI asks them on a terminal, before consent, and plans again with the
 answers; a list field takes a line per item, ended by an empty line. An empty
-answer is no answer, and the plan stands as it was. Nothing is asked under
+answer is no answer, and the plan stands as it was. An answer is checked as it is
+given: one holding characters that are not text — an arrow or erase key the
+terminal passed through — or one the request model refuses is said, with the
+characters shown, and the question is asked again, so one keystroke never ends
+the command. Nothing is asked under
 `--yes` or `--dry-run`, or without a terminal. A program reads `asks` in the
 `--dry-run --json` plan and sends the fields itself. No domain module reads a
 terminal.
@@ -256,7 +261,11 @@ Built from `core/text.py`, so every command reads alike:
   (one line only, for a step done at once); a step that did not finish shows
   its log's path and last lines. An operation run inside another's step
   (`env bootstrap`'s installs, `env install`'s validate) is indented under
-  that step. Paths under the
+  that step. On a terminal, a running step whose log the observer was told
+  of shows one line under it, rewritten in place about once a second: the
+  time it has run and its log's last line, cut to the terminal's width. The
+  line is erased before anything else is printed and when the step ends, so
+  it takes no room; output that is not a terminal never gets it. Paths under the
   home directory are written from `~`. With `--yes` the plan is printed first,
   its steps only; its findings come with the outcome.
 
