@@ -201,3 +201,40 @@ def test_an_environment_with_builds_declares_its_toolchain(tmp_path):
     start = src.index("[toolchain]")
     without = src[:start] + src[src.index("\n[", start + 1) + 1:]
     assert "toolchain" in _load_problems(tmp_path, without)
+
+
+
+TOOL = {"description": "a tool", "version": "v1", "version_command": ["tool", "--version"], "maturity": "production",
+        "packages": {"conda": ["tool=1"]}, "provides": {"executables": ["tool"]}}
+
+
+@pytest.mark.parametrize("change, at", [
+    ({"engine": "ngsolve"}, "engine"),                       # an engine and a tool's version command
+    ({"version_command": None}, "engine"),                   # neither
+    ({"fixed_variables": {"OMP_NUM_THREADS": "1"}}, "fixed_variables"),
+    ({"default": True}, "default"),
+    ({"thread_variables": ["X"]}, "thread_variables"),
+])
+def test_a_tool_environment_runs_no_engine_and_is_never_a_default(change, at):
+    """Fails if a definition states both an engine and a tool's version command, or neither, or
+    a tool environment carries variables for an engine's runs or a default install
+    (definitions.md § 4.7)."""
+    from femkit.core.schema import DefinitionError, validate
+    from femkit.definitions.models import EnvironmentDefinition
+    data = {**TOOL, **change}
+    if data.get("version_command") is None:
+        data.pop("version_command")
+    with pytest.raises(DefinitionError) as caught:
+        from femkit.engines import registered
+        validate(EnvironmentDefinition, data, "tool.toml", context={"engines": registered()})
+    assert at in [path for path, _ in caught.value.problems]
+
+
+def test_a_tool_environment_installs_without_python_and_probes_its_own_version(manager):
+    """Fails if a tool environment's create adds the Python femkit's own programs need, or its
+    version is probed with an engine's command (definitions.md § 4.7)."""
+    from femkit.core.operations import Context
+    from femkit.envs.operations import EnvInstall
+    plan = EnvInstall.plan(EnvInstall.request(names=["nodejs"]), Context.from_process())
+    create = next(s for s in plan.steps if s.id.endswith("/create")).argv
+    assert not any(a.startswith("python=") for a in create) and "nodejs=22.23.5" in create

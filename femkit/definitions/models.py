@@ -280,10 +280,14 @@ class Agreement(Model):
 
 
 class EnvironmentDefinition(Model):
-    """`femkit/data/environments/<name>.toml` — one engine environment (definitions.md § 4)."""
+    """`femkit/data/environments/<name>.toml` — one environment: an engine's (definitions.md § 4),
+    or a tool's, which states its `version_command` instead of an `engine` (§ 4.7)."""
 
-    engine: str = Field(description="the registered engine adapter ID")
-    version: str = Field(description="what the engine's version probe must report")
+    engine: str | None = Field(default=None, description="the registered engine adapter ID; absent for a tool "
+                                                         "environment")
+    version_command: list[str] | None = Field(default=None, description="a tool environment's: the command, run "
+                                              "in the prefix, whose last line of output is its version")
+    version: str = Field(description="what the version probe must report")
     description: str = Field(description="one line for `env list`")
     maturity: Maturity = Field(description="production, candidate or experimental")
     default: bool = Field(default=False, description="part of `env install --all`")
@@ -318,17 +322,31 @@ class EnvironmentDefinition(Model):
         """What the CUDA environment adds: the [cuda] part, or nothing."""
         return self.cuda or CudaPart(description="")
 
+    @property
+    def tool(self) -> bool:
+        """A tool environment: it runs no engine (definitions.md § 4.7)."""
+        return self.engine is None
+
     @field_validator("engine")
     @classmethod
-    def _engine_registered(cls, engine: str, info: ValidationInfo) -> str:
+    def _engine_registered(cls, engine: str | None, info: ValidationInfo) -> str | None:
         known = (info.context or {}).get("engines")
-        if known is not None and engine not in known:
+        if engine is not None and known is not None and engine not in known:
             raise ValueError(f"no engine adapter registers {engine!r} (registered: {', '.join(sorted(known)) or 'none'})")
         return engine
 
     @model_validator(mode="after")
     def _references(self, info: ValidationInfo) -> "EnvironmentDefinition":
         problems: list[tuple[tuple, str]] = []
+        if (self.engine is None) == (self.version_command is None):
+            problems.append((("engine",), "give an `engine`, or a tool's `version_command` (definitions.md § 4.7)"))
+        if self.tool:
+            for key in ("toolchain", "sources", "builds", "checks", "agreements", "cuda", "thread_variables",
+                        "fixed_variables"):
+                if getattr(self, key):
+                    problems.append(((key,), "a tool environment has none: it runs no engine (definitions.md § 4.7)"))
+            if self.default:
+                problems.append((("default",), "a tool environment is installed when asked, never by default"))
         for var in sorted(set(self.thread_variables) & set(self.fixed_variables)):
             problems.append((("fixed_variables", var), "also in thread_variables; a variable is in one or the other"))
         part = self.cuda_part

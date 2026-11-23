@@ -51,7 +51,7 @@ class ListResult(Result):
     rows: list[EnvRow] = Field(description="every engine environment")
 
     def text(self) -> str:
-        return "\n".join(["engine environments"] + text.table(
+        return "\n".join(["environments"] + text.table(
             (r.name, r.state.value, f"gpu {r.gpu}" if r.gpu else "", f"# {r.description}") for r in self.rows))
 
 
@@ -268,7 +268,8 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
         return [], basis
     env = definition(ctx, name)
     cpu = checks.selected(env, gpu=False)
-    validate = Step(id="validate", describe=f"validate: run its {text.count(len(cpu), 'CPU check')} (env validate)")
+    validate = Step(id="validate", describe=f"validate: run its {text.count(len(cpu), 'CPU check')} (env validate)"
+                    if cpu else "validate: it has no checks; record that (env validate)")
     checks.refusals(ctx, env, cpu)
     if state is EnvState.unchecked and not clean:
         return [validate], basis

@@ -15,12 +15,13 @@
 
 ## EnvironmentDefinition
 
-`femkit/data/environments/<name>.toml` — one engine environment (definitions.md § 4).
+`femkit/data/environments/<name>.toml` — one environment: an engine's (definitions.md § 4), or a tool's, which states its `version_command` instead of an `engine` (§ 4.7).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `engine` | text | required | the registered engine adapter ID |
-| `version` | text | required | what the engine's version probe must report |
+| `engine` | text, optional | — | the registered engine adapter ID; absent for a tool environment |
+| `version_command` | list of text, optional | — | a tool environment's: the command, run in the prefix, whose last line of output is its version |
+| `version` | text | required | what the version probe must report |
 | `description` | text | required | one line for `env list` |
 | `maturity` | `production` \| `candidate` \| `experimental` | required | production, candidate or experimental |
 | `default` | boolean | `False` | part of `env install --all` |

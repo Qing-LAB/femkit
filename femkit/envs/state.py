@@ -150,7 +150,7 @@ def facts(ctx: Context, name: str, *, holding_lock: bool = False) -> EnvFacts:
         manifest=read(layout.manifest_file(where), Manifest),
         install_fingerprint=install_fingerprint(ctx, name),
         checks=read(layout.checks_file(where), ChecksRecord),
-        check_fingerprint=fingerprints.check(env, package_dir(env.engine), checks.JUDGING),
+        check_fingerprint=fingerprints.check(env, package_dir(env.engine) if env.engine else None, checks.JUDGING),
         declared_checks=frozenset(c.id for c in env.checks),
         device_checks=frozenset(c.id for c in env.checks if c.device),
     )

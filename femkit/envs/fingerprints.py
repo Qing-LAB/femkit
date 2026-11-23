@@ -28,11 +28,12 @@ def install(env: EnvironmentDefinition, control: ControlDefinition, cuda_archite
     })
 
 
-def check(env: EnvironmentDefinition, engine_package: Path, judging: tuple[Path, ...]) -> str:
+def check(env: EnvironmentDefinition, engine_package: Path | None, judging: tuple[Path, ...]) -> str:
     """The checks and agreements, the thread and fixed variables, every file of the engine
-    package, and the shared code that runs and judges checks (``judging``)."""
+    package (none for a tool environment), and the shared code that runs and judges checks
+    (``judging``)."""
     files = {}
-    for path in sorted(engine_package.rglob("*")):
+    for path in sorted(engine_package.rglob("*")) if engine_package is not None else []:
         if path.is_file() and "__pycache__" not in path.parts:
             files[str(path.relative_to(engine_package))] = hashlib.sha256(path.read_bytes()).hexdigest()
     shared = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(judging)}

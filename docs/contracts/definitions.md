@@ -290,6 +290,34 @@ engines pin gcc 14 (ADRs 0003, 0004), `sysroot_linux-64=2.28` — unpinned, the
 compilers take the newest sysroot, whose startup objects need an x86-64-v3
 processor — and CMake to its 4.5 series (ADR 0006).
 
+### 4.7 A tool environment
+
+An environment that runs no engine — a tool femkit uses to build itself, such as
+Node.js for the web page ([`api.md`](api.md) § 5.3) — states no `engine`; it
+states the command that reports its version instead:
+
+```toml
+description = "Node.js: builds the web page (api.md § 5.3)"
+version = "v22.23.5"                   # the last line `version_command` prints
+version_command = ["node", "--version"]
+maturity = "production"
+
+[packages]
+conda = ["nodejs=22.23.5"]
+
+[provides]
+executables = ["node", "npm"]
+```
+
+- Exactly one of `engine` and `version_command` is given.
+- A tool environment has no `toolchain`, `sources`, `builds`, `checks`,
+  `agreements`, `cuda`, thread or fixed variables, and is never `default`: it is
+  installed when a person asks (`env install nodejs`).
+- It installs as any environment does — the declared channels, a solved and
+  saved lock, the audit of `provides`, the version probe — in the manager's
+  femkit places ([`envs.md`](envs.md) § 4.4), and is `ready` once its manifest is
+  written: it has no checks to run.
+
 ## 5. Checks
 
 A check runs one bounded calculation inside the environment and states the

@@ -155,7 +155,10 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
         create = m.argv(m.kind.create_from_lock, prefix=str(p), file=str(t.lock))
         how = "from the saved lock"
     else:
-        create = m.create(p, t.channels, [*t.env.packages.conda, f"python={t.python_minor}"])
+        # femkit's own programs run inside an engine's prefix on the Python every environment shares;
+        # a tool environment runs none (definitions.md § 4.7)
+        python = [] if t.env.tool else [f"python={t.python_minor}"]
+        create = m.create(p, t.channels, [*t.env.packages.conda, *python])
         how = "from the declared constraints"
     steps.append(Step(id="create", describe=f"create {text.path(p)} {how}", argv=tuple(create)))
     steps.append(Step(id="lock", describe=f"save the exact package list to {text.path(t.lock)}",
@@ -175,7 +178,7 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
         steps.append(Step(id=f"install:{b.id}", describe=f"install {b.id} into {text.path(p)}",
                           argv=tuple(m.in_prefix(p, ["cmake", "--install", str(t.build_dir(b.id))]))))
     steps.append(Step(id="audit", describe="find every provided executable and module inside the prefix"))
-    steps.append(Step(id="manifest", describe="probe the solver version and write the manifest"))
+    steps.append(Step(id="manifest", describe="probe the version and write the manifest"))
     return steps
 
 
@@ -423,6 +426,10 @@ def step_audit(t: Target, step: Step, log: Path, say: Say) -> str:
     proven = t.env.proven_toolchain
     problems = [f"executable not in the prefix: {e}" for e in t.env.provides.executables
                 if not (t.prefix / "bin" / e).exists()]
+    if not t.env.provides.modules and not proven:  # nothing for Python to find inside the prefix
+        for p in problems:
+            _note(log, p)
+        return "failed" if problems else "done"
     result = process.run(t.manager.in_prefix(t.prefix, [
         "python", "-c", _AUDIT, json.dumps(t.env.provides.modules),
         json.dumps(list(proven.compilers.values()) if proven else [])]),
@@ -440,14 +447,23 @@ def step_audit(t: Target, step: Step, log: Path, say: Say) -> str:
     return "failed" if problems else "done"
 
 
+def _last_line(stdout: str, stderr: str) -> str | None:
+    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    return lines[-1] if lines else None
+
+
 def step_manifest(t: Target, step: Step, log: Path, say: Say) -> str:
-    engine = engines.module(t.env.engine)
-    result = process.run(t.manager.in_prefix(t.prefix, engine.VERSION_COMMAND), env=manager.confined(t.manager.environment),
+    if t.env.tool:  # its own command, its last line (definitions.md § 4.7)
+        command, read = t.env.version_command, _last_line
+    else:
+        engine = engines.module(t.env.engine)
+        command, read = engine.VERSION_COMMAND, engine.read_version
+    result = process.run(t.manager.in_prefix(t.prefix, command), env=manager.confined(t.manager.environment),
                          timeout=120)
     _note(log, result.stdout + result.stderr)
     if _ended(result, log) == KILLED:
         return KILLED
-    version = engine.read_version(result.stdout, result.stderr)
+    version = read(result.stdout, result.stderr)
     if version != t.env.version:
         _note(log, f"the version probe reported {version!r}; the definition requires {t.env.version!r}")
         return "failed"

@@ -1,0 +1,13 @@
+# Node.js, the tool the web page is built with (api.md § 5.3): a tool environment, runs no
+# engine (definitions.md § 4.7). Installed only when asked, `env install nodejs`; the
+# control environment never holds it (ADR 0009).
+description = "Node.js: builds the web page"
+version = "v22.23.5"
+version_command = ["node", "--version"]
+maturity = "production"
+
+[packages]
+conda = ["nodejs=22.23.5"]
+
+[provides]
+executables = ["node", "npm"]
