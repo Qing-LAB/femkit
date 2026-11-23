@@ -24,6 +24,7 @@ from femkit.jobs import setup
 from femkit.jobs.operations import ProbeOutcome
 
 GIVEN = {"cuda_architectures": ["80"], "mpi": ["mpirun", "-np", "{ranks}"]}  # nothing measured (basic tier)
+STATED = {"no_preamble": True, "activation": "source activate"}  # what only a person can state (config.md § 3.1)
 DEFAULT = sorted(n for n, e in load_catalogue(engines=registered()).environments.items() if e.default)
 
 
@@ -67,8 +68,8 @@ def test_bootstrap_installs_every_default_environment_past_a_failure_then_record
     """Fails if a failed environment stops the next one, if this machine's record is written
     before the installs it lists, if the verdict calls a failed bootstrap complete, if the
     plan's findings — where environments go, say — do not come with the outcome, as `--yes`
-    shows no others (api.md § 4), or if the entry line is not the manager kind's activation of
-    the real control prefix (envs.md § 6.2)."""
+    shows no others (api.md § 4), or if the entry line is not the stated activation of the
+    real control prefix (envs.md § 6.2)."""
     installs = StandIns(failing={DEFAULT[0]})
     monkeypatch.setattr(setup, "EnvInstall", installs)
     monkeypatch.setattr(setup, "JobProbe", Probe(installs.done))
@@ -78,14 +79,12 @@ def test_bootstrap_installs_every_default_environment_past_a_failure_then_record
     first = ctx()  # a value bootstrap keeps, written by an earlier invocation
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="build.jobs", value="4"), first), first)
     c = ctx()
-    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, "no_preamble": True}), c)
+    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), c)
     outcome = setup.EnvBootstrap.apply(plan, c)
     assert installs.done == [*DEFAULT, "record"]
     assert {r.part: r.status for r in outcome.rows}[DEFAULT[0]] == "failed" and not outcome.ok()
     assert {i.code for i in plan.issues if i.code != "ready"} <= {i.code for i in outcome.issues}
-    without_hook = load_managers()["conda"].activate.without_hook  # the stand-in reports no root
-    line = shlex.join(a.replace("{prefix}", str(dirs.control_prefix())) for a in without_hook)
-    assert any(e.split("   #")[0] == line for e in outcome.entry)
+    assert shlex.join(["source", "activate", str(dirs.control_prefix())]) in outcome.entry
 
 
 def test_bootstrap_plans_each_install_against_the_configuration_it_will_write(manager, monkeypatch):
@@ -117,7 +116,7 @@ def test_bootstrap_warns_on_a_login_node_and_only_there(in_job, monkeypatch):
     if in_job:
         monkeypatch.setenv(slurm.job_variables["id"], "1")  # set by hand: sbatch is on PATH, so a SLURM machine
     monkeypatch.setattr(setup, "EnvInstall", StandIns(failing=set()))
-    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, "no_preamble": True}), ctx())
+    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), ctx())
     warned = [i.next[0].split()[0] for i in plan.issues if i.code == "login-node"]
     assert warned == ([] if in_job else [slurm.interactive])
 
@@ -125,7 +124,7 @@ def test_bootstrap_warns_on_a_login_node_and_only_there(in_job, monkeypatch):
 def test_bootstrap_names_its_own_command_for_config_init_s_options():
     """Fails if bootstrap's plan sends the person to `config init` for a value bootstrap itself
     takes, such as where environments go (envs.md § 6.2)."""
-    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, "no_preamble": True}), ctx())
+    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), ctx())
     boot, init = shlex.split(text.typed("env", "bootstrap")), shlex.split(text.typed("config", "init"))
     named = [shlex.split(n, comments=True) for i in plan.issues for n in i.next]
     assert any(argv[:len(boot)] == boot for argv in named) and not any(argv[:len(init)] == init for argv in named)
@@ -133,14 +132,14 @@ def test_bootstrap_names_its_own_command_for_config_init_s_options():
 
 def test_init_asks_for_what_nothing_reveals_and_never_writes_a_default():
     """Fails if config init proposes or writes a default paths.environments — an unattended
-    run would fix builds in a home directory for good — or does not ask for the preamble and
-    the environments' place while they are unset (config.md § 3.2)."""
+    run would fix builds in a home directory for good — or does not ask for the preamble, the
+    activation and the environments' place while they are unset (config.md § 3.2)."""
     c = ctx()
     plan = ConfigInit.plan(ConfigInit.request.model_validate(GIVEN), c)
-    assert {a.key for a in plan.asks} == {"environments", "preamble"}
+    assert {a.key for a in plan.asks} == {"environments", "preamble", "activation"}
     ConfigInit.apply(plan, c)
     assert "paths.environments" not in settings.load(ctx(), fresh=True).present()
-    answered = ConfigInit.plan(ConfigInit.request.model_validate({**GIVEN, "environments": "/x", "no_preamble": True}), ctx())
+    answered = ConfigInit.plan(ConfigInit.request.model_validate({**GIVEN, "environments": "/x", **STATED}), ctx())
     assert answered.asks == ()
 
 
@@ -148,14 +147,18 @@ def _row(subject: str):
     return next(r for r in setup.doctor.run(setup.doctor.request(), ctx()).rows if r.subject == subject)
 
 
-def test_doctor_names_the_probe_while_this_machine_has_no_record_and_states_the_preamble_first():
+def test_doctor_names_the_probe_while_this_machine_has_no_record_and_states_the_activation_first():
     """Fails if doctor counts a machine ready that has no record of itself, or names a probe
-    that would be refused: `job probe --write` needs the preamble stated first (envs.md § 6.1)."""
+    that would be refused: `job probe --write` needs the preamble and the activation command
+    stated first (envs.md § 6.1)."""
     probe = text.typed("job", "probe", "--write")
     unset = _row("this machine's record")
-    assert not unset.ready and unset.next == [*_row("config.toml").next, probe]  # state the preamble, then probe
+    assert not unset.ready and unset.next == [*_row("config.toml").next, probe]  # state both, then probe
     c = ctx()
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.preamble", value="[]"), c), c)
+    assert _row("this machine's record").next[-2:] == ["python -m femkit config init --activation 'source activate'   "
+                                                       "# or 'conda activate', 'mamba activate'", probe]
+    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.command", value="source activate"), c), c)
     assert _row("this machine's record").next == [probe]
 
 
@@ -228,7 +231,7 @@ def test_bootstrap_measures_the_record_again_unless_it_stays_current_and_nothing
     were before; or if it measures again a record nothing changes (envs.md § 6.2; jobs.md § 9.3)."""
     from femkit.jobs import record
     c = ctx()
-    for key, value in {"activation.preamble": "[]", **({"launch.mpi": json.dumps(GIVEN["mpi"])} if mpi_set else {})}.items():
+    for key, value in {"activation.preamble": "[]", "activation.command": "source activate", **({"launch.mpi": json.dumps(GIVEN["mpi"])} if mpi_set else {})}.items():
         ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), c), c)
     unknown = {"unknown": "not measured in a test"}
     now = record.settings_now(settings.load(ctx()).config).model_dump(exclude_none=True)
@@ -239,5 +242,5 @@ def test_bootstrap_measures_the_record_again_unless_it_stays_current_and_nothing
         "scheduler": {"kind": "local"}, "partitions": {}, "queues": [], "environments": {}, "settings": now}))
     assert record.status(record.path(record.LOCAL), settings.load(ctx()).config)[0] == "current"  # until bootstrap
     monkeypatch.setattr(setup, "EnvInstall", (StandIns if installs else NothingToInstall)(failing=set()))
-    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, "no_preamble": True}), ctx())
+    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), ctx())
     assert ("record" in [s.id for s in plan.steps]) == measured

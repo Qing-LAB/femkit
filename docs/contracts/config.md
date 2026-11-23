@@ -12,8 +12,8 @@ who writes each, how each is found, and the user configuration
 | Information has **five homes**: shipped definitions, user configuration, machine records, install records, run files. Each has one kind of writer | 1 |
 | Nothing a person sets and nothing a machine reports is in the repository; it lives in the user's own directories | 1, 2 |
 | Each directory is chosen by **the first rule that is set** — its own variable, the XDG variable, the default — and a file is read from that directory only, never from another; files are never merged; `config path` says which rule chose each | 2 |
-| `config.toml` holds **choices**: where environments go, CUDA targets, the MPI launcher, the activation preamble | 3 |
-| How a job's shell gets ready on a machine (`activation.preamble`) has **no default**: `config init` asks for it on a terminal and proposes nothing; no record is written and no job prepared until it is stated | 3.1, 3.2 |
+| `config.toml` holds **choices**: where environments go, CUDA targets, the MPI launcher, the activation preamble and command | 3 |
+| How a job's shell gets ready on a machine and enters an environment (`activation.preamble`, `activation.command`) has **no default**: `config init` asks for both on a terminal and proposes nothing; no record is written and no job prepared until both are stated | 3.1, 3.2 |
 | A **default is never written**: `paths.environments` unset means the default, which `config init` shows and asks to change | 3.2 |
 | A **machine record** holds **facts**, written only by `job probe` on that machine; a choice is never measured into it, only copied. Its contents are [`jobs.md`](jobs.md) § 9 | 1 |
 | The repository ships **templates**; `config init` turns them into the person's files and never overwrites what a person set | 3.2 |
@@ -70,15 +70,19 @@ is not a setting. How Python learns the manager without it is
 | `build.jobs` | parallel compile jobs | the CPUs this process may use (its CPU affinity: on a cluster, the allocation's share, never the whole login node) |
 | `launch.mpi` | how a multi-rank process starts, e.g. `["mpirun", "-np", "{ranks}"]` — the environment's own `mpirun` ([`jobs.md`](jobs.md) § 7). It must pass `{ranks}` and may not be empty: a launcher without it would run every job on the wrong number of processes. The same rule holds for a scheduler kind's `mpi_launch` | a multi-rank check or job, and installing an environment with MPI (its toolchain check runs two ranks, [`envs.md`](envs.md) § 4.1), are refused, naming this key |
 | `activation.preamble` | the shell lines a run script runs on this machine before it enters an environment — `module load` lines that put the manager on `PATH`, for instance; `[]` states that none are needed | `job probe --write` and `job prepare` are refused, naming this key |
+| `activation.command` | how a shell on this machine then enters an environment: `source activate`, the activate script on `PATH` (a cluster's `module load mamba` puts it there); or `conda activate` / `mamba activate`, the manager's shell function, which exists only once the manager's hook file is sourced — femkit sources it first, from the kind's `activate.hook` under the manager's root ([`definitions.md`](definitions.md) § 6) | `job probe --write` and `job prepare` are refused, naming this key |
 
 Every key is optional in the file, and its absence has the one consequence the
 table states. Unknown keys are refused at load. The schema model is the
 authority for types and allowed values (`docs/reference/`).
 
-`activation.preamble` has no default because nothing on the machine can
-reveal it: a login shell may have the manager on `PATH` through a module that a
-batch job does not load. Unset and `[]` are different answers — unset means
-nobody has said, `[]` means someone said nothing is needed.
+`activation.preamble` and `activation.command` have no default because nothing
+on the machine can reveal them: a login shell may have the manager on `PATH`
+through a module that a batch job does not load, and a hook file on disk does
+not say that a batch job's shell can use it — on a cluster whose module puts
+`activate` on `PATH`, `source activate` is the form that works. Unset and `[]`
+are different answers for the preamble — unset means nobody has said, `[]` means
+someone said nothing is needed.
 
 ### 3.2 How it is made
 
@@ -86,7 +90,7 @@ nobody has said, `[]` means someone said nothing is needed.
   a commented template. Like every changing command it first shows its plan
   ([`api.md`](api.md) § 3): each key it will add and where the value came
   from — given as an option (`--environments`, `--cuda-architectures`,
-  `--jobs`, `--mpi`, `--preamble`, `--no-preamble`) or measured here (the GPU
+  `--jobs`, `--mpi`, `--preamble`, `--no-preamble`, `--activation`) or measured here (the GPU
   architectures the driver reports, the scheduler kind's launcher). The person
   consents to the plan, or runs it again with an option to change a value.
 - **A default is never written.** It applies while its key is unset, so an
@@ -96,11 +100,14 @@ nobody has said, `[]` means someone said nothing is needed.
   space (a quota is not measured; on a cluster the home quota is often too
   small) — and on a terminal `config init` asks for another place; an empty
   answer keeps the default, unwritten.
-- `activation.preamble` is never proposed. While it is unset, `config init`
-  asks for its lines on a terminal, showing beside the question the loaded
-  modules when the shell lists them; an empty answer leaves it unset. `--preamble LINE` (repeatable) or
-  `--no-preamble` state it without the question. Left unset, the report says
-  what that blocks, naming both options.
+- `activation.preamble` and `activation.command` are never proposed. While
+  the preamble is unset, `config init` asks for its lines on a terminal,
+  showing beside the question the loaded modules when the shell lists them;
+  while the command is unset, it asks which of the three it is, saying what
+  each means. An empty answer leaves the key unset. `--preamble LINE`
+  (repeatable) or `--no-preamble`, and `--activation COMMAND`, state them
+  without the questions. Left unset, the report says what that blocks, naming
+  the options.
 - Both are asked as [`api.md`](api.md) § 3.1 states: never under `--yes` or
   `--dry-run`, or without a terminal.
 - Re-running `config init` adds only keys the file lacks and reports each as

@@ -53,7 +53,7 @@ def test_show_says_where_each_value_came_from_or_what_its_absence_means():
 
 def test_init_with_nothing_to_add_still_reports_kept_ignored_and_blocking_keys():
     """Fails if a run of init that adds nothing hides what it kept, a value it ignored, or
-    that an unset preamble blocks jobs (config.md § 3.2)."""
+    that an unset preamble or activation command blocks jobs (config.md § 3.2)."""
     init(jobs=4)
     ctx = Context.from_process()
     plan = ConfigInit.plan(ConfigInit.request.model_validate({**GIVEN, "jobs": 2}), ctx)
@@ -61,7 +61,7 @@ def test_init_with_nothing_to_add_still_reports_kept_ignored_and_blocking_keys()
     codes = {(i.code, i.subject) for i in plan.issues}
     assert ("key-kept", "build.jobs") in codes
     assert ("value-ignored", "build.jobs") in codes
-    assert ("preamble-unset", "activation.preamble") in codes
+    assert {("stated-unset", "activation.preamble"), ("stated-unset", "activation.command")} <= codes
 
 
 @pytest.mark.parametrize("text", [

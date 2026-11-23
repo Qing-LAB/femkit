@@ -108,6 +108,7 @@ class Settings(Model):
     environments: str = Field(description="paths.environments, as in effect")
     mpi: list[str] | None = Field(default=None, description="launch.mpi; absent when unset")
     preamble: list[str] | None = Field(default=None, description="activation.preamble; absent when unset")
+    activation: str | None = Field(default=None, description="activation.command; absent when unset")
 
 
 class Record(Model):
@@ -181,7 +182,8 @@ def settings_now(config: settings.UserConfig) -> Settings:
     """This machine's settings as a record copies them (jobs.md § 9.1)."""
     return Settings(environments=str(settings.environments_root(config)),
                     mpi=list(config.launch.mpi) if config.launch.mpi else None,
-                    preamble=list(config.activation.preamble) if config.activation.preamble is not None else None)
+                    preamble=list(config.activation.preamble) if config.activation.preamble is not None else None,
+                    activation=config.activation.command)
 
 
 def stale(record: Record, config: settings.UserConfig) -> list[str]:

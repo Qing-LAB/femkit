@@ -125,3 +125,4 @@ A fact that could not be measured, and why. Never read as zero or none.
 | `environments` | text | required | paths.environments, as in effect |
 | `mpi` | list of text, optional | — | launch.mpi; absent when unset |
 | `preamble` | list of text, optional | — | activation.preamble; absent when unset |
+| `activation` | text, optional | — | activation.command; absent when unset |

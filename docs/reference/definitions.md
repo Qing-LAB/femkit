@@ -166,13 +166,13 @@ Checks that must give the same quantity (definitions.md § 5.2).
 
 ## Activation
 
-How a shell enters a prefix with this manager (envs.md § 4.4, § 6.2): the hook sourced first when its file exists, else the form that needs none.
+The two ways a shell enters a prefix with this manager; this machine's activation.command chooses one (config.md § 3.1; envs.md § 6.2).
 
 | key | type | default | meaning |
 |---|---|---|---|
 | `hook` | text | required | the file whose sourcing defines the activation in a fresh shell, under {root} (the manager's root query); checked on disk, never derived from the executable's path, which on a cluster may be a module's wrapper. Placeholders: `{root}` |
-| `with_hook` | list of text | required | enters {prefix} once the hook is sourced. Placeholders: `{prefix}` |
-| `without_hook` | list of text | required | enters {prefix} where no hook file exists — a cluster module's own activate script on PATH. Placeholders: `{prefix}` |
+| `with_hook` | list of text | required | the shell function, e.g. `conda activate {prefix}`: it exists once the hook is sourced, which femkit does first. Placeholders: `{prefix}` |
+| `without_hook` | list of text | required | the activate script on PATH, `source activate {prefix}`, which needs no hook — what a cluster's module provides. Placeholders: `{prefix}` |
 
 ## SchedulerKind
 

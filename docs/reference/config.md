@@ -39,3 +39,4 @@
 | key | type | default | meaning |
 |---|---|---|---|
 | `preamble` | list of text, optional | — | shell lines a run script runs on this machine before it enters an environment (module load lines, for instance); [] states that none are needed. When unset: `machine probe --write` and `job prepare` are refused, naming this key |
+| `command` | `source activate` \| `conda activate` \| `mamba activate`, optional | — | how a shell on this machine enters an environment, after the preamble: `source activate`, the activate script on PATH (a cluster's module puts it there); or `conda activate` / `mamba activate`, the manager's shell function, its hook file sourced first. When unset: `machine probe --write` and `job prepare` are refused, naming this key |

@@ -16,7 +16,7 @@ from pathlib import Path
 from pydantic import Field
 
 from femkit.config import settings
-from femkit.config.operations import ConfigInit, where_environments_go
+from femkit.config.operations import ConfigInit, stating, where_environments_go
 from femkit.config.probe import place
 from femkit.core import dirs, text
 from femkit.core.errors import Refusal
@@ -81,24 +81,21 @@ def _control_row() -> DoctorRow:
                      next=[] if state == "current" else ["bash scripts/install-env.sh bootstrap"])
 
 
-STATE_PREAMBLE = (text.typed("config", "init", "--preamble", "LINE") + "   # once per line",
-                  text.typed("config", "init", "--no-preamble") + "   # none is needed here")
-
-
 def _config_row(loaded: settings.Loaded) -> DoctorRow:
-    preamble = loaded.config.activation.preamble is not None
+    unset = settings.unstated(loaded.config)
     return DoctorRow(
         subject="config.toml",
-        state=("found" if loaded.file else "absent") + (", preamble stated" if preamble else ", preamble unset"),
-        ready=loaded.file is not None and preamble, next=[] if preamble else list(STATE_PREAMBLE))
+        state=("found" if loaded.file else "absent") + "".join(
+            f", {d} {'unset' if d in unset else 'stated'}" for d in settings.STATED),
+        ready=loaded.file is not None and not unset, next=list(stating(("config", "init"), unset)))
 
 
 def _record_row(config: settings.UserConfig) -> DoctorRow:
     """This machine's record: present, loads, and not stale (jobs.md § 9.3). The probe that
-    writes it is refused while the preamble is unset, so that comes first."""
+    writes it is refused while a key a person states is unset, so that comes first."""
     status, detail = record.status(record.path(LOCAL), config)
     state = f"{status}: {detail}" if detail else status
-    first = list(STATE_PREAMBLE) if config.activation.preamble is None else []
+    first = list(stating(("config", "init"), settings.unstated(config)))
     return DoctorRow(subject="this machine's record", state=state, ready=state == "current",
                      next=[] if state == "current" else [*first, text.typed("job", "probe", "--write")])
 
@@ -192,14 +189,16 @@ def _login_node(ctx: Context) -> list[Issue]:
 
 
 def entry_lines(ctx: Context, config: settings.UserConfig) -> list[str]:
-    """This machine's day-to-day entry (envs.md § 6.2): the preamble, the manager kind's
-    activation of the real control prefix, the checkout, and the first command."""
+    """This machine's day-to-day entry (envs.md § 6.2): the preamble, the activation the person
+    stated for the real control prefix, the checkout, and the first command."""
     try:
         m = resolve(ctx)
     except Refusal:
         return []
-    return [*(config.activation.preamble or []), *m.activation(dirs.control_prefix()),
-            f"cd {shlex.quote(str(dirs.checkout()))}", text.typed("doctor")]
+    command = config.activation.command
+    enter = m.activation(dirs.control_prefix(), command) if command else [
+        f"# activation.command is unset: {stating(('config', 'init'), ['activation.command'])[0]}"]
+    return [*(config.activation.preamble or []), *enter, f"cd {shlex.quote(str(dirs.checkout()))}", text.typed("doctor")]
 
 
 @operation("env.bootstrap", request=BootstrapRequest, result=BootstrapOutcome, changes=True,
@@ -213,7 +212,7 @@ class EnvBootstrap:
         values = config_plan.basis["values"]
         planned = settings.as_planned(ctx, values)  # every install is planned against config.toml as it will be
         steps, issues = [], [_as_bootstrap(i) for i in config_plan.issues
-                             if i.code != "preamble-unset"]  # said below, with what it blocks
+                             if i.code != "stated-unset"]  # said below, with what it blocks
         if config_plan.steps:
             added = [s.id.removeprefix("add:") for s in config_plan.steps]  # config init's steps, without their whys
             steps.append(Step(id="config", describe="config.toml: add " + "; ".join(
@@ -250,12 +249,11 @@ class EnvBootstrap:
             issues.append(Issue(severity="info", code="record-kept", subject=str(file),
                                 message=f"this machine's record is kept: {file}",
                                 next=(text.typed("job", "probe", "--write") + "   # to measure it again",)))
-        elif will_be.activation.preamble is None:
-            issues.append(Issue(severity="warning", code="no-record", subject="activation.preamble",
-                                message="activation.preamble stays unset, so this machine's record is not written "
-                                        "and no job can be prepared for it",
-                                next=(text.typed("env", "bootstrap", "--preamble", "LINE") + "   # once per line",
-                                      text.typed("env", "bootstrap", "--no-preamble") + "   # none is needed here")))
+        elif unset := settings.unstated(will_be):
+            issues.append(Issue(severity="warning", code="no-record", subject=", ".join(unset),
+                                message=f"{' and '.join(unset)} {'stays' if len(unset) == 1 else 'stay'} unset, so this "
+                                        "machine's record is not written and no job can be prepared for it",
+                                next=stating(("env", "bootstrap"), unset)))
         else:
             steps.append(Step(id="record", describe=f"write this machine's record, {text.path(file)} ({why})"))
         return Plan(operation="env.bootstrap", request=req.model_dump(mode="json"),

@@ -580,11 +580,12 @@ The outcome lists every part with its status (`done`, `failed`, `killed`,
 only when every part is done and `doctor` finds the machine ready.
 
 It ends with the lines that enter femkit day to day on this machine: the
-preamble, the manager kind's activation of the real control prefix, the
-checkout, and `doctor`. The activation is the kind's two forms: its shell hook
-sourced, then `conda activate <prefix>`, when the
-hook file exists under the manager's root; otherwise `source activate
-<prefix>`, the activate script a cluster's module puts on `PATH`.
+preamble, the activation the person stated (`activation.command`,
+[`config.md`](config.md) § 3.1) of the real control prefix, the checkout, and
+`doctor`. `source activate` is one line, `source activate <prefix>`;
+`conda activate` or `mamba activate` is the manager kind's hook file sourced
+first, then the line. While `activation.command` is unset, the activation line
+says so and names `config init --activation`.
 
 On a cluster, `bootstrap` and `install` run inside an interactive allocation,
 not on a login node, whose limits kill large builds. When the machine's

@@ -63,18 +63,24 @@ class Manager:
         found = next((k for k in keys if k in data), None)
         return (data[found], None) if found else (None, f"`{shlex.join(argv[1:])}` has no {' or '.join(keys)}")
 
-    def activation(self, prefix: Path) -> list[str]:
-        """The shell lines that enter ``prefix`` (envs.md § 4.4, § 6.2): the kind's hook,
-        sourced when its file exists under the manager's root, then the line that needs
-        it; else the line that needs none."""
+    def activation(self, prefix: Path, command: str) -> list[str]:
+        """The shell lines that enter ``prefix`` with the activation the person stated for this
+        machine (config.md § 3.1; envs.md § 6.2). The kind's script form is one line; its
+        shell-function form needs the kind's hook sourced first, from its file under the
+        manager's root, checked on disk. A command that is neither of the kind's forms is
+        written as stated, and says so."""
         a = self.kind.activate
+        words = command.split()
+        line = shlex.join([*words, str(prefix)])
+        if words == [x for x in a.without_hook if x != "{prefix}"]:
+            return [line]
+        if words != [x for x in a.with_hook if x != "{prefix}"]:
+            return [line + f"   # not one of the {self.kind_name} kind's forms"]
         root, why = self.query(self.kind.root)
         hook = Path(render(a.hook, {"root": str(root)})) if root else None
         if hook is not None and hook.is_file():
-            return [f"source {shlex.quote(str(hook))}",
-                    shlex.join(render(x, {"prefix": str(prefix)}) for x in a.with_hook)]
-        line = shlex.join(render(x, {"prefix": str(prefix)}) for x in a.without_hook)
-        return [line + (f"   # {why}, so no hook was looked for" if why else "")]
+            return [f"source {shlex.quote(str(hook))}", line]
+        return [line + f"   # {why or f'no hook file at {hook}'}: `{command}` needs the manager's hook sourced first"]
 
 
 # What every command run inside a prefix starts from (envs.md § 4.4): this allow-list, and the

@@ -101,7 +101,7 @@ warning, and the job is prepared as asked. Nothing here probes a machine.
    lists no queues (naming the probe that renews it), no queue named, or a
    (partition, QOS) pair that is not one of the record's `queues` — the refusal
    lists them with the request's fit on each; a record whose
-   `activation.preamble` is unset.
+   `activation.preamble` or `activation.command` is unset.
 4. **Environment** — the engine's environment, and with `gpus > 0` its CUDA
    environment, `<name>-cuda` ([`definitions.md`](definitions.md) § 4.5).
    Shown, from the record's `environments`, which is `env
@@ -145,7 +145,7 @@ directory, copies no file and changes directory nowhere. Its blocks, in order:
 | 3 | traps. On the script's own exit, write `ended.json`: exit code, time, and the reason when the script stopped itself. On a stop signal (HUP, INT, QUIT, TERM, XCPU and the like), log the signal and exit 128 + its number **without** `ended.json`: a forced stop — a cancel, the wall time, a node failure — is told by the scheduler or by `cancel.json`, never by a marker |
 | 4 | write `started.json`: time, host, and from the kind's job variables the scheduler job ID, ranks, cores per rank, cores on the node, GPUs and nodes granted; with `gpus > 0`, the GPU model the driver reports (no count). With `gpus > 0` and no device visible — the scheduler's GPU grant, else `CUDA_VISIBLE_DEVICES`, else the driver's own list — stop with that reason |
 | 5 | the target's `activation.preamble`, from the record's `settings`, with unset variables allowed (`set +u`, restored after; `-e` stays on): a site's or a package's activation scripts read variables that may be unset |
-| 6 | enter the exact prefix through the manager kind's shell hook (`set +u` as in 5), then verify the active prefix is that one and that the command's executable resolves inside it; stop with the reason otherwise |
+| 6 | enter the exact prefix with the target's `activation.command`, from the record's `settings` — `source activate <prefix>`, or the manager kind's hook sourced then `conda activate` / `mamba activate <prefix>` (`set +u` as in 5) — then verify the active prefix is that one and that the command's executable resolves inside it; stop with the reason otherwise |
 | 7 | set each of the environment's `thread_variables` to `threads` and its `fixed_variables` to their values ([`definitions.md`](definitions.md) § 4.4) |
 | 8 | verify every input the request lists is present in the run directory; stop naming any that is missing |
 | 9 | run the command — through `launch.mpi` when `ranks > 1` — with output to the run's log. Under a scheduler no binding or mapping options are added: the scheduler has placed the job |
@@ -269,7 +269,7 @@ The record of one machine, as measured on it:
 | `partitions` | each partition's limits — `MaxTime`, `MaxCPUsPerNode`, `DefMemPerCPU` or `DefMemPerNode` (each kept as stated, never converted into the other), and the QOS it allows or denies — and its **node groups**: count, cores, memory, GPUs per node as `{type: count}`, architecture |
 | `queues` | each (partition, QOS) pair **this account may submit to**, from the scheduler's association records, with its effective limits: the shorter of the partition's `MaxTime` and the QOS's `MaxWall`; the QOS's per-job cpu, memory and GPU caps (`MaxTRESPerJob`); and `MaxSubmitJobsPerUser`, shown and never counted, since femkit submits one job per launch. When the account's QOS list cannot be read, each partition is one queue with no QOS, and the record says so |
 | `environments` | `env list` on this machine when the probe ran: each environment with its state, install fingerprint, solver version and GPU qualification; its platform is the record's `manager.platform`, since this machine's manager built it. An empty table means none is installed; one that could not be listed is `unknown` with the reason |
-| `settings` | a copy of this machine's `config.toml` values a job run here needs: `paths.environments`, `launch.mpi`, `activation.preamble` |
+| `settings` | a copy of this machine's `config.toml` values a job run here needs: `paths.environments`, `launch.mpi`, `activation.preamble`, `activation.command` |
 
 Rules the record follows:
 
@@ -342,8 +342,8 @@ was shown. It writes nothing without `--write`.
   write a record that is stale at once. A file there that does not load is
   said, with its reason, and replaced only on consent.
 - **Refusals.** `--write` is refused while this machine's
-  `activation.preamble` is unset ([`config.md`](config.md) § 3.1), naming `config init`, because every
-  job prepared for the record needs it.
+  `activation.preamble` or `activation.command` is unset ([`config.md`](config.md) § 3.1), naming
+  `config init`, because every job prepared for the record needs both.
 - **Run it where it will be used.** On a cluster, run it on a login node: the
   scheduler's commands describe the compute nodes from there.
 - **Reading a record never probes.** Every command but `job probe` reads

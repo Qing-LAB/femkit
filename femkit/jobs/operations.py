@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import Field
 
 from femkit.config import settings
+from femkit.config.operations import stating
 from femkit.core import text
 from femkit.core.errors import PlanStale, Refusal, UsageError
 from femkit.core.issues import Issue
@@ -107,11 +108,9 @@ class JobProbe:
         name = _name(req)
         file = record.path(name)
         declared = probe.declarations(req.set)
-        if req.write and settings.load(ctx).config.activation.preamble is None:
-            raise Refusal("activation.preamble is unset, and every job prepared for this record needs it "
-                          "(config.md § 3.1)",
-                          (text.typed("config", "init", "--preamble", "LINE") + "   # once per line",
-                           text.typed("config", "init", "--no-preamble") + "   # none is needed here"))
+        if req.write and (unset := settings.unstated(settings.load(ctx).config)):
+            raise Refusal(f"{' and '.join(unset)} {'is' if len(unset) == 1 else 'are'} unset, and every job "
+                          "prepared for this record needs it (config.md § 3.1)", stating(("config", "init"), unset))
         new = probe.measure(ctx, req.scheduler, declared)
         if req.write and isinstance(new.scheduler.commands.get("submit"), record.Unknown):
             raise Refusal(f"the {new.scheduler.kind} submit command was not found",

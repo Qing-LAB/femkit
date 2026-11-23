@@ -521,15 +521,17 @@ ActivationLine = Annotated[list[str], AfterValidator(_activation_line),
 
 
 class Activation(Model):
-    """How a shell enters a prefix with this manager (envs.md § 4.4, § 6.2): the hook sourced first when its file exists, else the form that needs none."""
+    """The two ways a shell enters a prefix with this manager; this machine's activation.command
+    chooses one (config.md § 3.1; envs.md § 6.2)."""
 
     hook: str = Field(description="the file whose sourcing defines the activation in a fresh shell, under {root} "
                                   "(the manager's root query); checked on disk, never derived from the "
                                   "executable's path, which on a cluster may be a module's wrapper",
                       json_schema_extra={"placeholders": ["root"]})
-    with_hook: ActivationLine = Field(description="enters {prefix} once the hook is sourced")
-    without_hook: ActivationLine = Field(description="enters {prefix} where no hook file exists — a cluster "
-                                                     "module's own activate script on PATH")
+    with_hook: ActivationLine = Field(description="the shell function, e.g. `conda activate {prefix}`: it "
+                                                  "exists once the hook is sourced, which femkit does first")
+    without_hook: ActivationLine = Field(description="the activate script on PATH, `source activate {prefix}`, "
+                                                     "which needs no hook — what a cluster's module provides")
 
     @field_validator("hook")
     @classmethod

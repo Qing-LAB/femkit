@@ -152,8 +152,22 @@ class ConfigSet:
 
 # ------------------------------------------------------------------ config init
 
+PREAMBLE = "activation.preamble"
+COMMAND = "activation.command"
+
+
+def stating(verb: tuple[str, ...], dotted: list[str]) -> tuple[str, ...]:
+    """The commands that state each of these keys of settings.STATED, as ``verb`` takes them."""
+    out: list[str] = []
+    if PREAMBLE in dotted:
+        out += [text.typed(*verb, "--preamble", "LINE") + "   # once per line",
+                text.typed(*verb, "--no-preamble") + "   # none is needed here"]
+    if COMMAND in dotted:
+        out += [text.typed(*verb, "--activation", "source activate") + "   # or 'conda activate', 'mamba activate'"]
+    return tuple(out)
+
 def _option_name(k: settings.Key) -> str:
-    return k.name
+    return "activation" if k.dotted == COMMAND else k.name
 
 
 _OPTION_KEYS = {_option_name(k): k for k in settings.keys()}
@@ -186,9 +200,6 @@ class InitOutcome(Outcome):
         lines += text.table((r.status, r.key, text.show(r.value) if r.status != "unset" else "unset", f"# {r.note}" if r.note else "")
                             for r in self.rows)
         return "\n".join(lines + text.findings(self.issues))
-
-
-PREAMBLE = "activation.preamble"
 
 
 def _given(req) -> dict[str, Any]:
@@ -235,10 +246,11 @@ def _issues(given: dict[str, Any], present: dict[str, Any], adding: dict[str, An
                      message=f"{k} is already {text.show(present[k])}; the value given is ignored",
                      next=(text.typed("config", "set", k, tomlkit.item(given[k]).as_string()),))
                for k in given if k in present and given[k] != present[k]]
-    if PREAMBLE not in present and PREAMBLE not in adding:
-        issues.append(Issue(severity="warning", code="preamble-unset", subject=PREAMBLE,
-                            message=f"{PREAMBLE} is unset; state it before preparing jobs on this machine",
-                            next=(text.typed("config", "init", "--no-preamble") + "   # nothing is needed here; else --preamble per line",)))
+    for dotted in settings.STATED:
+        if dotted not in present and dotted not in adding:
+            issues.append(Issue(severity="warning", code="stated-unset", subject=dotted,
+                                message=f"{dotted} is unset; state it before preparing jobs on this machine",
+                                next=stating(("config", "init"), [dotted])))
     return issues
 
 
@@ -259,6 +271,14 @@ def _asks(ctx: Context, given: dict[str, Any], present: dict[str, Any]) -> tuple
                                  "loaded modules: none listed by this shell",
                                  "a batch job starts a fresh shell: a `module load` that puts the manager on PATH "
                                  "belongs here; if nothing is needed, give --no-preamble instead")))
+    if COMMAND not in present and COMMAND not in given:
+        asks.append(Ask(key=_option_name(settings.key(COMMAND)),
+                        question="How does a shell here enter an environment, after those lines? "
+                                 "source activate, conda activate or mamba activate (empty: it stays unset)",
+                        context=("source activate: the activate script on PATH -- what a cluster's "
+                                 "`module load mamba` provides",
+                                 "conda activate / mamba activate: the manager's shell function; femkit sources "
+                                 "its hook file first (<root>/etc/profile.d/conda.sh or mamba.sh)")))
     return tuple(asks)
 
 

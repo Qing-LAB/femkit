@@ -10,7 +10,7 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import tomlkit
 from pydantic import AfterValidator, ConfigDict, Field, PositiveInt
@@ -88,6 +88,13 @@ class Activation(Section):
         "(module load lines, for instance); [] states that none are needed",
         json_schema_extra=_unset("`machine probe --write` and `job prepare` are refused, naming this key"),
     )
+    command: Literal["source activate", "conda activate", "mamba activate"] | None = Field(
+        default=None,
+        description="how a shell on this machine enters an environment, after the preamble: `source activate`, "
+        "the activate script on PATH (a cluster's module puts it there); or `conda activate` / `mamba activate`, "
+        "the manager's shell function, its hook file sourced first",
+        json_schema_extra=_unset("`machine probe --write` and `job prepare` are refused, naming this key"),
+    )
 
 
 class UserConfig(Model):
@@ -129,6 +136,15 @@ def key(dotted: str) -> Key:
         if k.dotted == dotted:
             return k
     raise UsageError(f"no key {dotted!r}; keys: {', '.join(k.dotted for k in keys())}")
+
+
+#: What nothing on a machine reveals: a person states it, and it is never proposed (config.md § 3.1).
+STATED = ("activation.preamble", "activation.command")
+
+
+def unstated(config: UserConfig) -> list[str]:
+    """The keys of STATED that ``config`` leaves unset."""
+    return [d for d in STATED if getattr(getattr(config, key(d).section), key(d).name) is None]
 
 
 def config_file() -> Path:

@@ -16,3 +16,7 @@
 # How a job's shell gets ready on this machine before it enters an environment.
 # preamble = ["module load mamba"]
 # preamble = []          # states that nothing is needed
+# Then how a shell enters an environment: the activate script on PATH (what a cluster's
+# `module load mamba` provides), or the manager's shell function, its hook sourced first.
+# command = "source activate"
+# command = "conda activate"

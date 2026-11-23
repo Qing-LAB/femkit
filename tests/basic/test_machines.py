@@ -147,3 +147,28 @@ def test_the_mamba_kind_reads_its_root_from_either_versions_answer(answer, tmp_p
     argv = tuple(m.argv(m.kind.root.argv))
     m.printed[argv] = ProcessResult(argv=argv, returncode=0, stdout=json.dumps(answer), stderr="", log=None)
     assert m.query(m.kind.root) == ("/r", None)
+
+
+@pytest.mark.parametrize("command, hook_on_disk, expected", [
+    ("source activate", True, ["source activate {p}"]),                      # the script: never the hook
+    ("conda activate", True, ["source {root}/etc/profile.d/conda.sh", "conda activate {p}"]),
+    ("conda activate", False, ["conda activate {p}   # no hook file at {root}/etc/profile.d/conda.sh: "
+                               "`conda activate` needs the manager's hook sourced first"]),
+    ("mamba activate", True, ["mamba activate {p}   # not one of the conda kind's forms"]),
+], ids=["source activate", "conda activate", "no hook file", "another kind's"])
+def test_the_entry_is_the_activation_the_person_stated(command, hook_on_disk, expected, tmp_path):
+    """Fails if the entry line follows what is on disk instead of the activation stated for this
+    machine: a cluster's module may ship a hook file while its batch shells enter with
+    `source activate` (config.md § 3.1; envs.md § 6.2)."""
+    import json
+    from femkit.core.process import ProcessResult
+    from femkit.definitions.catalogue import load_managers
+    from femkit.envs.manager import Manager
+    root, prefix = tmp_path / "root", tmp_path / "env"
+    if hook_on_disk:
+        (root / "etc" / "profile.d").mkdir(parents=True)
+        (root / "etc" / "profile.d" / "conda.sh").write_text("")
+    m = Manager(root / "bin" / "conda", "conda", load_managers()["conda"], {})
+    argv = tuple(m.argv(m.kind.root.argv))
+    m.printed[argv] = ProcessResult(argv=argv, returncode=0, stdout=json.dumps({"root_prefix": str(root)}), stderr="", log=None)
+    assert m.activation(prefix, command) == [e.format(p=prefix, root=root) for e in expected]
