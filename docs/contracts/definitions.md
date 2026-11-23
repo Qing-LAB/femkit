@@ -143,7 +143,7 @@ modules = ["ngsolve", "netgen"]
 
 [cuda]                                 # the CUDA environment, ngsolve-cuda (§ 4.5)
 description = "CUDA: device matrices and preconditioners for iterative solves"
-packages = ["cuda-version=12.9", "cuda-nvcc=12.9", "..."]
+packages = ["cuda-version=12.9", "cuda-compiler=12.9.1", "..."]
 executables = ["nvcc"]
 
 [[sources]]

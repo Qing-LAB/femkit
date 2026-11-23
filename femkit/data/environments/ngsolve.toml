@@ -40,12 +40,12 @@ mpi = { c = "mpicc", cxx = "mpicxx", fortran = "mpifort" }  # its MPI's compiler
 
 [cuda]                                # the CUDA environment, ngsolve-cuda (definitions.md § 4.5)
 description = "CUDA: device matrices and preconditioners for iterative solves"
-# The toolkit's parts the builds use, not the cuda-toolkit metapackage, whose profiler GUI
-# (nsight-compute) pins a krb5 the toolchain's CMake cannot share (ADR 0003): nvcc and the
-# runtime; cuBLAS and cuSPARSE, which ngscuda links; the Python bindings the device check uses.
+# CUDA 12.9 Update 1 as the cuda-toolkit metapackage composes it, less cuda-tools, whose
+# profilers pin a krb5 the toolchain's CMake cannot share (ADR 0003). The Python bindings the
+# device check uses.
 packages = [
-  "cuda-version=12.9", "cuda-nvcc=12.9", "cuda-cudart-dev=12.9", "cuda-cccl_linux-64=12.9",
-  "libcublas-dev", "libcusparse-dev", "cuda-bindings=12.9",
+  "cuda-version=12.9", "cuda-compiler=12.9.1", "cuda-libraries=12.9.1",
+  "cuda-libraries-dev=12.9.1", "cuda-nvml-dev=12.9", "cuda-bindings=12.9",
 ]
 executables = ["nvcc"]
 

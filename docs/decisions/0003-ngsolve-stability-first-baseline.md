@@ -123,13 +123,12 @@ is not a reason to move to a newer source release.
   supports GCC major versions 6 through 14 on x86_64, including newer minor
   versions within those majors. GCC 15 is outside that range.
 
-So `[cuda]` keeps nvcc, the runtime, the cuBLAS and cuSPARSE development
-packages the pinned
+So `[cuda]` installs CUDA 12.9 Update 1 as the `cuda-toolkit` metapackage
+composes it, less `cuda-tools`, whose profilers cannot share the toolchain's
+CMake ([ADR 0004](0004-elmer-stability-first-baseline.md) has the measurement
+and the reason for a whole toolkit rather than the libraries the pinned
 [`ngscuda` build](https://github.com/NGSolve/ngsolve/blob/b42211d28ab7a030e4e669ddfc204152aa5674a0/ngscuda/CMakeLists.txt)
-links, its CCCL headers and its Python bindings in the CUDA 12.9 family — never
-the `cuda-toolkit` metapackage, whose profiler GUI cannot share the
-toolchain's CMake ([ADR 0004](0004-elmer-stability-first-baseline.md) has the
-measurement) — and `[toolchain]` pins the C, C++ and Fortran compilers to
+names), plus the CUDA Python bindings — and `[toolchain]` pins the C, C++ and Fortran compilers to
 gcc 14 — each environment declares and proves its own
 ([ADR 0006](0006-toolchain-first.md)). gcc 14 is our compatible choice, not a
 compiler NGSolve mandates; NVIDIA's NVCC policy covers the host C++ compiler
