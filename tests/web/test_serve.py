@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.kit import apply, run
 from femkit import registry
 from femkit.core import clock, locks
 from femkit.core.eventlog import EventLog
@@ -35,18 +36,6 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def apply(name: str, **request):
-    op = registry.operations()[name]
-    ctx = Context.from_process()
-    plan = op.plan(op.request_from(request), ctx)
-    return op.apply(plan, ctx)
-
-
-def run(name: str, **request):
-    op = registry.operations()[name]
-    return op.run(op.request_from(request), Context.from_process())
-
-
 def wait_until(check, timeout: float = 15.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -63,7 +52,12 @@ def server():
     outcome = apply("serve.start", port=port, tcp=True)
     assert outcome.ok(), outcome.text()
     yield port
-    p = protocol.read_pidfile(protocol.pidfile(str(port)))
+    ended(str(port))
+
+
+def ended(name: str) -> None:
+    """Every process of the server ``name`` ended, whatever state the test left it in."""
+    p = protocol.read_pidfile(protocol.pidfile(name))
     if p is not None:
         for who in (p.child, p.supervisor):
             if who is not None:
@@ -507,26 +501,28 @@ def test_a_runtime_folder_others_could_replace_is_refused(tmp_path):
     assert stat.S_IMODE(private_dir(tmp_path / "closed" / "run").stat().st_mode) == 0o700
 
 
-def test_a_socket_file_left_by_an_ended_server_is_cleared_and_a_live_one_refused():
-    """Fails if a socket file no server answers on blocks every later start, or one another
+def test_a_socket_file_left_by_an_ended_server_is_cleared_and_a_live_one_refused(monkeypatch):
+    """Fails if a socket file no server answers on blocks every later `start`, or one another
     program answers on is taken over (web.md § 4)."""
+    import shutil
     import tempfile
-    from femkit.server.operations import _clear_left_socket
-    short = Path(tempfile.mkdtemp(prefix="fk", dir="/tmp"))
+    from femkit.core import dirs
+    short = Path(tempfile.mkdtemp(prefix="fk", dir="/tmp"))  # a socket's path has a length limit
+    monkeypatch.setenv(dirs.VARIABLES["runtime"], str(short))
+    path = protocol.socket_path()
     try:
-        path = short / "serve-sock.sock"
-        left = socket.socket(socket.AF_UNIX)
-        left.bind(str(path))
-        left.close()  # the file stays, nothing answers
-        _clear_left_socket(path)
-        assert not path.exists()
-        live = socket.socket(socket.AF_UNIX)
-        live.bind(str(path))
-        live.listen(1)
-        with pytest.raises(Refused, match="held by another program"):
-            _clear_left_socket(path)
-        live.close()
+        with socket.socket(socket.AF_UNIX) as left:
+            left.bind(str(path))                                 # closed: the file stays, nothing answers
+        started = apply("serve.start", socket=True)
+        assert started.ok(), started.text()
+        assert apply("serve.stop", socket=True).ok()
+        path.unlink(missing_ok=True)
+        with socket.socket(socket.AF_UNIX) as live:
+            live.bind(str(path))
+            live.listen(1)
+            with pytest.raises(Refused, match="held by another program"):
+                apply("serve.start", socket=True)
+        assert not protocol.pidfile(protocol.SOCKET_NAME).exists()
     finally:
-        for f in short.iterdir():
-            f.unlink()
-        short.rmdir()
+        ended(protocol.SOCKET_NAME)
+        shutil.rmtree(short)

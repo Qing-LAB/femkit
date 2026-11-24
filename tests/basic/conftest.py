@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from femkit.config.probe import GPU_QUERY
+from femkit.config.probe import GPU_QUERY, place
 from femkit.definitions.catalogue import load_environments, load_managers, load_schedulers
 
 # Programs the tests' own process needs; never tripwired.
@@ -32,6 +32,11 @@ def tripwire_names() -> frozenset[str]:
         names |= set(env.provides.executables) | set(env.toolchain.mpi.values() if env.toolchain else ())
     return frozenset(names - NEEDED_BY_THE_TEST_PROCESS)
 
+
+#: The machine the basic and web tiers stand on (testing.md § 2.1): the tripwires put every scheduler
+#: kind's commands on PATH and clear its job variables, so femkit finds SLURM's submit command and no
+#: job. A test that needs another place says so in its own environment, for its own run.
+MACHINE = "login node"
 
 REACHED = "reached.log"  # in the tripwire directory: every call a tripwire took during the current test
 
@@ -67,6 +72,8 @@ def tripwires(tripwire_dir, monkeypatch):
             monkeypatch.delenv(variable, raising=False)
     monkeypatch.setenv("PATH", f"{tripwire_dir}{os.pathsep}{os.environ.get('PATH', '')}")
     monkeypatch.setenv("FEMKIT_ENV_MANAGER", str(tripwire_dir / sorted(load_managers())[0]))
+    stood_on = place(load_schedulers(), os.environ).where
+    assert stood_on == MACHINE, f"the tests stand on a {stood_on}, not the stated {MACHINE} (testing.md § 2.1)"
     yield log
     if log.exists() and log.read_text().strip():
         pytest.fail("a basic test reached an outside program: " + log.read_text().strip())

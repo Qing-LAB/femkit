@@ -155,9 +155,40 @@ class Nest:
         return WriteOutcome(plan=plan, status=status, log=f"{where}\n{inner[0].log}")
 
 
+TOYS = {"toy.echo": echo, "toy.write": Write, "toy.sign": Sign}
+
+
 def run(*args: str, input: str | None = None):
+    """The toy command line run in this process, its input not a terminal."""
     WRITTEN.clear()
-    return CliRunner().invoke(build({"toy.echo": echo, "toy.write": Write, "toy.sign": Sign}), list(args), input=input)
+    return CliRunner().invoke(build(TOYS), list(args), input=input)
+
+
+ON_A_TERMINAL = """
+import atexit, json, sys
+from tests.basic import test_api as toy
+atexit.register(lambda: print(json.dumps(toy.WRITTEN)))
+toy.build(toy.TOYS)(sys.argv[1:], prog_name="femkit")
+"""
+
+
+def on_a_terminal(*args: str, typed: str) -> tuple[int, list, str]:
+    """The toy command line run as a person runs it, in its own process, its input a terminal
+    they type ``typed`` into: its exit code, what it wrote, and all it said."""
+    import os
+    import pty
+    import subprocess
+    import sys
+    main, sub = pty.openpty()
+    try:
+        os.write(main, typed.encode())                  # held by the terminal until the command reads it
+        p = subprocess.run([sys.executable, "-c", ON_A_TERMINAL, *args], stdin=sub, capture_output=True, text=True,
+                           cwd=Path(__file__).resolve().parents[2], timeout=60)
+    finally:
+        os.close(sub)
+        os.close(main)
+    *said, written = p.stdout.splitlines()
+    return p.returncode, json.loads(written), "\n".join(said) + p.stderr
 
 
 # --- the adapter, once --------------------------------------------------------
@@ -277,26 +308,22 @@ def test_a_refusal_offers_the_command_as_typed_so_it_can_be_pasted():
                                                                      "python -m femkit toy write 'two words' --yes"]
 
 
-def test_a_plans_question_is_asked_on_a_terminal_and_never_under_yes(monkeypatch):
+def test_a_plans_question_is_asked_on_a_terminal_and_never_under_yes():
     """Fails if a question a plan asks is not put to the person on a terminal, its answer
     does not reach the plan applied, or it is asked although --yes said not to ask
     (api.md § 3.1)."""
-    import femkit.cli
-    monkeypatch.setattr(femkit.cli, "_can_ask", lambda: True)
-    assert run("toy", "sign", input="Ada\ny\n").exit_code == 0 and WRITTEN == ["Ada"]
-    assert run("toy", "sign", "--yes", input="Ada\n").exit_code == 0 and WRITTEN == [None]
+    assert on_a_terminal("toy", "sign", typed="Ada\ny\n")[:2] == (0, ["Ada"])
+    assert on_a_terminal("toy", "sign", "--yes", typed="Ada\n")[:2] == (0, [None])
 
 
 @pytest.mark.parametrize("first", ["\x1b[A", "ada"], ids=["an arrow key's code", "a value the request refuses"])
-def test_an_answer_that_is_not_text_or_is_refused_is_said_and_asked_again(first, monkeypatch):
+def test_an_answer_that_is_not_text_or_is_refused_is_said_and_asked_again(first):
     """Fails if an answer holding a terminal's control characters, or one the request refuses,
     ends the command instead of being said and asked again — a bootstrap lost to one keystroke
     (api.md § 3.1)."""
-    import femkit.cli
-    monkeypatch.setattr(femkit.cli, "_can_ask", lambda: True)
-    out = run("toy", "sign", input=f"{first}\nAda\ny\n")
-    assert out.exit_code == 0 and WRITTEN == ["Ada"] and out.output.count("Who signs?") == 2
-    assert repr(first) in out.output or "pattern" in out.output
+    code, written, said = on_a_terminal("toy", "sign", typed=f"{first}\nAda\ny\n")
+    assert code == 0 and written == ["Ada"] and said.count("Who signs?") == 2
+    assert repr(first) in said or "pattern" in said
 
 
 def test_a_command_line_is_shown_as_typed_its_placeholders_bare_and_its_shell_words_quoted():

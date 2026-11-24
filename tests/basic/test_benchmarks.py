@@ -6,13 +6,10 @@ from fractions import Fraction
 
 import pytest
 
+from tests.kit import ctx
 from femkit import registry
 from femkit.core.operations import Context
 from femkit.definitions import catalogue
-
-
-def ctx() -> Context:
-    return Context.from_process()
 
 
 def test_the_two_material_reference_follows_from_its_own_model():
@@ -59,4 +56,5 @@ def test_schema_check_refuses_a_benchmark_that_is_not_complete_or_misnames_its_r
         pytest.fail(f"{old!r} is in no file")
     op = registry.operations()["schema.check"]
     result = op.run(op.request_from({}), Context.from_process())
-    assert not result.ok() and any("benchmarks.two_material" in i.message for i in result.issues)
+    assert not result.ok() and any(i.code == "benchmark-invalid" and i.subject.endswith("benchmarks.two_material")
+                                   for i in result.issues)

@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from femkit.config import settings
-from femkit.core import dirs
+from femkit.core import dirs, locks
 from femkit.core.errors import Refusal
 from femkit.core.operations import Context
 from femkit.definitions.catalogue import load_environments
@@ -26,6 +26,8 @@ REPO = Path(__file__).resolve().parent.parent
 # The person's real places, resolved once, before any isolation is set (§ 2.2).
 REAL_CONFIG = dirs.config_dir()
 REAL_CONTROL = dirs.control_prefix()
+REAL_SHALLOW = {"state": dirs.state_dir(), "cache": dirs.cache_dir(), "runtime": dirs.runtime_dir(),
+                "locks": locks.root()}
 
 
 def _real_engine_root() -> Path:
@@ -77,6 +79,19 @@ def _tree(root: Path):
     ))
 
 
+def _shallow(root: Path):
+    """Every entry within two levels of ``root``, with its modification time: anything added,
+    removed or rewritten there — and anything made deeper, which changes its folder's time."""
+    if not root.exists():
+        return ()
+    out = []
+    for first in sorted(root.iterdir()):
+        out.append((first.name, first.stat().st_mtime_ns))
+        if first.is_dir() and not first.is_symlink():
+            out += [(f"{first.name}/{p.name}", p.stat().st_mtime_ns) for p in sorted(first.iterdir())]
+    return tuple(out)
+
+
 def _environments():
     out = []
     for prefix in REAL_ENVIRONMENTS:
@@ -100,18 +115,20 @@ def _measure(name: str, read):
 
 
 CANARIES = {"config": lambda: _tree(REAL_CONFIG), "environments": _environments,
-            "checkout": lambda: code_now(str(REPO))}
+            "checkout": lambda: code_now(str(REPO)),
+            **{name: (lambda root=root: _shallow(root)) for name, root in REAL_SHALLOW.items()}}
 
 
 @pytest.fixture(scope="session", autouse=True)
 def the_run_leaves_your_machine_alone():
-    """The config, environments and checkout canaries (§ 2.2)."""
+    """The canaries of § 2.2: config, environments, checkout, and the real state, cache, runtime
+    and lock folders."""
     before = {name: _measure(name, read) for name, read in CANARIES.items()}
     yield
     after = {name: _measure(name, read) for name, read in CANARIES.items()}
     changed = [name for name in before if before[name] is not None and before[name] != after[name]]
     where = {"config": str(REAL_CONFIG), "environments": ", ".join(map(str, REAL_ENVIRONMENTS)),
-             "checkout": str(REPO)}
+             "checkout": str(REPO), **{name: str(root) for name, root in REAL_SHALLOW.items()}}
     if changed:
         raise AssertionError("canary: the run changed " + "; ".join(f"{n} ({where[n]})" for n in changed))
 

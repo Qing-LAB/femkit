@@ -67,7 +67,11 @@ does for the person. In that tier the environments canary (§ 2.2) watches
 `conda-meta/` and the manifest, not the check results.
 
 In the **basic** and **web** tiers, `PATH` starts with a directory of
-tripwires for every outside program femkit can start: the managers, MPI and
+tripwires for every outside program femkit can start. With every scheduler
+kind's commands among them and every job variable cleared, these tiers stand on
+a SLURM login node, as femkit observes one; that is stated beside the tripwires
+and checked before each test, so a change to them never moves every test to
+another machine unseen. The tripwires cover the managers, MPI and
 scheduler commands, CMake and CTest, `nvidia-smi`, and every executable an
 environment definition names — the solvers, and the `web` environment's
 Node.js. A tripwire logs its call and exits 97; a test that reached one
@@ -85,7 +89,7 @@ it.
 
 ### 2.2 Canaries — the outcome, measured
 
-Isolation by construction is a claim; three session-wide canaries measure it.
+Isolation by construction is a claim; seven session-wide canaries measure it.
 Each fingerprints something of the person's when the run starts and again when
 it ends, and a difference fails the run, naming what changed:
 
@@ -94,6 +98,7 @@ it ends, and a difference fails the run, naming what changed:
 | config | every file under the person's real config directory: names, sizes, modification times | a test writing past `FEMKIT_CONFIG_DIR` |
 | environments | for each environment femkit manages here (the control prefix under the real `<data>`, and each engine prefix under the person's real `paths.environments`): entry count and modification time of its `conda-meta/` and `.femkit/` | a test that reached the real manager and installed into, or removed, an environment |
 | checkout | the code digest of § 4.5 | a test writing into the repository — or a person editing it while a run is going |
+| state, cache, runtime, locks | the person's real `<state>`, `<cache>`, `<runtime>` and `<data>/locks/`: each entry within two levels, with its modification time — anything made deeper changes its folder's | a test writing a run's log, a download, a server's files or a lock past its own directories |
 
 - The real directories are resolved once, before the run's own isolation is
   set; no test can move them.
@@ -116,6 +121,15 @@ it ends, and a difference fails the run, naming what changed:
   records and files it writes, and the outcome of running what it generated —
   through the interfaces femkit offers, never by reading source code or
   grepping a rendered file for a line.
+- **Through femkit's own doors, from one kit.** A test reaches femkit as a
+  person or a surface does: an operation through the registry, an outside
+  program through a stand-in on `PATH` or named by `FEMKIT_ENV_MANAGER`, a
+  terminal through a pseudo-terminal — never by calling or replacing a private
+  name of femkit's (one with a leading underscore). What tests share — a
+  context, an operation called as a surface calls it, a lock held by another
+  process, an environment left as an install leaves it, a machine record — is
+  written once, in `tests/kit.py`; a test file takes it from there, never from
+  another test file.
 - **The code's discipline is the review's.** Rules about the code itself — the
   one-way rules and the layers ([`framework.md`](framework.md) § 1), no
   duplicated or hand-made code, the page naming no field

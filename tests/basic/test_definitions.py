@@ -302,8 +302,8 @@ def test_schema_check_refuses_a_page_declaration_that_names_what_is_not_served(d
     page = definitions / "web" / "page.toml"
     page.write_text(page.read_text().replace('document = "model.graph"', 'document = "model.nothing"', 1))
     result = schema_check.run(schema_check.request(), Context.from_process())
-    assert [i.subject for i in result.issues] == [str(page)]
-    assert "workspaces.0.document" in result.issues[0].message
+    assert [(i.code, i.subject) for i in result.issues] == [("definition-invalid", str(page))]
+    assert result.issues[0].message.startswith(f"{page}: workspaces.0.document:")    # where in the file
 
 @pytest.mark.parametrize("change, at", [
     ({"provided_by": "comsol"}, "provided_by"),                 # no such environment

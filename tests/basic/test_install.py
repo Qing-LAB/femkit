@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.kit import ctx
 from femkit.config.operations import ConfigSet
 from femkit.core.errors import Unstated
 from femkit.core.operations import Context, Plan, SilentObserver, Step, run_steps
@@ -15,10 +16,6 @@ from femkit.envs.operations import EnvInstall
 from femkit.envs.state import facts
 
 NAME = "ngsolve-cuda"  # the CUDA environment: its ngsolve build is compiled for CUDA
-
-
-def ctx() -> Context:
-    return Context.from_process()
 
 
 def set_key(key: str, value: str) -> None:
@@ -148,7 +145,8 @@ URL = "https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_7.con
 
 @pytest.mark.parametrize("listing", [
     f'List of packages in environment: "/p"\n\n{URL}\n',  # mamba 2.9.0's own header
-    f"# This file may be used to create an environment using:\n# platform: linux-64\n@EXPLICIT\n{URL}\n",  # conda's
+    f"# This file may be used to create an environment using:\n# $ conda create --name <env> --file <this file>\n"
+    f"# platform: linux-64\n# created-by: conda 26.7.1\n@EXPLICIT\n{URL}\n",   # conda 26.7.1's own header, measured
 ], ids=["mamba 2", "conda"])
 def test_the_saved_lock_is_the_list_every_manager_creates_from(listing):
     """Fails if a manager's own header reaches the saved lock: mamba 2's is not a comment, and its

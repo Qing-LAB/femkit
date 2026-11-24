@@ -11,6 +11,7 @@ from enum import Enum
 
 import pytest
 
+from tests.kit import hold
 from femkit.core import view
 from pydantic import Field
 from femkit.core.schema import Model
@@ -74,24 +75,6 @@ def test_a_second_holder_of_a_subject_is_refused_not_queued():
                 pass
     with subject_lock("env-x"):  # released when the first holder left
         pass
-
-
-HOLDER = """
-import sys
-from femkit.core import locks, view
-with locks.subject_lock(sys.argv[1], shared=sys.argv[2] == "shared"):
-    locks.adopt(locks.held_fd(sys.argv[1]), "a user of " + sys.argv[1], [view.shell("end it").model_dump(mode="json")])
-    print("held", flush=True)
-    sys.stdin.read()
-"""
-
-
-def hold(subject: str, mode: str):
-    """Another process holding ``subject``'s lock, ``mode`` shared or alone, until its stdin closes."""
-    p = subprocess.Popen([sys.executable, "-c", HOLDER, subject, mode], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         text=True)
-    assert p.stdout.readline().strip() == "held"
-    return p
 
 
 def test_users_share_a_lock_and_a_change_is_refused_naming_each_and_what_ends_it():

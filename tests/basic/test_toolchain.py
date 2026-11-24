@@ -2,26 +2,23 @@
 command in a prefix confined to it (definitions.md § 4.6; envs.md § 4.1, § 4.4).
 
 The program that runs inside an environment is exercised in the field tier
-(tests/field/test_toolchain.py); here, femkit's side: the plan, the confinement, the judgement.
+(tests/field/test_toolchain_on_this_machine.py); here, femkit's side: the plan, the confinement, the judgement.
 """
 
 from __future__ import annotations
 
 import pytest
 
+from tests.kit import apply, ctx
 from femkit.config.operations import ConfigSet
 from femkit.core.errors import Refusal
-from femkit.core.operations import Context, Step
+from femkit.core.operations import Step
 from femkit.core import process as process_module
 from femkit.core.process import ProcessResult
 from femkit.definitions.catalogue import load_environments
 from femkit.engines.toolchain import LANGUAGES
-from femkit.envs import checks, install, manager, toolchain
+from femkit.envs import checks, install, toolchain
 from femkit.envs.operations import EnvInstall
-
-
-def ctx() -> Context:
-    return Context.from_process()
 
 
 def test_every_environment_with_builds_solves_its_own_toolchain():
@@ -73,11 +70,9 @@ def test_every_command_in_the_prefix_sees_none_of_the_shells_build_settings(monk
     ran: list[dict] = []
     monkeypatch.setattr(process_module, "run", lambda argv, log=None, env=None, **kw:
                         ran.append(env) or ProcessResult(tuple(argv), 1, "", "", log))  # each fails at once
-    c = ctx()
-    env = load_environments()["ngsolve"]
-    t = install.Target(name="ngsolve", env=env, prefix=tmp_path / "p", manager=manager.resolve(c), channels=[],
-                       python_minor="3.12", cuda_architectures=None, jobs=1, install_fingerprint="f",
-                       launcher=["mpirun", "-np", "{ranks}"])
+    apply("config.set", key="launch.mpi", value='["mpirun", "-np", "{ranks}"]')  # its toolchain check runs MPI
+    t = install.target(ctx(), "ngsolve")
+    env = t.env
 
     def seen(step: Step) -> list[dict]:
         ran.clear()
@@ -86,8 +81,11 @@ def test_every_command_in_the_prefix_sees_none_of_the_shells_build_settings(monk
 
     steps = install.plan_steps(t, remove_first=False, discard_lock=True)
     confined = {s.id: seen(s) for s in steps if s.id.split(":")[0] in INSIDE}
-    confined["check"] = [checks._variables(checks.Runner(env=env, prefix=t.prefix, manager=t.manager, launcher=None),
-                                           env.checks[0])]
+    work = tmp_path / "check"
+    work.mkdir()
+    ran.clear()
+    checks.run_check(checks.runner(ctx(), "ngsolve"), env.checks[0], work)   # as validate runs one
+    confined["check"] = list(ran)
     assert {i.split(":")[0] for i, envs in confined.items() if envs} == {*INSIDE, "check"}  # every kind ran something
     for step_id, envs in confined.items():
         for variables in envs:
@@ -137,15 +135,18 @@ def test_a_program_that_cannot_start_is_a_finding_not_a_crash(tmp_path, monkeypa
     launcher not on the confined PATH, crashes the toolchain program — losing every finding
     already made — instead of being reported as a program that does not build or run
     (envs.md § 4.1, definitions.md § 4.6)."""
-    import sys
     from femkit.engines import toolchain as program
     broken = tmp_path / "cc"
     broken.write_text("#!/no/such/interpreter\n")
-    broken.chmod(0o755)
+    builds = tmp_path / "mpiwrapper"                     # an MPI wrapper that builds anything
+    builds.write_text("#!/bin/sh\nexit 0\n")
+    for script in (broken, builds):
+        script.chmod(0o755)
     monkeypatch.setenv("CC", str(broken))
     work = tmp_path / "work"
     work.mkdir()
-    report = program.check({"compilers": {language: "CC"}, "mpi": {}, "launcher": None, "tools": []}, work)
+    report = program.check({"compilers": {language: "CC"}, "mpi": {language: str(builds)},
+                            "launcher": [str(tmp_path / "no-such-launcher"), "-np", "2"], "tools": []}, work)
     assert not report["compilers"][language]["compiled"] and report["compilers"][language]["error"]
-    found = program._try([sys.executable, "-c", ""], [str(tmp_path / "no-such-launcher"), "./a.out"], work)
-    assert found["compiled"] and not found["ran"] and found["error"]
+    mpi = report["mpi"][language]
+    assert mpi["compiled"] and not mpi["ran"] and mpi["error"] and report["launcher"] is None

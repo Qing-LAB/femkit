@@ -11,6 +11,7 @@ import tomllib
 
 import pytest
 
+from tests.kit import a_record
 from femkit.config import settings
 from femkit.config.operations import ConfigInit, ConfigSet
 from femkit.core.errors import Unstated, UsageError
@@ -21,35 +22,7 @@ from femkit.definitions.catalogue import CatalogueError, load_schedulers
 from femkit.definitions.models import SchedulerKind
 from femkit.jobs import record
 from femkit.jobs.operations import JobProbe, job_machines
-from femkit.jobs.record import Record, Unknown
-
-
-def a_record(**changes) -> Record:
-    """A cluster's record with every kind of value: numbers, `unlimited`, unknowns, walls."""
-    data = {
-        "schema": 1,
-        "measured": {"time": "2026-01-01T00:00:00Z", "where": "login node"},
-        "identity": "cluster-a",
-        "host": {"os": "Linux 5", "architecture": "x86_64", "cores": 8, "memory_mib": 16000,
-                 "gpus": {"unknown": "nvidia-smi not found on PATH"}},
-        "manager": {"kind": "conda", "path": "/opt/conda/bin/conda", "version": "25.1", "root": "/opt/conda",
-                    "platform": "linux-64", "run_enters": False},
-        "scheduler": {"kind": "slurm", "commands": {"submit": "/usr/bin/sbatch", "query": {"unknown": "squeue not found"}},
-                      "probe": {"control": "/usr/bin/scontrol"}},
-        "partitions": {"p1": {"max_time": "7-00:00:00", "max_cpus_per_node": "unlimited", "def_mem_per_cpu_mib": 2048,
-                              "allow_qos": "all", "deny_qos": [],
-                              "node_groups": [{"count": 3, "cores": 48, "memory_mib": 515000, "gpus": {"t1": 4},
-                                               "architecture": "x86_64"}]}},
-        "queues": [{"partition": "p1", "qos": "q1", "max_time": "1-00:00:00", "max_cpus": 128,
-                    "max_memory_mib": "unlimited", "max_gpus": {"unknown": "capped per GPU type: gres/gpu:t1=2"},
-                    "max_submit_jobs_per_user": "unlimited"}],
-        "environments": {"ngsolve": {"state": "ready", "gpu": "not-run", "install_fingerprint": "abc"}},
-        "settings": {"environments": "/scratch/envs", "preamble": ["module load x"]},
-        "sources": {"partitions": "scontrol show partition, scontrol show node"},
-        "notes": [],
-    }
-    data.update(changes)
-    return Record.model_validate(data)
+from femkit.jobs.record import Unknown
 
 
 def test_a_record_survives_the_disk_with_its_three_answers():
@@ -149,19 +122,26 @@ def test_a_scheduler_kind_names_only_femkits_roles_and_its_submit_and_job_id(dat
         validate(SchedulerKind, data, "kind.toml")
 
 
+def answering(executable, answer: dict, monkeypatch):
+    """The manager femkit resolves when FEMKIT_ENV_MANAGER names ``executable``: a stand-in of that
+    kind that prints ``answer`` to whatever it is asked (envs.md § 7.1)."""
+    import json
+    import shlex
+    from femkit.envs import manager
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_text(f"#!/bin/sh\nprintf '%s' {shlex.quote(json.dumps(answer))}\n")
+    executable.chmod(0o755)
+    monkeypatch.setenv(manager.VARIABLE, str(executable))
+    return manager.resolve(Context.from_process())
+
+
 @pytest.mark.parametrize("answer", [{"root_prefix": "/r", "platform": "linux-64"},  # mamba 1.5.9
                                     {"base environment": "/r", "platform": "linux-64"}],  # mamba 2.9.0
                          ids=["mamba 1", "mamba 2"])
-def test_the_mamba_kind_reads_its_root_from_either_versions_answer(answer, tmp_path):
+def test_the_mamba_kind_reads_its_root_from_either_versions_answer(answer, tmp_path, monkeypatch):
     """Fails if the mamba kind finds its root under one version's key only: 1.x answers
     `root_prefix`, 2.x `base environment` (definitions.md § 6; both measured)."""
-    import json
-    from femkit.core.process import ProcessResult
-    from femkit.definitions.catalogue import load_managers
-    from femkit.envs.manager import Manager
-    m = Manager(tmp_path / "mamba", "mamba", load_managers()["mamba"], {})
-    argv = tuple(m.argv(m.kind.root.argv))
-    m.printed[argv] = ProcessResult(argv=argv, returncode=0, stdout=json.dumps(answer), stderr="", log=None)
+    m = answering(tmp_path / "bin" / "mamba", answer, monkeypatch)
     assert m.query(m.kind.root) == ("/r", None)
 
 
@@ -172,19 +152,14 @@ def test_the_mamba_kind_reads_its_root_from_either_versions_answer(answer, tmp_p
                                "`conda activate` needs the manager's hook sourced first"]),
     ("mamba activate", True, ["mamba activate {p}   # not one of the conda kind's forms"]),
 ], ids=["source activate", "conda activate", "no hook file", "another kind's"])
-def test_the_entry_is_the_activation_the_person_stated(command, hook_on_disk, expected, tmp_path):
+def test_the_entry_is_the_activation_the_person_stated(command, hook_on_disk, expected, tmp_path, monkeypatch):
     """Fails if the entry line follows what is on disk instead of the activation stated for this
     machine: a cluster's module may ship a hook file while its batch shells enter with
     `source activate` (config.md § 3.1; envs.md § 6.2)."""
-    import json
-    from femkit.core.process import ProcessResult
-    from femkit.definitions.catalogue import load_managers
-    from femkit.envs.manager import Manager
     root, prefix = tmp_path / "root", tmp_path / "env"
     if hook_on_disk:
         (root / "etc" / "profile.d").mkdir(parents=True)
         (root / "etc" / "profile.d" / "conda.sh").write_text("")
-    m = Manager(root / "bin" / "conda", "conda", load_managers()["conda"], {})
-    argv = tuple(m.argv(m.kind.root.argv))
-    m.printed[argv] = ProcessResult(argv=argv, returncode=0, stdout=json.dumps({"root_prefix": str(root)}), stderr="", log=None)
+    # conda 26.7.1's `info --json` answer, measured, cut to the one key the kind file reads
+    m = answering(root / "bin" / "conda", {"root_prefix": str(root)}, monkeypatch)
     assert m.activation(prefix, command) == [e.format(p=prefix, root=root) for e in expected]

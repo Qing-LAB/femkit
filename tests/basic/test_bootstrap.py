@@ -12,10 +12,11 @@ import shlex
 
 import pytest
 
+from tests.kit import a_record, apply, ctx
 from femkit.config import settings
 from femkit.config.operations import ConfigInit, ConfigSet
 from femkit.core import dirs
-from femkit.core.operations import Context, Plan, Step
+from femkit.core.operations import Plan, Step
 from femkit.definitions.catalogue import load_catalogue
 from femkit.envs.operations import EnvResult, InstallOutcome
 from femkit.envs.state import EnvState
@@ -25,10 +26,6 @@ from femkit.jobs.operations import ProbeOutcome
 GIVEN = {"cuda_architectures": ["80"], "mpi": ["mpirun", "-np", "{ranks}"]}  # nothing measured (basic tier)
 STATED = {"no_preamble": True, "activation": "source activate"}  # what only a person can state (config.md § 3.1)
 DEFAULT = sorted(n for n, e in load_catalogue().environments.items() if e.default)
-
-
-def ctx() -> Context:
-    return Context.from_process()
 
 
 class StandIns:
@@ -186,20 +183,14 @@ def test_doctor_holds_only_a_default_environment_against_the_machine():
 
 @pytest.mark.parametrize("step", ["create", "lock", "toolchain", "compile:ngsolve", "audit", "manifest"])
 @pytest.mark.parametrize("code", [-9, 137])
-def test_a_step_ended_by_sigkill_is_killed_and_names_the_interactive_allocation(step, code, tmp_path, monkeypatch):
-    """Fails if any install step whose command the system killed reads as an ordinary failure,
-    or the finding does not name the scheduler kind's interactive allocation (envs.md § 6.2)."""
+def test_a_step_ended_by_sigkill_is_killed(step, code, tmp_path, monkeypatch):
+    """Fails if any install step whose command the system killed reads as an ordinary failure:
+    the advice on where to run it again would never show (envs.md § 6.2)."""
     from femkit.core.process import ProcessResult
-    from femkit.definitions.catalogue import load_environments, load_schedulers
-    from femkit.envs import install, operations
-    from femkit.envs.manager import resolve
+    from femkit.envs import install
     monkeypatch.setattr(install.process, "run", lambda argv, log=None, **kw: ProcessResult(tuple(argv), code, "", "", log))
-    t = install.Target(name="ngsolve", env=load_environments()["ngsolve"], prefix=tmp_path / "p",
-                       manager=resolve(ctx()), channels=[], python_minor="3.12", cuda_architectures=None, jobs=1,
-                       install_fingerprint="f", launcher=["mpirun", "-np", "{ranks}"])
+    t = install.target(ctx(), "ngsolve")
     assert install.run_step(t, Step(id=step, describe="", argv=("x",)), tmp_path / "logs")[0] == install.KILLED
-    issue = operations._killed(ctx(), "ngsolve", [step])  # sbatch is on PATH: a SLURM login node
-    assert issue.next[0].command == load_schedulers()["slurm"].interactive
 
 
 @pytest.mark.parametrize("log_line, expected", [
@@ -212,9 +203,7 @@ def test_a_compiler_killed_under_the_build_tool_makes_its_step_killed(log_line, 
     login-node advice never shows, or if a real compile error reads as killed: make exits 2 either
     way, and only the log tells (envs.md § 6.2; the line as measured on a cluster's login node)."""
     from femkit.core.process import ProcessResult
-    from femkit.definitions.catalogue import load_environments
     from femkit.envs import install
-    from femkit.envs.manager import resolve
 
     def make(argv, log=None, **kw):
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -222,20 +211,31 @@ def test_a_compiler_killed_under_the_build_tool_makes_its_step_killed(log_line, 
         return ProcessResult(tuple(argv), 2, "", "", log)
 
     monkeypatch.setattr(install.process, "run", make)
-    t = install.Target(name="elmer", env=load_environments()["elmer"], prefix=tmp_path / "p",
-                       manager=resolve(ctx()), channels=[], python_minor="3.12", cuda_architectures=None, jobs=1,
-                       install_fingerprint="f", launcher=["mpirun", "-np", "{ranks}"])
+    t = install.target(ctx(), "elmer")
     assert install.run_step(t, Step(id="compile:elmer", describe="", argv=("x",)), tmp_path / "logs")[0] == expected
 
 
-def test_a_step_killed_inside_an_allocation_is_not_sent_to_another(monkeypatch):
-    """Fails if a step the allocation's own memory limit killed is told to run inside an
-    interactive allocation, which it already is (envs.md § 6.2)."""
+@pytest.mark.parametrize("inside_a_job", [False, True], ids=["login node", "scheduler job"])
+def test_an_install_the_system_killed_says_where_to_run_it_again(inside_a_job, manager, monkeypatch):
+    """Fails if an install whose command the system killed does not report it killed, or tells a
+    login node anything but the scheduler kind's interactive allocation, or a step already inside
+    an allocation — whose own memory limit killed it — to start another (envs.md § 6.2)."""
+    from femkit.core.process import ProcessResult
     from femkit.definitions.catalogue import load_schedulers
-    from femkit.envs import operations
-    monkeypatch.setenv(load_schedulers()["slurm"].job_variables["id"], "1")  # sbatch is on PATH: inside a SLURM job
-    assert [n.command for n in operations._killed(ctx(), "ngsolve", ["compile:ngsolve"]).next] == [
-        "python -m femkit env install ngsolve"]
+    from femkit.envs import install
+    from femkit.envs.operations import EnvInstall
+    slurm = load_schedulers()["slurm"]                   # sbatch is on PATH: a SLURM machine
+    if inside_a_job:
+        monkeypatch.setenv(slurm.job_variables["id"], "1")
+    apply("config.set", key="launch.mpi", value='["mpirun", "-np", "{ranks}"]')
+    c = ctx()
+    plan = EnvInstall.plan(EnvInstall.request(names=["ngsolve"]), c)
+    monkeypatch.setattr(install.process, "run", lambda argv, log=None, **kw: ProcessResult(tuple(argv), -9, "", "", log))
+    outcome = EnvInstall.apply(plan, c)
+    (killed,) = [i for i in outcome.issues if i.code == "killed"]
+    again = "python -m femkit env install ngsolve"
+    assert not outcome.ok() and killed.subject == "ngsolve"
+    assert [n.command for n in killed.next] == ([again] if inside_a_job else [slurm.interactive])
 
 
 class NothingToInstall(StandIns):
@@ -259,13 +259,8 @@ def test_bootstrap_measures_the_record_again_unless_it_stays_current_and_nothing
     c = ctx()
     for key, value in {"activation.preamble": "[]", "activation.command": '"source activate"', **({"launch.mpi": json.dumps(GIVEN["mpi"])} if mpi_set else {})}.items():
         ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), c), c)
-    unknown = {"unknown": "not measured in a test"}
     now = record.settings_now(settings.load(ctx()).config).model_dump(exclude_none=True)
-    record.write(record.path(record.LOCAL), record.Record.model_validate({
-        "schema": 1, "measured": {"time": "t", "where": "workstation"}, "identity": "here",
-        "host": {"os": "Linux", "architecture": "x86_64", "cores": 1, "memory_mib": 1, "gpus": unknown},
-        "manager": dict.fromkeys(("kind", "path", "version", "root", "platform", "run_enters"), unknown),
-        "scheduler": {"kind": "local"}, "partitions": {}, "queues": [], "environments": {}, "settings": now}))
+    record.write(record.path(record.LOCAL), a_record(settings=now))      # measured under these settings
     assert record.status(record.path(record.LOCAL), settings.load(ctx()).config)[0] == "current"  # until bootstrap
     monkeypatch.setattr(setup, "EnvInstall", (StandIns if installs else NothingToInstall)(failing=set()))
     plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), ctx())

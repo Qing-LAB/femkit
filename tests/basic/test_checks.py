@@ -13,16 +13,17 @@ import sys
 
 import pytest
 
+from tests.kit import ctx, installed
 from femkit.config.operations import ConfigSet
 from femkit.core.errors import Refused, Unstated, UsageError
-from femkit.core.operations import Context, SilentObserver
-from femkit.core.persist import write_json
+from femkit.core.operations import SilentObserver
 from femkit.definitions.models import Agreement, Check, Expectation
 from femkit.engines import junit
-from femkit.definitions.catalogue import CUDA_SUFFIX
+from femkit.core.schema import render
+from femkit.definitions.catalogue import CUDA_SUFFIX, load_managers
 from femkit.envs import checks, layout, state as state_module
 from femkit.envs.operations import EnvInstall, EnvValidate
-from femkit.envs.records import CheckOutcome, ChecksRecord, Manifest, read
+from femkit.envs.records import CheckOutcome, ChecksRecord, read
 from femkit.envs.state import EnvState, facts, observe
 
 DEFINITION = "ngsolve"  # thread_variables NGS_NUM_THREADS, fixed_variables OMP_NUM_THREADS = "1"
@@ -39,10 +40,6 @@ def program(id_: str, value: float = 1.0, **fields) -> Check:
     return Check(id=id_, kind="command", run=["python", "-c", PROGRAM, "{work}", str(value)], read="summary", **fields)
 
 
-def ctx() -> Context:
-    return Context.from_process()
-
-
 def set_key(key: str, value: str) -> None:
     c = ctx()
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), c), c)
@@ -56,12 +53,7 @@ def declared(give_checks, running_manager):
         give_checks(DEFINITION, list(declared_checks), agreements)
         if launcher:
             set_key("launch.mpi", '["env", "RANKS={ranks}"]')  # a launcher that starts nothing else
-        f = facts(ctx(), name)
-        (f.prefix / "conda-meta").mkdir(parents=True)
-        write_json(layout.manifest_file(f.prefix), Manifest(
-            install_fingerprint=f.install_fingerprint, lock_sha256="0" * 64, manager_kind="conda",
-            manager_version="0", solver_version="0", time="t").model_dump())
-        return f
+        return installed(name)
     return declare
 
 
@@ -87,7 +79,9 @@ def test_a_check_runs_in_its_environment_with_its_threads_ranks_and_fixed_variab
     got = recorded()
     assert {i: o.outcome for i, o in got.items()} == {"serial": "passed", "threaded": "passed", "mpi": "passed"}
     assert all(o.quantities["omp"] == 1 and o.quantities["nousersite"] == 1 for o in got.values())
-    assert all(line.startswith(f"run --no-capture-output -p {f.prefix} ") for line in running_manager.read_text().splitlines())
+    run_form = " ".join(render(a, {"exe": "", "prefix": str(f.prefix)}) for a in load_managers()["conda"].run[1:])
+    ran = [line for line in running_manager.read_text().splitlines() if line.startswith(run_form.split()[0] + " ")]
+    assert len(ran) == len(got) and all(line.startswith(run_form + " ") for line in ran)   # each check, in the prefix
 
 
 def test_every_check_runs_and_a_failed_one_makes_the_environment_failing(declared):
