@@ -738,6 +738,12 @@ approved as written:
 - The programs that run inside an environment, and the readers, are the lowest
   of the domains, so the loader of the definitions reads their registries
   directly (`framework.md` § 1).
+- An installed environment's fingerprint is read with the manager its manifest
+  says built it: looking at an environment needs no manager named and writes
+  nothing; another manager named leaves it as built (`envs.md` § 2).
+- Once B's part 4 lands, Elmer, NGSolve and `web` are rebuilt from nothing and
+  validated on this workstation, proving the installer end to end; the CUDA
+  environments stay with the person's cluster runs.
 
 **Open, the person's** (the proposed answer in each contract):
 

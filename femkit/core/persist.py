@@ -99,6 +99,12 @@ def remove(path: Path) -> None:
         path.unlink(missing_ok=True)
 
 
+def make_folder(path: Path) -> Path:
+    """``path`` as a folder, made with its parents when it is not there; what it holds stays."""
+    Path(path).mkdir(parents=True, exist_ok=True)
+    return Path(path)
+
+
 def empty_folder(path: Path) -> Path:
     """``path`` as an empty folder, whatever was there before."""
     remove(path)

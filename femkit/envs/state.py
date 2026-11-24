@@ -18,8 +18,8 @@ from femkit.core.states import Action, Machine, Rule
 from femkit.definitions import catalogue
 from femkit.definitions.models import EnvironmentDefinition
 from femkit.engines import package_dir
-from femkit.envs import checks, fingerprints, layout
-from femkit.envs.manager import resolve
+from femkit.envs import checks, fingerprints, layout, manager
+
 from femkit.envs.records import ChecksRecord, Manifest, read
 from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_VALIDATE
 
@@ -41,7 +41,7 @@ class EnvFacts:
     locked: bool
     prefix_kind: Literal["absent", "directory", "environment"]
     manifest: Manifest | None
-    install_fingerprint: str
+    install_fingerprint: str | None   # none: no manifest and no manager named to say what would build it
     checks: ChecksRecord | None
     check_fingerprint: str
     declared_checks: frozenset[str]
@@ -134,11 +134,24 @@ def definition(ctx: Context, name: str) -> EnvironmentDefinition:
     return envs[name]
 
 
-def install_fingerprint(ctx: Context, name: str) -> str:
+def install_fingerprint(ctx: Context, name: str, manager_kind: str | None) -> str | None:
+    """What an install of ``name`` by a ``manager_kind`` manager is fingerprinted as; None
+    without a manager kind."""
+    if manager_kind is None:
+        return None
     env = definition(ctx, name)
     cat = catalogue.load(ctx)
-    return fingerprints.install(env, cat.control, settings.load(ctx).config.build.cuda_architectures,
-                                resolve(ctx).kind_name)
+    return fingerprints.install(env, cat.control, settings.load(ctx).config.build.cuda_architectures, manager_kind)
+
+
+def _built_by(manifest: Manifest | None, ctx: Context) -> str | None:
+    """The manager kind an environment's fingerprint is read with: the one its manifest says built
+    it — so looking needs no manager named, and another manager now leaves it as built — else the
+    one the invocation names, which would build it (envs.md § 2)."""
+    if manifest is not None:
+        return manifest.manager_kind
+    named = manager.named(ctx)
+    return Path(named).name if named else None
 
 
 def facts(ctx: Context, name: str, *, holding_lock: bool = False) -> EnvFacts:
@@ -147,13 +160,14 @@ def facts(ctx: Context, name: str, *, holding_lock: bool = False) -> EnvFacts:
     env = definition(ctx, name)
     where = layout.prefix(ctx, name)
     kind = "absent" if not where.exists() else ("environment" if (where / "conda-meta").is_dir() else "directory")
+    manifest = read(layout.manifest_file(where), Manifest)
     return EnvFacts(
         name=name,
         prefix=where,
         locked=False if holding_lock else locks.is_held(layout.subject(name)),
         prefix_kind=kind,
-        manifest=read(layout.manifest_file(where), Manifest),
-        install_fingerprint=install_fingerprint(ctx, name),
+        manifest=manifest,
+        install_fingerprint=install_fingerprint(ctx, name, _built_by(manifest, ctx)),
         checks=read(layout.checks_file(where), ChecksRecord),
         check_fingerprint=fingerprints.check(env, package_dir(env.engine) if env.engine else None, checks.JUDGING),
         declared_checks=frozenset(c.id for c in env.checks),

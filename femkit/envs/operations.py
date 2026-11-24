@@ -245,7 +245,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
     checks.refusals(ctx, cpu)
     if state is EnvState.unchecked and not clean:
         return [validate]
-    t = target(ctx, name, f.install_fingerprint)
+    t = target(ctx, name)
     if t.env.proven_toolchain and t.env.proven_toolchain.mpi:
         settings.launcher(ctx, f"{name}'s toolchain check runs MPI on {toolchain.RANKS} ranks")
     cuda_builds = [b.id for b in t.env.builds if b.cuda_architectures]
@@ -254,7 +254,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
                       (view.command(CONFIG_SET, key="build.cuda_architectures",
                                     fills=[view.Fill(field="value", label="the GPUs' architectures", example='["80"]')]),))
     fingerprint, finished = last_operation(name)
-    resume = state is EnvState.incomplete and not clean and fingerprint == f.install_fingerprint
+    resume = state is EnvState.incomplete and not clean and fingerprint == t.install_fingerprint
     remove_first = f.prefix_kind != "absent" and not resume
     steps = plan_steps(t, remove_first=remove_first, discard_lock=clean)
     if resume:  # the toolchain check proves this machine, which a resume may not be on: it runs again
@@ -287,9 +287,9 @@ class EnvInstall:
             mine = tuple(s.model_copy(update={"id": s.id.split("/", 1)[1]}) for s in plan.steps if s.id.startswith(f"{name}/"))
             env_status, where, killed, outcomes, validated = "done", None, [], [], None
             if mine:
+                t = target(ctx, name)
                 sub = plan.model_copy(update={"subjects": (layout.subject(name),), "steps": mine,
-                                              "basis": {"install_fingerprint": f.install_fingerprint}})
-                t = target(ctx, name, f.install_fingerprint)
+                                              "basis": {"install_fingerprint": t.install_fingerprint}})
 
                 def do(step, where):
                     nonlocal outcomes, validated

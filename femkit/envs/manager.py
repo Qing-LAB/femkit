@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from femkit.core import dirs, process, view
+from femkit.core import dirs, persist, process, view
 from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.core.schema import render
@@ -28,10 +28,18 @@ class Manager:
     path: Path
     kind_name: str
     kind: ManagerKind
-    # The invocation's variables: the manager's own commands run with them, and a command inside a
-    # prefix is cut from them (§ 4.4) — one source for every command this manager starts.
-    environment: dict[str, str] = field(compare=False, repr=False)
+    # The invocation's variables, from which every command this manager starts takes its own (§ 4.4).
+    base: Mapping[str, str] = field(compare=False, repr=False)
     printed: dict = field(default_factory=dict, compare=False, repr=False)  # a query's command -> what it printed
+
+    @property
+    def environment(self) -> dict[str, str]:
+        """The variables its commands run with, in femkit's own places — made now, as a command
+        is about to start; looking at an environment or planning makes none of them."""
+        variables = in_femkit_places(self.base)
+        for name in ("HOME", "CONDA_PKGS_DIRS", "TMPDIR"):
+            persist.make_folder(Path(variables[name]))
+        return variables
 
     def argv(self, template: list[str], **values: str) -> list[str]:
         return [render(arg, {"exe": str(self.path), **values}) for arg in template]
@@ -122,25 +130,28 @@ def in_femkit_places(base: Mapping[str, str]) -> dict[str, str]:
     cache, list of environments and temporary files in femkit's cache, never in the person's
     home or the system's temporary folder, and none of the person's own configuration read."""
     home, packages, tmp = (dirs.cache_dir() / d for d in ("manager-home", "pkgs", "tmp"))
-    for folder in (home, packages, tmp):
-        folder.mkdir(parents=True, exist_ok=True)
     return {**{k: v for k, v in base.items() if k not in PERSONS_OWN}, "HOME": str(home),
             "CONDA_PKGS_DIRS": str(packages), "CONDA_REGISTER_ENVS": "false", "TMPDIR": str(tmp)}
 
 
-def resolve(ctx: Context) -> Manager:
-    """The manager: FEMKIT_ENV_MANAGER (set by the install script), else the variable the
-    manager's activation sets (envs.md § 7.1). Refused when none names a known kind."""
+def named(ctx: Context) -> str | None:
+    """The manager the invocation names: FEMKIT_ENV_MANAGER (set by the install script), else the
+    first variable a manager's activation sets that names one femkit has a kind file for, so a
+    mamba beside conda is passed over (envs.md § 7.1); None when none is named."""
     kinds = catalogue.load_managers()
     activated = [ctx.env[v] for v in ACTIVATION_VARIABLES if ctx.env.get(v)]
-    # The variable the install script set wins; else the first activation variable naming a
-    # manager femkit has a kind file for (envs.md § 7.1), so a mamba beside conda is passed over.
-    named = ctx.env.get(VARIABLE) or next((v for v in activated if Path(v).name in kinds), None) \
+    return ctx.env.get(VARIABLE) or next((v for v in activated if Path(v).name in kinds), None) \
         or next(iter(activated), None)
-    if not named:
+
+
+def resolve(ctx: Context) -> Manager:
+    """The manager the invocation names, to run its commands; refused when none names a known kind."""
+    kinds = catalogue.load_managers()
+    named_here = named(ctx)
+    if not named_here:
         raise Unstated("no package manager is named: run femkit in the activated control environment, "
                       "or through scripts/install-env.sh", (view.shell("bash scripts/install-env.sh list"),))
-    path = Path(named)
+    path = Path(named_here)
     if path.name not in kinds:
         raise UsageError(f"{path} is a manager femkit has no kind file for (it has: {', '.join(sorted(kinds))})")
-    return Manager(path, path.name, kinds[path.name], in_femkit_places(ctx.env))
+    return Manager(path, path.name, kinds[path.name], ctx.env)

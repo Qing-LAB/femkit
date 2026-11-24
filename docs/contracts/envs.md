@@ -71,7 +71,7 @@ declares them ([`definitions.md`](definitions.md) § 6). No command sets
 
 | fingerprint | covers | when it changes |
 |---|---|---|
-| **install** | the environment's packages, sources and builds; the Python minor and channels (`control.txt`, `channels.txt`); `build.cuda_architectures` when a build has `cuda_architectures = true`; the manager kind | the environment is `outdated` and must be rebuilt |
+| **install** | the environment's packages, sources and builds; the Python minor and channels (`control.txt`, `channels.txt`); `build.cuda_architectures` when a build has `cuda_architectures = true`; the manager kind — read, for an installed environment, as its manifest records the manager that built it, so another manager named now leaves it as built, and an install records the kind of the manager that runs it | the environment is `outdated` and must be rebuilt |
 | **check** | the environment's checks and agreements, its thread and fixed variables, the files of its engine package, and the shared code that runs and judges checks (`femkit/envs/checks.py`, and every module directly in `femkit/engines/` — a new one included — but the toolchain's program, which checks nothing) | its check results no longer count; it is `unchecked` until validated |
 
 `build.jobs` and anything else that changes how fast, not what, is outside both.
@@ -112,7 +112,8 @@ flowchart LR
 
 ### 3.1 Facts
 
-All are read from disk; observing starts no process and needs no network.
+All are read from disk; observing starts no process, needs no network and no
+package manager named, and writes nothing.
 
 | fact | read from |
 |---|---|

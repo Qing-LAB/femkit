@@ -64,15 +64,18 @@ class Target:
         return layout.lock_file(self.name, self.install_fingerprint)
 
 
-def target(ctx: Context, name: str, install_fingerprint: str) -> Target:
-    from femkit.envs.state import definition
+def target(ctx: Context, name: str) -> Target:
+    """An install of ``name`` by the manager the invocation names, fingerprinted as that manager
+    builds it — what its manifest records."""
+    from femkit.envs.state import definition, install_fingerprint
     cat = catalogue.load(ctx)
     config = settings.load(ctx).config
+    m = resolve(ctx)
     return Target(
-        name=name, env=definition(ctx, name), prefix=layout.prefix(ctx, name), manager=resolve(ctx),
+        name=name, env=definition(ctx, name), prefix=layout.prefix(ctx, name), manager=m,
         channels=cat.control.channels, python_minor=cat.control.python_minor,
         cuda_architectures=config.build.cuda_architectures, jobs=config.build.jobs or len(os.sched_getaffinity(0)),  # config.md § 3.1
-        install_fingerprint=install_fingerprint,
+        install_fingerprint=install_fingerprint(ctx, name, m.kind_name),
         launcher=config.launch.mpi,
     )
 

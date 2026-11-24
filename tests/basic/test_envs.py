@@ -12,7 +12,8 @@ from femkit.core.locks import subject_lock
 from femkit.core.operations import Context
 from femkit.core.persist import write_json
 from femkit.definitions.models import Check
-from femkit.envs import layout, state as state_module
+from femkit.core import dirs
+from femkit.envs import layout, manager, state as state_module
 from femkit.envs.manager import resolve
 from femkit.envs.operations import EnvClean
 from femkit.jobs.setup import doctor
@@ -96,6 +97,18 @@ def test_installed_states_follow_the_fingerprints_and_every_cpu_check(setup, exp
     assert state() is expected
     if expected in (EnvState.failing, EnvState.ready):
         assert facts(ctx(), NAME).gpu == gpu
+
+
+def test_an_environment_is_looked_at_with_no_manager_named_and_as_the_manager_that_built_it(monkeypatch):
+    """Fails if looking at an environment needs a package manager named, writes anything, or reads
+    one built by a manager as out of date because another is named now (envs.md §§ 2, 3.1)."""
+    installed(outcomes=[passed("cpu")])
+    for variable in (*manager.ACTIVATION_VARIABLES, manager.VARIABLE):
+        monkeypatch.delenv(variable, raising=False)
+    assert state() is EnvState.ready
+    assert not any(dirs.cache_dir().iterdir())                    # no manager folder made by looking
+    monkeypatch.setenv(manager.VARIABLE, "/opt/mamba/bin/mamba")
+    assert state() is EnvState.ready
 
 
 def test_a_held_lock_reads_busy_and_refuses_every_action():
