@@ -22,11 +22,11 @@ from femkit.core import dirs, locks, persist, text, view
 from femkit.core.errors import PlanStale, Refused, UsageError
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import open_private, private_dir
-from femkit.core.process import GRACE, Identity, end, start_detached, tail
+from femkit.core.process import GRACE, TAIL_LINES, Identity, end, start_detached, tail
 from femkit.core.schema import DefinitionError, Model
 from femkit.definitions import catalogue
 from femkit.server import health, protocol, supervisor
-from femkit.server.protocol import LOOPBACK, Listen, event_line
+from femkit.server.protocol import LOOPBACK, Listen
 from femkit.server.state import MACHINE, ServerState, facts, require
 from femkit.config.requests import CONFIG_SHOW
 from femkit.envs.requests import ENV_INSTALL
@@ -40,8 +40,12 @@ STOP_WAIT = GRACE + 5.0
 # ------------------------------------------------------------------ requests
 
 def _target(req: TargetRequest | StatusRequest) -> Listen:
-    """The server a request names: on the socket, or on its port."""
-    return Listen.unix() if req.socket else Listen(port=req.port)
+    """The server a request names: on the socket, or on its port — never both, a stated
+    port never dropped."""
+    if req.socket and req.port is not None:
+        raise UsageError(f"--socket names the server on the Unix socket, --port {req.port} one on TCP: give one",
+                         code="socket-and-port", subject="port")
+    return Listen.unix() if req.socket else Listen(port=req.port or DEFAULT_PORT)
 
 
 def _holds(listen: Listen) -> tuple[str, list[dict]]:
@@ -87,18 +91,19 @@ def web_python(ctx: Context) -> str:
 
 
 def _preflight(listen: Listen, ctx: Context) -> None:
-    """Everything `start` refuses, refused before it detaches (web.md § 4)."""
-    web_python(ctx)
-    private_dir(dirs.runtime_dir())
-    if listen.socket and len(listen.socket.encode()) > protocol.SOCKET_PATH_MAX:
-        raise UsageError(f"the socket's path is longer than a Unix socket's {protocol.SOCKET_PATH_MAX} bytes: "
-                         f"{listen.socket}", (view.shell("export FEMKIT_RUNTIME_DIR=/a/shorter/path"),),
-                         code="socket-path-too-long", subject=listen.socket)
+    """Everything `start` refuses, refused before it detaches (web.md § 4): first what a fresh
+    child meets first, config.toml, which everything after it reads."""
     try:
         settings.load(ctx, fresh=True)
-    except (DefinitionError, OSError) as exc:  # what a fresh child would meet reading it
+    except (DefinitionError, OSError) as exc:
         raise Refused(f"config.toml does not load, so the server could not start: {exc}",
                       (view.command(CONFIG_SHOW),), code="config-does-not-load", subject="config.toml") from None
+    web_python(ctx)
+    private_dir(dirs.runtime_dir(), make=False)   # made by the apply, never by a plan
+    if listen.socket and len(listen.socket.encode()) > protocol.SOCKET_PATH_MAX:
+        raise UsageError(f"the socket's path is longer than a Unix socket's {protocol.SOCKET_PATH_MAX} bytes: "
+                         f"{listen.socket}", (view.shell(f"export {dirs.VARIABLES['runtime']}=/a/shorter/path"),),
+                         code="socket-path-too-long", subject=listen.socket)
 
 
 def _clear_left_socket(path: Path) -> None:
@@ -107,13 +112,13 @@ def _clear_left_socket(path: Path) -> None:
     if not path.exists() and not path.is_symlink():
         return
     if not stat.S_ISSOCK(path.lstat().st_mode):
-        raise Refused(f"{path} is in the way and is not a socket; remove it, or set FEMKIT_RUNTIME_DIR",
+        raise Refused(f"{path} is in the way and is not a socket; remove it, or set {dirs.VARIABLES['runtime']}",
                       code="not-a-socket", subject=str(path))
     probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         probe.connect(str(path))
     except (ConnectionRefusedError, FileNotFoundError):
-        path.unlink(missing_ok=True)
+        persist.remove(path)
         return
     finally:
         probe.close()
@@ -239,9 +244,12 @@ def _outcome(plan: Plan, status: str, where: Path, listen: Listen, token: str | 
 # ------------------------------------------------------------------ start and foreground
 
 def _start_basis(req: ServeRequest, ctx: Context, held: bool) -> dict:
-    """Where it would listen, and that server's state: what a start rests on."""
+    """Where it would listen, that server's state, and the state of the environment it runs
+    in: what a start rests on."""
+    from femkit.envs.state import observe
     listen = _listen(req, ctx)
-    return {"state": MACHINE.observe(facts(listen.name, mine=held)).value, "listen": listen.as_json()}
+    return {"state": MACHINE.observe(facts(listen.name, mine=held)).value, "listen": listen.as_json(),
+            WEB: observe(ctx, WEB)[1].value}
 
 
 def _start_plan(req: ServeRequest, ctx: Context, detached: bool) -> Plan:
@@ -285,7 +293,6 @@ class ServeStart:
         return _start_basis(req, ctx, held)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
-        req = ServeRequest.model_validate(plan.request)
         # the runner holds the server's lock (subject "plan")
         listen, f = _started(plan)
         held: dict = {}
@@ -295,15 +302,15 @@ class ServeStart:
                 for line in _end_stale(f):
                     observer.note(line)
             elif step.id == "listen":
+                private_dir(dirs.runtime_dir())
                 held["socket"] = _bind(listen)
             elif step.id == "token":
                 held["token"] = _write_token(listen)
             elif step.id == "supervise":
                 sock, lock_fd = held["socket"], locks.held_fd(protocol.subject(listen.name))
                 use_fd = locks.held_fd(_web_subject())
-                argv = supervisor.argv(sys.executable, web_python(ctx), listen,
-                                       {"socket": sock.fileno(), "lock": lock_fd, "use": use_fd},
-                                       json.dumps(_holds(listen)), req.log_max_mb * 1024 * 1024, req.log_keep)
+                fds = {"<socket>": str(sock.fileno()), "<lock>": str(lock_fd), "<use>": str(use_fd)}
+                argv = [fds.get(a, a) for a in step.argv]   # the plan's command, its descriptors now known
                 held["supervisor"] = start_detached(argv, keep_fds=(sock.fileno(), lock_fd, use_fd), cwd=dirs.checkout(),
                                                     log=protocol.supervisor_log(listen.name))
                 sock.close()  # the supervisor holds it now
@@ -312,7 +319,7 @@ class ServeStart:
                 observer.note(said)
                 if not ok:
                     for log in (protocol.supervisor_log(listen.name), protocol.log_file(listen.name)):
-                        for line in (tail(log, 15) if log.exists() else []):
+                        for line in (tail(log, TAIL_LINES) if log.exists() else []):
                             observer.note(f"  {line}")
                     return "failed", protocol.log_file(listen.name)
             return "done", None
@@ -362,13 +369,14 @@ class ServeForeground:
                 for line in _end_stale(f):
                     observer.note(line)
             elif step.id == "listen":
+                private_dir(dirs.runtime_dir())
                 held["socket"] = _bind(listen)
             elif step.id == "token":
                 held["token"] = _write_token(listen)
             elif step.id == "supervise":
                 for subject in (protocol.subject(listen.name), _web_subject()):  # the runner's holds, named as the server
                     locks.adopt(locks.held_fd(subject), *_holds(listen))
-                code = supervisor.supervise(listen, held["socket"].fileno(), web_python(ctx),
+                code = supervisor.supervise(listen, held["socket"].fileno(), step.argv[0],  # the plan's Python
                                             log_max_bytes=req.log_max_mb * 1024 * 1024,
                                             log_keep=req.log_keep, echo=sys.stdout.buffer,
                                             on_child=announce)
@@ -389,7 +397,7 @@ class ServeForeground:
 def _child_locks(f, force: bool, verb: view.Verb) -> None:
     """Refused while the child holds an operation's lock, unless forced, naming each."""
     child = f.pidfile.child if f.pidfile else None
-    if child is None or force:
+    if child is None or force or not child.alive():   # a process ID alone names no child: its start time too
         return
     own = protocol.subject(f.name)  # the kernel names the process that took a lock; the server's was taken by `start`
     held = sorted(s for s, pid in locks.holders().items() if pid == child.pid and s != own)
@@ -405,7 +413,7 @@ def _signal(f, sig: int) -> Identity:
     who = f.pidfile.supervisor
     if not who.alive():
         raise PlanStale("the supervisor ended since the plan; plan again", (view.command(SERVE_STATUS),),
-                        subject=f.name)
+                        code="supervisor-ended", subject=f.name)
     os.kill(who.pid, sig)
     return who
 
@@ -450,7 +458,7 @@ class ServeRestart:
         return _outcome(plan, status, where, listen, token if status == "done" else None)
 
 
-@operation(SERVE_STOP, result=ServeOutcome, changes=True)
+@operation(SERVE_STOP, result=ServeOutcome, changes=True, subject="plan")
 class ServeStop:
     """Stop the server: its child, then its supervisor; the pidfile, the token and the
     socket go with them."""
@@ -463,12 +471,13 @@ class ServeStop:
         if state is ServerState.stopped:
             steps = ()
         elif state is ServerState.stale:
-            steps = (Step(id="clean", describe="remove the stale server's files, ending a child it left"),)
+            return Plan(subjects=(protocol.subject(name),),   # free since its supervisor ended: held while cleaning
+                        steps=(Step(id="clean", describe="remove the stale server's files, ending a child it left"),))
         else:
             _child_locks(f, req.force, SERVE_STOP)
             steps = (Step(id="signal", describe=f"stop the supervisor, pid {f.pidfile.supervisor.pid} (SIGTERM)"),
                      Step(id="gone", describe="wait until it has ended and released its lock"))
-        return Plan(steps=steps)
+        return Plan(steps=steps)   # the running supervisor holds the server's lock
 
     def observe(self, req: TargetRequest, ctx: Context, held: bool) -> dict:
         """The server's state: what a stop does depends on it."""
@@ -555,12 +564,6 @@ def _row(name: str) -> ServerRow:
         token = _read_token(name)
         ok, said = health.ask(p.listen, token or "") if token else (False, "its token file is gone")
         row = row.model_copy(update={"answers": ok, "said": said})
-        if not ok:
-            try:
-                with open_private(protocol.log_file(name), "ab") as fh:
-                    fh.write(event_line("status", f"up, pid {p.supervisor.pid}, but not answering: {said}").encode())
-            except OSError:
-                pass
     return row
 
 

@@ -183,19 +183,27 @@ def _replaceable_by_others(info: os.stat_result) -> bool:
     return bool(info.st_mode & stat.S_IWOTH) or bool(info.st_mode & stat.S_IWGRP and not _own_group(info.st_gid))
 
 
-def private_dir(path: Path) -> Path:
+def private_dir(path: Path, *, make: bool = True) -> Path:
     """``path``, made if absent — each folder made here 0700 — and entered by this account
     alone. Refused, naming the folder, when it is another account's, or a folder above it
     lets another account replace what is inside: owned by another account, or writable by
-    others and not sticky (a group's write counts unless the group is this account's own)."""
+    others and not sticky (a group's write counts unless the group is this account's own).
+    ``make=False``: only the refusals, nothing made or changed — what a plan checks."""
     path = Path(path)
     missing = [p for p in [path, *path.parents] if not p.exists()]
+    if not make:
+        if missing and missing[-1].parent.exists():
+            for above in [missing[-1].parent.resolve(), *missing[-1].parent.resolve().parents]:
+                if _replaceable_by_others(above.stat()):
+                    raise UsageError(f"{above} lets other accounts replace what is inside it, so {path} below it "
+                                     "cannot be kept private", code="not-private", subject=str(path))
+            return path
     for folder in reversed(missing):
         folder.mkdir(mode=PRIVATE_DIR)
     info = path.lstat()
     if stat.S_ISLNK(info.st_mode) or info.st_uid != os.getuid():
         raise UsageError(f"{path} is not a folder of this account's own", code="not-private", subject=str(path))
-    if info.st_mode & 0o077:
+    if info.st_mode & 0o077 and make:
         os.chmod(path, PRIVATE_DIR)
     for above in path.resolve().parents:
         if _replaceable_by_others(above.stat()):

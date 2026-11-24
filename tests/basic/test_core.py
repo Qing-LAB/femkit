@@ -11,7 +11,7 @@ from enum import Enum
 
 import pytest
 
-from tests.kit import hold
+from tests.kit import hold, refused
 from femkit.core import view
 from pydantic import Field
 from femkit.core.schema import Model
@@ -70,7 +70,7 @@ def test_a_second_holder_of_a_subject_is_refused_not_queued():
     """Fails if a second mutation of one subject waits or proceeds instead of being
     refused immediately (core.md § 5)."""
     with subject_lock("env-x"):
-        with pytest.raises(Busy):
+        with refused(Busy, "held", "env-x"):
             with subject_lock("env-x"):
                 pass
     with subject_lock("env-x"):  # released when the first holder left
@@ -92,12 +92,12 @@ def test_users_share_a_lock_and_a_change_is_refused_naming_each_and_what_ends_it
     users = [hold("env-x", "shared"), hold("env-x", "shared")]
     try:
         assert not is_held("env-x")                         # a use is not a change
-        with pytest.raises(Busy) as caught:
+        with refused(Busy, "held", "env-x") as caught:
             with subject_lock("env-x"):
                 pass
         assert str(caught.value).count("a user of env-x") == 2 and [n.command for n in caught.value.next] == ["end it"]
         assert "long gone" not in str(caught.value)            # a holder that ended is not named
-        with pytest.raises(Busy):
+        with refused(Busy, "held", "env-x"):
             require_free("env-x")
         with subject_lock("env-x", shared=True):            # one more user
             pass
@@ -108,7 +108,7 @@ def test_users_share_a_lock_and_a_change_is_refused_naming_each_and_what_ends_it
     changer = hold("env-x", "alone")
     try:
         assert is_held("env-x")
-        with pytest.raises(Busy):
+        with refused(Busy, "held", "env-x"):
             with subject_lock("env-x", shared=True):
                 pass
     finally:

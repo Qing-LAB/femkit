@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-TAIL_LINES = 40   # a step's last lines, as a surface shows a running step's live line
+TAIL_LINES = 40   # a log's last lines, as every surface shows a step's or a server's (core.md § 8)
 GRACE = 5.0       # seconds between SIGTERM and SIGKILL, for every process femkit stops
 
 

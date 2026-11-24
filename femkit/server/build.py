@@ -22,6 +22,7 @@ from femkit.core.process import run
 from femkit.envs import layout
 from femkit.envs.manager import confined, resolve
 from femkit.envs.state import EnvState, observe
+from femkit.definitions.requests import DOCS_SUBJECT
 from femkit.server.requests import BuildRequest
 from femkit.envs.requests import ENV_INSTALL
 from femkit.server.requests import WEB_BUILD
@@ -123,16 +124,19 @@ class WebBuild:
                        argv=tuple(m.in_prefix(prefix, ["npm", "run", "build"]))),
                   Step(id="ship", describe=f"write the bundle, build.json and its licenses into "
                                            f"{text.path(static_dir())}")]
-        return Plan(shared=(layout.subject(TOOL),), steps=tuple(steps))   # the environment it builds with, in use
+        return Plan(shared=(layout.subject(TOOL), DOCS_SUBJECT),   # the environment it builds with, and the files
+                    steps=tuple(steps))                               # `schema docs` generates for it, in use
 
     def observe(self, req: BuildRequest, ctx: Context, held: bool) -> dict:
-        """The declared sources of frontend/ as they are now: what the bundle is built from."""
-        return {"sources": sources_hash(source_dir())["sha256"]}
+        """The declared sources of frontend/ as they are now — what the bundle is built from —
+        and the state of the environment it is built with."""
+        return {"sources": sources_hash(source_dir())["sha256"], TOOL: observe(ctx, TOOL)[1].value}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> BuildOutcome:
         m, work = resolve(ctx), work_root() / "work"
         env = npm_environment(m.environment)
         written: list[str] = []
+        built_from: dict = {}
 
         def do(step: Step, where: Path):
             log = where / f"{step.id}.log"
@@ -140,14 +144,16 @@ class WebBuild:
                 persist.remove(work)
                 for rel in declared_sources(source_dir()):
                     persist.copy_file(source_dir() / rel, work / rel)
+                built_from.update(sources_hash(work))          # what the bundle is built from, before npm touches it
                 return "done", None
             if step.id == "ship":
-                return _ship(work, m, ctx, written), None
+                return _ship(work, m, ctx, written, built_from), None
             observer.step_log(log)
             result = run(list(step.argv), env=env, cwd=work, log=log)
             if step.id == "relock" and result.ok:
                 persist.copy_file(work / "package-lock.json", source_dir() / "package-lock.json")
                 written.append(str(source_dir() / "package-lock.json"))
+                built_from.update(sources_hash(work))          # the lock solved again is a source too
             return ("done" if result.ok else "failed"), log
 
         status, where = run_steps(plan, ctx, observer, do)
@@ -162,7 +168,7 @@ def _version(result) -> str:
     return f"not measured: {result.argv[-2]} --version " + ("printed nothing" if result.ok else f"exited {result.returncode}")
 
 
-def _ship(work: Path, m, ctx: Context, written: list[str]) -> str:
+def _ship(work: Path, m, ctx: Context, written: list[str], built_from: dict) -> str:
     """The bundle replaces femkit/web/static/ whole; build.json is written last."""
     prefix = layout.prefix(ctx, TOOL)
     versions = {tool: _version(run(m.in_prefix(prefix, [tool, "--version"]), env=confined(m.environment), timeout=60))
@@ -172,7 +178,7 @@ def _ship(work: Path, m, ctx: Context, written: list[str]) -> str:
     persist.copy_tree(work / "dist", fresh)
     atomic_write_text(fresh / "THIRD-PARTY-LICENSES.txt", licenses(work))
     persist.replace_folder(fresh, static)
-    write_json(static / "build.json", {"sources": sources_hash(source_dir()), "node": versions["node"],
+    write_json(static / "build.json", {"sources": built_from, "node": versions["node"],   # what was built
                                        "npm": versions["npm"], "bundle": bundle_hashes(static)})
     written += [str(p) for p in sorted(static.rglob("*")) if p.is_file()]
     return "done"

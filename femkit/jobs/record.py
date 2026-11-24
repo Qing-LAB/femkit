@@ -16,11 +16,12 @@ from femkit.config import settings
 from femkit.config.probe import Where
 from femkit.core import dirs, persist, text
 from femkit.core.errors import UsageError
-from femkit.core.schema import DefinitionError, Model, load_toml
+from femkit.core.schema import DefinitionError, Model, key_path, load_toml
+from femkit.jobs.requests import MACHINE_NAME
 
 SCHEMA = 1
 LOCAL = "local"  # always the machine the command runs on
-NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+NAME = re.compile(MACHINE_NAME)   # the request's own grammar: a name typed in a request or found as a file
 
 
 class Unknown(Model):
@@ -190,7 +191,7 @@ def settings_now(config: settings.UserConfig) -> Settings:
 def stale(record: Record, config: settings.UserConfig) -> list[str]:
     """The settings a record of this machine no longer shares with its config.toml (jobs.md § 9.3)."""
     now = settings_now(config)
-    return [f"{k}: recorded {getattr(record.settings, k)!r}, now {getattr(now, k)!r}"
+    return [f"{k}: recorded {text.show(getattr(record.settings, k))}, now {text.show(getattr(now, k))}"
             for k in Settings.model_fields if getattr(record.settings, k) != getattr(now, k)]
 
 
@@ -207,28 +208,28 @@ def status(file: Path, config: settings.UserConfig) -> tuple[str, str]:
 
 
 def unknowns(record: Record) -> list[tuple[str, str]]:
-    """Every fact the record holds as unknown: (dotted part, why)."""
+    """Every fact the record holds as unknown: (its key path, why)."""
     found: list[tuple[str, str]] = []
 
-    def walk(value: Any, where: str) -> None:
+    def walk(value: Any, where: tuple) -> None:
         if isinstance(value, dict):
             if set(value) == {"unknown"}:
-                found.append((where, value["unknown"]))
+                found.append((key_path(where), value["unknown"]))
                 return
             for k, v in value.items():
-                walk(v, f"{where}.{k}" if where else str(k))
+                walk(v, (*where, k))
         elif isinstance(value, list):
             for i, v in enumerate(value):
-                walk(v, f"{where}[{i}]")
+                walk(v, (*where, i))
 
-    walk(record.data(), "")
+    walk(record.data(), ())
     return found
 
 
 def differences(old: Record, new: Record) -> list[str]:
     """What changed, part by part, leaving out when it was measured."""
     a, b = _flat(old.data()), _flat(new.data())
-    skip = ("measured.", "sources.")
+    skip = ("measured.", "sources.")   # key paths, as core writes them
     return [f"{k}: {_shown(a, k)} -> {_shown(b, k)}"
             for k in sorted(set(a) | set(b)) if not k.startswith(skip) and a.get(k) != b.get(k)]
 
@@ -241,14 +242,14 @@ def _shown(flat: dict[str, Any], key: str) -> str:
     return f"unknown ({value['unknown']})" if isinstance(value, dict) and set(value) == {"unknown"} else text.show(value)
 
 
-def _flat(value: Any, where: str = "") -> dict[str, Any]:
-    """Every value of a record at its dotted address; a list's items at their index — a queue
-    is `queues.0.max_time` — so a change names the one value that changed."""
+def _flat(value: Any, where: tuple = ()) -> dict[str, Any]:
+    """Every value of a record at its key path; a list of tables' items at their index — a queue
+    is `queues[0].max_time` — so a change names the one value that changed."""
     items = value.items() if isinstance(value, dict) and set(value) != {"unknown"} else \
         enumerate(value) if isinstance(value, list) and value and isinstance(value[0], dict) else None
     if not items:
-        return {where: value}
+        return {key_path(where): value}
     out: dict[str, Any] = {}
     for k, v in items:
-        out.update(_flat(v, f"{where}.{k}" if where else str(k)))
+        out.update(_flat(v, (*where, k)))
     return out

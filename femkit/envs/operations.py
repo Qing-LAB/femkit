@@ -17,10 +17,10 @@ from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.schema import Model
 from femkit.definitions import catalogue
-from femkit.envs import checks, layout, toolchain
+from femkit.envs import checks, layout, manager, toolchain
 from femkit.envs.manager import resolve
 from femkit.envs.records import CheckOutcome
-from femkit.envs.state import INSTALLED, MACHINE, EnvState, definition, facts, observe
+from femkit.envs.state import INSTALLED, MACHINE, EnvState, definition, facts, install_fingerprint, observe
 from femkit.envs.requests import ListRequest, CleanRequest, LogRequest, InstallRequest, ValidateRequest
 from femkit.config.requests import CONFIG_SET
 from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_LOG, ENV_VALIDATE
@@ -88,8 +88,8 @@ class EnvClean:
         if MACHINE.require(state, "clean", req.name).verb is None:
             return Plan()
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
-        manager = resolve(ctx)
-        argv = tuple(manager.remove(f.prefix, catalogue.load_control().channels))
+        m = resolve(ctx)
+        argv = tuple(m.remove(f.prefix, catalogue.load_control().channels))
         return Plan(steps=(Step(id="remove", describe=f"remove {text.path(f.prefix)}", argv=argv),))
 
     def observe(self, req: CleanRequest, ctx: Context, held: bool) -> dict:
@@ -141,20 +141,21 @@ def _runs(name: str) -> list[Path]:
     return sorted(root.glob(f"*/{eventlog.FILE}")) if root.exists() else []
 
 
-def last_operation(name: str) -> tuple[str | None, frozenset[str]]:
-    """The newest operation's install fingerprint, and every step that finished in the
-    unbroken run of operations with that fingerprint — each resume continues the one
-    before it (envs.md § 4.2; core.md § 6)."""
+def last_install(name: str) -> tuple[str | None, frozenset[str]]:
+    """What a resume continues (envs.md § 4.2): the newest install's fingerprint, and every step
+    that finished in the unbroken run of unfinished installs with that fingerprint — each resume
+    continues the one before it. A validate between them is no install and breaks no run; an
+    install that ended done ends the run, and leaves nothing to resume."""
     fingerprint, finished = None, set()
     for run in reversed(_runs(name)):
-        events = EventLog(run).events()
-        start = next((e for e in events if e["kind"] == "operation-start"), {})
-        this = (start.get("basis") or {}).get("install_fingerprint")
-        if fingerprint is None:
-            fingerprint = this
-        if this != fingerprint:
+        state = fold(EventLog(run).events())
+        if state.operation != ENV_INSTALL.name:
+            continue
+        this = state.basis.get("install_fingerprint")
+        if state.outcome == "done" or (fingerprint is not None and this != fingerprint):
             break
-        finished |= set(fold(events).finished_steps)
+        fingerprint = this
+        finished |= set(state.finished_steps)
     return fingerprint, frozenset(finished)
 
 
@@ -227,9 +228,15 @@ def _not_ready(f, state: EnvState, outcomes) -> Issue:
 
 
 def _install_basis(ctx: Context, name: str, held: bool) -> dict:
-    """What an install of ``name`` rests on: its state, its install fingerprint and its place."""
+    """What an install of ``name`` rests on: its state, its install fingerprint, its place, the
+    saved lock it would create from, and the earlier install it would resume."""
     f, state = observe(ctx, name, holding_lock=held)
-    return {"state": state.value, "install_fingerprint": f.install_fingerprint, "prefix": str(f.prefix)}
+    builds = Path(named).name if (named := manager.named(ctx)) else None
+    resumed, finished = last_install(name)
+    return {"state": state.value, "install_fingerprint": f.install_fingerprint, "prefix": str(f.prefix),
+            "launcher": settings.load(ctx).config.launch.mpi,   # in its toolchain check's and its checks' commands
+            "saved_lock": layout.lock_file(name, install_fingerprint(ctx, name, builds)).exists(),
+            "resume": {"install_fingerprint": resumed, "finished": sorted(finished)}}
 
 
 def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
@@ -254,7 +261,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
                       (view.command(CONFIG_SET, key="build.cuda_architectures",
                                     fills=[view.Fill(field="value", label="the GPUs' architectures", example='["80"]')]),),
                       code="setting-unset", subject="build.cuda_architectures")
-    fingerprint, finished = last_operation(name)
+    fingerprint, finished = last_install(name)
     resume = state is EnvState.incomplete and not clean and fingerprint == t.install_fingerprint
     remove_first = f.prefix_kind != "absent" and not resume
     steps = plan_steps(t, remove_first=remove_first, discard_lock=clean)
@@ -271,7 +278,10 @@ class EnvInstall:
     def plan(self, req: InstallRequest, ctx: Context) -> Plan:
         steps = [s.model_copy(update={"id": f"{name}/{s.id}", "describe": f"{name}: {s.describe}"})
                  for name in _requested(req) for s in _env_steps(ctx, name, req.clean)]
-        return Plan(steps=tuple(steps))
+        validated = {s.id.split("/", 1)[0] for s in steps if s.id.endswith("/validate")}
+        held = {name: [s.model_dump(mode="json") for s in checks.steps(
+            checks.runner(ctx, name), checks.selected(definition(ctx, name), gpu=False))] for name in sorted(validated)}
+        return Plan(holds={"checks": held}, steps=tuple(steps))   # what each validate runs, shown with the plan
 
     def observe(self, req: InstallRequest, ctx: Context, held: bool) -> dict:
         """Each requested environment's install basis: every one re-observed before any is touched."""
@@ -296,7 +306,7 @@ class EnvInstall:
                     nonlocal outcomes, validated
                     if step.id == "validate":  # envs.md § 4.1: its own operation, shown under this step
                         ran, validated, outcomes = checks.run_validation(
-                            ctx, name, False, tuple(checks.steps(checks.selected(definition(ctx, name), gpu=False))),
+                            ctx, name, False, tuple(Step.model_validate(s) for s in plan.holds["checks"][name]),
                             observer)
                         return ran, validated  # done once every check ran, whatever its verdict
                     outcome, log = run_step(t, step, where, observer.note, observer.step_log)
@@ -340,9 +350,10 @@ class EnvValidate:
     """Run an environment's checks and record whether it is ready (envs.md § 5)."""
 
     @staticmethod
-    def _basis(f, state) -> dict:
+    def _basis(f, state, ctx: Context) -> dict:
         return {"state": state.value, "install_fingerprint": f.install_fingerprint,
-                "check_fingerprint": f.check_fingerprint, "prefix": str(f.prefix)}
+                "check_fingerprint": f.check_fingerprint, "prefix": str(f.prefix),
+                "launcher": settings.load(ctx).config.launch.mpi}   # in the checks' commands
 
     def plan(self, req: ValidateRequest, ctx: Context) -> Plan:
         f, state = observe(ctx, req.name)
@@ -359,11 +370,11 @@ class EnvValidate:
         MACHINE.require(state, "validate --gpu" if req.gpu else "validate", req.name)  # envs.md § 3.3
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         checks.refusals(ctx, chosen)
-        return Plan(steps=tuple(checks.steps(chosen)))
+        return Plan(steps=tuple(checks.steps(checks.runner(ctx, req.name), chosen)))
 
     def observe(self, req: ValidateRequest, ctx: Context, held: bool) -> dict:
         f, state = observe(ctx, req.name, holding_lock=held)
-        return self._basis(f, state)
+        return self._basis(f, state, ctx)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ValidateOutcome:
         req = ValidateRequest.model_validate(plan.request)

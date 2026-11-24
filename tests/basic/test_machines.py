@@ -11,9 +11,8 @@ import tomllib
 
 import pytest
 
-from tests.kit import a_record
+from tests.kit import a_record, apply, planned, refused, run
 from femkit.config import settings
-from femkit.config.operations import ConfigInit, ConfigSet
 from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import write_toml
@@ -21,7 +20,6 @@ from femkit.core.schema import DefinitionError, validate
 from femkit.definitions.catalogue import CatalogueError, load_schedulers
 from femkit.definitions.models import SchedulerKind
 from femkit.jobs import record
-from femkit.jobs.operations import JobProbe, job_machines
 from femkit.jobs.record import Unknown
 
 
@@ -55,7 +53,7 @@ def test_job_machines_lists_every_record_marking_one_that_does_not_load():
     record.write(record.path("cluster-a"), a_record())
     broken = record.path("cluster-b")
     broken.write_text("schema = 1\nidentity = \n")
-    rows = {r.name: r.status for r in job_machines.run(job_machines.request(), Context.from_process()).rows}
+    rows = {r.name: r.status for r in run("job.machines").rows}
     assert rows == {"cluster-a": "ok", "cluster-b": "does not load"}
 
 
@@ -65,32 +63,33 @@ def test_only_a_record_of_this_machine_is_compared_with_its_config(identity):
     """Fails if `local` is not marked stale when this machine's settings changed, or if
     another machine's record is compared with this machine's config.toml — two identities
     neither probe could read name no machine (jobs.md § 9.3)."""
+    apply("config.init", no_preamble=True, cuda_architectures=["80"], mpi=["mpirun", "-np", "{ranks}"])
     ctx = Context.from_process()
-    ConfigInit.apply(ConfigInit.plan(ConfigInit.request.model_validate(
-        {"no_preamble": True, "cuda_architectures": ["80"], "mpi": ["mpirun", "-np", "{ranks}"]}), ctx), ctx)
     here = record.settings_now(settings.load(ctx, fresh=True).config)
     record.write(record.path("local"), a_record(identity=identity, settings=here.model_dump(exclude_none=True)))
     other = identity if isinstance(identity, dict) else "cluster-a"
     record.write(record.path("cluster-a"), a_record(identity=other))  # not this machine's settings: never compared
     ctx = Context.from_process()
-    assert {r.name: r.status for r in job_machines.run(job_machines.request(), ctx).rows} == {"cluster-a": "ok", "local": "ok"}
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.preamble", value='["module load y"]'), ctx), ctx)
+    assert {r.name: r.status for r in run("job.machines").rows} == {"cluster-a": "ok", "local": "ok"}
+    apply("config.set", key="activation.preamble", value='["module load y"]')
     ctx = Context.from_process()
-    assert {r.name: r.status for r in job_machines.run(job_machines.request(), ctx).rows} == {"cluster-a": "ok", "local": "stale"}
+    assert {r.name: r.status for r in run("job.machines").rows} == {"cluster-a": "ok", "local": "stale"}
 
 
 @pytest.mark.parametrize("fields, refusal", [
-    ({"write": True, "name": "local"}, UsageError),          # local is this machine's own record
-    ({"write": True}, Unstated),                              # activation.preamble unset
-    ({"set": ["partitions.p1.max_time=1:00:00"]}, UsageError),  # only command paths are declarable
-    ({"set": ["scheduler.commands.sumbit=/opt/x"], "scheduler": "slurm"}, UsageError),  # a role the kind has not
-    ({"name": "../elsewhere"}, UsageError),                   # a name is a file name, nothing more
+    ({"write": True, "name": "local"}, (UsageError, "reserved-name", "local")),     # local is this machine's own record
+    ({"write": True}, (Unstated, "setting-unset", "activation.preamble, activation.command")),  # the activation unset
+    ({"set": ["partitions.p1.max_time=1:00:00"]}, (UsageError, "invalid-request", "job.probe")),  # only command paths
+    ({"set": ["scheduler.commands.submit"]}, (UsageError, "invalid-request", "job.probe")),        # not KEY=VALUE
+    ({"set": ["scheduler.commands.sumbit=/opt/x"], "scheduler": "slurm"}, (UsageError, "no-such-role", "scheduler.commands.sumbit")),
+    ({"name": "../elsewhere"}, (UsageError, "invalid-request", "job.probe")),     # a name is a file name, nothing more
 ])
 def test_the_probe_refuses_before_it_measures(fields, refusal):
     """Fails if `job probe` measures (and so starts outside programs — the tripwires catch
-    it) before refusing what it can tell from the request, the kind and config.toml (jobs.md § 9.2)."""
-    with pytest.raises(refusal):
-        JobProbe.plan(JobProbe.request.model_validate(fields), Context.from_process())
+    it) before refusing what it can tell from the request, the kind and config.toml — or if a
+    request its schema does not admit gets past the schema (jobs.md § 9.2, framework.md § 4)."""
+    with refused(*refusal):
+        planned("job.probe", **fields)
 
 
 @pytest.mark.parametrize("name, text, where", [
@@ -122,7 +121,7 @@ def test_a_scheduler_kind_its_reader_cannot_read_does_not_load(definitions, name
 def test_a_scheduler_kind_names_only_femkits_roles_and_its_submit_and_job_id(data):
     """Fails if a kind file loads with a role femkit does not know, or with commands but no
     submit command or no job-ID variable (jobs.md § 7)."""
-    with pytest.raises(DefinitionError):
+    with refused(DefinitionError, "definition-invalid", "kind.toml"):
         validate(SchedulerKind, data, "kind.toml")
 
 
@@ -177,4 +176,4 @@ def test_a_changed_record_names_each_value_that_changed_as_a_person_reads_it():
     new = a_record(queues=[queue], host={**old.data()["host"], "gpus": {"unknown": "nvidia-smi printed nothing"}})
     assert record.differences(old, new) == [
         "host.gpus: unknown (nvidia-smi not found on PATH) -> unknown (nvidia-smi printed nothing)",
-        "queues.0.max_time: 1-00:00:00 -> 2-00:00:00"]
+        "queues[0].max_time: 1-00:00:00 -> 2-00:00:00"]

@@ -18,13 +18,13 @@ def test_the_shipped_page_declaration_loads():
 
 
 @pytest.mark.parametrize("old, new, where", [
-    ('document = "model.graph"', 'document = "model.nowhere"', "workspaces.0.document"),   # no such operation
-    ('document = "model.graph"', 'document = "model.set"', "workspaces.0.document"),       # one that changes things
-    ('rows = "studies"', 'rows = "nothing"', "context.1.rows"),                            # no such field
-    ('value_key = "name"', 'value_key = "nowhere"', "context.2"),                          # no such row key
-    ('depends = ["project"]', 'depends = ["study"]', "context.1.depends"),                 # depends on itself
+    ('document = "model.graph"', 'document = "model.nowhere"', "workspaces[0].document"),   # no such operation
+    ('document = "model.graph"', 'document = "model.set"', "workspaces[0].document"),       # one that changes things
+    ('rows = "studies"', 'rows = "nothing"', "context[1].rows"),                            # no such field
+    ('value_key = "name"', 'value_key = "nowhere"', "context[2]"),                          # no such row key
+    ('depends = ["project"]', 'depends = ["study"]', "context[1].depends"),                 # depends on itself
     ('parameter = "variable"\n', "", "kinds"),                                               # a kind without its icon
-    ('rows = "studies"\n', 'rows = "studies"\nvalue_key = "name"\n', "context.1"),          # a key of rows that are no records
+    ('rows = "studies"\n', 'rows = "studies"\nvalue_key = "name"\n', "context[1]"),          # a key of rows that are no records
 ])
 def test_a_page_declaration_naming_what_does_not_exist_is_refused(definitions, old, new, where):
     """Fails if a declaration naming an operation that does not exist or changes things, a field

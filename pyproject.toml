@@ -2,7 +2,8 @@
 # never installed (docs/contracts/envs.md § 7).
 
 [tool.pytest.ini_options]
-testpaths = ["tests/basic"]   # plain `pytest` runs the basic tier; tools/testrun.py runs each tier (testing.md § 4)
+testpaths = ["tests/basic"]
+pythonpath = ["."]           # the checkout: femkit and tests/ import from it, with or without `python -m`   # plain `pytest` runs the basic tier; tools/testrun.py runs each tier (testing.md § 4)
 norecursedirs = [".git", ".test-progress", "*.egg-info"]
 addopts = "-ra"
 xfail_strict = true

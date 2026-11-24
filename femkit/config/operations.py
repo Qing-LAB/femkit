@@ -265,7 +265,7 @@ class ConfigInit:
     """Write config.toml from its template, adding only keys it lacks; never replaces a value."""
 
     def plan(self, req, ctx: Context) -> Plan:
-        present = settings.load(ctx).present()
+        present = settings.load(ctx, fresh=True).present()   # as its basis reads it: a plan made again after the questions sees a key set meanwhile
         given = _given(req)
         proposals = _proposals(ctx, given, present)
         values = {k: v for k, (v, _) in proposals.items()}

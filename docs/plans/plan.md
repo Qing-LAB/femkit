@@ -73,7 +73,8 @@ one line each:
 | when | what | by |
 |---|---|---|
 | every step | the unit against its contract, then its callers, then its domain; findings fixed; landed work removed from this plan | the author |
-| every milestone's end | its acceptance and its tier green, then the independent review on separate aspects | independent reviewers; the person agrees before work that depends on the milestone starts — milestones that depend on nothing run side by side |
+| every milestone's end | its acceptance and its tier green, then the independent review on separate aspects, and a review of the whole system | independent reviewers; the person agrees before work that depends on the milestone starts — milestones that depend on nothing run side by side |
+| before work that builds on existing code | a review of the whole system: every domain against its contract and the framework; each finding fixed, or scheduled at the start of the step that first works on its code | independent reviewers; the person agrees |
 | before a branch merges into `main` | the basic tier, the field tier where the change reaches it, and a consistency review of every merged document | the author; the person agrees |
 
 ## 3. Milestones
@@ -259,8 +260,9 @@ geometry script, meshing, solving — is milestone X, designed after R.
      tool's version — and citations corrected.
   2. **Refusals and the door.** `core.md` § 9's kinds complete, the missing
      statement `framework.md` § 4 refuses among them, and every bare `Refusal`
-     given its kind; a next step's shape needs nothing above the standard
-     library, so the supervisor loads no pydantic; one key-path formatter;
+     given its kind; the supervisor loads no pydantic nor any domain — proven
+     by what its entry point imports (a next step's shape, `Action`, stays a
+     model the supervisor never loads); one key-path formatter;
      every value a request or a file carries checked by its schema, with the
      registries handed to the loader — never an import-time assertion, a
      comment or a test standing in for it (generic readers, CMake options,
@@ -275,8 +277,11 @@ geometry script, meshing, solving — is milestone X, designed after R.
      observed, and core refuses a stale plan before any step runs, with its
      next step; a step carries what it runs, and apply runs that; a plan
      declares every subject it uses (`web build` holds `env-web`); `persist`
-     reads, lists, deletes, appends and swaps a folder atomically, and is the
-     only writer; observing writes nothing and needs no package manager.
+     reads, deletes, appends, makes and swaps a folder atomically, and is the
+     only writer beside core's own event and process logs; observing writes
+     nothing and needs no package manager. A step that runs one command
+     carries it; the queries a step makes to record what it found — a tool's
+     version — are not its command.
   5. **Definitions found one way, listed once.** A test points femkit at
      definitions of its own with `FEMKIT_DEFINITIONS_DIR`, never by replacing a
      function; one table of definition types is read by the catalogue,
@@ -294,11 +299,34 @@ geometry script, meshing, solving — is milestone X, designed after R.
      leftover token file; a port dropped on a login node; `except Exception`
      hiding a defect; the runner reading a collecting run as unusable; each
      step log written twice; a defect answered as HTML by the server; the
-     supervisor ending when its child fails (the policy is the person's).
+     contract saying both that the supervisor waits for a restart when its
+     child fails and that it ends (it ends: the person's decision).
 
   Acceptance: the basic and web tiers green, each rule above with a test seen
   to fail without it; a review of the whole system finding nothing left in B's
   scope; the person's agreement before C.
+
+  The review of the whole system (2026-11-24) found more in B's scope, fixed
+  here with a test seen to fail for each — and what a later step reworks,
+  scheduled at its start:
+  - **C**: each loader builds its folder from the one table of definition
+    types, whose `files` are today only shown.
+  - **D**: the models domain's tests tell refusals apart by wording, and one
+    imports another test file; both go with the models code.
+  - **G**: the page declaration joins the one table of definition types; the
+    docs viewer's test points femkit at a checkout of its own by a variable,
+    not by replacing `dirs.checkout`; the request time limit is set for a test
+    by the server's own configuration, not by replacing `READ_TIMEOUT`; the
+    server log's rotation writes through `persist`.
+  - **X**: the test that no command in a prefix sees the shell's build
+    settings runs real steps, not a replaced `process.run`.
+  - **M3**: `job probe`'s plan makes no cache folder (with its read and write
+    kept apart).
+  - **M6**: the engines' version reader and the install's are one.
+  - No test can reach two rules through femkit's doors: `web build` recording
+    an empty `node --version` as not measured (no build runs in a tier), and
+    the configuration checks catching only a file that does not load (no door
+    makes `settings.load` fail otherwise).
 - **C. The framework.** `femkit/projects/` — the layout as data, names as
   paths and grouping folders, transactions and undo, addresses, opening a
   project part by part, naming a project by its path or the folder a command
@@ -756,14 +784,15 @@ approved as written:
 - A refusal carries a code and the subject it is about, as a finding does, so a
   script, the page and the tests tell refusals apart without reading their
   wording (`core.md` § 9).
+- When the web server's application exits by itself, its supervisor ends too,
+  removing its files: `status` shows the server stopped, and `serve start`
+  brings it back with a new token (`web.md` § 4).
+- A review of the whole system joins the review schedule, at every milestone's
+  end and before work that builds on existing code (§ 2;
+  `conventions.md` § 1, step 7).
 
 **Open, the person's** (the proposed answer in each contract):
 
-- **Before B:** whether a review of the whole
-  system joins the review schedule (§ 2) at every milestone's end and before
-  work that builds on existing code (proposed); whether the
-  web server's supervisor stays up when its application fails, to start the
-  fixed one at the next restart (proposed, `web.md` § 4), or ends.
 - **Before D:** results written in the vocabulary (proposed), or the
   vocabulary cut back to next steps and help; whether a next step carries the
   command line's text or each surface writes it.

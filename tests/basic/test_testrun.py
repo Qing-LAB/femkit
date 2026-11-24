@@ -189,3 +189,29 @@ def test_field_and_engine_run_in_one_process_even_in_part():
     assert testrun.select("field", [], 8)[2] == 1
     assert testrun.select("tests/engine/test_x.py", [], 8) == (["tests/engine/test_x.py"], "custom", 1)
     assert testrun.select("basic", [], 8)[2] == 8
+
+
+def test_a_canary_sees_a_write_at_the_depth_femkit_writes(tmp_path):
+    """Fails if a canary's fingerprint misses a file added, rewritten or removed below the folder
+    it watches — a run that wrote there would pass as clean (testing.md § 2.2)."""
+    from tests.conftest import _shallow, _tree
+    run_folder = tmp_path / "operations" / "env-x"                 # two levels down, as a run's log is
+    run_folder.mkdir(parents=True)
+    log = run_folder / "events.jsonl"
+
+    def measured_at_the_start(fingerprint):                         # long before the run writes: an earlier time
+        for path in (log, run_folder):
+            if path.exists():
+                os.utime(path, (1, 1))
+        return fingerprint(tmp_path)
+
+    for fingerprint in (_shallow, _tree):
+        before = measured_at_the_start(fingerprint)
+        log.write_text(f"{fingerprint.__name__}\n")
+        assert fingerprint(tmp_path) != before, "a file added"
+        before = measured_at_the_start(fingerprint)
+        log.write_text("rewritten\n")
+        assert fingerprint(tmp_path) != before or fingerprint is _shallow, "a file rewritten"   # _shallow: its folder's time
+        before = measured_at_the_start(fingerprint)
+        log.unlink()
+        assert fingerprint(tmp_path) != before, "a file removed"

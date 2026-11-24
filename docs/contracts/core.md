@@ -17,7 +17,7 @@ types in `core/operations.py` are governed by [`api.md`](api.md).
 | A multi-step operation is an **append-only event log** folded for progress and resume; one atomic write, made last, commits it | 6 |
 | A **state machine** is one closed table: ordered observation rules ending in `otherwise`, and the actions each state allows | 7 |
 | Every external command runs through **`process.run`** | 8 |
-| A refusal is one of six **`Refusal`** types (exit 2); any other exception is a defect or an unavailable system (exit 1) | 9 |
+| A refusal is one of seven **`Refusal`** types (exit 2); any other exception is a defect or an unavailable system (exit 1) | 9 |
 | A dimensional value is an **exact rational** in its dimension's canonical unit, read by one grammar from a unit table that is data | 11 |
 
 The core imports the standard library and declared third-party libraries
@@ -37,7 +37,7 @@ module reads no file, probes nothing and starts nothing.
 | `eventlog` | `EventLog`, its file's name, the record kinds, the step outcomes, and its fold | 6 |
 | `states` | `Machine`, `Rule`, `Action` | 7 |
 | `process` | `run`, `ProcessResult`, `tail` (a log's last lines), a process's `Identity`, the one stop grace | 8 |
-| `errors` | `Refusal` and its six kinds | 9 |
+| `errors` | `Refusal` and its seven kinds | 9 |
 | `issues` | `Issue` | 10 |
 | `units` | the unit table's schema, `Quantity`, `Units`: one grammar for a quantity, a unit and an expression of named quantities; conversion | 11 |
 | `text` | how a value, a path (from `~`), a count (`1 step`, `16 steps`), a table, a finding and a "next" block are shown | [`api.md`](api.md) § 4.4 |
@@ -73,8 +73,7 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   description; nothing restates it.
 - **Extra facts on a field** go in `json_schema_extra` under these names only:
   `unset` (what an unset optional key means, [`config.md`](config.md) § 3),
-  `declarable` (a machine fact `--set` may declare, [`jobs.md`](jobs.md)
-  § 9.2), `cli` (how the command line spells it, [`api.md`](api.md) § 4),
+  `cli` (how the command line spells it, [`api.md`](api.md) § 4),
   `placeholders` (the names a templated field accepts, § 2.1), `ref` (the type of
   object a field refers to by name, read by both the cross-reference check and
   the model graph, [`models.md`](models.md) § 11.2), `quantity` (a value
@@ -167,6 +166,7 @@ def copy_file(source, path) -> Path                    # atomic, as write_stream
 def append_text(path, text) -> None                    # a log's lines added at its end
 def touch(path) -> Path                                # made empty if absent; its time now
 def remove(path) -> None                               # a file, or a folder with all it holds; absent is no error
+def make_folder(path) -> Path                          # a folder, with the folders above it; there already is no error
 def empty_folder(path) -> Path                         # an empty folder, whatever was there
 def copy_tree(source, path) -> Path                    # a folder copied to a place not there yet
 def replace_folder(fresh, path) -> None                # fresh takes path's place whole: old moved aside, fresh
@@ -183,7 +183,8 @@ def document_rename(doc, key, new)                     # in place, its comment k
 def document_text(doc, key) -> str                     # an entry as a person edits it: a table as its own document
 def document_write(doc, key, text)                     # an entry made what that text writes, its comments kept
 def inline_text(value) -> str                          # a plain value as TOML text on one line
-def private_dir(path: Path) -> Path     # 0700; refused when another account could enter it or replace it
+def private_dir(path: Path, *, make=True) -> Path   # 0700; refused when another account could enter it or
+                                                   # replace it; make=False only refuses — what a plan checks
 def open_private(path: Path, mode: str) -> IO   # 0600 from its first byte, never through a link;
                                                 # "a" appends, "w" truncates, "x" creates exclusively
 ```
@@ -407,7 +408,8 @@ class PlanStale(Refusal)         # the state changed between plan and apply (api
 class UsageError(Refusal)        # a request that does not validate (api.md § 4.1)
 ```
 
-Every refusal is one of these kinds, never a bare `Refusal`; the kind tells a
+Every refusal is one of these kinds, never a bare `Refusal` — a narrower class a
+domain keeps for itself is answered as the kind it is of; the kind tells a
 surface or a script what sort of problem it is, its code and subject which one
 and about what — as a finding's do (§ 10) — and its next steps say what to do.
 A script, a surface or a test tells two refusals apart by kind, code and

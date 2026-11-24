@@ -80,7 +80,7 @@ Engine code lives in `femkit/engines/<engine>/` and provides only:
   the engine declares, turn a case into input files, a run's output into
   observations, and apply each kind of customization
   ([`models.md`](models.md) § 9.1). An environment definition also declares
-  its abilities, default mesher, extension points and engine-only options —
+  its abilities, extension points and engine-only options —
   not built yet (plan § 3, M5) ([`models.md`](models.md) § 6.1).
 
 ## 2. Schemas

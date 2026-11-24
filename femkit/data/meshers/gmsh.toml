@@ -1,6 +1,6 @@
-# Gmsh, in the elmer environment (models.md § 6.5). ElmerGrid converts its meshes for Elmer;
-# a shared mesh is written as MSH 2.2 ASCII, the form Netgen's Gmsh reader parses (Gmsh's own
-# default is MSH 4.1, so the translator asks for 2.2).
+# Gmsh, in the elmer environment: the one mesher (models.md § 6.5); ElmerGrid converts its meshes
+# for Elmer. It writes MSH 2.2 ASCII (Gmsh's own default is MSH 4.1, so the translator asks for 2.2);
+# which form the pipeline hands over is settled by measurement with the execution design (plan § 3, X).
 description = "Gmsh with its OpenCASCADE kernel"
 provided_by = "elmer"
 dimensions = [2, 3]
@@ -12,4 +12,4 @@ tolerance = { kind = "absolute", value = "1e-8" }   # in the length unit geometr
 writes = { format = "msh", version = "2.2", encoding = "ascii" }
 orders = [1, 2]
 keeps_region_names = true
-basis = "measured 2026-11-23 on gmsh 4.15.2 (conda-forge, OpenCASCADE 8.0.1): its build options, Geometry.Tolerance; orders 1 and 2 as models.md § 6.5 states what ElmerGrid and Netgen's reader keep, not yet measured (plan § 3, M6)"
+basis = "measured 2026-11-23 on gmsh 4.15.2 (conda-forge, OpenCASCADE 8.0.1): its build options, Geometry.Tolerance; orders 1 and 2, what ElmerGrid keeps of each not yet measured (plan § 3, X)"

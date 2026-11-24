@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from femkit.core import process
-from femkit.core.operations import Context, Step
+from femkit.core.operations import Context
 from femkit.definitions import catalogue
 from femkit.envs import install
 from tests.kit import apply
@@ -27,9 +26,8 @@ def test_each_environments_toolchain_is_proven_on_this_machine(name, tmp_path):
     engine's build here would then fail later, deep inside a configure."""
     apply("config.set", key="launch.mpi", value=LAUNCHER)
     t = install.target(Context.from_process(), name)            # in the test's own data directory
-    create = next(s for s in install.plan_steps(t, remove_first=False, discard_lock=True) if s.id == "create")
-    created = process.run(list(create.argv), log=tmp_path / "create.log", timeout=3600)
-    assert created.ok, created.stdout
+    steps = {s.id: s for s in install.plan_steps(t, remove_first=False, discard_lock=True)}
     said: list[str] = []
-    outcome = install.step_toolchain(t, Step(id="toolchain", describe=""), tmp_path / "toolchain.log", said.append)
-    assert outcome == "done", "\n".join(said)
+    for step in (steps["create"], steps["toolchain"]):           # the install's own door: femkit's places only
+        outcome, log = install.run_step(t, step, tmp_path, said.append)
+        assert outcome == "done", log.read_text() + "\n".join(said)

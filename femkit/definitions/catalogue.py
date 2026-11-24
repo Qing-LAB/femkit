@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from femkit.core import view
+from femkit.core.errors import UsageError
 from femkit.core.dirs import CONTROL
+from femkit.core.locks import SUBJECT
 from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.core.units import UnitTable, Units
@@ -30,7 +32,12 @@ def data_root() -> Path:
     """`femkit/data/`, the shipped definitions — or the folder FEMKIT_DEFINITIONS_DIR names, which
     only a test sets (testing.md § 2.1); read when asked, never at import."""
     own = os.environ.get(VARIABLE)
-    return Path(own) if own else Path(__file__).resolve().parent.parent / "data"
+    if not own:
+        return Path(__file__).resolve().parent.parent / "data"
+    path = Path(own).expanduser()                              # read as the directories' variables are (config.md § 2)
+    if not path.is_absolute():
+        raise UsageError(f"{VARIABLE} must be an absolute path, not {path}", code="not-absolute", subject=VARIABLE)
+    return path
 
 
 class CatalogueError(DefinitionError):
@@ -70,7 +77,15 @@ def load_control() -> ControlDefinition:
                     if line.strip() and not line.lstrip().startswith("#")]
     except OSError as exc:
         raise DefinitionError(exc.filename or packages_file, [("", f"does not read: {exc.strerror}")]) from None
-    return validate(ControlDefinition, {"channels": channels, "dependencies": packages}, packages_file.parent)
+    try:
+        return validate(ControlDefinition, {"channels": channels, "dependencies": packages}, packages_file.parent)
+    except DefinitionError as exc:                         # each problem named by the file it is in
+        files = {"channels": channels_file, "dependencies": packages_file}
+        found: dict[Path, list[tuple[str, str]]] = {}
+        for where, why in exc.problems:
+            found.setdefault(files.get(where.split(".")[0].split("[")[0], packages_file.parent), []).append((where, why))
+        errors = [DefinitionError(file, problems) for file, problems in found.items()]
+        raise (errors[0] if len(errors) == 1 else CatalogueError(errors)) from None
 
 
 def load_managers() -> dict[str, ManagerKind]:
@@ -114,6 +129,8 @@ def load_environments() -> dict[str, EnvironmentDefinition]:
     directory = data_root() / "environments"
     found = _load_dir(directory, EnvironmentDefinition)
     taken = {name: f"{CONTROL!r} names the control environment (control.txt)" for name in found if name == CONTROL}
+    taken |= {name: f"{name!r} is no environment name: a letter or digit, then letters, digits, '.', '_' or '-' — "
+                    "it names the environment's lock and folders" for name in found if not SUBJECT.fullmatch(name)}
     taken |= {name: f"a name ending in {CUDA_SUFFIX!r} is a definition's CUDA environment"
               for name in found if name.endswith(CUDA_SUFFIX)}
     if taken:
@@ -143,8 +160,7 @@ def schedulers(ctx: Context) -> dict[str, SchedulerKind]:
 
 def load_meshers() -> dict[str, MesherDefinition]:
     """Every mesher; each names an engine environment that provides it (models.md § 6.5)."""
-    environments = {p.stem for p in (data_root() / "environments").glob("*.toml")}
-    return _load_dir(data_root() / "meshers", MesherDefinition, {"environments": environments})
+    return _load_dir(data_root() / "meshers", MesherDefinition, {"environments": set(load_environments())})
 
 
 def meshers(ctx: Context) -> dict[str, MesherDefinition]:

@@ -32,7 +32,7 @@ class ServeRequest(Model):
 class TargetRequest(Model):
     """Which server."""
 
-    port: int = Field(DEFAULT_PORT, ge=1, le=65535, description="the server on this TCP port")
+    port: int | None = Field(None, ge=1, le=65535, description=f"the server on this TCP port; {DEFAULT_PORT} when not given")
     socket: bool = Field(False, description="the server on the Unix socket")
     force: bool = Field(False, description="even while the server's child holds an operation's lock "
                                            "(an install started from the page), which then stops with it")

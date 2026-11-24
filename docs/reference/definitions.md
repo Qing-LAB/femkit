@@ -22,9 +22,9 @@
 | `engine` | text, optional | — | the registered engine adapter ID; absent for a tool environment |
 | `version_command` | list of text, optional | — | a tool environment's: the command, run in the prefix, whose last line of output is its version |
 | `version` | text | required | what the version probe must report |
-| `control_packages` | boolean | `False` | a tool environment's: the control environment's packages (control.txt), solved with its own (definitions.md § 4.7) |
+| `control_packages` | boolean | `false` | a tool environment's: the control environment's packages (control.txt), solved with its own (definitions.md § 4.7) |
 | `description` | text | required | one line for `env list` |
-| `default` | boolean | `False` | part of `env install --all` |
+| `default` | boolean | `false` | part of `env install --all` |
 | `thread_variables` | list of text | empty | variables set to a run's threads per rank |
 | `fixed_variables` | table of text → text | empty | variables set to these values in every check and run |
 | `toolchain` | [Toolchain](#toolchain), optional | — | the compilers and build tools its builds use; required with builds |
@@ -93,7 +93,7 @@
 | `id` | text | required | the build's ID |
 | `source` | text | required | the source it builds |
 | `after` | list of text | empty | builds that must be installed first |
-| `cuda_architectures` | boolean | `False` | in the CUDA environment, compiled for `build.cuda_architectures` |
+| `cuda_architectures` | boolean | `false` | in the CUDA environment, compiled for `build.cuda_architectures` |
 | `rpath` | list of text | empty | install RPATH entries, relative to the prefix |
 | `options` | table of text → Any | empty | CMake cache entries; a boolean becomes BOOL, anything else STRING. Strings may use placeholders. Placeholders: `{build}`, `{prefix}`, `{source}` |
 | `cuda_options` | table of text → Any | empty | CMake cache entries added in the CUDA environment; in the other, each boolean among them is set false and the rest are left out. Placeholders: `{build}`, `{prefix}`, `{source}` |
@@ -117,8 +117,8 @@ One bounded calculation and the numbers it must produce (definitions.md § 5).
 | `read` | text | required | the reader ID that turns its output into quantities |
 | `expect` | table of text → [Expectation](#expectation) | empty | quantity -&gt; its bounds |
 | `agree` | text, optional | — | the agreement group it belongs to |
-| `device` | boolean | `False` | uses a GPU: exists only in the CUDA environment, and runs only with `env validate --gpu` |
-| `upstream_verdict` | boolean | `True` | ctest: the test's own pass or fail counts, besides `expect`; false where its stored reference does not hold for the pinned libraries — the definition says why — and only `expect` decides |
+| `device` | boolean | `false` | uses a GPU: exists only in the CUDA environment, and runs only with `env validate --gpu` |
+| `upstream_verdict` | boolean | `true` | ctest: the test's own pass or fail counts, besides `expect`; false where its stored reference does not hold for the pinned libraries — the definition says why — and only `expect` decides |
 | `timeout` | integer | `600` | seconds before it is stopped |
 
 ## Expectation
@@ -205,7 +205,7 @@ One unit: a base dimension times an exact factor, or an expression of units abov
 | key | type | default | meaning |
 |---|---|---|---|
 | `dimension` | text, optional | — | the base dimension this unit measures, when it is defined by one; with `factor` |
-| `factor` | text | `'1'` | with `dimension`: how many of the dimension's canonical unit one of this unit is, an exact number (`1/1000`) |
+| `factor` | text | `"1"` | with `dimension`: how many of the dimension's canonical unit one of this unit is, an exact number (`1/1000`) |
 | `equals` | text, optional | — | otherwise: what one of this unit is, an expression of units above it (`W/A`, `1.602176634e-19 J`) |
 | `prefixes` | boolean | required | whether SI prefixes apply to it (`nm`, `kV`) |
 

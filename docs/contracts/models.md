@@ -11,7 +11,8 @@ replaces it whole (plan § 6): one `model.toml` and `studies/<s>/study.toml` per
 project, with the units ([`core.md`](core.md) § 11), the formulation type with
 `electrostatics` and its first benchmark, `model check`, `model set`/`write`/
 `unset`/`rename`/`undo`/`redo`, `model graph`, `study expand`/`copy`/`list`,
-`case list` and case IDs. Its fields are documented by
+`case list` and case IDs, `project list` and `project new`, and the mesher
+definition type (`definitions/meshers.py`). Its fields are documented by
 [`../reference/models.md`](../reference/models.md); where its code cites a
 section here, the section states the design that replaces it
 **Authority:** how a calculation is described independently of any engine — its

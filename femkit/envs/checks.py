@@ -69,8 +69,14 @@ def refusals(ctx: Context, checks: list[Check]) -> None:
         settings.launcher(ctx, "a check runs on several MPI ranks")
 
 
-def steps(checks: list[Check]) -> list[Step]:
-    out = [Step(id=f"check:{c.id}", describe=_describe(c)) for c in checks]
+WORK = "{work}"  # a check's own folder in its operation's: known when it runs, filled in then
+
+
+def steps(r: Runner, checks: list[Check]) -> list[Step]:
+    """Each check with the command it runs — in the prefix, with the launcher when on several
+    ranks — and the step that records the verdicts (envs.md § 5)."""
+    out = [Step(id=f"check:{c.id}", describe=_describe(c),
+                argv=tuple(r.manager.in_prefix(r.prefix, _argv(r, c, Path(WORK))))) for c in checks]
     out.append(Step(id="record", describe="judge the agreement groups and write the check results"))
     return out
 
@@ -138,10 +144,11 @@ def _argv(r: Runner, check: Check, work: Path) -> list[str]:
             "--junitxml", str(work / junit.FILE), *[str(root / n) for n in nodes]]
 
 
-def run_check(r: Runner, check: Check, work: Path) -> CheckOutcome:
-    """Run one check as asked and judge it: passed, or failed with the reason. A device check
-    where no GPU is allocated runs too, and its own failure says so (envs.md § 5)."""
-    work.mkdir(parents=True, exist_ok=True)
+def run_check(r: Runner, check: Check, argv: tuple[str, ...], work: Path) -> CheckOutcome:
+    """Run one check — the command its step carries, in its folder ``work`` — and judge it:
+    passed, or failed with the reason. A device check where no GPU is allocated runs too, and
+    its own failure says so (envs.md § 5)."""
+    persist.make_folder(work)
     log = work / "check.log"
 
     def failed(reason: str) -> CheckOutcome:
@@ -159,7 +166,7 @@ def run_check(r: Runner, check: Check, work: Path) -> CheckOutcome:
     variables = _variables(r, check)
     if check.kind == "pytest":  # the upstream tests alone: no plugin installed in the prefix loads by itself
         variables.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYTHONDONTWRITEBYTECODE="1")
-    result = process.run(r.manager.in_prefix(r.prefix, _argv(r, check, work)),
+    result = process.run([a.replace(WORK, str(work)) for a in argv],
                          env=variables, cwd=work, timeout=check.timeout, log=log)
     if result.timed_out:
         return failed(f"stopped after {check.timeout} s")
@@ -289,7 +296,7 @@ def run_validation(ctx: Context, name: str, gpu: bool, plan_steps: tuple[Step, .
                 time=clock.stamp(ctx.now())).model_dump())
             return "done", None
         check = by_id[step.id.split(":", 1)[1]]
-        outcome = run_check(r, check, where / check.id)
+        outcome = run_check(r, check, step.argv, where / check.id)
         ran[check.id] = outcome
         observer.note(f"verdict: {outcome.outcome}" + (f" -- {outcome.reason}" if outcome.reason else ""))
         return "done", Path(outcome.log) if outcome.log else None

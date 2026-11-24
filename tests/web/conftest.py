@@ -7,14 +7,17 @@ import sys
 
 import pytest
 
+from tests.kit import installed
 # The basic tier's tripwires hold here too: a web test reaches no manager, scheduler or solver,
 # nor the Node.js a build runs (testing.md § 2.1).
 from tests.basic.conftest import tripwire_dir, tripwires  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
-def web_python(monkeypatch):
-    """The server's child runs on this very Python: the tier already runs in the web
-    environment, while each test's own data folder holds no environment."""
-    from femkit.server import operations
-    monkeypatch.setattr(operations, "web_python", lambda ctx: sys.executable)
+def web_environment():
+    """The `web` environment as an install and a validate leave it, in the test's own data
+    folder, its Python the one this tier runs on — the web environment's own."""
+    f = installed("web", outcomes=[])
+    (f.prefix / "bin").mkdir()
+    (f.prefix / "bin" / "python").symlink_to(sys.executable)
+    return f

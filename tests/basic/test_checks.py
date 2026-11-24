@@ -13,8 +13,9 @@ import sys
 
 import pytest
 
-from tests.kit import ctx, installed
-from femkit.config.operations import ConfigSet
+from pathlib import Path
+
+from tests.kit import apply, ctx, installed, planned, refused
 from femkit.core.errors import Refused, Unstated, UsageError
 from femkit.core.operations import SilentObserver
 from femkit.definitions.models import Agreement, Check, Expectation
@@ -22,7 +23,6 @@ from femkit.engines import junit
 from femkit.core.schema import render
 from femkit.definitions.catalogue import CUDA_SUFFIX, load_managers
 from femkit.envs import checks, layout, state as state_module
-from femkit.envs.operations import EnvInstall, EnvValidate
 from femkit.envs.records import CheckOutcome, ChecksRecord, read
 from femkit.envs.state import EnvState, facts, observe
 
@@ -42,7 +42,7 @@ def program(id_: str, value: float = 1.0, **fields) -> Check:
 
 def set_key(key: str, value: str) -> None:
     c = ctx()
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), c), c)
+    apply("config.set", key=key, value=value)
 
 
 @pytest.fixture
@@ -58,8 +58,7 @@ def declared(give_checks, running_manager):
 
 
 def validate(name: str = NAME, **fields):
-    c = ctx()
-    return EnvValidate.apply(EnvValidate.plan(EnvValidate.request(name=name, **fields), c), c)
+    return apply("env.validate", name=name, **fields)
 
 
 def recorded() -> dict[str, CheckOutcome]:
@@ -190,7 +189,7 @@ def test_validate_gpu_is_refused_without_current_cpu_results(declared):
     """Fails if `validate --gpu` runs on an unchecked environment, recording GPU results that
     cannot qualify it and reporting no GPU qualification at all (envs.md § 5)."""
     declared(program("cpu"), gpu_program("gpu"))
-    with pytest.raises(Refused):
+    with refused(Refused, "not-allowed", NAME):
         validate(gpu=True)
 
 
@@ -213,10 +212,9 @@ def test_an_unchecked_environment_installs_by_validating(declared, value, ready)
     does not run it, runs a GPU check nobody asked for, or succeeds when it leaves the
     environment failing — without naming the check (envs.md § 3.3, § 4.1, § 5)."""
     declared(program("cpu", value=value, expect={"value": Expectation(max=1.0)}), gpu_program("gpu"))
-    c = ctx()
-    plan = EnvInstall.plan(EnvInstall.request(names=[NAME]), c)
+    op, plan, c = planned("env.install", names=[NAME])
     assert [s.id for s in plan.steps] == [f"{NAME}/validate"]
-    result = EnvInstall.apply(plan, c)
+    result = op.apply(plan, c)
     assert result.ok() is ready
     assert result.environments[0].state is (EnvState.ready if ready else EnvState.failing)
     assert ready or [i.subject for i in result.issues] == [NAME]
@@ -247,9 +245,9 @@ def test_install_numbers_its_validate_as_its_last_step_with_the_checks_run_under
     """Fails if an install runs a different number of steps than its plan shows, or runs its
     validate anywhere but inside its own last step (envs.md § 4.1; api.md § 4.4)."""
     declared(program("cpu", value=2.0, expect={"value": Expectation(max=1.0)}))
-    c, seen = ctx(), Recorder()
-    plan = EnvInstall.plan(EnvInstall.request(names=[NAME]), c)
-    result = EnvInstall.apply(plan, c, seen)
+    seen = Recorder()
+    op, plan, c = planned("env.install", names=[NAME])
+    result = op.apply(plan, c, seen)
     n = len(plan.steps)
     assert seen.said[0] == ("start", "env.install", n)
     assert seen.said[1] == ("step", "validate", n, n) and seen.said[2] == ("start", "env.validate", 2)
@@ -261,11 +259,10 @@ def test_a_check_on_several_ranks_is_refused_before_anything_runs_without_a_laun
     """Fails if validate or install starts with launch.mpi unset and an MPI check to run,
     finding out only when that check fails (envs.md § 5)."""
     declared(program("mpi", ranks=2), launcher=False)
-    c = ctx()
-    with pytest.raises(Unstated):
-        EnvValidate.plan(EnvValidate.request(name=NAME), c)
-    with pytest.raises(Unstated):
-        EnvInstall.plan(EnvInstall.request(names=[NAME]), c)
+    with refused(Unstated, "setting-unset", "launch.mpi"):
+        planned("env.validate", name=NAME)
+    with refused(Unstated, "setting-unset", "launch.mpi"):
+        planned("env.install", names=[NAME])
 
 
 def _junit(tmp_path, body: str, nodes: list[str]) -> dict:
@@ -296,3 +293,21 @@ def test_a_passing_test_inside_a_class_counts_as_passed(tmp_path):
     report names it `module.Class::test`, as the reader must (definitions.md § 5.3)."""
     body = "class TestC:\n    def test_m(self): pass\n"
     assert _junit(tmp_path, body, ["tests/test_x.py::TestC::test_m"]) == {"tests": 1, "passed": 1}
+
+
+
+def test_validate_runs_the_commands_its_plan_shows(declared, running_manager):
+    """Fails if `env validate` runs a check's command other than its plan's — built again when
+    it runs — beyond the check's own folder, known only then; or if the plan shows the command
+    without the launcher a check on several ranks runs under (api.md § 3, definitions.md § 5.1)."""
+    import re
+    declared(program("serial"), program("spread", ranks=2))
+    op, shown, c = planned("env.validate", name=NAME)
+    commands = {s.id.split(":", 1)[1]: list(s.argv) for s in shown.steps if s.argv}
+    assert set(commands) == {"serial", "spread"} and "RANKS=2" in commands["spread"]   # the launcher, in the plan
+    op.apply(shown, c)
+    calls = running_manager.read_text().splitlines()           # each call to the manager: its arguments
+    for check, argv in commands.items():
+        pattern = re.escape(" ".join(argv[1:])).replace(re.escape(checks.WORK), r"(\S+)")
+        hits = [m for line in calls if (m := re.fullmatch(pattern, line))]
+        assert len(hits) == 1 and {Path(w).name for w in hits[0].groups()} == {check}, (check, calls)

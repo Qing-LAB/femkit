@@ -108,11 +108,11 @@ exit 0
 RUNS = '  "run --no-capture-output") shift 4; PATH=@TRIPWIRES@:@ACTIVATION@:"$PATH" exec "$@" ;;'
 
 
-def _stand_in(tmp_path, monkeypatch, tripwires: Path, runs: bool) -> Path:
+def _stand_in(tmp_path, monkeypatch, tripwires: Path, runs: bool, case: str = "") -> Path:
     fake = tmp_path / "stand-in" / "conda"
     fake.parent.mkdir()
     log = tmp_path / "manager.log"
-    script = STAND_IN.replace("RUN_LINE\n", RUNS + "\n" if runs else "")
+    script = STAND_IN.replace("RUN_LINE\n", (RUNS + "\n" if runs else "") + (case + "\n" if case else ""))
     fake.write_text(script.replace("@LOG@", shlex.quote(str(log))).replace("@TRIPWIRES@", shlex.quote(str(tripwires)))
                     .replace("@ACTIVATION@", shlex.quote(str(Path(sys.executable).parent))))
     fake.chmod(0o755)
@@ -124,6 +124,13 @@ def _stand_in(tmp_path, monkeypatch, tripwires: Path, runs: bool) -> Path:
 def manager(tmp_path, monkeypatch, tripwire_dir):
     """FEMKIT_ENV_MANAGER pointing at the stand-in; returns the file its calls go to."""
     return _stand_in(tmp_path, monkeypatch, tripwire_dir, runs=False)
+
+
+@pytest.fixture
+def manager_doing(tmp_path, monkeypatch, tripwire_dir):
+    """The stand-in with one case of the test's own before its others — a shell `case` line:
+    what a command did to the machine besides, as another shell working meanwhile would."""
+    return lambda case, runs=False: _stand_in(tmp_path, monkeypatch, tripwire_dir, runs=runs, case=case)
 
 
 @pytest.fixture

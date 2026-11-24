@@ -9,16 +9,14 @@ from __future__ import annotations
 
 import pytest
 
-from tests.kit import apply, ctx
-from femkit.config.operations import ConfigSet
-from femkit.core.errors import Refusal
+from tests.kit import apply, ctx, planned, refused
+from femkit.core.errors import Unstated
 from femkit.core.operations import Step
 from femkit.core import process as process_module
 from femkit.core.process import ProcessResult
 from femkit.definitions.catalogue import load_environments
 from femkit.engines.toolchain import LANGUAGES
 from femkit.envs import checks, install, toolchain
-from femkit.envs.operations import EnvInstall
 
 
 def test_every_environment_with_builds_solves_its_own_toolchain():
@@ -33,8 +31,8 @@ def test_the_toolchain_is_proven_before_any_source_is_fetched(manager):
     """Fails if the toolchain check is missing from an install, or comes after a download
     (envs.md § 4.1)."""
     c = ctx()
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="launch.mpi", value='["mpirun", "-np", "{ranks}"]'), c), c)
-    ids = [s.id.split("/", 1)[1] for s in EnvInstall.plan(EnvInstall.request(names=["elmer"]), ctx()).steps]
+    apply("config.set", key="launch.mpi", value='["mpirun", "-np", "{ranks}"]')
+    ids = [s.id.split("/", 1)[1] for s in planned("env.install", names=["elmer"])[1].steps]
     assert ids.index("forbid") < ids.index("toolchain") < min(i for i, s in enumerate(ids) if s.startswith("fetch:"))
 
 
@@ -42,15 +40,13 @@ def test_an_mpi_environment_is_refused_while_launch_mpi_is_unset_and_told_how_to
     """Fails if an install of an MPI environment is planned with no launcher for its
     toolchain check's two ranks, or the command the refusal names does not make it plannable
     (envs.md § 4.1)."""
-    with pytest.raises(Refusal) as refused:
-        EnvInstall.plan(EnvInstall.request(names=["elmer"]), ctx())
-    (step,) = refused.value.next
+    with refused(Unstated, "setting-unset", "launch.mpi") as caught:
+        planned("env.install", names=["elmer"])
+    (step,) = caught.value.next
     (fill,) = step.fills
     assert step.call.operation == "config.set" and fill.field == "value" and fill.toml
-    c = ctx()
-    request = ConfigSet.request(**step.call.request, value=fill.example)  # the value it offers
-    ConfigSet.apply(ConfigSet.plan(request, c), c)
-    assert EnvInstall.plan(EnvInstall.request(names=["elmer"]), ctx()).steps
+    apply(step.call.operation, **step.call.request, value=fill.example)  # the step it offers, with the value it offers
+    assert planned("env.install", names=["elmer"])[1].steps
 
 
 LEAKS = {"CC": "/opt/site/gcc", "LD_LIBRARY_PATH": "/opt/site/lib", "HYPRE_ROOT": "/opt/site",
@@ -84,7 +80,8 @@ def test_every_command_in_the_prefix_sees_none_of_the_shells_build_settings(monk
     work = tmp_path / "check"
     work.mkdir()
     ran.clear()
-    checks.run_check(checks.runner(ctx(), "ngsolve"), env.checks[0], work)   # as validate runs one
+    r = checks.runner(ctx(), "ngsolve")
+    checks.run_check(r, env.checks[0], checks.steps(r, env.checks[:1])[0].argv, work)   # as validate runs one
     confined["check"] = list(ran)
     assert {i.split(":")[0] for i, envs in confined.items() if envs} == {*INSIDE, "check"}  # every kind ran something
     for step_id, envs in confined.items():
@@ -150,3 +147,4 @@ def test_a_program_that_cannot_start_is_a_finding_not_a_crash(tmp_path, monkeypa
     assert not report["compilers"][language]["compiled"] and report["compilers"][language]["error"]
     mpi = report["mpi"][language]
     assert mpi["compiled"] and not mpi["ran"] and mpi["error"] and report["launcher"] is None
+

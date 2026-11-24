@@ -87,5 +87,5 @@ def require(f: ServerFacts, state: ServerState, action: str) -> None:
                       subject=f.name)
     if state is ServerState.starting and action not in MACHINE.allowed(state):
         raise Busy(f"{label(f.name)} is being started or stopped by another command; look again in a moment",
-                   (view.command(SERVE_STATUS, **protocol.target(f.name)),), subject=f.name)
+                   (view.command(SERVE_STATUS, **protocol.target(f.name)),), code="starting", subject=f.name)
     MACHINE.require(state, action, f.name, label(f.name))

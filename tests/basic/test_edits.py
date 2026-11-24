@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.kit import apply, ctx, run
 from femkit import registry
 from femkit.core.errors import PlanStale, Refused, UsageError
 from femkit.core.operations import Context
@@ -409,7 +410,7 @@ def test_projects_are_listed_under_the_projects_folder_and_made_there(tmp_path):
     root = tmp_path / "projects"
     root.mkdir()
     c = ctx()
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="web.projects", value=f'"{root}"'), c), c)
+    apply("config.set", key="web.projects", value=f'"{root}"')
     run("project.new", name="first")
     assert (root / "first").is_dir()
     edit("set", root / "first", "study:check:numerics.geometry_order", "1")

@@ -7,26 +7,37 @@ from femkit.core.view import Verb
 
 from femkit.config.requests import InitRequest
 from femkit.core.commandline import ARGUMENT
+from femkit.core.locks import SUBJECT
 from femkit.core.schema import Model
+from typing import Annotated
+
 from pydantic import Field
+
+#: A machine record's name: a file name in machines/, nothing more, and a lock subject's name
+#: (`machine-<name>`, core.md § 5) — the subjects' own grammar (jobs.md § 9.2).
+MACHINE_NAME = f"^{SUBJECT.pattern}$"
+#: What `--set` may declare: where a scheduler command is, never a measured fact (jobs.md § 9.2).
+DECLARATION = r"^scheduler\.(commands|probe)\.[a-z_]+=.+$"
 
 
 class ProbeRequest(Model):
     """What to measure, and where to write it."""
 
     write: bool = Field(default=False, description="write the record", json_schema_extra={"doc": "jobs.md § 9.2"})
-    name: str | None = Field(default=None, description="write machines/NAME.toml, the record another machine "
-                                                        "prepares this one by; without it, machines/local.toml")
-    set: list[str] = Field(default_factory=list, description="KEY=VALUE: declare where a scheduler command is, "
-                                                             "e.g. scheduler.commands.submit=PATH")
+    name: str | None = Field(default=None, pattern=MACHINE_NAME,
+                             description="write machines/NAME.toml, the record another machine prepares this "
+                                         "one by; without it, machines/local.toml")
+    set: list[Annotated[str, Field(pattern=DECLARATION)]] = Field(
+        default_factory=list, description="scheduler.commands.ROLE=PATH or scheduler.probe.ROLE=PATH: declare "
+                                          "where a scheduler command is")
     scheduler: str | None = Field(default=None, description="name the scheduler kind instead of detecting it")
 
 
 class MachinesRequest(Model):
     """One record by name, or every record."""
 
-    name: str | None = Field(default=None, description="the record to show; without it, every record",
-                             json_schema_extra=ARGUMENT)
+    name: str | None = Field(default=None, pattern=MACHINE_NAME, description="the record to show; without it, "
+                                                                            "every record", json_schema_extra=ARGUMENT)
 
 
 class DoctorRequest(Model):

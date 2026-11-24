@@ -6,9 +6,8 @@ import os
 
 import pytest
 
-from tests.kit import ctx, hold, installed, refused
-from femkit.config.operations import ConfigSet
-from femkit.core.errors import Refused
+from tests.kit import apply, ctx, hold, installed, planned, refused, run
+from femkit.core.errors import PlanStale, Refused
 from femkit.core.locks import subject_lock
 from femkit.core.persist import write_json
 from femkit.definitions.models import Check
@@ -16,8 +15,6 @@ from femkit.core import dirs
 from femkit.definitions.catalogue import CUDA_SUFFIX
 from femkit.envs import layout, manager
 from femkit.envs.manager import resolve
-from femkit.envs.operations import EnvClean
-from femkit.jobs.setup import doctor
 from femkit.envs.records import CheckOutcome
 from femkit.envs.state import MACHINE, EnvState, facts, observe
 
@@ -98,8 +95,8 @@ def test_a_held_lock_reads_busy_and_refuses_every_action():
     """Fails if a second command can act on an environment another holds (envs.md § 3.2 rule 1, § 3.3)."""
     with subject_lock(layout.subject(NAME)):
         assert state() is EnvState.busy
-        with pytest.raises(Refused):
-            EnvClean.plan(EnvClean.request(name=NAME), ctx())
+        with refused(Refused, "not-allowed", NAME):
+            planned("env.clean", name=NAME)
 
 
 def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manager):
@@ -111,16 +108,16 @@ def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manag
     user = hold(layout.subject(NAME), "shared")
     try:
         with pytest.raises(Busy) as caught:                 # absent: an install has steps
-            EnvInstall.plan(EnvInstall.request(names=[NAME]), ctx())
+            planned("env.install", names=[NAME])[1]
         assert [n.command for n in caught.value.next] == ["end it"]
         installed(NAME, outcomes=[passed("cpu")])
         assert state() is EnvState.ready
-        for op, request in ((EnvClean, EnvClean.request(name=NAME)), (EnvValidate, EnvValidate.request(name=NAME))):
-            with refused(Busy, "busy", layout.subject(NAME)):
-                op.plan(request, ctx())
+        for name in ("env.clean", "env.validate"):
+            with refused(Busy, "held", layout.subject(NAME)):
+                planned(name, name=NAME)
     finally:
         user.communicate("")
-    EnvClean.plan(EnvClean.request(name=NAME), ctx())       # its use ended: allowed
+    planned("env.clean", name=NAME)       # its use ended: allowed
 
 
 def test_changing_the_cuda_targets_makes_a_cuda_build_outdated():
@@ -129,14 +126,14 @@ def test_changing_the_cuda_targets_makes_a_cuda_build_outdated():
     installed(CUDA, outcomes=[passed("cpu"), passed("gpu")])
     installed(NAME, outcomes=[passed("cpu")])
     c = ctx()
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="build.cuda_architectures", value='["90"]'), c), c)
+    apply("config.set", key="build.cuda_architectures", value='["90"]')
     assert state(CUDA) is EnvState.outdated and state() is EnvState.ready
 
 
 def test_install_never_discards_a_failing_build_on_its_own():
     """Fails if `install` is allowed on a failing environment instead of offering validate
     and install --clean (envs.md § 3.3)."""
-    with pytest.raises(Refused) as caught:
+    with refused(Refused, "not-allowed", NAME) as caught:
         MACHINE.require(EnvState.failing, "install", NAME)
     offered = {n.command for n in caught.value.next}
     assert {"python -m femkit env validate ngsolve", "python -m femkit env install ngsolve --clean"} <= offered
@@ -145,7 +142,7 @@ def test_install_never_discards_a_failing_build_on_its_own():
 
 def test_doctor_reports_an_environment_that_is_not_ready():
     """Fails if doctor counts an environment ready that is not (envs.md § 6.1)."""
-    result = doctor.run(doctor.request(), ctx())
+    result = run("doctor")
     assert {r.subject: r.ready for r in result.rows}[NAME] is False and not result.ok()
 
 
@@ -153,11 +150,22 @@ def test_clean_removes_the_prefix_through_the_manager_while_holding_its_lock(man
     """Fails if clean's apply mistakes its own lock for another holder, or removes the
     prefix other than by the manager's declared command (envs.md § 3.3, § 6)."""
     f = installed(NAME, outcomes=[passed("cpu")])
-    c = ctx()
-    outcome = EnvClean.apply(EnvClean.plan(EnvClean.request(name=NAME), c), c)
+    outcome = apply("env.clean", name=NAME)
     assert outcome.status == "done" and not f.prefix.exists()
     from femkit.definitions.catalogue import load_control
     assert manager.read_text().split() == resolve(ctx()).remove(f.prefix, load_control().channels)[1:]
+
+
+def test_a_change_made_while_a_plan_is_read_is_seen_though_the_command_read_it_before(manager, tmp_path):
+    """Fails if core checks a plan's basis again through the reads its invocation cached: the
+    environments moved while the person read the plan, and clean would act on the old place
+    (api.md § 3)."""
+    f = installed(NAME, outcomes=[passed("cpu")])
+    op, plan, c = planned("env.clean", name=NAME)                  # the command line, waiting at "Proceed?"
+    apply("config.set", key="paths.environments", value=f'"{tmp_path / "elsewhere"}"')   # another shell
+    with refused(PlanStale, "basis-changed"):
+        op.apply(plan, c)
+    assert f.prefix.exists()
 
 
 def test_in_the_activated_control_environment_the_manager_is_the_one_activation_named(manager, monkeypatch):
@@ -178,5 +186,5 @@ def test_doctor_reads_the_control_environment_by_the_install_scripts_rules():
     records = dirs.control_prefix() / ".femkit"
     records.mkdir(parents=True)  # a current stamp, in a folder that is no environment
     (records / "control.sha256").write_text(control_digest())
-    row = next(r for r in doctor.run(doctor.request(), ctx()).rows if r.subject == "control environment")
+    row = next(r for r in run("doctor").rows if r.subject == "control environment")
     assert row.state == "broken" and [n.command for n in row.next] == ["bash scripts/install-env.sh bootstrap"]

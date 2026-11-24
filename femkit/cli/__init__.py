@@ -72,9 +72,6 @@ def _emit(as_json: bool, model: Result | Plan, tag: str) -> None:
         click.echo(_tagged(tag, model.text()))
 
 
-TAIL = 12  # log lines shown under a step that did not finish
-
-
 def took(seconds: float) -> str:
     s = int(round(seconds))
     if s < 60:
@@ -88,7 +85,7 @@ def took(seconds: float) -> str:
 
 def _tail(log: Path) -> list[str]:
     try:
-        return [line.rstrip() for line in process.tail(log, TAIL)]
+        return [line.rstrip() for line in process.tail(log, process.TAIL_LINES)]   # as the page shows it
     except OSError:
         return []
 

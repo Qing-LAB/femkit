@@ -224,7 +224,7 @@ def as_planned(ctx: Context, values: dict[str, Any]) -> Context:
     if not values:
         return ctx
     planned = Loaded(config=validate(UserConfig, with_values(values).unwrap(), config_file()), file=config_file())
-    c = Context(env=ctx.env, now=ctx.now)
+    c = ctx.fresh()
     c.cached("config", lambda: planned)
     return c
 

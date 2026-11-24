@@ -65,6 +65,8 @@ class StepState(Model):
 
 
 class LogState(Model):
+    operation: str | None = None   # the operation that wrote the log, as its start names it
+    basis: dict = {}               # the facts its plan rested on, as its start records them
     started: bool
     ended: bool
     outcome: Literal["done", "failed"] | None
@@ -98,6 +100,8 @@ def fold(events: list[dict]) -> LogState:
             if e.get("outcome") != "done":
                 failed = e["step"]
     return LogState(
+        operation=start.get("operation") if start else None,
+        basis=(start.get("basis") or {}) if start else {},
         started=start is not None,
         ended=end is not None,
         outcome=end.get("outcome") if end else None,

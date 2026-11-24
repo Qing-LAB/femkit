@@ -1,8 +1,7 @@
 # Security
 
 **Role:** guide
-**Status:** current; the web interface is not built yet
-([`docs/plans/plan.md`](docs/plans/plan.md) § 3, M7)
+**Status:** current
 **Authority:** the trust boundary and how to report a problem
 
 femkit is a single-user tool. It runs as the person who starts it, with that
@@ -17,10 +16,10 @@ person's permissions, on their workstation or in their cluster account.
 - **Downloads are pinned.** Every source archive is fetched by URL and checked
   against its declared SHA-256 before it is unpacked
   ([`envs.md`](docs/contracts/envs.md) § 4.1).
-- **The web interface, when built, listens only locally by default**: on
+- **The web interface listens only locally by default**: on
   `127.0.0.1`, or on a cluster login node on a Unix socket only its owner can
   open; every request carries its token, and serving it beyond the machine
-  requires TLS ([`api.md`](docs/contracts/api.md) § 5.4, § 5.5).
+  requires TLS ([`web.md`](docs/contracts/web.md) §§ 4–5; TLS is not built yet).
 
 ## Reporting a problem
 

@@ -89,7 +89,7 @@ it.
 
 ### 2.2 Canaries — the outcome, measured
 
-Isolation by construction is a claim; seven session-wide canaries measure it.
+Isolation by construction is a claim; eight session-wide canaries measure it.
 Each fingerprints something of the person's when the run starts and again when
 it ends, and a difference fails the run, naming what changed:
 
@@ -98,6 +98,7 @@ it ends, and a difference fails the run, naming what changed:
 | config | every file under the person's real config directory: names, sizes, modification times | a test writing past `FEMKIT_CONFIG_DIR` |
 | environments | for each environment femkit manages here (the control prefix under the real `<data>`, and each engine prefix under the person's real `paths.environments`): entry count and modification time of its `conda-meta/` and `.femkit/` | a test that reached the real manager and installed into, or removed, an environment |
 | checkout | the code digest of § 4.5 | a test writing into the repository — or a person editing it while a run is going |
+| manager | the person's own package manager: the modification times of its list of environments (`~/.conda/environments.txt`) and of its package caches (`~/.conda/pkgs`, and `pkgs/` beside the manager the invocation names) | a test that ran a manager command outside femkit's own places (`envs.md` § 4.4) — the person's cache filled, a test's prefix registered as theirs |
 | state, cache, runtime, locks | the person's real `<state>`, `<cache>`, `<runtime>` and `<data>/locks/`: each entry within two levels, with its modification time — anything made deeper changes its folder's | a test writing a run's log, a download, a server's files or a lock past its own directories |
 
 - The real directories are resolved once, before the run's own isolation is

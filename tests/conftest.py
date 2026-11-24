@@ -1,9 +1,8 @@
 """Isolation for every tier (testing.md § 2).
 
-Every test runs with its own FEMKIT_CONFIG_DIR, FEMKIT_DATA_DIR,
-FEMKIT_CACHE_DIR and FEMKIT_STATE_DIR. Three session canaries fingerprint the person's real
-configuration, environments and checkout at the start and the end of the run;
-a difference fails the run in teardown, naming what changed.
+Every test runs with its own directory for each variable core's `dirs.VARIABLES` names.
+Session canaries fingerprint the person's real places at the start and the end of the run
+(§ 2.2); a difference fails the run in teardown, naming what changed.
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ from femkit.core import dirs, locks
 from femkit.core.errors import Refusal
 from femkit.core.operations import Context
 from femkit.definitions.catalogue import load_environments
+from femkit.envs import manager
 from tools.testrun import code_now
 
 REPO = Path(__file__).resolve().parent.parent
@@ -40,6 +40,18 @@ def _real_engine_root() -> Path:
 
 
 REAL_ENVIRONMENTS = [REAL_CONTROL] + [_real_engine_root() / name for name in load_environments()]
+
+
+def _persons_manager() -> list[Path]:
+    """The person's own package manager's list of environments and package caches: what a
+    manager command run outside femkit's places would write (envs.md § 4.4)."""
+    places = [Path.home() / ".conda" / "environments.txt", Path.home() / ".conda" / "pkgs"]
+    if named := manager.named(Context.from_process()):
+        places.append(Path(named).resolve().parent.parent / "pkgs")
+    return places
+
+
+REAL_MANAGER = _persons_manager()
 
 
 # ------------------------------------------------------------------ isolation
@@ -116,19 +128,20 @@ def _measure(name: str, read):
 
 CANARIES = {"config": lambda: _tree(REAL_CONFIG), "environments": _environments,
             "checkout": lambda: code_now(str(REPO)),
+            "manager": lambda: tuple((str(p), p.stat().st_mtime_ns if p.exists() else None) for p in REAL_MANAGER),
             **{name: (lambda root=root: _shallow(root)) for name, root in REAL_SHALLOW.items()}}
 
 
 @pytest.fixture(scope="session", autouse=True)
 def the_run_leaves_your_machine_alone():
-    """The canaries of § 2.2: config, environments, checkout, and the real state, cache, runtime
-    and lock folders."""
+    """The canaries of § 2.2: config, environments, checkout, the person's own package manager,
+    and the real state, cache, runtime and lock folders."""
     before = {name: _measure(name, read) for name, read in CANARIES.items()}
     yield
     after = {name: _measure(name, read) for name, read in CANARIES.items()}
     changed = [name for name in before if before[name] is not None and before[name] != after[name]]
     where = {"config": str(REAL_CONFIG), "environments": ", ".join(map(str, REAL_ENVIRONMENTS)),
-             "checkout": str(REPO), **{name: str(root) for name, root in REAL_SHALLOW.items()}}
+             "checkout": str(REPO), "manager": ", ".join(map(str, REAL_MANAGER)), **{name: str(root) for name, root in REAL_SHALLOW.items()}}
     if changed:
         raise AssertionError("canary: the run changed " + "; ".join(f"{n} ({where[n]})" for n in changed))
 

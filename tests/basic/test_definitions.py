@@ -7,24 +7,24 @@ from pathlib import Path
 
 import pytest
 
+from tests.kit import planned, refused, run
 from femkit.core.dirs import CONTROL
-from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.definitions import catalogue
+from femkit.core.view import RefusalAnswer
 from femkit.definitions.catalogue import CUDA_SUFFIX, CatalogueError, data_root, load_environments
 from femkit.definitions.models import EnvironmentDefinition
-from femkit.reference import SchemaDocs, schema_check
 
 
 def test_every_shipped_definition_loads():
     """Fails if any shipped file stops loading (definitions.md § 2.3: a test runs schema check)."""
-    result = schema_check.run(schema_check.request(), Context.from_process())
+    result = run("schema.check")
     assert result.ok(), result.text()
 
 
 def test_the_reference_pages_match_the_models():
     """Fails if docs/reference/ differs from what the models render (definitions.md § 2.3)."""
-    plan = SchemaDocs.plan(SchemaDocs.request(), Context.from_process())
+    plan = planned("schema.docs")[1]
     assert plan.steps == (), "docs/reference/ is stale: run `python -m femkit schema docs`"
 
 
@@ -168,15 +168,18 @@ def test_what_the_cpu_environment_runs_may_not_name_what_only_cuda_declares(tmp_
     assert at in _load_problems(tmp_path, text(_shipped("elmer")))
 
 
-@pytest.mark.parametrize("name", [CONTROL, "ngsolve" + CUDA_SUFFIX])
+@pytest.mark.parametrize("name", [CONTROL, "ngsolve" + CUDA_SUFFIX, "a b"])
 def test_a_definition_may_not_take_another_environments_name(definitions, name):
-    """Fails if a definition named `control` or `<name>-cuda` loads: installing it would remove
-    femkit's own control environment, or take a definition's CUDA environment's place
-    (definitions.md § 4.5)."""
+    """Fails if a definition named `control` or `<name>-cuda` loads — installing it would remove
+    femkit's own control environment, or take a definition's CUDA environment's place — or one
+    whose name no lock subject can hold, which would fail as a defect at its install
+    (definitions.md § 4.5, core.md § 5)."""
     (definitions / "environments" / f"{name}.toml").write_text(_shipped("ngsolve"))
     with pytest.raises(CatalogueError) as refused:
         load_environments()
     assert [Path(e.file).stem for e in refused.value.errors] == [name]
+    answer = RefusalAnswer.of(refused.value)                  # several files, one kind: what a script reads
+    assert (answer.refused, answer.code) == ("DefinitionError", "definition-invalid")
 
 
 @pytest.mark.parametrize("line", ["", "# the channel femkit uses", "conda-forge  "])
@@ -188,7 +191,7 @@ def test_channels_hold_one_bare_name_a_line(definitions, line):
     assert load_control().channels and load_control().python_minor
     channels = definitions / "channels.txt"            # the test's own copy, by the path it was given
     channels.write_text(channels.read_text() + line + "\n")
-    with pytest.raises(DefinitionError):
+    with refused(DefinitionError, "definition-invalid", str(channels)):
         load_control()
 
 
@@ -232,7 +235,7 @@ def test_the_web_environment_takes_the_control_environments_packages_by_referenc
     holds the web's flask or Node.js (definitions.md § 4.7, ADR 0009)."""
     from femkit.definitions.catalogue import load_control
     from femkit.envs.operations import EnvInstall
-    plan = EnvInstall.plan(EnvInstall.request(names=["web"]), Context.from_process())
+    plan = planned("env.install", names=["web"])[1]
     create = list(next(s for s in plan.steps if s.id.endswith("/create")).argv)
     control = load_control().dependencies
     assert all(d in create for d in control) and "flask>=3,<4" in create and "nodejs=22.23.5" in create
@@ -247,7 +250,7 @@ def test_a_tool_environment_without_control_packages_holds_only_its_own(manager,
     (data / "environments" / "tool.toml").write_text(
         'description = "a tool"\nversion = "v1"\nversion_command = ["tool", "--version"]\n'
         '[packages]\nconda = ["tool=1"]\n[provides]\nexecutables = ["tool"]\n')
-    plan = EnvInstall.plan(EnvInstall.request(names=["tool"]), Context.from_process())
+    plan = planned("env.install", names=["tool"])[1]
     create = list(next(s for s in plan.steps if s.id.endswith("/create")).argv)
     assert create[-1] == "tool=1" and not any(a.startswith("python") for a in create)
     assert not set(catalogue.load_control().dependencies) & set(create)
@@ -301,9 +304,9 @@ def test_schema_check_refuses_a_page_declaration_that_names_what_is_not_served(d
     passes `schema check` (definitions.md § 2.3, web.md § 8.1)."""
     page = definitions / "web" / "page.toml"
     page.write_text(page.read_text().replace('document = "model.graph"', 'document = "model.nothing"', 1))
-    result = schema_check.run(schema_check.request(), Context.from_process())
+    result = run("schema.check")
     assert [(i.code, i.subject) for i in result.issues] == [("definition-invalid", str(page))]
-    assert result.issues[0].message.startswith(f"{page}: workspaces.0.document:")    # where in the file
+    assert result.issues[0].message.startswith(f"{page}: workspaces[0].document:")    # where in the file, at its key path
 
 @pytest.mark.parametrize("change, at", [
     ({"provided_by": "comsol"}, "provided_by"),                 # no such environment
@@ -347,3 +350,16 @@ def test_an_environment_listing_a_pip_package_does_not_load():
     with pytest.raises(DefinitionError) as caught:
         validate(EnvironmentDefinition, data, "ngsolve.toml")
     assert "packages.pip" in [path for path, _ in caught.value.problems]
+
+
+@pytest.mark.parametrize("part", ["compilers", "mpi"])
+def test_a_toolchain_naming_a_language_femkit_cannot_check_is_refused_when_it_loads(definitions, part):
+    """Fails if a definition whose toolchain names a language the toolchain check has no program
+    for loads — its install would pass a check that never compiled that language (definitions.md § 4.6)."""
+    file = definitions / "environments" / "ngsolve.toml"
+    old = {"compilers": 'compilers = { c = "CC",', "mpi": 'mpi = { c = "mpicc",'}[part]
+    file.write_text(file.read_text().replace(old, old.replace("{ c", "{ cobol = \"COB\", c", 1) if part == "compilers"
+                                             else old.replace("{ c", "{ cobol = \"mpicob\", c", 1), 1))
+    with pytest.raises(CatalogueError) as caught:
+        load_environments()
+    assert [(Path(e.file).name, e.problems[0][0]) for e in caught.value.errors] == [("ngsolve.toml", "toolchain")]

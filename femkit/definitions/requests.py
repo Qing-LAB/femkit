@@ -21,3 +21,4 @@ class DocsRequest(Model):
 
 SCHEMA_CHECK = Verb("schema.check", CheckRequest)
 SCHEMA_DOCS = Verb("schema.docs", DocsRequest)
+DOCS_SUBJECT = "reference-docs"   # held by `schema docs` while it writes; shared by `web build`, which builds from its files

@@ -49,6 +49,10 @@ class Context:
     def from_process(cls) -> "Context":
         return cls(env=dict(os.environ))
 
+    def fresh(self) -> "Context":
+        """The same invocation's variables and clock, with nothing read yet: the world as it is now."""
+        return Context(env=self.env, now=self.now)
+
 
 # --------------------------------------------------------------------- results
 
@@ -350,10 +354,10 @@ class Operation:
                 stack.enter_context(subject_lock(subject, shared=True))
             if hasattr(self.impl, "observe"):
                 req = self.request.model_validate(plan.request)
-                if self.impl.observe(req, ctx, held=True) != plan.basis:
+                if self.impl.observe(req, ctx.fresh(), held=True) != plan.basis:  # never a read cached since the plan
                     raise PlanStale(f"{', '.join(plan.subjects) or self.name} changed since the plan; plan it again",
                                     (view.command(self.verb, **req.model_dump(mode="json", exclude_defaults=True)),),
-                                    subject=", ".join(plan.subjects) or self.name)
+                                    code="basis-changed", subject=", ".join(plan.subjects) or self.name)
             recording = observer if isinstance(observer, _Recording) else _Recording(observer or SilentObserver(), ctx.now)
             return self.impl.apply(plan, ctx, recording)   # an apply inside another's records its steps once
 

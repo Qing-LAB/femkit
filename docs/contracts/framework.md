@@ -33,12 +33,12 @@ femkit/
 │                  (jobs.md) — records, the probe and setup built, the rest not yet
 ├── projects/      the projects root, a project's tree and the one door to it:
 │                  every path, every read and write, transactions and undo
-│                  (projects.md) — proposed, not built yet (plan § 3, R)
+│                  (projects.md) — approved (plan § 6), not built yet (plan § 3, R)
 ├── materials/     the property list, the material format, libraries, importers,
-│                  a property's data for a case (materials.md) — proposed, not built yet
+│                  a property's data for a case (materials.md) — approved, not built yet
 ├── geometry/      the geometry script's contract, mesh recipes, the mesh step,
 │                  kinds and coverage, the hand-over to each engine (geometry.md) —
-│                  proposed, not built yet; the mesh step's code runs inside its
+│                  approved, not built yet; the mesh step's code runs inside its
 │                  environment (plan § 3, X)
 ├── models/        calculations described once: model, studies, cases, the match
 │                  against an environment's abilities, decisions, customizations,
@@ -112,10 +112,10 @@ independent review, which reads the source against it; no test reads code
 | shipped definitions and kinds | [`definitions.md`](definitions.md) |
 | configuration | [`config.md`](config.md) |
 | environments, installs, the install script | [`envs.md`](envs.md) |
-| a project's tree, its parts, addresses, the one door, transactions and undo | [`projects.md`](projects.md) — proposed (plan § 3, R) |
-| the property list, materials, libraries, importers | [`materials.md`](materials.md) — proposed (plan § 3, R) |
-| the geometry script's contract, the pipeline's steps, mesh recipes, the mesh step and the hand-over | [`geometry.md`](geometry.md) — proposed (plan § 3, R) |
-| calculations: parameters, physics, studies, observables, cases, formulations, environment abilities and proofs, the match report, decisions, customizations, preparation, results and analyses | [`models.md`](models.md) — not built yet (plan § 3, M5–M9, R) |
+| a project's tree, its parts, addresses, the one door, transactions and undo | [`projects.md`](projects.md) — approved, not built yet (plan § 3, R) |
+| the property list, materials, libraries, importers | [`materials.md`](materials.md) — approved, not built yet (plan § 3, R) |
+| the geometry script's contract, the pipeline's steps, mesh recipes, the mesh step and the hand-over | [`geometry.md`](geometry.md) — approved, not built yet (plan § 3, R) |
+| calculations: parameters, physics, studies, observables, cases, formulations, environment abilities and proofs, the match report, decisions, customizations, preparation, results and analyses | [`models.md`](models.md) — an earlier design today, frozen until R step D replaces it (models.md, status; plan § 3, M5–M9, R) |
 | machine records and the probe, jobs, schedulers | [`jobs.md`](jobs.md) |
 | tests and the test runner | [`testing.md`](testing.md) |
 
@@ -171,7 +171,8 @@ environment — has three owners, and each answers only its own part:
   whether it runs. Nothing falls back silently: work that asks for a GPU shows
   it used one — a GPU check's expectations require the device to have done the
   work ([`definitions.md`](definitions.md) § 5.2), and a run asking for GPUs
-  stops at its start, saying so, when it sees none ([`jobs.md`](jobs.md) § 4).
+  stops at its start, saying so, when it sees none ([`jobs.md`](jobs.md) § 4;
+  runs are not built, plan § 3, M3).
   When the machine cannot do what was asked, the outcome says so with the
   reason and its log, so "no GPU was granted" and "the GPU build is broken"
   read differently.
@@ -188,7 +189,8 @@ environment — has three owners, and each answers only its own part:
   nothing a request could name (no queues on a machine with a scheduler,
   naming the probe that renews it), or an environment to install whose CUDA
   toolkit needs a newer driver than the record measured, since what it builds
-  could not run here (the driver is the machine's; femkit never changes it).
+  could not run here (the driver is the machine's; femkit never changes it) —
+  not built: the record holds no driver version yet (plan § 3, M1).
   These are `Refusal`s
   ([`core.md`](core.md) § 9) — a contradicting statement a `UsageError`, a
   record that no longer matches `Refused` — because nothing could be prepared

@@ -10,7 +10,7 @@ from typing import Literal, Mapping
 from pydantic import Field
 
 from femkit.core.operations import Operation
-from femkit.core.schema import DefinitionError, Model, classes, field_extras, items_of, load_toml
+from femkit.core.schema import DefinitionError, Model, classes, field_extras, items_of, key_path, load_toml
 from femkit.definitions import catalogue
 from femkit.models.schema import OBJECTS
 
@@ -84,22 +84,22 @@ def load(ops: Mapping[str, Operation]) -> Page:
 
     for i, w in enumerate(p.workspaces):
         if w.document is not None and not reads(w.document):
-            problems.append((f"workspaces.{i}.document", f"{w.document!r} is not a read-only operation"))
-        problems += [(f"workspaces.{i}.context", f"{c!r} is not a declared context") for c in set(w.context) - contexts]
+            problems.append((key_path(("workspaces", i, "document")), f"{w.document!r} is not a read-only operation"))
+        problems += [(key_path(("workspaces", i, "context")), f"{c!r} is not a declared context") for c in set(w.context) - contexts]
     if len({w.key for w in p.workspaces}) != len(p.workspaces):
         problems.append(("workspaces", "two workspaces share a key"))
     for i, c in enumerate(p.context):
-        problems += [(f"context.{i}.depends", f"{d!r} is not another declared context")
+        problems += [(key_path(("context", i, "depends")), f"{d!r} is not another declared context")
                      for d in set(c.depends) - (contexts - {c.key})]
         if not reads(c.choices):
-            problems.append((f"context.{i}.choices", f"{c.choices!r} is not a read-only operation"))
+            problems.append((key_path(("context", i, "choices")), f"{c.choices!r} is not a read-only operation"))
             continue
         rows = ops[c.choices].result.model_fields.get(c.rows)
         if rows is None:
-            problems.append((f"context.{i}.rows", f"{c.choices}'s result has no field {c.rows!r}"))
+            problems.append((key_path(("context", i, "rows")), f"{c.choices}'s result has no field {c.rows!r}"))
             continue
         records = classes(items_of(rows.annotation))                  # the row the page reads, when a record
-        problems += [(f"context.{i}", f"{c.choices}'s rows have no key {key!r}")
+        problems += [(key_path(("context", i)), f"{c.choices}'s rows have no key {key!r}")
                      for key in filter(None, (c.value_key, c.label_key))
                      if not records or key not in records[0].model_fields]
     problems += [("context", f"{op.name}'s field {name!r} takes the context {taken!r}, which is not declared")

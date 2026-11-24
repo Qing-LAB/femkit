@@ -30,26 +30,14 @@ from femkit.jobs.record import Record, settings_now
 from femkit.jobs.requests import JOB_PROBE
 
 HOST_GPU_QUERY = ("nvidia-smi", "--query-gpu=name,compute_cap,memory.total", "--format=csv,noheader,nounits")
-DECLARABLE = re.compile(r"scheduler\.(commands|probe)\.([a-z_]+)")
-
-
 def unknown(reason: str) -> dict:
     return {"unknown": reason}
 
 
 def declarations(pairs: list[str]) -> dict[str, str]:
-    """`--set KEY=VALUE` -> {key: value}. Only where a scheduler command is may be declared
-    (jobs.md § 9.2): a queue list typed on another machine is a guess."""
-    out = {}
-    for pair in pairs:
-        key, sep, value = pair.partition("=")
-        if not sep or not value:
-            raise UsageError(f"--set takes KEY=VALUE, not {pair!r}", code="not-key-value", subject=pair)
-        if not DECLARABLE.fullmatch(key):
-            raise UsageError(f"{key} cannot be declared; only scheduler.commands.ROLE and scheduler.probe.ROLE "
-                             "(where a scheduler command is) can", code="not-declarable", subject=key)
-        out[key] = value
-    return out
+    """`--set KEY=VALUE` -> {key: value}; the request's schema admits only where a scheduler
+    command is (jobs.md § 9.2): a queue list typed on another machine is a guess."""
+    return dict(pair.partition("=")[::2] for pair in pairs)
 
 
 def scheduler_kind(ctx: Context, named: str | None, declared: dict[str, str]) -> tuple[str, SchedulerKind, str]:

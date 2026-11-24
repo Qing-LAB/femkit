@@ -216,12 +216,13 @@ outer     = { dimension = 2 }         # faces the script picks out
 
 The standard import script reads the file, takes the bodies' names from it, and
 leaves a marked place for the person to pick out the faces the file does not
-name. Measured: Gmsh reads the names of a STEP file's solids; whether
+name. Measured (Gmsh's version not recorded; measured again with X): Gmsh
+reads the names of a STEP file's solids; whether
 FreeCAD writes them is not measured. Not built yet (plan § 3, X).
 
 ## 10. The geometry's file format
 
 Step 1 writes a file that keeps both the exact shapes and the group names, so
 step 2 meshes the true curves and keeps the names. Which of Gmsh's formats does
-both is chosen by measurement with the execution design: measured, a Gmsh
-script saving to STEP lost the names (plan § 3, X).
+both is chosen by measurement with the execution design: measured (Gmsh's
+version not recorded), a Gmsh script saving to STEP lost the names (plan § 3, X).

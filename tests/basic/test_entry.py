@@ -13,6 +13,7 @@ import pytest
 
 from femkit.core import dirs
 from femkit.core.errors import UsageError
+from tests.kit import refused
 from femkit.core.schema import render
 from femkit.core.operations import Context
 from femkit.definitions.catalogue import control_files, load_control, load_managers
@@ -129,7 +130,7 @@ def test_a_relative_data_directory_is_refused_by_both(manager, monkeypatch):
     command runs (config.md § 2)."""
     monkeypatch.setenv("FEMKIT_DATA_DIR", "relative/data")
     assert install_env("bootstrap", "--yes").returncode == 2 and calls(manager) == []
-    with pytest.raises(UsageError):
+    with refused(UsageError, "not-absolute", "FEMKIT_DATA_DIR"):
         dirs.control_prefix()
 
 

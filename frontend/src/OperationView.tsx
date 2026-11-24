@@ -16,10 +16,6 @@ type Phase =
   | { kind: "done"; ok: boolean; result: any; plan?: any; runs?: string[] }
   | { kind: "refused"; message: string; next: Action[]; kind2: string };
 
-export function command(name: string): string {
-  return "python -m femkit " + name.replace(/\./g, " ");
-}
-
 export function OperationView({ op, onNeedToken }: { op: OperationInfo; onNeedToken: () => void }) {
   const [values, setValues] = useState<Values>({});
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -83,7 +79,6 @@ export function OperationView({ op, onNeedToken }: { op: OperationInfo; onNeedTo
     <section className="operation">
       <header>
         <h1>{op.name}</h1>
-        <code className="command">{command(op.name)}</code>
         <p className="lead">{op.description}</p>
         <span className={`badge ${op.changes ? "changes" : "reads"}`}>{op.changes ? "changes things" : "reads only"}</span>
       </header>

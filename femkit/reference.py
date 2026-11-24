@@ -23,7 +23,7 @@ from femkit.core import dirs, text, view
 from femkit.definitions.requests import CheckRequest, DocsRequest
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.persist import atomic_write_text
+from femkit.core.persist import atomic_write_text, inline_text
 from femkit.core.schema import (DefinitionError, Model, allowed, alternatives, classes, described, field_extras,
                                 items_of, keys_of, optional, values_of)
 from femkit.core.units import Units
@@ -31,7 +31,7 @@ from femkit.definitions import catalogue
 from femkit.jobs.record import Record
 from femkit.models.schema import QUANTITIES, ModelFile, StudyFile
 from femkit import page
-from femkit.definitions.requests import SCHEMA_CHECK, SCHEMA_DOCS
+from femkit.definitions.requests import DOCS_SUBJECT, SCHEMA_CHECK, SCHEMA_DOCS
 
 # page name -> (title, the files it describes, models)
 PAGES: dict[str, tuple[str, str, list[type[Model]]]] = {
@@ -162,7 +162,7 @@ def _default(field: FieldInfo) -> str:
         return "—"
     if isinstance(value, Model):
         return "see table"
-    return f"`{value!r}`" if value not in ([], {}) else "empty"
+    return f"`{inline_text(value)}`" if value not in ([], {}) else "empty"   # as the file writes it
 
 
 def _nested(annotation: Any) -> list[type[Model]]:
@@ -300,7 +300,7 @@ def _stale() -> dict[str, str]:
 
 
 @operation(SCHEMA_DOCS, result=DocsOutcome, changes=True,
-           subject=lambda req: ["reference-docs"])
+           subject=lambda req: [DOCS_SUBJECT])
 class SchemaDocs:
     """Render docs/reference/, and the page's schemas, from the schema models; files already up to date are left alone."""
 

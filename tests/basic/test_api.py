@@ -13,6 +13,7 @@ from femkit.cli import build
 from femkit.core import text
 from femkit.core import view
 from femkit.core.errors import PlanStale, Refused, UsageError
+from tests.kit import refused
 from femkit.core.eventlog import EventLog, fold
 from femkit.core.operations import (Ask, Context, Outcome, Plan, Result, SilentObserver, Step, operation,
                                     operations_root, run_steps)
@@ -363,8 +364,9 @@ def test_a_running_steps_live_line_shows_its_log_and_is_erased_before_anything_e
 def test_a_refused_request_names_a_lists_item_as_a_files_problem_does():
     """Fails if a request that does not validate names a list's item otherwise than a file's
     problems do — `names[0]`, one key-path form on every surface (core.md § 2)."""
-    with pytest.raises(UsageError, match=r"names\[0\]"):
+    with refused(UsageError, "invalid-request", "env.install") as caught:
         operations()["env.install"].request_from({"names": [1]})
+    assert str(caught.value).startswith("names[0]: ")            # the field, at its key path
 
 
 def test_a_plan_whose_facts_changed_is_refused_before_any_step_and_offered_again():

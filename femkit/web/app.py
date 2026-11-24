@@ -166,7 +166,7 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
         plan = op.plan(req, ctx)
         if plan.digest() != body.get("digest"):
             raise PlanStale("what this would do changed since you saw the plan; look at the new plan",
-                            subject=op.name)
+                            code="plan-differs", subject=op.name)
         observer, done = _Started(), queue.Queue(maxsize=1)
 
         def work() -> None:  # runs to its end whether or not the page still reads (web.md § 1)

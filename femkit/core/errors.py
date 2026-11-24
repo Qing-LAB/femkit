@@ -22,13 +22,21 @@ class Refusal(Exception):
     def __init__(self, message: str, next: Iterable[Action] = (), *, code: str | None = None,
                  subject: str | None = None):
         super().__init__(message)
-        self.code = code or re.sub(r"(?<!^)(?=[A-Z])", "-", type(self).__name__).lower()  # PlanStale: plan-stale
+        self.code = code or re.sub(r"(?<!^)(?=[A-Z])", "-", self.kind).lower()  # PlanStale: plan-stale
         self.subject = subject
         self.next = tuple(next)
         if self.next:  # held at the door: a next step is never bare text; a refusal with none needs no vocabulary
             from femkit.core.view import Action
             if not all(isinstance(n, Action) for n in self.next):
                 raise TypeError(f"a refusal's next steps are Actions, not {[type(n).__name__ for n in self.next]}")
+
+
+    @property
+    def kind(self) -> str:
+        """Its kind (core.md § 9): the type just below `Refusal` — a narrower class a domain keeps
+        for itself is still answered as its kind."""
+        mro = type(self).__mro__
+        return mro[mro.index(Refusal) - 1].__name__
 
 
 class Refused(Refusal):

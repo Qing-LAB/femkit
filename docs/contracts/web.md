@@ -302,8 +302,10 @@ on the node can connect to it or take its place. The person forwards it with
 SSH from their own machine, with the forwarding line `start` prints (§ 5),
 and opens the printed address there. Elsewhere it listens on TCP, `127.0.0.1` and
 `--port`; `--socket` and `--tcp` choose either explicitly. A `--port` where the
-server would listen on a socket is refused, offering it with `--tcp`: a stated
-port is never dropped.
+server would listen on a socket is refused, offering it with `--tcp`, and
+`stop`, `restart` or `status` given both `--socket` and `--port` is refused: a
+stated port is never dropped. `status` looks and writes nothing — not even a
+line in the server's log.
 
 **Files**, each in a directory of the person's own account:
 
@@ -312,7 +314,7 @@ port is never dropped.
 | `<runtime>/serve-<name>.pid` | the supervisor's and the child's process IDs and start times, the host and its boot ID, and where it listens | by `start`, rewritten by the supervisor at each respawn, `0600` |
 | `<runtime>/serve-<name>.token` | the access token (§ 5) | by `start`, before the child runs: created exclusively, never following a link, `0600` |
 | `<runtime>/serve-<name>.sock` | the Unix socket, when it listens on one; its path at most 108 bytes, or `start` refuses, naming it; never an abstract socket, which has no permissions | by the supervisor, `0600` |
-| `<state>/logs/serve-<name>.log` | every event the supervisor and the server report, one line each, `[serve-<source>] <moment> <message>` (`protocol.event_line`, its moment as `core/clock.py` writes one): child start, respawn, give-up, stop, a `status` that found it up but not answering; each request's method, path without its query (control characters escaped), status, time and, with sign-in, the account — never a header, a token or a body | by the supervisor alone, `0600` |
+| `<state>/logs/serve-<name>.log` | every event the supervisor and the server report, one line each, `[serve-<source>] <moment> <message>` (`protocol.event_line`, its moment as `core/clock.py` writes one): child start, respawn, give-up, stop; each request's method, path without its query (control characters escaped), status, time and, with sign-in, the account — never a header, a token or a body | by the supervisor alone, `0600` |
 | `<state>/logs/serve-<name>.supervisor.log` | what the detached supervisor itself prints before or outside the server's log — a traceback, an import that failed; `start` shows its last lines when the child never answers | by the supervisor's own output, `0600` |
 | `<state>/logs/serve-<name>.stacks.log` | every thread's stack, appended each time the child receives `SIGUSR1` | by the child, `0600` |
 

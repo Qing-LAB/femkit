@@ -186,7 +186,7 @@ class RefusalAnswer(Model):
 
     @classmethod
     def of(cls, exc: Refusal) -> "RefusalAnswer":
-        return cls(refused=type(exc).__name__, code=exc.code, subject=exc.subject, message=str(exc),
+        return cls(refused=exc.kind, code=exc.code, subject=exc.subject, message=str(exc),
                    next=list(exc.next))
 
 

@@ -103,7 +103,7 @@ def _busy(subject: str, fd: int) -> Busy:
             except ValidationError:                      # one it cannot read offers nothing
                 pass
     return Busy(f"{subject} is in use by {who or 'another process'}", {s.command: s for s in steps}.values(),
-                subject=subject)
+                code="held", subject=subject)
 
 
 @contextmanager

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { hasToken, NeedToken, OperationInfo, operations, setToken, viewerAddress } from "./api";
-import { command, OperationView } from "./OperationView";
+import { OperationView } from "./OperationView";
 
 // The first page: the Operations workspace and the documents, until the page is rebuilt on the
 // kernel and elements (web.md § 2.2; plan § 3, R step G).
@@ -59,7 +59,7 @@ function OperationsWorkspace({ onNeedToken }: { onNeedToken: () => void }) {
               <div className="group-name">{g}</div>
               {list.map((o) => (
                 <button key={o.name} className={`nav-item ${o.name === selected ? "active" : ""}`}
-                  onClick={() => setSelected(o.name)} title={command(o.name)}>
+                  onClick={() => setSelected(o.name)} title={o.name}>
                   <span>{o.name.includes(".") ? o.name.split(".").slice(1).join(" ") : o.name}</span>
                   {o.changes && <span className="dot" aria-label="changes things" />}
                 </button>

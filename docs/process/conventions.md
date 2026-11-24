@@ -66,8 +66,13 @@ A change that crosses a public or persisted boundary then continues:
    aspect — the documents' rules and consistency, the fit with the framework,
    scientific soundness, security for anything that serves requests or runs a
    person's code, and the person's workflow — and the documents and code, not
-   the author's conclusions. Each finding is verified against the repository
-   before it is fixed; the person agrees before work that depends on the
+   the author's conclusions. At every milestone's end, and before work that
+   builds on existing code, a review of the whole system joins it: every domain
+   against its contract and the framework, for what a review of one milestone
+   cannot see — a rule kept in one domain and broken in another, a fact held
+   twice, residue. Each finding is verified against the repository
+   before it is fixed, or scheduled at the start of the step that first works
+   on its code; the person agrees before work that depends on the
    milestone starts. Before a branch merges into `main`: the whole basic tier,
    the field tier where the change reaches it, and a consistency review of every
    merged document; the person agrees.

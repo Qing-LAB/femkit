@@ -17,6 +17,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from datetime import datetime
 from typing import Callable
 
 from femkit.config import settings
@@ -52,6 +53,7 @@ class Target:
     jobs: int
     install_fingerprint: str
     launcher: list[str] | None = None        # launch.mpi: the toolchain check's MPI runs with it
+    now: Callable[[], datetime] = clock.now   # the invocation's clock (core.md § 6): what the manifest is stamped with
 
     def source_dir(self, source_id: str) -> Path:
         return layout.source_dir(self.prefix, self.env, source_id)
@@ -76,7 +78,7 @@ def target(ctx: Context, name: str) -> Target:
         channels=cat.control.channels, python_minor=cat.control.python_minor,
         cuda_architectures=config.build.cuda_architectures, jobs=config.build.jobs or len(os.sched_getaffinity(0)),  # config.md § 3.1
         install_fingerprint=install_fingerprint(ctx, name, m.kind_name),
-        launcher=config.launch.mpi,
+        launcher=config.launch.mpi, now=ctx.now,
     )
 
 
@@ -172,7 +174,12 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
                           argv=tuple(m.in_prefix(p, ["cmake", "--build", str(t.build_dir(b.id)), "--parallel", str(t.jobs)]))))
         steps.append(Step(id=f"install:{b.id}", describe=f"install {b.id} into {text.path(p)}",
                           argv=tuple(m.in_prefix(p, ["cmake", "--install", str(t.build_dir(b.id))]))))
-    steps.append(Step(id="audit", describe="find every provided executable and module inside the prefix"))
+    proven = t.env.proven_toolchain
+    audit = (m.in_prefix(p, ["python", "-c", _AUDIT, json.dumps(t.env.provides.modules),
+                             json.dumps(list(proven.compilers.values()) if proven else [])])
+             if t.env.provides.modules or proven else None)      # nothing for Python to find: no command
+    steps.append(Step(id="audit", describe="find every provided executable and module inside the prefix",
+                      argv=tuple(audit) if audit else None))
     steps.append(Step(id="manifest", describe="probe the version and write the manifest"))
     return steps
 
@@ -392,14 +399,14 @@ def step_install(t: Target, step: Step, log: Path, say: Say) -> str:
 
 _AUDIT = """import importlib, json, os, shutil, sys
 modules, variables = json.loads(sys.argv[1]), json.loads(sys.argv[2])
-origins = {}
+origins, failures = {}, {}
 for m in modules:
     try:
         origins[m] = getattr(importlib.import_module(m), "__file__", None)
-    except Exception:
-        origins[m] = None
+    except Exception as exc:  # reported whole: a module in the prefix that fails to import says why
+        origins[m], failures[m] = None, f"{type(exc).__name__}: {exc}"
 compilers = {v: shutil.which(os.environ[v]) if os.environ.get(v) else None for v in variables}
-print(json.dumps({"modules": origins, "compilers": compilers}))
+print(json.dumps({"modules": origins, "failures": failures, "compilers": compilers}))
 """
 
 
@@ -413,15 +420,13 @@ def step_audit(t: Target, step: Step, log: Path, say: Say) -> str:
         for p in problems:
             _note(log, p)
         return "failed" if problems else "done"
-    result = process.run(t.manager.in_prefix(t.prefix, [
-        "python", "-c", _AUDIT, json.dumps(t.env.provides.modules),
-        json.dumps(list(proven.compilers.values()) if proven else [])]),
-        env=manager.confined(t.manager.environment), timeout=300)
+    result = process.run(step.argv, env=manager.confined(t.manager.environment), timeout=300)   # the plan's command
     _note(log, result.stdout + result.stderr)
     if not result.ok:
         return _ended(result, log)
     found = json.loads(result.stdout.strip().splitlines()[-1])
-    problems += [f"module not found inside the prefix: {m} ({o})" for m, o in found["modules"].items() if not inside(o)]
+    problems += [f"module {m} does not import inside the prefix: {found['failures'][m]}" if m in found["failures"]
+                 else f"module not found inside the prefix: {m} ({o})" for m, o in found["modules"].items() if not inside(o)]
     if proven:
         problems += [f"compiler ${v} does not resolve inside the prefix: {c}" for v, c in found["compilers"].items()
                      if not inside(c)]
@@ -455,7 +460,7 @@ def step_manifest(t: Target, step: Step, log: Path, say: Say) -> str:
     write_json(layout.manifest_file(t.prefix), Manifest(
         install_fingerprint=t.install_fingerprint, lock_sha256=_sha256(t.lock), manager_kind=t.manager.kind_name,
         manager_version=found.group(1) if found else "unknown", solver_version=version,
-        time=clock.stamp(),
+        time=clock.stamp(t.now()),
     ).model_dump())
     return "done"
 

@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.kit import apply, refused, run
+from tests.kit import apply, hold, planned, refused, run
 from femkit import registry
-from femkit.core import clock, locks
+from femkit.core import clock, dirs, locks
 from femkit.core.eventlog import EventLog
-from femkit.core.errors import Busy, Refused, UsageError
+from femkit.core.errors import Busy, PlanStale, Refused, UsageError
 from femkit.core.operations import Context, OperationAddress, operations_root
 from femkit.core.view import Verb
 from femkit.core.process import GRACE, Identity, end, identify
@@ -193,6 +193,67 @@ def test_a_port_stated_where_the_server_would_listen_on_a_socket_is_refused(requ
     assert caught.value.next[0].call.request == {"tcp": True, "port": 9000}
 
 
+@pytest.mark.parametrize("verb", ["serve.stop", "serve.status"])
+def test_a_port_stated_beside_the_socket_is_refused_not_dropped(verb):
+    """Fails if `--socket --port N` acts on the socket's server and drops the port stated (web.md § 4)."""
+    with refused(UsageError, "socket-and-port", "port"):
+        (apply if verb == "serve.stop" else run)(verb, socket=True, port=9000)
+
+
+def test_a_plan_to_start_makes_nothing_not_even_the_runtime_folder(tmp_path, monkeypatch):
+    """Fails if planning `serve start` — `--dry-run` — makes the runtime folder: looking
+    writes nothing (api.md § 3)."""
+    monkeypatch.setenv(dirs.VARIABLES["runtime"], str(tmp_path / "not-yet" / "run"))
+    planned("serve.start", port=free_port(), tcp=True)
+    assert not (tmp_path / "not-yet").exists()
+
+
+def test_start_refuses_its_plan_when_the_web_environment_changed_since(web_environment):
+    """Fails if a start applies a plan made while the web environment it runs in was ready,
+    after that environment changed: the server's steps would run, then fail (web.md § 4, api.md § 3)."""
+    port = free_port()
+    op, plan, c = planned("serve.start", port=port, tcp=True)
+    (web_environment.prefix / ".femkit" / "manifest.json").unlink()        # another shell, meanwhile
+    try:
+        with refused(PlanStale, "basis-changed"):
+            op.apply(plan, c)
+    finally:
+        ended(str(port))
+
+
+def test_the_supervisor_runs_as_the_plan_showed_it():
+    """Fails if `serve start` runs a supervisor command other than its plan's — built again at
+    apply — beyond the descriptors only the apply knows (api.md § 3)."""
+    port = free_port()
+    outcome = apply("serve.start", port=port, tcp=True)
+    try:
+        shown = next(s for s in outcome.plan.steps if s.id == "supervise").argv
+        p = protocol.read_pidfile(protocol.pidfile(str(port)))
+        ran = [a.decode() for a in Path(f"/proc/{p.supervisor.pid}/cmdline").read_bytes().split(b"\0")[:-1]]
+        differ = {a: b for a, b in zip(shown, ran) if a != b}
+        assert len(ran) == len(shown) and set(differ) == {"<socket>", "<lock>", "<use>"}
+        assert all(b.isdigit() for b in differ.values())
+    finally:
+        ended(str(port))
+
+
+def test_stop_holds_a_stale_servers_lock_while_it_cleans(server):
+    """Fails if `stop` removes a stale server's files without its lock, so a `start` meanwhile
+    would have its new files removed (web.md § 4)."""
+    name = str(server)
+    p = protocol.read_pidfile(protocol.pidfile(name))
+    os.kill(p.supervisor.pid, signal.SIGKILL)
+    assert wait_until(lambda: not p.child.alive())
+    op, plan, c = planned("serve.stop", port=server)
+    holder = hold(protocol.subject(name), "alone")                       # a start, meanwhile
+    try:
+        with refused(Busy, "held"):
+            op.apply(plan, c)
+    finally:
+        holder.stdin.close()
+        holder.wait()
+
+
 def test_a_token_file_an_ended_server_left_does_not_stop_the_next_start():
     """Fails if a token file left without a pidfile — its server ended before removing it —
     makes `start` fail instead of being replaced (web.md § 4)."""
@@ -262,17 +323,19 @@ def test_stop_is_refused_while_the_child_holds_an_operation_lock_unless_forced(s
 
 
 def test_status_tells_up_from_answering(server):
-    """Fails if `status` calls a server healthy because its process is up: a child that is
-    alive and not answering is reported, and noted in the log (web.md § 4)."""
+    """Fails if `status` calls a server healthy because its process is up — a child that is
+    alive and not answering is reported — or writes anything, its server's log included:
+    looking writes nothing (web.md § 4, api.md § 3)."""
     name = str(server)
     p = protocol.read_pidfile(protocol.pidfile(name))
     row = run("serve.status").servers[0]
     assert (row.state, row.answers) == ("running", True)
     os.kill(p.child.pid, signal.SIGSTOP)  # up, and silent
     try:
+        log = protocol.log_file(name).read_text()
         row = run("serve.status", port=server).servers[0]
         assert (row.state, row.answers) == ("running", False)
-        assert "not answering" in protocol.log_file(name).read_text()
+        assert protocol.log_file(name).read_text() == log
     finally:
         os.kill(p.child.pid, signal.SIGCONT)
 
@@ -346,14 +409,15 @@ def test_apply_answers_with_the_run_address_first_and_refuses_a_stale_digest(cli
     """Fails if an apply does not tell the page its operation directory before the outcome,
     or applies a plan other than the one the person saw (web.md § 1)."""
     headers = {**AUTH, "Content-Type": "application/json"}
-    plan = client.post("/api/schema/docs/plan", headers=headers, data="{}").get_json()
-    stale = client.post("/api/schema/docs/apply", headers=headers,
-                        data=json.dumps({"request": {}, "digest": "0" * 64}))
-    assert stale.status_code == 409 and stale.get_json()["refused"] == "PlanStale"
-    lines = client.post("/api/schema/docs/apply", headers=headers,
-                        data=json.dumps({"request": {}, "digest": plan["digest"]})).get_data(as_text=True).splitlines()
+    request = {"key": "launch.mpi", "value": '["mpirun", "-np", "{ranks}"]'}   # written in the test's own config
+    plan = client.post("/api/config/set/plan", headers=headers, data=json.dumps(request)).get_json()
+    stale = client.post("/api/config/set/apply", headers=headers,
+                        data=json.dumps({"request": request, "digest": "0" * 64}))
+    assert stale.status_code == 409 and (stale.get_json()["refused"], stale.get_json()["code"]) == ("PlanStale", "plan-differs")
+    lines = client.post("/api/config/set/apply", headers=headers,
+                        data=json.dumps({"request": request, "digest": plan["digest"]})).get_data(as_text=True).splitlines()
     first, last = json.loads(lines[0]), json.loads(lines[-1])
-    assert first["operation"].startswith("reference-docs/") and last["ok"] is True
+    assert first["operation"].startswith("config/") and last["ok"] is True
     events = client.get(f"/api/events/{first['operation']}", headers=AUTH).get_data(as_text=True).splitlines()
     assert [json.loads(e)["kind"] for e in events][-1] == "operation-end"
 

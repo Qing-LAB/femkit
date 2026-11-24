@@ -9,10 +9,8 @@ from __future__ import annotations
 
 import platform
 
-from femkit.config.operations import ConfigSet
-from femkit.core.operations import Context
+from tests.kit import apply
 from femkit.jobs import record
-from femkit.jobs.operations import JobProbe
 from femkit.jobs.record import Record
 
 
@@ -21,11 +19,8 @@ def test_the_probe_reads_this_machine_and_its_record_survives_the_disk():
     as `job probe --write` does, or — on a machine with a scheduler — reads no partition, no
     node group, or a queue on a partition it did not read."""
     for key, value in (("activation.preamble", "[]"), ("activation.command", '"source activate"')):  # a record needs them
-        setting = Context.from_process()                    # each command its own context, as on the command line
-        ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), setting), setting)
-    ctx = Context.from_process()
-    plan = JobProbe.plan(JobProbe.request(name="probe-test", write=True), ctx)
-    outcome = JobProbe.apply(plan, ctx)
+        apply("config.set", key=key, value=value)            # each command its own context, as on the command line
+    outcome = apply("job.probe", name="probe-test", write=True)
     assert outcome.ok() and outcome.file == str(record.path("probe-test")), outcome.text()
     r = record.read(record.path("probe-test"))
     assert Record.model_validate(outcome.record) == r

@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import BinaryIO, Callable
 
-from femkit.core import dirs, locks
+from femkit.core import dirs, locks, persist
 from femkit.core.process import GRACE, Identity, identify
 from femkit.server import protocol
 from femkit.server.protocol import Listen, LogRoll, Pidfile, event_line
@@ -53,7 +53,7 @@ def remove_files(listen: Listen) -> None:
     if listen.socket:
         paths.append(Path(listen.socket))
     for path in paths:
-        path.unlink(missing_ok=True)
+        persist.remove(path)
 
 
 def supervise(listen: Listen, fd: int, python: str, *, log_max_bytes: int, log_keep: int,

@@ -121,7 +121,7 @@ package manager named, and writes nothing.
 | prefix | `absent`, a plain directory, or a manager environment (`conda-meta/` present) |
 | manifest | `<prefix>/.femkit/manifest.json`: missing, unreadable, or its install fingerprint |
 | checks | `<prefix>/.femkit/checks.json`: missing, or its check fingerprint and outcomes |
-| last operation | the newest `events.jsonl` for this environment: its install fingerprint, finished steps, and whether it ended — read only to decide what a resume may skip (§ 4.2); no rule below reads it |
+| last install | the newest install's `events.jsonl` for this environment (a validate's is no install's): its install fingerprint, finished steps, and how it ended — read only to decide what a resume may skip (§ 4.2); no rule below reads it |
 
 ### 3.2 Observation — the first rule that matches
 
@@ -281,10 +281,12 @@ command ended by `SIGKILL` (§ 6.2), which counts as failed; an install stops at
 its first failed step (a validate runs every check, § 5). The operation log records each transition with the step's
 inputs.
 
-`install` on an `incomplete` environment resumes when the last operation had the
-**current** install fingerprint: steps that logged `done` in that operation, or in
-the unbroken run of earlier operations with the same fingerprint, are skipped and
-the rest run. When the fingerprint differs, the leftover prefix is removed and the
+`install` on an `incomplete` environment resumes when the last install — a
+validate is none — had the **current** install fingerprint and did not end done:
+steps that logged `done` in it, or in the unbroken run of earlier unfinished
+installs with the same fingerprint, are skipped and the rest run. An install that
+ended done leaves nothing to resume: a prefix broken after it is removed and
+installed again. When the fingerprint differs, the leftover prefix is removed and the
 install starts from `create`. A crashed command and a failed step resume the
 same way. The `toolchain` step is the one exception: it proves the machine the
 install runs on, and a resume may run on another (a cluster's login node, then

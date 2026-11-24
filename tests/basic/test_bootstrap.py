@@ -8,99 +8,96 @@ probe tests/field/test_job_probe.py's.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 
 import pytest
 
-from tests.kit import a_record, apply, ctx
+from tests.kit import a_record, apply, ctx, installed, planned, refused, run
+from femkit.envs.records import CheckOutcome
 from femkit.config import settings
-from femkit.config.operations import ConfigInit, ConfigSet
 from femkit.core import dirs
-from femkit.core.operations import Plan, Step
+from femkit.core.errors import PlanStale
 from femkit.definitions.catalogue import load_catalogue
-from femkit.envs.operations import EnvResult, InstallOutcome
-from femkit.envs.state import EnvState
+from femkit.envs import layout
 from femkit.jobs import setup
-from femkit.jobs.operations import ProbeOutcome
 
 GIVEN = {"cuda_architectures": ["80"], "mpi": ["mpirun", "-np", "{ranks}"]}  # nothing measured (basic tier)
 STATED = {"no_preamble": True, "activation": "source activate"}  # what only a person can state (config.md § 3.1)
 DEFAULT = sorted(n for n, e in load_catalogue().environments.items() if e.default)
 
 
-class StandIns:
-    """EnvInstall and JobProbe, each applying nothing but a line in `done`."""
-
-    def __init__(self, failing: set[str]):
-        self.failing, self.done = failing, []
-        self.request = setup.EnvInstall.request
-
-    def plan(self, req, c):
-        return Plan(operation="env.install", request=req.model_dump(), steps=(Step(id=f"{req.names[0]}/create", describe="create"),))
-
-    def apply(self, plan, c, observer):
-        name = plan.request["names"][0]
-        self.done.append(name)
-        status = "failed" if name in self.failing else "done"
-        state = EnvState.incomplete if name in self.failing else EnvState.ready
-        return InstallOutcome(plan=plan, status=status, environments=[EnvResult(name=name, status=status, state=state)])
+@pytest.fixture
+def workstation(definitions, tmp_path, monkeypatch):
+    """This test's machine, stated in its own environment (testing.md § 2.1): no scheduler — its
+    own definitions hold no SLURM kind — and no GPU, an `nvidia-smi` ahead of the tripwires
+    finding none, as on a workstation without one."""
+    (definitions / "schedulers" / "slurm.toml").unlink()
+    own = tmp_path / "workstation"
+    own.mkdir()
+    (own / "nvidia-smi").write_text("#!/bin/sh\necho 'No devices were found' >&2\nexit 6\n")
+    (own / "nvidia-smi").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{own}{os.pathsep}{os.environ['PATH']}")
 
 
-class Probe:
-    request = setup.JobProbe.request
-
-    def __init__(self, done: list[str]):
-        self.done = done
-
-    def plan(self, req, c):
-        return Plan(operation="job.probe", request=req.model_dump(), steps=(Step(id="write", describe="write"),))
-
-    def apply(self, plan, c, observer):
-        self.done.append("record")
-        return ProbeOutcome(plan=plan, status="done", file="machines/local.toml")
-
-
-def test_bootstrap_installs_every_default_environment_past_a_failure_then_records_and_checks(manager, monkeypatch):
+def test_bootstrap_installs_every_default_environment_past_a_failure_then_records_and_checks(manager, workstation):
     """Fails if a failed environment stops the next one, if this machine's record is written
     before the installs it lists, if the verdict calls a failed bootstrap complete, if the
     plan's findings — where environments go, say — do not come with the outcome, as `--yes`
     shows no others (api.md § 4), or if the entry line is not the stated activation of the
     real control prefix (envs.md § 6.2)."""
-    installs = StandIns(failing={DEFAULT[0]})
-    monkeypatch.setattr(setup, "EnvInstall", installs)
-    monkeypatch.setattr(setup, "JobProbe", Probe(installs.done))
-    ready = setup.DoctorResult(rows=[])  # doctor content to itself, so the verdict rests on the failure alone
-    monkeypatch.setattr(setup, "doctor", type("Doctor", (), {"request": staticmethod(lambda: None),
-                                                              "run": staticmethod(lambda req, c: ready)}))
-    first = ctx()  # a value bootstrap keeps, written by an earlier invocation
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="build.jobs", value="4"), first), first)
-    c = ctx()
-    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), c)
-    outcome = setup.EnvBootstrap.apply(plan, c)
-    assert installs.done == [*DEFAULT, "record"]
-    assert {r.part: r.status for r in outcome.rows}[DEFAULT[0]] == "failed" and not outcome.ok()
+    from femkit.jobs import record
+    apply("config.set", key="build.jobs", value="4")           # a value bootstrap keeps, written earlier
+    op, plan, c = planned("env.bootstrap", **GIVEN, **STATED)
+    outcome = op.apply(plan, c)                                 # each install fails: the stand-in lists no package
+    rows = {r.part: r.status for r in outcome.rows}
+    assert [rows[n] for n in DEFAULT] == ["failed"] * len(DEFAULT) and not outcome.ok()
+    assert rows["this machine's record"] == "done"
+    measured = record.read(record.path(record.LOCAL)).environments  # after the installs: what they left
+    assert {n: measured[n]["state"] if isinstance(measured[n], dict) else measured[n].state for n in DEFAULT} == \
+        {n: "incomplete" for n in DEFAULT}
     assert {i.code for i in plan.issues if i.code != "ready"} <= {i.code for i in outcome.issues}
     assert shlex.join(["source", "activate", str(dirs.control_prefix())]) in [e.command for e in outcome.entry]
 
 
-def test_bootstrap_plans_each_install_against_the_configuration_it_will_write(manager, monkeypatch):
+def test_bootstrap_plans_each_install_against_the_configuration_it_will_write(manager, workstation, definitions):
     """Fails if an install is planned against config.toml as it is rather than as bootstrap
     will write it — a launcher given to bootstrap then reads as unset — or if an install
     that will be refused is not said before anything runs, or does not count against the
     exit (envs.md § 6.2)."""
-    from femkit.config import probe
-    monkeypatch.setattr(probe, "detect_scheduler", lambda kinds: (None, "no scheduler here"))  # no launcher proposed
-    without = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate(  # no launch.mpi: two-rank checks
-        {"cuda_architectures": GIVEN["cuda_architectures"]}), ctx())
+    kinds = definitions / "schedulers"                       # two kinds without commands: which applies cannot be
+    (kinds / "second.toml").write_text((kinds / "local.toml").read_text())   # told, and no launcher is proposed
+    op, without, c = planned("env.bootstrap", cuda_architectures=GIVEN["cuda_architectures"])
     refused = {i.subject for i in without.issues if i.code == "refused"}  # ngsolve: its checks run mpirun
     assert refused and refused.isdisjoint(s.id.removeprefix("install:") for s in without.steps)
-    given = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate(GIVEN), ctx())
+    given = planned("env.bootstrap", **GIVEN)[1]
     assert [s.id for s in given.steps if s.id.startswith("install:")] == [f"install:{n}" for n in DEFAULT]
     assert not settings.config_file().exists()  # planning wrote nothing
-    ready = setup.DoctorResult(rows=[])  # even with doctor content, a refused install is no success
-    monkeypatch.setattr(setup, "doctor", type("Doctor", (), {"request": staticmethod(lambda: None),
-                                                              "run": staticmethod(lambda req, c: ready)}))
-    assert not setup.EnvBootstrap.apply(without, ctx()).ok()
+    assert not op.apply(without, c).ok()
+
+
+def test_a_part_refused_while_bootstrap_runs_is_said_and_the_next_still_runs(manager_doing):
+    """Fails if an install refused at its turn — its environment changed since the plan, as
+    another shell would change it — ends bootstrap as a defect, or stops the installs after
+    it (envs.md § 6.2, core.md § 6)."""
+    first, second, *rest = DEFAULT
+    c = ctx()
+    manager_doing(f'  "create -y") [ "$4" = {shlex.quote(str(layout.prefix(c, first)))} ] && '
+                  f'mkdir -p {shlex.quote(str(layout.prefix(c, second)))}; mkdir -p "$4/conda-meta" ;;')
+    outcome = apply("env.bootstrap", **GIVEN)       # nothing stated: no record step
+    rows = {r.part: r.status for r in outcome.rows}
+    assert rows[second] == "refused" and ("refused", second) in {(i.code, i.subject) for i in outcome.issues}
+    assert all(rows[name] != "refused" for name in [first, *rest]) and not outcome.ok()
+
+
+def test_bootstrap_refuses_its_plan_when_an_environment_changed_since(manager):
+    """Fails if bootstrap applies a plan whose decisions no longer hold — an environment it
+    planned to install was changed meanwhile — instead of refusing it before any step (api.md § 3)."""
+    op, plan, c = planned("env.bootstrap", **GIVEN)
+    (layout.prefix(c, DEFAULT[1]) / "conda-meta").mkdir(parents=True)      # another shell, meanwhile
+    with refused(PlanStale, "basis-changed"):
+        op.apply(plan, c)
+    assert not settings.config_file().exists()
 
 
 @pytest.mark.parametrize("in_job", [False, True], ids=["login node", "inside a job"])
@@ -111,8 +108,7 @@ def test_bootstrap_warns_on_a_login_node_and_only_there(in_job, monkeypatch):
     slurm = load_schedulers()["slurm"]
     if in_job:
         monkeypatch.setenv(slurm.job_variables["id"], "1")  # set by hand: sbatch is on PATH, so a SLURM machine
-    monkeypatch.setattr(setup, "EnvInstall", StandIns(failing=set()))
-    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), ctx())
+    plan = planned("env.bootstrap", **GIVEN, **STATED)[1]
     warned = [i.next[0].command for i in plan.issues if i.code == "login-node"]
     assert warned == ([] if in_job else [slurm.interactive])
 
@@ -120,7 +116,7 @@ def test_bootstrap_warns_on_a_login_node_and_only_there(in_job, monkeypatch):
 def test_bootstrap_names_its_own_command_for_config_init_s_options():
     """Fails if bootstrap's plan sends the person to `config init` for a value bootstrap itself
     takes, such as where environments go (envs.md § 6.2)."""
-    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), ctx())
+    plan = planned("env.bootstrap", **GIVEN, **STATED)[1]
     named = [n.call.operation for i in plan.issues for n in i.next if n.call]
     assert "env.bootstrap" in named and "config.init" not in named
 
@@ -129,17 +125,15 @@ def test_init_asks_for_what_nothing_reveals_and_never_writes_a_default():
     """Fails if config init proposes or writes a default paths.environments — an unattended
     run would fix builds in a home directory for good — or does not ask for the preamble, the
     activation and the environments' place while they are unset (config.md § 3.2)."""
-    c = ctx()
-    plan = ConfigInit.plan(ConfigInit.request.model_validate(GIVEN), c)
+    op, plan, c = planned("config.init", **GIVEN)
     assert {a.key for a in plan.asks} == {"environments", "preamble", "activation"}
-    ConfigInit.apply(plan, c)
+    op.apply(plan, c)
     assert "paths.environments" not in settings.load(ctx(), fresh=True).present()
-    answered = ConfigInit.plan(ConfigInit.request.model_validate({**GIVEN, "environments": "/x", **STATED}), ctx())
-    assert answered.asks == ()
+    assert planned("config.init", **GIVEN, environments="/x", **STATED)[1].asks == ()
 
 
 def _row(subject: str):
-    return next(r for r in setup.doctor.run(setup.doctor.request(), ctx()).rows if r.subject == subject)
+    return next(r for r in run("doctor").rows if r.subject == subject)
 
 
 def test_doctor_names_the_probe_while_this_machine_has_no_record_and_states_the_activation_first():
@@ -150,11 +144,10 @@ def test_doctor_names_the_probe_while_this_machine_has_no_record_and_states_the_
     unset = _row("this machine's record")
     assert not unset.ready and unset.next == [*_row("config.toml").next, unset.next[-1]]  # state both, then probe
     assert unset.next[-1].command == probe
-    c = ctx()
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.preamble", value="[]"), c), c)
+    apply("config.set", key="activation.preamble", value="[]")
     assert [str(n) for n in _row("this machine's record").next[-2:]] == [
         "python -m femkit config init --activation 'source activate'   # or 'conda activate', 'mamba activate'", probe]
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.command", value='"source activate"'), c), c)
+    apply("config.set", key="activation.command", value='"source activate"')
     assert [n.command for n in _row("this machine's record").next] == [probe]
 
 
@@ -169,28 +162,34 @@ def test_doctor_reports_every_row_when_it_cannot_observe_one(breaks, monkeypatch
     else:
         for variable in ("FEMKIT_ENV_MANAGER", "MAMBA_EXE", "CONDA_EXE"):
             monkeypatch.delenv(variable, raising=False)
-    result = setup.doctor.run(setup.doctor.request(), ctx())
+    result = run("doctor")
     assert not result.ok() and {"control environment", "config.toml", setup.ENGINES} <= {r.subject for r in result.rows}
 
 
 def test_doctor_holds_only_a_default_environment_against_the_machine():
     """Fails if doctor calls a machine not ready for a CUDA environment nobody asked for,
     or stops counting a default environment that is absent (envs.md § 6.1)."""
-    rows = {r.subject: r.ready for r in setup.doctor.run(setup.doctor.request(), ctx()).rows}
+    rows = {r.subject: r.ready for r in run("doctor").rows}
     on_request = [n for n, e in load_catalogue().environments.items() if not e.default]
     assert on_request and all(rows[n] for n in on_request) and not any(rows[n] for n in DEFAULT)
 
 
-@pytest.mark.parametrize("step", ["create", "lock", "toolchain", "compile:ngsolve", "audit", "manifest"])
-@pytest.mark.parametrize("code", [-9, 137])
-def test_a_step_ended_by_sigkill_is_killed(step, code, tmp_path, monkeypatch):
-    """Fails if any install step whose command the system killed reads as an ordinary failure:
-    the advice on where to run it again would never show (envs.md § 6.2)."""
-    from femkit.core.process import ProcessResult
-    from femkit.envs import install
-    monkeypatch.setattr(install.process, "run", lambda argv, log=None, **kw: ProcessResult(tuple(argv), code, "", "", log))
-    t = install.target(ctx(), "ngsolve")
-    assert install.run_step(t, Step(id=step, describe="", argv=("x",)), tmp_path / "logs")[0] == install.KILLED
+LISTED = "printf '@EXPLICIT\\nhttps://conda.anaconda.org/conda-forge/linux-64/xz-5.8.1-h0_0.conda\\n'"  # a lock to go on with
+
+
+@pytest.mark.parametrize("step, name", [("create", "ngsolve"), ("lock", "ngsolve"), ("toolchain", "ngsolve"),
+                                        ("audit", "web")])
+@pytest.mark.parametrize("ends", ["kill -9 $$", "exit 137"], ids=["by SIGKILL", "exit 137"])
+def test_a_step_ended_by_sigkill_is_killed(step, name, ends, manager_doing):
+    """Fails if an install step whose command the system killed — the manager's own, or one run
+    in the prefix — reads as an ordinary failure: the advice on where to run it again would never
+    show (envs.md § 6.2)."""
+    kills = {"create": [f'  "create -y") {ends} ;;'], "lock": [f'  "list --explicit") {ends} ;;'],
+             "toolchain": [f'  "list --explicit") {LISTED} ;;', f'  "run --no-capture-output") {ends} ;;']}
+    manager_doing("\n".join(kills.get(step, kills["toolchain"])))       # the audit: web's first command in its prefix
+    apply("config.set", key="launch.mpi", value='["mpirun", "-np", "{ranks}"]')
+    apply("env.install", names=[name])
+    assert [(s.id, s.outcome) for s in run("env.log", name=name).steps][-1] == (step, "killed")
 
 
 @pytest.mark.parametrize("log_line, expected", [
@@ -198,51 +197,32 @@ def test_a_step_ended_by_sigkill_is_killed(step, code, tmp_path, monkeypatch):
     ("nvcc error   : 'cudafe++' died due to signal 9 (Kill signal)", "killed"),
     ("Acoustics.F90:12:3: Error: Symbol 'x' at (1) has no IMPLICIT type", "failed"),
 ], ids=["gcc compiler killed", "nvcc front end killed", "compile error"])
-def test_a_compiler_killed_under_the_build_tool_makes_its_step_killed(log_line, expected, tmp_path, monkeypatch):
-    """Fails if a compile whose compiler the system killed reads as an ordinary failure, so the
+def test_a_compiler_killed_under_the_build_tool_makes_its_step_killed(log_line, expected, manager_doing):
+    """Fails if a step whose compiler the system killed reads as an ordinary failure, so the
     login-node advice never shows, or if a real compile error reads as killed: make exits 2 either
-    way, and only the log tells (envs.md § 6.2; the line as measured on a cluster's login node)."""
-    from femkit.core.process import ProcessResult
-    from femkit.envs import install
-
-    def make(argv, log=None, **kw):
-        log.parent.mkdir(parents=True, exist_ok=True)
-        log.write_text(f"[ 63%] Built target CoilSolver\n{log_line}\ngmake: *** [Makefile:166: all] Error 2\n")
-        return ProcessResult(tuple(argv), 2, "", "", log)
-
-    monkeypatch.setattr(install.process, "run", make)
-    t = install.target(ctx(), "elmer")
-    assert install.run_step(t, Step(id="compile:elmer", describe="", argv=("x",)), tmp_path / "logs")[0] == expected
+    way, and only the log tells (envs.md § 6.2; the line as measured on a cluster's login node).
+    Every step that runs a command reads its log alike: here the first one."""
+    lines = ["[ 63%] Built target CoilSolver", log_line, "gmake: *** [Makefile:166: all] Error 2"]
+    manager_doing(f'  "create -y") printf "%s\\n" {" ".join(shlex.quote(x) for x in lines)}; exit 2 ;;')
+    apply("env.install", names=["web"])
+    assert [(s.id, s.outcome) for s in run("env.log", name="web").steps] == [("create", expected)]
 
 
 @pytest.mark.parametrize("inside_a_job", [False, True], ids=["login node", "scheduler job"])
-def test_an_install_the_system_killed_says_where_to_run_it_again(inside_a_job, manager, monkeypatch):
+def test_an_install_the_system_killed_says_where_to_run_it_again(inside_a_job, manager_doing, monkeypatch):
     """Fails if an install whose command the system killed does not report it killed, or tells a
     login node anything but the scheduler kind's interactive allocation, or a step already inside
     an allocation — whose own memory limit killed it — to start another (envs.md § 6.2)."""
-    from femkit.core.process import ProcessResult
     from femkit.definitions.catalogue import load_schedulers
-    from femkit.envs import install
-    from femkit.envs.operations import EnvInstall
     slurm = load_schedulers()["slurm"]                   # sbatch is on PATH: a SLURM machine
     if inside_a_job:
         monkeypatch.setenv(slurm.job_variables["id"], "1")
-    apply("config.set", key="launch.mpi", value='["mpirun", "-np", "{ranks}"]')
-    c = ctx()
-    plan = EnvInstall.plan(EnvInstall.request(names=["ngsolve"]), c)
-    monkeypatch.setattr(install.process, "run", lambda argv, log=None, **kw: ProcessResult(tuple(argv), -9, "", "", log))
-    outcome = EnvInstall.apply(plan, c)
+    manager_doing('  "create -y") kill -9 $$ ;;')
+    outcome = apply("env.install", names=["web"])
     (killed,) = [i for i in outcome.issues if i.code == "killed"]
-    again = "python -m femkit env install ngsolve"
-    assert not outcome.ok() and killed.subject == "ngsolve"
+    again = "python -m femkit env install web"
+    assert not outcome.ok() and killed.subject == "web"
     assert [n.command for n in killed.next] == ([again] if inside_a_job else [slurm.interactive])
-
-
-class NothingToInstall(StandIns):
-    """EnvInstall with every environment ready: nothing to install."""
-
-    def plan(self, req, c):
-        return Plan(operation="env.install", request=req.model_dump(), steps=())
 
 
 @pytest.mark.parametrize("mpi_set, installs, measured", [
@@ -256,12 +236,14 @@ def test_bootstrap_measures_the_record_again_unless_it_stays_current_and_nothing
     the record stale, or although it installs environments the record would then list as they
     were before; or if it measures again a record nothing changes (envs.md § 6.2; jobs.md § 9.3)."""
     from femkit.jobs import record
-    c = ctx()
     for key, value in {"activation.preamble": "[]", "activation.command": '"source activate"', **({"launch.mpi": json.dumps(GIVEN["mpi"])} if mpi_set else {})}.items():
-        ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), c), c)
+        apply("config.set", key=key, value=value)
     now = record.settings_now(settings.load(ctx()).config).model_dump(exclude_none=True)
     record.write(record.path(record.LOCAL), a_record(settings=now))      # measured under these settings
     assert record.status(record.path(record.LOCAL), settings.load(ctx()).config)[0] == "current"  # until bootstrap
-    monkeypatch.setattr(setup, "EnvInstall", (StandIns if installs else NothingToInstall)(failing=set()))
-    plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), ctx())
+    if not installs:                                     # every default environment ready: nothing to install
+        for name, env in load_catalogue().environments.items():
+            if env.default:
+                installed(name, outcomes=[CheckOutcome(id=c.id, outcome="passed") for c in env.checks if not c.device])
+    plan = planned("env.bootstrap", **GIVEN, **STATED)[1]
     assert ("record" in [s.id for s in plan.steps]) == measured

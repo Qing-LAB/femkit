@@ -257,6 +257,13 @@ class EnvBootstrap:
                            "refused": refused},
                     steps=tuple(steps), issues=issues, asks=config_plan.asks)
 
+    def observe(self, req: BootstrapRequest, ctx: Context, held: bool) -> dict:
+        """What the plan decided on: the keys config.toml holds, each default environment's
+        state, and this machine's record — each part's own apply checks its own besides."""
+        return {"present": sorted(settings.load(ctx, fresh=True).present()),
+                "environments": {name: observe(ctx, name)[1].value for name in default_environments()},
+                "record": record.sha256(record.path(LOCAL))}
+
     def apply(self, plan: Plan, ctx: Context, observer) -> BootstrapOutcome:
         config_plan = Plan.model_validate(plan.holds["config_plan"])
         rows = [BootstrapRow(part=name, status="refused", detail=why) for name, why in plan.holds["refused"].items()]
@@ -265,7 +272,7 @@ class EnvBootstrap:
         issues: list[Issue] = [i for i in plan.issues if i.code != "ready"]
 
         def again() -> Context:
-            return Context(env=ctx.env, now=ctx.now)  # a new invocation's view: reads config.toml as written
+            return ctx.fresh()  # a new invocation's view: reads config.toml as written
 
         def do(step: Step, where: Path):
             if step.id == "config":
@@ -280,7 +287,7 @@ class EnvBootstrap:
                     rows.append(BootstrapRow(part=name, status="refused", detail=str(exc)))
                     issues.append(Issue(severity="error", code="refused", subject=name, message=f"{name}: {exc}",
                                         next=exc.next))
-                    return "refused", None
+                    return "failed", None   # the step did not do its work; the next one still runs
                 env = out.environments[0]
                 status = "killed" if any(i.code == "killed" for i in out.issues) else \
                     "done" if out.ok() else "failed"
@@ -297,7 +304,7 @@ class EnvBootstrap:
             except Refusal as exc:
                 rows.append(BootstrapRow(part="this machine's record", status="refused", detail=str(exc)))
                 issues.append(Issue(severity="error", code="refused", subject="record", message=str(exc), next=exc.next))
-                return "refused", None
+                return "failed", None
             rows.append(BootstrapRow(part="this machine's record", status=out.status, detail=out.file or ""))
             return out.status, None
 

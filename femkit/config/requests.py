@@ -8,6 +8,8 @@ from femkit.core.view import Verb
 from femkit.core.commandline import ARGUMENT
 from femkit.config import settings
 from femkit.core.schema import Model
+from typing import Literal
+
 from pydantic import Field, create_model
 
 
@@ -22,7 +24,8 @@ class ShowRequest(Model):
 class SetRequest(Model):
     """One key and its new value."""
 
-    key: str = Field(description="a dotted key, e.g. build.jobs", json_schema_extra=ARGUMENT)
+    key: Literal[tuple(k.dotted for k in settings.keys())] = Field(  # the keys config.toml has, and no other
+        description="a dotted key, e.g. build.jobs", json_schema_extra=ARGUMENT)
     value: str = Field(description='a TOML value, as the file writes it: 8, "text", ["80", "90"], []',
                        json_schema_extra={**ARGUMENT, "toml": "whole"})
 
@@ -32,7 +35,8 @@ def option_name(k: settings.Key) -> str:
 
 
 OPTION_KEYS = {option_name(k): k for k in settings.keys()}
-assert len(OPTION_KEYS) == len(settings.keys()), "config key names must be unique across sections"
+if len(OPTION_KEYS) != len(settings.keys()):  # a defect of femkit's own: two keys would be one `config init` option
+    raise TypeError("config key names must be unique across sections: each is one `config init` option")
 
 InitRequest = create_model(
     "InitRequest",

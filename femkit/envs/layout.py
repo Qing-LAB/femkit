@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from femkit.config import settings
-from femkit.core import dirs
+from femkit.core import dirs, locks
 from femkit.core.operations import Context, operations_root
 
 
@@ -49,7 +49,8 @@ def toolchain_dir(prefix_dir: Path) -> Path:
 
 
 def lock_file(name: str, install_fingerprint: str) -> Path:
-    return dirs.data_dir() / "locks" / name / f"{install_fingerprint}.txt"
+    """The saved package list, beside the subjects' lock files (envs.md § 4.3)."""
+    return locks.root() / name / f"{install_fingerprint}.txt"
 
 
 def archive_cache(sha256: str) -> Path:

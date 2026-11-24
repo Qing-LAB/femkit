@@ -49,5 +49,7 @@ def read(work: Path, nodes: list[str]) -> dict:
             observed[f"{case.get('classname')}::{case.get('name')}"] += 1
     expected = Counter(_case(n) for n in relative_nodes(nodes)[1])
     if observed != expected:
-        raise ValueError(f"the report holds {dict(observed)}, not the named tests {dict(expected)}")
+        def listed(tests: Counter) -> str:
+            return ", ".join(f"{name} ({n}×)" if n > 1 else name for name, n in sorted(tests.items())) or "none"
+        raise ValueError(f"the report holds {listed(observed)}, not the named tests {listed(expected)}")
     return {"tests": len(nodes), "passed": sum(observed.values())}

@@ -26,17 +26,25 @@ def ctx() -> Context:
     return Context.from_process()
 
 
-def run(name: str, **request):
+def run(name: str, /, **request):
     """A read-only operation, its request given as JSON values, run as a surface runs it."""
     op = registry.operations()[name]
     return op.run(op.request_from(request), ctx())
 
 
-def apply(name: str, **request):
+def apply(name: str, /, **request):
     """A changing operation planned and applied in one context, as `--yes` applies it."""
     op = registry.operations()[name]
     c = ctx()
     return op.apply(op.plan(op.request_from(request), c), c)
+
+
+def planned(name: str, /, **request):
+    """A changing operation, its plan, and the one context the plan was made in — held, as the
+    command line holds them while the person reads the plan; ``op.apply(plan, c)`` applies it."""
+    op = registry.operations()[name]
+    c = ctx()
+    return op, op.plan(op.request_from(request), c), c
 
 
 HOLDER = """
