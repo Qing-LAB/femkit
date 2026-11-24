@@ -12,9 +12,10 @@ and the boundary between declared data and engine code
 | A **shipped definition** says what femkit supports: environments, the tools it drives, the checks that prove an install. It is reviewed source, never per-user or per-machine | 1 |
 | Generic code reads declared fields and registered IDs; it never tests an engine, manager or scheduler **name** ([`conventions.md`](../process/conventions.md) § 2) | 1 |
 | Every field's type, default and description is defined **once**, on a schema model; the reference page is generated from it | 2 |
-| Unknown keys, wrong types and dangling references fail **at load**, before any plan or process; a mesher's shape kinds, which the model defines, fail `schema check` | 2.2, 2.3 |
+| Unknown keys, wrong types and dangling references fail **at load**, before any plan or process | 2.2 |
 | The control environment is two plain lists, **`channels.txt`** and **`control.txt`**, read by the install script, the package manager and Python alike | 3 |
 | An engine environment declares packages, sources, builds and checks; nothing about a machine | 4, 5 |
+| Everything in an environment comes from **conda-forge in one solve**, unless femkit builds it from a pinned source; nothing comes from the host, and pip installs nothing yet | 4.1 |
 | How to drive a package manager or a scheduler is a **kind** file; adding a scheduler, or a manager of the conda family, is data plus, at most, a reader | 6 |
 
 What is configured per user or per machine is not here: it is
@@ -104,11 +105,8 @@ file, the key path and the reason. It fails when:
   accepts (§ 4.3);
 - a mesher builds `import` and names no format it imports.
 
-One rule is not checked at load: the shape kinds a mesher builds are the
-model's, and the model sits above the definitions, so `schema check` refuses
-a kind the model has not (§ 2.3).
-
-Loading reads only definition files. It probes nothing, starts no process and
+Loading reads only definition files, and the science documents a formulation
+names (`models.md` § 4.3). It probes nothing, starts no process and
 writes nothing; importing a schema module loads nothing.
 
 ### 2.3 Generated reference
@@ -118,9 +116,7 @@ reads every domain's models) renders `docs/reference/` from the schema models
 (the state tables are not rendered yet, [`core.md`](core.md) § 7). The
 committed pages are that output; a test renders them again and fails on any difference. Contracts,
 guides and help text link to the reference instead of restating fields.
-`python -m femkit schema check` loads every shipped definition, and refuses a
-mesher that builds a shape kind the model has not — the model's shapes are the
-one list of kinds; a test runs it.
+`python -m femkit schema check` loads every shipped definition; a test runs it.
 
 ## 3. `channels.txt` and `control.txt`
 
@@ -157,7 +153,6 @@ packages.
 engine = "ngsolve"                     # registered engine adapter ID
 version = "6.2.2606"                   # what the version probe must report
 description = "Netgen/NGSolve with MPI and threads"
-maturity = "candidate"                 # production | candidate | experimental
 default = true                         # part of `env install --all`
 thread_variables = ["NGS_NUM_THREADS"]   # set to a run's threads per rank
 fixed_variables = { OMP_NUM_THREADS = "1" }   # set to these values in every check and run
@@ -206,12 +201,26 @@ NETGEN_DIR = "{prefix}/lib/cmake/netgen"
 USE_CUDA = true
 ```
 
-### 4.1 Packages
+### 4.1 Where each part comes from
 
-`conda` and `pip` are constraints the manager solves, together with the
-toolchain's packages (§ 4.6) in one solve. The first install records
-the exact solution (the lock, [`envs.md`](envs.md) § 4); `forbid`
-is checked against that lock, never against the host.
+An environment holds what its file lists, and nothing from the host. Each part
+has one source:
+
+| what | listed in | installed by | from |
+|---|---|---|---|
+| compilers, the sysroot and every tool a build calls | `[toolchain] packages` (§ 4.6) | the package manager, conda or mamba | conda-forge |
+| libraries, MPI, Python and its packages | `[packages] conda` | the package manager, in the same solve | conda-forge |
+| the GPU compilers and libraries of the CUDA environment | `[cuda] packages` (§ 4.5) | the package manager, in the same solve | conda-forge |
+| each engine, and anything femkit needs at a version, option or patch conda-forge does not offer | `[[sources]]`, `[[builds]]` (§ 4.2) | femkit's build steps, inside the prefix, with its toolchain | an archive pinned by its commit and SHA-256 |
+| a Python package conda-forge does not have | `[packages] pip` | not built yet: an environment that lists one is refused; designed with how a script's imports are provided (plan § 3, X) | — |
+
+The rule: everything comes from conda-forge, solved once and together, unless
+femkit must build it. pip itself is in every environment with Python, but
+femkit installs nothing with it, because a package pip installs sits outside the
+solve: the manager cannot pin it with the rest, rebuild it exactly, or keep it
+from replacing a library the solve chose. The first install records the exact
+solution (the lock, [`envs.md`](envs.md) § 4); `forbid` names what must be
+absent from it, and is checked against that lock, never against the host.
 
 ### 4.2 Builds
 
@@ -326,7 +335,6 @@ states no `engine`; it states the command that reports its version instead:
 description = "the web surface: femkit's server, and Node.js to build its page"
 version = "v22.23.5"                   # the last line `version_command` prints
 version_command = ["node", "--version"]
-maturity = "production"
 control_packages = true                # femkit's own libraries, as control.txt lists them
 
 [packages]

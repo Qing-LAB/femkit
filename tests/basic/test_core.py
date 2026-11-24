@@ -87,8 +87,6 @@ with locks.subject_lock(sys.argv[1], shared=sys.argv[2] == "shared"):
 
 def hold(subject: str, mode: str):
     """Another process holding ``subject``'s lock, ``mode`` shared or alone, until its stdin closes."""
-    import subprocess
-    import sys
     p = subprocess.Popen([sys.executable, "-c", HOLDER, subject, mode], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          text=True)
     assert p.stdout.readline().strip() == "held"

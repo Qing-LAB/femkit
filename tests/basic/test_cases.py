@@ -83,7 +83,7 @@ def test_what_differs_in_the_physics_gives_another_case_and_the_studys_own_choic
     before = ids(project)
     edit(study_file(project, "check"), 'display = ["m", "V", "V/m"]', 'display = ["nm"]')
     edit(study_file(project, "check"), 'reduction = "value"', 'reduction = "maximum"')
-    edit(study_file(project, "check"), 'mesher = "gmsh"', 'mesher = "netgen"')
+    edit(study_file(project, "check"), 'memory = "2G" }   # jobs.md', 'memory = "4G" }   # jobs.md')
     assert ids(project) == before
     edit(model_file(project), 'bias = "1 V"', 'bias = "2 V"')
     assert set(ids(project)).isdisjoint(before)
@@ -117,20 +117,17 @@ def test_an_incomplete_model_or_unexplained_crossed_classes_expand_to_nothing(pr
         produced(project)
 
 
-def test_expand_writes_each_case_once_and_names_the_preparations_it_orphans(project):
-    """Fails if a second expansion writes again, a case.json's content is not its ID, or a
-    preparation of a case the study no longer produces is deleted or left unnamed (models.md § 5)."""
+def test_expand_writes_each_case_once(project):
+    """Fails if a second expansion writes again, or a case.json's content is not its ID
+    (models.md § 5)."""
     first = apply("study.expand", project=str(project), study="check")
     assert len(first.added) == 3 and first.kept == []
     for cid in first.added:
         data = json.loads((cases.case_dir(project, cid) / "case.json").read_text())
         assert cases.case_id(data) == cid
         assert data["numerics"]["mesh"]["size"] == data["point"]["numerics.mesh.size"]  # the axis is applied
-    left = project / "studies" / "check" / "prepared" / ("0" * 64) / "elmer"
-    left.mkdir(parents=True)
     second = apply("study.expand", project=str(project), study="check")
-    assert second.added == [] and sorted(second.kept) == sorted(first.added) and second.orphaned == ["0" * 64]
-    assert left.is_dir()
+    assert second.added == [] and sorted(second.kept) == sorted(first.added)
     listed = run("case.list", project=str(project)).cases
     assert {c.id for c in listed} == set(first.added) and all(c.studies == ["check"] for c in listed)
 

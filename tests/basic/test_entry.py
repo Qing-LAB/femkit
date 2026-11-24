@@ -237,7 +237,6 @@ def test_help_before_control_exists_is_the_scripts_own_and_creates_nothing(manag
 
 
 def femkit_places() -> list[str]:
-    from femkit.core import dirs
     return [str(dirs.cache_dir() / "manager-home"), str(dirs.cache_dir() / "pkgs"), "false",
             str(dirs.cache_dir() / "tmp"), "person="]
 

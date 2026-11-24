@@ -1203,13 +1203,6 @@
           "default": null,
           "description": "the operation directory holding its event log"
         },
-        "orphaned": {
-          "description": "preparations of cases the study no longer produces",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "plan": {
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
@@ -1229,8 +1222,7 @@
         "status",
         "log",
         "added",
-        "kept",
-        "orphaned"
+        "kept"
       ],
       "title": "ExpandOutcome",
       "type": "object"
@@ -2527,28 +2519,6 @@
         "text"
       ],
       "title": "PlanAnswer",
-      "type": "object"
-    },
-    "PlanResult": {
-      "additionalProperties": false,
-      "properties": {
-        "issues": {
-          "description": "findings a person should act on",
-          "items": {
-            "$ref": "#/$defs/Issue"
-          },
-          "type": "array"
-        },
-        "plan": {
-          "$ref": "#/$defs/Plan",
-          "description": "the steps `install` would run now, with their commands"
-        }
-      },
-      "required": [
-        "issues",
-        "plan"
-      ],
-      "title": "PlanResult",
       "type": "object"
     },
     "ProbeOutcome": {

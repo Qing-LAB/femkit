@@ -128,8 +128,6 @@ class Imported(Model):
 
 Shape = Annotated[Union[Rectangle, Disk, Polygon, Box, Sphere, Cylinder, Extrusion, Combined, Imported],
                   Field(discriminator="kind")]
-#: The shape kinds, read from the shapes themselves: the one list a mesher's `builds` names from.
-SHAPE_KINDS = [kind for shape in classes(Shape) for kind in closed(shape.model_fields["kind"].annotation)]
 
 
 class Frame(Model):
@@ -350,7 +348,6 @@ class Observable(Model):
 
 class Binding(Model):
     """What a study binds for one environment (models.md § 5)."""
-    mesher: str | None = Field(default=None, description="its mesher, or the study's shared one")
     resources: Resources | None = Field(default=None, description="its job's resources", json_schema_extra={"doc": "jobs.md § 2"})
 
 

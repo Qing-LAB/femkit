@@ -34,14 +34,6 @@ class InstallRequest(Model):
     clean: bool = Field(default=False, description="remove and rebuild, discarding the saved lock")
 
 
-class PlanRequest(Model):
-    """Environments whose install is shown."""
-
-    names: list[str] = Field(default_factory=list, description="environments", json_schema_extra=ARGUMENT)
-    all: bool = Field(default=False, description="every environment whose definition has default = true")
-    clean: bool = Field(default=False, description="as `install --clean` would")
-
-
 class ValidateRequest(Model):
     """One environment to validate."""
 
@@ -56,5 +48,4 @@ ENV_CLEAN = Verb("env.clean", CleanRequest)
 ENV_INSTALL = Verb("env.install", InstallRequest)
 ENV_LIST = Verb("env.list", ListRequest)
 ENV_LOG = Verb("env.log", LogRequest)
-ENV_PLAN = Verb("env.plan", PlanRequest)
 ENV_VALIDATE = Verb("env.validate", ValidateRequest)

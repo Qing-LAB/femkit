@@ -162,7 +162,6 @@ def test_clean_removes_the_prefix_through_the_manager_while_holding_its_lock(man
     outcome = EnvClean.apply(EnvClean.plan(EnvClean.request(name=NAME), c), c)
     assert outcome.status == "done" and not f.prefix.exists()
     from femkit.definitions.catalogue import load_control
-    from femkit.envs.manager import resolve
     assert manager.read_text().split() == resolve(ctx()).remove(f.prefix, load_control().channels)[1:]
 
 

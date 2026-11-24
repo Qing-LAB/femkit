@@ -33,8 +33,7 @@ class MesherDefinition(Model):
     description: str = Field(description="one line")
     provided_by: str = Field(description="the engine environment it runs in")
     dimensions: list[Literal[2, 3]] = Field(min_length=1, description="the dimensions it meshes")
-    builds: list[str] = Field(description="the model's shape kinds it can build; `schema check` refuses one the "
-                                          "model has not")
+    builds: list[str] = Field(description="the model's shape kinds it can build")
     imports: list[Literal["step", "iges", "brep", "stl"]] = Field(default_factory=list,
                                                                   description="the CAD formats an `import` may be in")
     controls: list[Control] = Field(description="the mesh policy's keys it honors")

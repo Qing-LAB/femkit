@@ -18,10 +18,10 @@ DOMAINS = (
 )
 
 
-def operations(modules: tuple[str, ...] = DOMAINS) -> dict[str, Operation]:
-    """Every declared operation by name; imports the modules only when called."""
+def operations() -> dict[str, Operation]:
+    """Every declared operation by name; imports the domains' modules only when called."""
     found: dict[str, Operation] = {}
-    for module_name in modules:
+    for module_name in DOMAINS:
         module = importlib.import_module(module_name)
         for value in vars(module).values():
             if isinstance(value, Operation):

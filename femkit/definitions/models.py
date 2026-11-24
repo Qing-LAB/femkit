@@ -7,7 +7,6 @@ description. `femkit schema docs` renders `docs/reference/` from them.
 from __future__ import annotations
 
 import re
-from enum import Enum
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
@@ -71,15 +70,10 @@ def _relative_path(text: str) -> str:
 RelativePath = Annotated[str, AfterValidator(_relative_path)]
 
 
-class Maturity(str, Enum):
-    production = "production"
-    candidate = "candidate"
-    experimental = "experimental"
-
-
 class Packages(Model):
     conda: list[str] = Field(default_factory=list, description="conda constraints the manager solves")
-    pip: list[str] = Field(default_factory=list, description="pip constraints solved after conda")
+    pip: list[str] = Field(default_factory=list, description="Python packages conda-forge does not have; not built "
+                                                             "yet — an environment that lists one is refused")
     forbid: list[str] = Field(
         default_factory=list, description="package families that must be absent from the solved lock"
     )
@@ -290,7 +284,6 @@ class EnvironmentDefinition(Model):
     control_packages: bool = Field(default=False, description="a tool environment's: the control environment's "
                                    "packages (control.txt), solved with its own (definitions.md § 4.7)")
     description: str = Field(description="one line for `env list`")
-    maturity: Maturity = Field(description="production, candidate or experimental")
     default: bool = Field(default=False, description="part of `env install --all`")
     thread_variables: list[str] = Field(
         default_factory=list, description="variables set to a run's threads per rank"

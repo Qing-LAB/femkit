@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from femkit.core.view import Verb
 
-import socket
 from femkit.core.schema import Model
 from pydantic import Field, model_validator
 

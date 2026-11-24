@@ -1,7 +1,7 @@
 # Geometry contract — the script and its contract, and the step from geometry to mesh
 
 **Role:** contract
-**Status:** current, approved by the person (2026-11-23); nothing in it is
+**Status:** current, approved by the person (plan § 6); nothing in it is
 built yet (plan § 3, R). How a step is run — its run folder,
 its run script, its monitoring — is designed with execution (plan § 3, X)
 **Authority:** what a component is; the geometry script and the contract that
@@ -187,9 +187,9 @@ declared as data, in `femkit/data/meshers/gmsh.toml`: the format written, the
 format each engine reads, the conversion step, and what each keeps — group
 names, the geometry order. Elmer receives MSH 2.2 through ElmerGrid; NGSolve
 receives the mesh through femkit's own layer, which builds NGSolve's mesh with
-every group's name, so NGSolve never handles a file format. Measured
-2026-11-23: NGSolve's own reader of a two-body Gmsh mesh kept both bodies'
-elements and only the first body's name. Which geometry orders each route keeps
+every group's name, so NGSolve never handles a file format. Measured on the
+`ngsolve` environment's build: NGSolve's own reader of a two-body Gmsh mesh kept
+both bodies' elements and only the first body's name. Which geometry orders each route keeps
 is not measured, nor whether femkit's layer can give NGSolve curved
 second-order elements; a geometry order a route does not keep is a match line
 ([`models.md`](models.md) § 6.2). Not built yet (plan § 3, X).
@@ -216,12 +216,12 @@ outer     = { dimension = 2 }         # faces the script picks out
 
 The standard import script reads the file, takes the bodies' names from it, and
 leaves a marked place for the person to pick out the faces the file does not
-name. Measured 2026-11-23: Gmsh reads the names of a STEP file's solids; whether
+name. Measured: Gmsh reads the names of a STEP file's solids; whether
 FreeCAD writes them is not measured. Not built yet (plan § 3, X).
 
 ## 10. The geometry's file format
 
 Step 1 writes a file that keeps both the exact shapes and the group names, so
 step 2 meshes the true curves and keeps the names. Which of Gmsh's formats does
-both is chosen by measurement with the execution design: measured 2026-11-23, a
-Gmsh script saving to STEP lost the names (plan § 3, X).
+both is chosen by measurement with the execution design: measured, a Gmsh
+script saving to STEP lost the names (plan § 3, X).

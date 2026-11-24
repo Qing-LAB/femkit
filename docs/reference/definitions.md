@@ -24,7 +24,6 @@
 | `version` | text | required | what the version probe must report |
 | `control_packages` | boolean | `False` | a tool environment's: the control environment's packages (control.txt), solved with its own (definitions.md § 4.7) |
 | `description` | text | required | one line for `env list` |
-| `maturity` | `production` \| `candidate` \| `experimental` | required | production, candidate or experimental |
 | `default` | boolean | `False` | part of `env install --all` |
 | `thread_variables` | list of text | empty | variables set to a run's threads per rank |
 | `fixed_variables` | table of text → text | empty | variables set to these values in every check and run |
@@ -53,7 +52,7 @@
 | key | type | default | meaning |
 |---|---|---|---|
 | `conda` | list of text | empty | conda constraints the manager solves |
-| `pip` | list of text | empty | pip constraints solved after conda |
+| `pip` | list of text | empty | Python packages conda-forge does not have; not built yet — an environment that lists one is refused |
 | `forbid` | list of text | empty | package families that must be absent from the solved lock |
 
 ## Provides
@@ -311,7 +310,7 @@ One mesher (models.md § 6.5).
 | `description` | text | required | one line |
 | `provided_by` | text | required | the engine environment it runs in |
 | `dimensions` | list of `2` \| `3` | required | the dimensions it meshes |
-| `builds` | list of text | required | the model's shape kinds it can build; `schema check` refuses one the model has not |
+| `builds` | list of text | required | the model's shape kinds it can build |
 | `imports` | list of `step` \| `iges` \| `brep` \| `stl` | empty | the CAD formats an `import` may be in |
 | `controls` | list of `size` \| `regions` | required | the mesh policy's keys it honors |
 | `tolerance` | [Tolerance](#tolerance), optional | — | its geometric tolerance; absent: not known, and no feature can be checked against it |

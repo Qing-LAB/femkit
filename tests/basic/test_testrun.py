@@ -172,7 +172,7 @@ def test_a_dead_worker_leaves_the_run_partial(tmp_path):
     assert s["state"] == "partial" and s["failed"] == 1
 
 
-def test_rerunning_failures_with_none_recorded_runs_nothing(tmp_path, monkeypatch, capsys):
+def test_rerunning_failures_with_none_recorded_runs_nothing(tmp_path, monkeypatch):
     """Fails if `run lf` with no recorded failure runs every test, as pytest's own
     --last-failed would (testing.md § 4.7)."""
     monkeypatch.setattr(testrun, "REPO", str(tmp_path))

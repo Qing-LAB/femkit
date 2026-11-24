@@ -10,7 +10,7 @@ environment state machine
 
 | rule | § |
 |---|---|
-| **control** (runs femkit) at a fixed place under `<data>`, and under `paths.environments` one environment per engine definition, plus a `-cuda` one for a definition with a CUDA part (today `ngsolve`, `elmer`, `ngsolve-cuda`, `elmer-cuda`) | 1 |
+| **control** (runs femkit) at a fixed place under `<data>`, and under `paths.environments` one environment per engine definition, plus a `-cuda` one for a definition with a CUDA part (today `ngsolve`, `elmer`, `ngsolve-cuda`, `elmer-cuda`), and one per tool definition (today `web`) | 1 |
 | An environment's state is **observed** from its lock, its prefix and its records, by seven ordered rules; the first that matches is the state. Its operation log decides only what a resume may skip | 3, 4.2 |
 | Each state allows a fixed set of actions; anything else is refused before it starts, with the allowed commands | 3.3 |
 | An install is a fixed sequence of steps logged as events; a failed or interrupted install **resumes** from its last finished step | 4 |
@@ -208,7 +208,7 @@ that validate did not run or did not finish.
 
 ### 4.1 Steps
 
-`env plan NAME` prints these, with their exact commands:
+`env install NAME --dry-run` prints these, with their exact commands:
 
 | step | does | once per |
 |---|---|---|
@@ -398,17 +398,16 @@ flowchart LR
   or a command inside a prefix writes lands in the person's home or the
   system's temporary folder: package downloads, repodata and notice caches, its
   list of environments, mamba's process records, Node.js's compile cache
-  (measured 2026-11-23: `web build` left `/tmp/node-compile-cache` before this
-  rule). Measured 2026-11-23 on a workstation:
-  conda 26.7.1 honours both variables; mamba 2.9.0 honours the package cache
+  (measured: Node.js 22 writes `node-compile-cache` under `TMPDIR`). Measured
+  on a workstation: conda 26.7.1 honours both variables; mamba 2.9.0 honours the package cache
   but registers every environment it creates in `$HOME/.conda/environments.txt`
   with no setting to stop it, so its `HOME` is femkit's; `conda info` writes
   `~/.anaconda/keyring` and `~/.conda/aau_token` into whichever `HOME` it has;
   both report the same root prefix under either `HOME`. The variables that
   name the person's own configuration and caches apart from `HOME` —
   `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`,
-  `CONDARC`, `MAMBARC` — are removed from every manager command: measured
-  2026-11-23, conda 26.7.1 under femkit's `HOME` still reads
+  `CONDARC`, `MAMBARC` — are removed from every manager command: measured,
+  conda 26.7.1 under femkit's `HOME` still reads
   `$XDG_CONFIG_HOME/conda/.condarc` and `$CONDARC`. The person's
   `~/.condarc` and `~/.mambarc` are therefore not read by femkit's installs:
   the channels are femkit's own (below), and a proxy reaches the manager
@@ -553,7 +552,6 @@ resources and runs `env validate` there.
 | command | does |
 |---|---|
 | `env list` | every environment with its definition, state and GPU qualification |
-| `env plan NAME` | the steps `install` would run now, without running them |
 | `env install NAME… \| --all [--clean]` | § 3.3, § 4 |
 | `env validate NAME [--gpu]` | § 5 |
 | `env bootstrap [--clean]` + `config init`'s options | set up this machine: `config init`, every default environment installed (with `--clean`, rebuilt), this machine's record, then `doctor` (§ 6.2) |
@@ -594,7 +592,7 @@ consent, then four parts in order:
    `config.toml`, so if it is not written nothing is installed.
 2. **Every default environment**, one install each. Each is planned against
    `config.toml` as bootstrap will write it, so the plan already shows each
-   install and its number of steps (`env plan NAME` lists them), and says now
+   install and its number of steps (`env install NAME --dry-run` lists them), and says now
    which installs will be refused and why: an environment with MPI while
    `launch.mpi` is unset, for instance. A refused install is not started
    and counts against the exit. A ready one is left alone, unless `--clean`. The

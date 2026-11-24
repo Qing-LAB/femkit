@@ -13,14 +13,14 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
-from femkit.core.errors import Refused, UsageError
+from femkit.core.errors import Refused
 from femkit.core.paths import inside
 from femkit.core.units import Quantity, UnitError, Units
 from femkit.definitions.formulations import FormulationDefinition
 from femkit.core import view
 from femkit.models import check
 from femkit.models.schema import Axis, ModelFile, Numerics, StudyFile, quantities
-from femkit.models.requests import CASE_LIST, MODEL_CHECK
+from femkit.models.requests import MODEL_CHECK
 
 SCHEMA = 1
 
@@ -230,12 +230,3 @@ def written_cases(project: Path) -> dict[str, dict]:
     for path in sorted(root.glob("*/case.json")) if root.is_dir() else []:
         out[path.parent.name] = json.loads(path.read_text(encoding="utf-8"))
     return out
-
-
-def named(project: Path, prefix: str) -> str:
-    """The case a unique prefix of its ID names (models.md § 5)."""
-    matches = [cid for cid in written_cases(project) if cid.startswith(prefix)]
-    if len(matches) != 1:
-        raise UsageError(f"{prefix!r} names {'no case' if not matches else f'{len(matches)} cases'}: give more of "
-                         "its ID", (view.command(CASE_LIST, project=str(project)),))
-    return matches[0]

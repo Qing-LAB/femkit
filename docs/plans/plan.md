@@ -85,8 +85,8 @@ flowchart LR
     M3["M3 local jobs"] --> M4
     M3 --> M6
     M3 --> X
-    M5["M5 models I<br/>model, studies, cases,<br/>abilities, match, graph"] --> M6["M6 electrostatics<br/>through the chain"]
-    M5 --> R["R the project's structure,<br/>materials, geometry, the page"]
+    R["R the project's structure,<br/>materials, geometry, the page"] --> M5["M5 models I<br/>abilities, match"]
+    M5 --> M6["M6 electrostatics<br/>through the chain"]
     R --> X["X execution:<br/>run folders, the pipeline"]
     X --> M6
     R --> M7["M7 web interface"]
@@ -106,8 +106,8 @@ flowchart LR
 | **M2** | the cluster's scheduler read for real | — |
 | **M3** | jobs prepared and run on the workstation | — |
 | **M4** | jobs submitted to SLURM | M2, M3 |
-| **M5** | a calculation described, expanded and matched against an environment, with every limitation shown | — |
-| **R** | the project as parts in a fixed tree behind one door; materials in femkit's format with libraries; geometry as the person's Gmsh script under a contract; the page describing the structure | M5 |
+| **R** | the project as parts in a fixed tree behind one door; materials in femkit's format with libraries; geometry as the person's Gmsh script under a contract; the page describing the structure | — |
+| **M5** | a calculation matched against an environment, with every limitation shown | R (its parts) |
 | **X** | every step run from a run folder: the geometry script, the mesh step, the solve | R, M3 |
 | **M6** | `electrostatics` through the whole chain in both engines, its abilities proven | M1's exact-answer check, M3, M5, R, X |
 | **M7** | the web interface and its server | M5, R, and M3's detached process; its progress and job views M3, its review view M6, its customization view M8 |
@@ -167,7 +167,7 @@ effective-tunneling studies.
 ### M2 — machines
 
 `job probe` and `job machines` are built. Open: the SLURM readers
-(`femkit/schedulers/slurm.py`) have read only made-up text; the field test on
+(`femkit/schedulers/slurm.py`) have read no real output yet; the field test on
 the cluster's login node (`tests/field/test_job_probe.py`) is their first real
 reading, and settles the `sacctmgr` column names and the shape of
 `scontrol show node -o` there.
@@ -204,8 +204,7 @@ case run through `job launch`.
 ### M4 — SLURM
 
 The `slurm` kind's remaining parts and its readers in `femkit/schedulers/`
-(`jobs.md` § 7); cluster probing and carrying a record; header, submission,
-query, cancel, `launch --check`. The fit of a request against the machine
+(`jobs.md` § 7); header, submission, query, cancel, `launch --check`. The fit of a request against the machine
 record and its wording follow `framework.md` § 4. Field tier on the cluster:
 the readers' first real reading is M2's field test there. Acceptance: a job
 submitted, queried and cancelled on the cluster; `launch --check` naming a
@@ -213,40 +212,21 @@ request the record cannot fit.
 
 ### M5 — models I
 
-All by [`../contracts/models.md`](../contracts/models.md):
+By [`../contracts/models.md`](../contracts/models.md). Its first design — one
+`model.toml` with its studies, cases, graph and edits — is built and frozen
+until R step D replaces it (`models.md`, status). Open, on the parts R builds:
+abilities — their schema, each one's digest, the abilities, extension points and
+engine-only options of `elmer` and `ngsolve` for `electrostatics`; the proof
+record's schema; `case match` and `study match`; decisions and their staleness;
+`case list`'s match and preparation columns; `project graph --environment`,
+which overlays the match report. The manufactured benchmarks come with the
+expression language (M6).
 
-1. **The project, the model, studies and cases.** Built: the model and study
-   schemas, each reference field annotated with its target type (`core.md`
-   § 2), loaded with their first tier of validity — types, unknown keys,
-   quantities, parameters and their arithmetic, references — and the job
-   request's resources they bind; `model check`, the second tier: what is
-   missing, and what the formulation does not allow; `study expand`, case
-   IDs and `case.json` in their canonical form, tabulated materials converted
-   to the model's convention with the passivity check, a case outside a
-   property's range refused; `study copy`; `case list`. Open: `case list`'s
-   match and preparation columns, which come with step 3 and M6.
-2. **Formulations and meshers as definition types** (`definitions.md` § 1).
-   Built: the formulation type, and `electrostatics` with its science document,
-   its constants, and its first benchmark, `two_material`, checked by
-   `schema check`; the mesher type, `gmsh` and `netgen`. The manufactured
-   benchmarks come with the expression language (M6).
-3. **Abilities**: their schema; each one's digest; the abilities, default
-   mesher, extension points and engine-only options of `elmer` and `ngsolve`
-   for `electrostatics`; the proof record's schema; `case match` and
-   `study match`; decisions and their staleness.
-4. **The graph and its edits.** Built: the address grammar; comment-preserving
-   TOML editing in `core/persist.py`; `model graph` with `--mermaid`,
-   `model set`, `model unset`, `model rename`; the Laplace model built from an
-   empty folder by `model set` alone — all reshaped by R (the `project …`
-   edits). Open: `project graph
-   --environment`, which overlays the match report (step 3).
-
-Acceptance: the Laplace model built from an empty folder by `model set` alone,
-each intermediate state loadable, its findings shrinking to none; "500 nm" and
-"0.5 µm" giving one case ID; a decision changing no case ID and going stale
-when its ability's digest changes; a match line for each translation status
-M5 can reach — `exact`, `approximated`, `unsupported`, `engine-only` — and for
-`proven` and `unproven`, with a proof record written by the test.
+Acceptance: "500 nm" and "0.5 µm" giving one case ID; a decision changing no
+case ID and going stale when its ability's digest changes; a match line for each
+translation status M5 can reach — `exact`, `approximated`, `unsupported`,
+`engine-only` — and for `proven` and `unproven`, with a proof record written by
+the test.
 
 ### R — the project's structure, its data, and the page
 
@@ -266,7 +246,7 @@ geometry script, meshing, solving — is milestone X, designed after R.
   start of the step that first works on its code (D, G, X, M3, M6), so fixing
   never holds up the plan. In it, in order:
   1. **Residue out, contracts true.** Removed (the person's decision):
-     `packages.pip`, `maturity`, `env plan`, `study expand`'s scan of
+     `maturity`, `env plan`, `study expand`'s scan of
      `prepared/`, `cases.named`, `Binding.mesher`, `netgen.toml` (its measured
      orders moved into ADR 0012 first), the mesher shape-kind rule in
      `definitions.md`, the first page's own command-line text; dead parameters
@@ -275,8 +255,8 @@ geometry script, meshing, solving — is milestone X, designed after R.
      requirements on C–F (below), and only its schema cache is fixed. Status
      marks made exact (`framework.md`; `web.md` §§ 6, 8.2, 8.3, 9.2;
      `testing.md`'s engine tier; `materials.md`; `jobs.md`; M2, M4, M5, M7
-     here), `envs.md`'s dated measurements moved to their ADRs, citations
-     corrected.
+     here), dates taken out of the contracts — each measurement keeping its
+     tool's version — and citations corrected.
   2. **Refusals and the door.** `core.md` § 9's kinds complete, the missing
      statement `framework.md` § 4 refuses among them, and every bare `Refusal`
      given its kind; a next step's shape needs nothing above the standard
@@ -447,7 +427,9 @@ after ([`../contracts/geometry.md`](../contracts/geometry.md) § 4). In it:
 - the three steps: the person's geometry script, femkit's mesh step with its
   recipe, the engine's solve; the geometry's file format chosen by measurement;
 - the mesh step's environment, proposed as `gmsh` (an environment change, the
-  person's), and how a geometry script's imports are provided; the hand-over
+  person's), and how a geometry script's imports are provided — with it, whether
+  pip installs a Python package conda-forge lacks, its exact versions and hashes
+  recorded as the lock records conda's (`definitions.md` § 4.1); the hand-over
   to Elmer through ElmerGrid and to NGSolve through femkit's own layer, its
   region names proven; the model's shape kinds and `netgen.toml` removed; the
   benchmarks converted to example scripts with contracts;
@@ -510,8 +492,8 @@ five verbs as operations, the server's state machine observed from its lock and
 pidfile, the supervisor, the rotated log; token-mode access with the `Host`,
 `Origin`, write and size checks and the response headers; the page's operation
 and progress views, from the registry's schemas, and `web build`; the document
-viewer, in a tab of its own; the Model, Runs and Operations workspaces over
-`model graph` and the edits — the first page, which item 3 replaces. Open:
+viewer, in a tab of its own; the Operations workspace — the first page, which
+R step G replaces. Open:
 
 1. **`serve` on a cluster**: the Unix socket on a login node, reached through
    `ssh -L`, and the manager's femkit-owned home with the cluster's mamba
@@ -749,7 +731,8 @@ approved as written:
 - Step C proves the project framework on a layout of the tests' own; the state
   machines as data move to the start of G.
 - The leftovers listed in § 3, B.1 are removed; the mesh step stays a step of
-  its own, so another mesher can join it later (ADR 0012).
+  its own, so another mesher can join it later (ADR 0012). The `pip` list stays:
+  its use is designed with X.
 
 **Open, the person's** (the proposed answer in each contract):
 

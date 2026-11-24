@@ -49,11 +49,11 @@ def test_field_problems_are_reported_together_by_key_path(tmp_path):
     path, or one hides the other (definitions.md § 2.2, § 4.2; core.md § 2)."""
     src = _shipped("ngsolve")
     n = len(tomllib.loads(src)["builds"])
-    text = (src.replace('maturity = "candidate"\n', 'maturity = "candidate"\nmaturty = "x"\n', 1)
+    text = (src.replace('default = true\n', 'default = true\ndefualt = "x"\n', 1)
             + '\n[[builds]]\nid = "x"\nsource = "netgen"\n[builds.options]\nCMAKE_BUILD_TYPE = "Debug"\n'
             + '\n[[builds]]\nid = "y"\nsource = "netgen"\n[builds.options]\nX = [1]\n')
     problems = _load_problems(tmp_path, text)
-    assert {"maturty", f"builds[{n}].options", f"builds[{n + 1}].options.X"} <= set(problems)
+    assert {"defualt", f"builds[{n}].options", f"builds[{n + 1}].options.X"} <= set(problems)
     assert not [p for p in problems if p.startswith(f"builds[{n + 1}].options.X.")]  # one problem, at its key
 
 
@@ -206,7 +206,7 @@ def test_an_environment_with_builds_declares_its_toolchain(tmp_path):
 
 
 
-TOOL = {"description": "a tool", "version": "v1", "version_command": ["tool", "--version"], "maturity": "production",
+TOOL = {"description": "a tool", "version": "v1", "version_command": ["tool", "--version"],
         "packages": {"conda": ["tool=1"]}, "provides": {"executables": ["tool"]}}
 
 
@@ -221,13 +221,11 @@ def test_a_tool_environment_runs_no_engine_and_is_never_a_default(change, at):
     """Fails if a definition states both an engine and a tool's version command, or neither, or
     a tool environment carries variables for an engine's runs or a default install
     (definitions.md § 4.7)."""
-    from femkit.core.schema import DefinitionError, validate
-    from femkit.definitions.models import EnvironmentDefinition
+    from femkit.core.schema import validate
     data = {**TOOL, **change}
     if data.get("version_command") is None:
         data.pop("version_command")
     with pytest.raises(DefinitionError) as caught:
-        from femkit.engines import registered
         validate(EnvironmentDefinition, data, "tool.toml", context={"engines": registered()})
     assert at in [path for path, _ in caught.value.problems]
 
@@ -236,7 +234,6 @@ def test_the_web_environment_takes_the_control_environments_packages_by_referenc
     """Fails if the web environment does not hold femkit's own libraries exactly as control.txt
     lists them — its server would run femkit on other versions — or the control environment
     holds the web's flask or Node.js (definitions.md § 4.7, ADR 0009)."""
-    from femkit.core.operations import Context
     from femkit.definitions.catalogue import load_control
     from femkit.envs.operations import EnvInstall
     plan = EnvInstall.plan(EnvInstall.request(names=["web"]), Context.from_process())
@@ -249,14 +246,11 @@ def test_the_web_environment_takes_the_control_environments_packages_by_referenc
 def test_a_tool_environment_without_control_packages_holds_only_its_own(manager, tmp_path, monkeypatch):
     """Fails if the create planned for a tool environment that does not ask for femkit's
     libraries installs them, or the Python femkit's own programs need (definitions.md § 4.7)."""
-    import shutil
-    from femkit.core.operations import Context
-    from femkit.definitions import catalogue
     from femkit.envs.operations import EnvInstall
     data = tmp_path / "data"
     shutil.copytree(catalogue.data_root(), data)
     (data / "environments" / "tool.toml").write_text(
-        'description = "a tool"\nversion = "v1"\nversion_command = ["tool", "--version"]\nmaturity = "production"\n'
+        'description = "a tool"\nversion = "v1"\nversion_command = ["tool", "--version"]\n'
         '[packages]\nconda = ["tool=1"]\n[provides]\nexecutables = ["tool"]\n')
     monkeypatch.setattr(catalogue, "data_root", lambda: data)
     plan = EnvInstall.plan(EnvInstall.request(names=["tool"]), Context.from_process())
@@ -269,7 +263,6 @@ def test_a_conda_removal_names_the_declared_channels_and_a_mamba_one_none():
     """Fails if conda's removal leaves out the declared channels — under femkit's HOME it would
     stop on the terms of the base configuration's `defaults`, channels femkit never uses — or
     mamba's names them, which mamba 2.9.0 refuses (envs.md § 4.4; measured forms)."""
-    from pathlib import Path
     from femkit.definitions.catalogue import load_control, load_managers
     from femkit.envs.manager import Manager
     kinds, channels = load_managers(), load_control().channels
@@ -298,27 +291,14 @@ def test_a_formulation_that_misstates_itself_does_not_load(change, at):
     grammar does not read, its unknown not among what an observable may name, a condition on
     a region kind that does not exist, or a description pointing to a section its science
     document lacks (models.md § 4)."""
-    import tomllib
-    from femkit.core.schema import DefinitionError, validate
+    from femkit.core.schema import validate
     from femkit.core.units import Units
-    from femkit.definitions.catalogue import data_root, load_units
+    from femkit.definitions.catalogue import load_units
     from femkit.definitions.formulations import FormulationDefinition
     data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text()) | change
     with pytest.raises(DefinitionError) as caught:
         validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units())})
     assert at in [path for path, _ in caught.value.problems]
-
-
-def test_schema_check_refuses_a_mesher_that_builds_a_shape_the_model_has_not(tmp_path, monkeypatch):
-    """Fails if a mesher naming a shape kind the model has not passes `schema check`: the
-    model's shapes are the one list of kinds (definitions.md § 2.3)."""
-    data = tmp_path / "data"
-    shutil.copytree(data_root(), data)
-    gmsh = data / "meshers" / "gmsh.toml"
-    gmsh.write_text(gmsh.read_text().replace('builds = ["rectangle",', 'builds = ["torus", "rectangle",', 1))
-    monkeypatch.setattr(catalogue, "data_root", lambda: data)
-    result = schema_check.run(schema_check.request(), Context.from_process())
-    assert [i.subject for i in result.issues if "'torus'" in i.message] == [str(gmsh)]
 
 
 def test_schema_check_refuses_a_page_declaration_that_names_what_is_not_served(tmp_path, monkeypatch):
@@ -340,9 +320,7 @@ def test_schema_check_refuses_a_page_declaration_that_names_what_is_not_served(t
 def test_a_mesher_that_misstates_itself_does_not_load(change, at):
     """Fails if a mesher names an environment that does not exist, or builds `import` with no
     format (definitions.md § 2.2)."""
-    import tomllib
-    from femkit.core.schema import DefinitionError, validate
-    from femkit.definitions.catalogue import data_root
+    from femkit.core.schema import validate
     from femkit.definitions.meshers import MesherDefinition
     data = tomllib.loads((data_root() / "meshers" / "gmsh.toml").read_text()) | change
     with pytest.raises(DefinitionError) as caught:
@@ -358,10 +336,9 @@ def test_a_mesher_that_misstates_itself_does_not_load(change, at):
 def test_a_benchmark_that_misstates_itself_does_not_load(change, at):
     """Fails if a benchmark exercises a kind its formulation lacks, names a project that does not
     exist, or a reference value the unit grammar does not read (models.md § 4)."""
-    import tomllib
-    from femkit.core.schema import DefinitionError, validate
+    from femkit.core.schema import validate
     from femkit.core.units import Units
-    from femkit.definitions.catalogue import data_root, load_units
+    from femkit.definitions.catalogue import load_units
     from femkit.definitions.formulations import FormulationDefinition
     data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text())
     data["benchmarks"]["two_material"] |= change

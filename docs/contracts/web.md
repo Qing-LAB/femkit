@@ -290,8 +290,8 @@ a detached, supervised process is a core building block
 ([`core.md`](core.md) § 8): the child is spawned
 from the supervisor's main thread, ends when its supervisor ends
 (`PR_SET_PDEATHSIG`, checked again with `getppid` after it is set), and both are
-identified as a run's process is — process ID and start time. **The supervisor
-opens the listening socket once and hands it to each child**, so the address is
+identified as a run's process is — process ID and start time. **`start` opens
+the listening socket once, and the supervisor hands it to each child**, so the address is
 never free between a child's end and the next one's start, and no other
 program can take it in that gap.
 
@@ -537,11 +537,13 @@ never as a document of its own.
 
 ## 6. The page's framework
 
-Built (plan § 3, R step B): the vocabulary (§ 7), the page
-declaration and what the server declares but the layout and text and templates
-(§§ 8.2–8.3), the kernel and the elements in part (§ 9); the views, the shell,
-§ 8.2's layout and § 8.3 are not (plan § 3, R), and the page as it
-stands is the first page they replace. The page is held to the web discipline of
+Built: the vocabulary (§ 7), the page declaration (§ 8.1), § 8.3's fragments
+and templates over today's one-file model, the kernel's client, action hook
+and page state, and the elements of § 9.2 but `Form`, `TextEditor`, `Keys`,
+`Confirm` and `Busy`; none of it is wired into the page yet. Not built: the
+layout (§ 8.2, plan § 3, R step C), `project write` (§ 8.3, R step F), the
+missing elements, the views and the shell (R step G); the page as it stands is
+the first page they replace. The page is held to the web discipline of
 [`../process/conventions.md`](../process/conventions.md) § 2.1, and to one
 doctrine: **a view is a thin consumer of documents and elements; a missing
 capability is work on the document or the element, never a workaround in the
@@ -669,7 +671,8 @@ operation does not exist.
 Each part kind — its folder, its file, its schema — and each object type inside
 a part — its table, whether it is named, its place in the chain's order — is
 declared once, in the project layout ([`projects.md`](projects.md) § 4); the
-door, the graph, the checks, the templates and the page all read it. A kind's
+door, the graph, the checks, the templates and the page all read it. Not built
+yet (plan § 3, R step C). A kind's
 colour is the design token of its place in that order (§ 10.2), so no style
 names a kind.
 
@@ -693,8 +696,9 @@ starts from one of femkit's example scripts with its contract
 ([`geometry.md`](geometry.md) § 2): geometry is the person's, and its examples
 are real scripts, not generated text. No other template text is written by
 hand, and no value is asked for field by field
-([ADR 0010](../decisions/0010-describe-the-system.md)). Not built yet (plan
-§ 3, R step F).
+([ADR 0010](../decisions/0010-describe-the-system.md)). Built over today's
+one-file model: the fragments, the keys and the templates; not built: `project
+write` and the property list's part (plan § 3, R step F).
 
 ### 8.4 The way through
 
@@ -770,7 +774,8 @@ holds it ([`testing.md`](testing.md) § 3).
 ### 9.2 Elements — the design system
 
 One component for each, each with its stylesheet, its classes prefixed with
-its name; every view uses these and nothing else:
+its name; every view uses these and nothing else. `Form`, `TextEditor`, `Keys`,
+`Confirm` and `Busy` are not built yet (plan § 3, R step G):
 
 | element | is |
 |---|---|

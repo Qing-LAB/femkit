@@ -1,8 +1,9 @@
 # Materials contract — the property list, the material format, libraries and importers
 
 **Role:** contract
-**Status:** current, approved by the person (2026-11-23); nothing in it is
-built yet (plan § 3, R)
+**Status:** current, approved by the person (plan § 6); nothing of its design
+is built yet (plan § 3, R step E). Today's one-file models check a property
+table's phasor convention, passivity and range (`models.md`, status)
 **Authority:** the property list and its names in each engine and source;
 dispersion models; the material format; the global library and a project's
 own, and how a material is found; the material assignment of a component;
@@ -200,7 +201,7 @@ source is refused. femkit never fetches a file itself: the person supplies it.
 The first importer is for refractiveindex.info's files (one YAML file per
 material and source; tabulated `n`, tabulated `nk`, or one of nine formulas;
 its range in micrometres). Reading YAML needs a library the control environment
-does not hold (measured 2026-11-23); adding it is an environment change, the
+does not hold (measured); adding it is an environment change, the
 person's decision. Not built yet (plan § 3, R step E).
 
 ## 8. Translation

@@ -43,18 +43,18 @@ def _with_units(node: Any, units: Units) -> Any:
 
 
 @functools.lru_cache(maxsize=None)
-def _base(cls: type[BaseModel], units: Units) -> dict[str, Any]:
-    """The schema of ``cls``, self-contained, with its units: read once for a class and a unit
-    table, both of which never change; every caller takes a copy."""
+def _inlined(cls: type[BaseModel]) -> dict[str, Any]:
+    """The schema of ``cls``, self-contained: read once for a class, which never changes. Keyed
+    on the class alone — a unit table is made per invocation, so a cache keyed on it never hits."""
     raw = cls.model_json_schema(mode="validation")
-    return _with_units(_inline(raw, raw.get("$defs", {})), units)
+    return _inline(raw, raw.get("$defs", {}))
 
 
 def fragment(cls: type[BaseModel], units: Units, *, const: dict[str, Any] | None = None,
              keep: Callable[[str], bool] | None = None) -> dict[str, Any]:
     """The schema of ``cls``, self-contained: a property ``const`` fixes held to its value,
     and with ``keep``, only the properties it keeps."""
-    schema = copy.deepcopy(_base(cls, units))
+    schema = _with_units(_inlined(cls), units)               # a new tree: the cached one is never changed
     props = schema.get("properties", {})
     if keep is not None:
         schema["properties"] = props = {k: v for k, v in props.items() if keep(k)}

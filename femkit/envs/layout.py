@@ -1,4 +1,4 @@
-"""Where an environment's files live (envs.md § 1, § 4.3; config.md § 5)."""
+"""Where an environment's files live (envs.md § 1, § 4.3; config.md § 4)."""
 
 from __future__ import annotations
 

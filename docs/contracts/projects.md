@@ -1,7 +1,7 @@
 # Projects contract — the projects root, a project's tree, and the one door
 
 **Role:** contract
-**Status:** current, approved by the person (2026-11-23); nothing in it is
+**Status:** current, approved by the person (plan § 6); nothing in it is
 built yet (plan § 3, R)
 **Authority:** where projects live; the tree of a project — every folder and
 file, what it holds, who writes it, which door reads it, and whether it moves

@@ -32,7 +32,7 @@ from femkit.definitions.formulations import FormulationDefinition
 from femkit.definitions.meshers import MesherDefinition
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 from femkit.jobs.record import Record
-from femkit.models.schema import QUANTITIES, SHAPE_KINDS, ModelFile, StudyFile
+from femkit.models.schema import QUANTITIES, ModelFile, StudyFile
 from femkit.engines import registered
 from femkit import page
 from femkit.definitions.requests import SCHEMA_CHECK, SCHEMA_DOCS
@@ -85,13 +85,12 @@ def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
         cat = catalogue.load(ctx, engines=registered())
     except catalogue.CatalogueError as exc:
         return SchemaCheckResult(issues=[i for err in exc.errors for i in _issues(err)])
-    errors = _mesher_errors(cat)
     from femkit import registry               # here: the registry imports this module
+    issues = _benchmark_issues(cat, ctx)
     try:
         page.load(registry.operations())
     except DefinitionError as exc:
-        errors.append(exc)
-    issues = _benchmark_issues(cat, ctx) + [i for err in errors for i in _issues(err)]
+        issues += _issues(exc)
     if issues:
         return SchemaCheckResult(issues=issues)
     return SchemaCheckResult(environments=list(cat.environments), managers=list(cat.managers),
@@ -102,18 +101,6 @@ def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
 def _issues(err: DefinitionError) -> list[Issue]:
     """A file that does not load, as findings: one per problem, with its file and key path."""
     return [Issue(severity="error", code="definition-invalid", subject=err.file, message=line) for line in err.lines()]
-
-
-def _mesher_errors(cat) -> list[DefinitionError]:
-    """A mesher may build only the model's shape kinds: the shapes' own kinds are the one list
-    (definitions.md § 2.3). Checked here, as the definitions may not import `models`."""
-    errors = []
-    for name, mesher in cat.meshers.items():
-        problems = [(f"builds[{i}]", f"{kind!r} is no shape kind of the model; the kinds are {', '.join(SHAPE_KINDS)}")
-                    for i, kind in enumerate(mesher.builds) if kind not in SHAPE_KINDS]
-        if problems:
-            errors.append(DefinitionError(catalogue.data_root() / "meshers" / f"{name}.toml", problems))
-    return errors
 
 
 def _benchmark_issues(cat, ctx: Context) -> list[Issue]:

@@ -75,11 +75,6 @@ MACHINE: Machine[ServerFacts, ServerState] = Machine(
 )
 
 
-def observe(name: str) -> tuple[ServerFacts, ServerState]:
-    f = facts(name)
-    return f, MACHINE.observe(f)
-
-
 def label(name: str) -> str:
     """How a sentence names this server: `the server on port 8000`, or on the socket."""
     return "the server on the socket" if name == protocol.SOCKET_NAME else f"the server on port {name}"

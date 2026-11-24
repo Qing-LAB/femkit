@@ -103,8 +103,8 @@ def test_a_model_that_would_not_load_is_refused_at_the_place(project, old, new, 
     ('support = { point = [0.5, 0.5] }', 'support = { region = "nowhere" }', 'observables.midpoint.support.region'),
     ('unit = "V"\n', 'unit = "V"\nside = "left"\n', 'observables.midpoint.side'),          # a side that is no domain
     ('size = "0.05 m"', 'size = "0.05 V"', 'numerics.mesh.size'),                         # a mesh size that is no length
-    ('gmsh"\nresources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00"',
-     'gmsh"\nresources = { ranks = 1, threads = 1, gpus = 0, wall = "10:00"',
+    ('elmer]\nresources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00"',
+     'elmer]\nresources = { ranks = 1, threads = 1, gpus = 0, wall = "10:00"',
      'environments.elmer.resources.wall'),                                                     # two parts: minutes to SLURM
 ])
 def test_a_study_that_would_not_load_is_refused_at_the_place(project, old, new, at):
@@ -117,7 +117,6 @@ def test_a_study_that_would_not_load_is_refused_at_the_place(project, old, new, 
 # ------------------------------------------------------------------ the second tier: model check
 
 def check(project: Path) -> list[str]:
-    from femkit.core.operations import Context
     from femkit import registry
     op = registry.operations()["model.check"]
     return [i.subject for i in op.run(op.request_from({"project": str(project)}), Context.from_process()).issues]

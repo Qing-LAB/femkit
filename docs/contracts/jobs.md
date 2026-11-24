@@ -1,7 +1,7 @@
 # Jobs — requests, run scripts, runs and schedulers
 
 **Role:** contract
-**Status:** current; machine records and the probe are built, jobs are not yet (`docs/plans/plan.md` M3, M4)
+**Status:** current; built: machine records and the probe (§ 9), and the scheduler kinds' probe commands and readers (§ 7). Not built: §§ 1–6 and 8, and § 7's header, submit, check, query and cancel, and its readers checked when a kind loads (plan § 3, M3, M4); whether X rewrites §§ 1–5 is the person's (plan § 6)
 **Authority:** machine records and the probe, the job request, preparation,
 the run script, the run state machine, and how femkit uses a scheduler
 

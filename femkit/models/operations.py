@@ -65,13 +65,9 @@ def _expanded(project: Path, study: str, ctx: Context) -> list[cases.Case]:
 class ExpandOutcome(Outcome):
     added: list[str] = Field(default_factory=list, description="cases written")
     kept: list[str] = Field(default_factory=list, description="cases already there")
-    orphaned: list[str] = Field(default_factory=list, description="preparations of cases the study no longer produces")
 
     def text(self) -> str:
         lines = [f"{text.count(len(self.added), 'case')} added, {len(self.kept)} kept"]
-        if self.orphaned:
-            lines.append(f"{text.count(len(self.orphaned), 'preparation')} orphaned, kept with their runs: "
-                         + ", ".join(o[:12] for o in self.orphaned))
         return "\n".join(lines + text.findings(self.issues))
 
 
@@ -84,18 +80,11 @@ class StudyExpand:
         project = _project(req)
         produced = _expanded(project, req.study, ctx)
         written = cases.written_cases(project)
-        prepared = project / "studies" / req.study / "prepared"
         ids = {c.id for c in produced}
-        orphaned = sorted(p.name for p in prepared.iterdir() if p.is_dir() and p.name not in ids) \
-            if prepared.is_dir() else []
         steps = tuple(Step(id=c.id, describe=f"write cases/{c.id[:12]}…/case.json — "
                                              + ", ".join(f"{k} = {v}" for k, v in c.point.items()) or "the one case")
                       for c in produced if c.id not in written)
-        issues = [Issue(severity="info", code="case-orphaned", subject=f"study:{req.study}:prepared.{o}",
-                        message=f"a preparation of {o[:12]}…, a case the study no longer produces: kept with its runs")
-                  for o in orphaned]
-        return Plan(steps=steps, issues=issues,
-                    basis={"produced": sorted(ids), "kept": sorted(ids & set(written)), "orphaned": orphaned})
+        return Plan(steps=steps, basis={"produced": sorted(ids), "kept": sorted(ids & set(written))})
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ExpandOutcome:
         req = StudyRequest.model_validate(plan.request)
@@ -111,7 +100,7 @@ class StudyExpand:
 
         status, where = run_steps(plan, ctx, observer, do)
         return ExpandOutcome(plan=plan, status=status, log=str(where), added=[s.id for s in plan.steps],
-                             kept=plan.basis["kept"], orphaned=plan.basis["orphaned"], issues=plan.issues)
+                             kept=plan.basis["kept"], issues=plan.issues)
 
 
 class CopyOutcome(Outcome):

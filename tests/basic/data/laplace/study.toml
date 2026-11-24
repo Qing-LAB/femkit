@@ -18,9 +18,7 @@ reduction = "value"
 unit = "V"
 
 [environments.elmer]
-mesher = "gmsh"
 resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G" }   # jobs.md § 2
 
 [environments.ngsolve]
-mesher = "netgen"
 resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G" }

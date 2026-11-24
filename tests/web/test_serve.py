@@ -113,7 +113,6 @@ def test_a_running_server_holds_its_environment_until_it_stops(server):
     """Fails if the web environment can be changed under a running server — its supervisor not
     holding `env-web` shared — or the refusal does not offer this server's stop, or the hold
     outlives the server (web.md § 4, core.md § 5)."""
-    from femkit.core import locks
     with pytest.raises(Busy) as caught:
         locks.require_free("env-web")
     assert f"the web server on 127.0.0.1:{server}" in str(caught.value)
@@ -320,7 +319,7 @@ def test_apply_answers_with_the_run_address_first_and_refuses_a_stale_digest(cli
     assert [json.loads(e)["kind"] for e in events][-1] == "operation-end"
 
 
-# ------------------------------------------------------------------ what the review found
+# ------------------------------------------------------------------ stopping and streams
 
 def test_stop_is_prompt_with_an_event_stream_open(server):
     """Fails if an open event stream holds up `stop`: the child ends its streams, and the
@@ -383,7 +382,7 @@ def fake_operation(runs: int, step_log: bool = False):
     return Operation("demo.multi", Req, Outcome, True, "a test operation", Impl()), release
 
 
-def test_an_apply_over_several_runs_reports_each_and_ends(tmp_path):
+def test_an_apply_over_several_runs_reports_each_and_ends():
     """Fails if the apply route blocks on a second run's start — an install of several
     environments would hang holding its locks (web.md § 1)."""
     from femkit.web.app import create_app
@@ -499,7 +498,7 @@ def test_a_runtime_folder_others_could_replace_is_refused(tmp_path):
     assert stat.S_IMODE(private_dir(tmp_path / "closed" / "run").stat().st_mode) == 0o700
 
 
-def test_a_socket_file_left_by_an_ended_server_is_cleared_and_a_live_one_refused(monkeypatch):
+def test_a_socket_file_left_by_an_ended_server_is_cleared_and_a_live_one_refused():
     """Fails if a socket file no server answers on blocks every later start, or one another
     program answers on is taken over (web.md § 4)."""
     import tempfile

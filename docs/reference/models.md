@@ -310,7 +310,6 @@ What a study binds for one environment (models.md § 5).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `mesher` | text, optional | — | its mesher, or the study's shared one |
 | `resources` | [Resources](#resources), optional | — | its job's resources (jobs.md § 2) |
 
 ## Resources

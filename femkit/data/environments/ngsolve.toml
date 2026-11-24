@@ -3,7 +3,6 @@
 engine = "ngsolve"
 version = "6.2.2606"
 description = "Netgen/NGSolve with MPI and threads"
-maturity = "candidate"
 default = true
 thread_variables = ["NGS_NUM_THREADS"]
 fixed_variables = { OMP_NUM_THREADS = "1" }

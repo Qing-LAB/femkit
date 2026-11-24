@@ -4,7 +4,6 @@
 description = "the web surface: femkit's server, and Node.js to build its page"
 version = "v22.23.5"
 version_command = ["node", "--version"]
-maturity = "production"
 control_packages = true
 
 [packages]

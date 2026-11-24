@@ -199,8 +199,6 @@ def _kinded(finding, remove, at: tuple, label: str, item: Kinded, allowed: dict[
         finding(at, f"{label.capitalize()} is a {item.kind}, which stands on a {' or '.join(spec.on)}, not a "
                 f"{region_kind}.", remove(at), code="model-invalid")
     given = dict(item.model_extra or {})
-    if "on" in type(item).model_fields:
-        given.pop("on", None)
     for name, p in spec.parameters.items():
         if name not in given:
             finding((*at, name), f"{label.capitalize()} states no {name}: {p.description} (in {p.unit}).")

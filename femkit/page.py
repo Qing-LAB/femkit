@@ -15,7 +15,7 @@ from femkit.definitions import catalogue
 from femkit.models.schema import OBJECTS
 
 Context = Literal["project", "study", "environment"]
-#: The page's own commands, which a key may be bound to; each is the kernel's (web.md § 9.1).
+#: The page's own commands, which a key may be bound to (web.md § 8.1).
 Command = Literal["undo", "redo", "remove", "commit", "cancel"]
 
 

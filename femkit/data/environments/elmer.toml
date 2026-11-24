@@ -3,7 +3,6 @@
 engine = "elmer"
 version = "26.2"                      # what `ElmerSolver -v` reports for release-26.2.1
 description = "Elmer with MPI and OpenMP"
-maturity = "candidate"
 default = true
 thread_variables = ["OMP_NUM_THREADS"]
 

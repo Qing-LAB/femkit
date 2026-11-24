@@ -16,7 +16,7 @@ from werkzeug.serving import BaseWSGIServer, WSGIRequestHandler
 
 from femkit.server.protocol import LOOPBACK, Listen
 
-THREADS = 16          # above access's cap on event streams (STREAMS)
+THREADS = 16          # above the app's cap on event streams (app.STREAMS)
 READ_TIMEOUT = 15.0   # seconds a connection may take to send a request, and stay idle
 
 

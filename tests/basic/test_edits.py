@@ -152,7 +152,6 @@ def test_the_graph_holds_every_object_and_every_reference_the_loader_checks(proj
     """Fails if a reference the loader checks is not a wire of the graph, or an object not a
     node: the graph and the check read one annotation and cannot disagree (models.md § 11.2)."""
     from femkit.core.schema import references
-    from femkit.models.project import load_study
     g = graph(project, study="check")
     nodes = {n.address for n in g.nodes}
     assert {"model:regions.left", "model:geometry.shapes.square", "model:materials.vacuum", "model:parameters.bias",
@@ -399,7 +398,6 @@ def test_projects_are_listed_under_the_projects_folder_and_made_there(tmp_path):
     name what sets the folder while it is unset, or a project is made over one already there
     (web.md § 8.6)."""
     from femkit.config.operations import ConfigSet
-    from femkit.core.errors import Refused
     def run(operation: str, **request):
         op = registry.operations()[operation]
         req = op.request_from(request)

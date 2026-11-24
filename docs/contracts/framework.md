@@ -41,8 +41,9 @@ femkit/
 │                  environment (plan § 3, X)
 ├── models/        calculations described once: model, studies, cases, the match
 │                  against an environment's abilities, decisions, customizations,
-│                  preparation (models.md) — the schemas and `model check` built;
-│                  the rest not yet (plan § 3, M5, M6, M8, M9)
+│                  preparation (models.md) — today an earlier, one-file design,
+│                  frozen until R step D replaces it (models.md, status); the
+│                  rest not yet (plan § 3, M6, M8, M9)
 ├── results/       a run's observables, proofs, comparisons, analysis (models.md
 │                  § 6.3, § 10) — not built yet (plan § 3, M6)
 ├── server/        `serve`: the web server's verbs, state machine, supervisor,
@@ -61,7 +62,7 @@ tools/             developer tools that import nothing from femkit (testing.md �
 | layer | packages | may import |
 |---|---|---|
 | core | `core` | the standard library and declared third-party libraries |
-| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `jobs`, `projects`, `materials`, `geometry`, `models`, `results`, `server` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
+| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `jobs`, `projects`, `materials`, `geometry`, `models`, `results`, `server` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its programs run inside an engine environment that holds no femkit dependency — a check program also imports what its environment provides (ngsolve, mpi4py, …); an engine never imports another engine |
 | registry | `registry.py`, `reference.py`, `page.py` | every domain |
 | surfaces | `cli`, `web` | everything below; never each other |
 

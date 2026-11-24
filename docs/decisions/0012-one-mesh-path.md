@@ -2,8 +2,8 @@
 
 **Role:** ADR
 
-**Status:** accepted (2026-11-23); it would
-supersede decision 9 of [ADR 0008](0008-one-model-declared-abilities.md)
+**Status:** accepted (2026-11-23); it
+supersedes decision 9 of [ADR 0008](0008-one-model-declared-abilities.md)
 
 **Authority:** the reasons and the alternatives only;
 [`geometry.md`](../contracts/geometry.md) owns the rules
@@ -47,7 +47,10 @@ test but only the first body's name. Gmsh's command line is installed in the
 ## Consequences
 
 - Netgen curves its meshes to geometry order up to 4 in its own geometry
-  (measured, `femkit/data/meshers/netgen.toml`). Which orders the Gmsh route
+  (measured on this workstation on 2026-11-23, netgen 6.2.2606 as the `ngsolve`
+  environment builds it: `Mesh.Curve` at orders 1–4 on a unit disk, area errors
+  1.4e-1, 9.0e-4, 1.1e-4 and 1.2e-6; its constructive geometry in 2-D and 3-D and
+  STL read, `netgen.occ` refusing to load). Which orders the Gmsh route
   keeps is not measured (`gmsh.toml` states 1 and 2 as expected), nor whether
   femkit's layer can hand NGSolve curved second-order elements — a cost to weigh
   for the bowtie's curved metal surfaces. A case that asks for more than the

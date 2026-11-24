@@ -1,15 +1,19 @@
 # Models — one calculation, described once, solved in a chosen environment
 
 **Role:** contract
-**Status:** current; of what it describes, the units ([`core.md`](core.md)
-§ 11), the formulation type with `electrostatics` and its first benchmark, the
-mesher type, `study expand`, `study copy`, `case list` and case IDs are built,
-over one `model.toml` per project. The project structure this contract now
-states — parameters in the project file; components, physics, mesh recipes,
-observable sets, studies and analyses as parts of their own; materials and
-geometry under their own contracts — was approved by the person (2026-11-23)
-and is not built yet (plan § 3, R); running steps is plan § 3, X; the rest is
-[`../plans/plan.md`](../plans/plan.md) § 3, M5, M6, M8, M9
+**Status:** current; nothing of the project structure this contract states —
+parameters in the project file; components, physics, mesh recipes, observable
+sets, studies and analyses as parts of their own; materials and geometry under
+their own contracts — is built yet (plan § 3, R steps C–F); running steps is
+plan § 3, X; the rest is [`../plans/plan.md`](../plans/plan.md) § 3, M6, M8, M9.
+**Today** `femkit/models/` holds an earlier design, frozen until R step D
+replaces it whole (plan § 6): one `model.toml` and `studies/<s>/study.toml` per
+project, with the units ([`core.md`](core.md) § 11), the formulation type with
+`electrostatics` and its first benchmark, `model check`, `model set`/`write`/
+`unset`/`rename`/`undo`/`redo`, `model graph`, `study expand`/`copy`/`list`,
+`case list` and case IDs. Its fields are documented by
+[`../reference/models.md`](../reference/models.md); where its code cites a
+section here, the section states the design that replaces it
 **Authority:** how a calculation is described independently of any engine — its
 parameters, its physics, its studies, its observables and analyses; how a study
 is expanded into cases; how a case is matched against an engine environment's

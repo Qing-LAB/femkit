@@ -2,8 +2,8 @@
 
 **Role:** ADR
 
-**Status:** accepted (2026-11-23); it would
-amend [`web.md`](../contracts/web.md) §§ 1–2 and
+**Status:** accepted (2026-11-23); it
+amends [`web.md`](../contracts/web.md) §§ 1–2 and
 [`models.md`](../contracts/models.md) § 8.4
 
 **Authority:** the reasons and the alternatives only;

@@ -20,9 +20,9 @@ from femkit.envs import checks, layout, toolchain
 from femkit.envs.manager import resolve
 from femkit.envs.records import CheckOutcome
 from femkit.envs.state import INSTALLED, MACHINE, EnvState, definition, facts, observe
-from femkit.envs.requests import ListRequest, CleanRequest, LogRequest, InstallRequest, PlanRequest, ValidateRequest
+from femkit.envs.requests import ListRequest, CleanRequest, LogRequest, InstallRequest, ValidateRequest
 from femkit.config.requests import CONFIG_SET
-from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_LOG, ENV_PLAN, ENV_VALIDATE
+from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_LOG, ENV_VALIDATE
 
 
 
@@ -146,7 +146,7 @@ def env_log(req: LogRequest, ctx: Context) -> LogResult:
     return LogResult(operation=str(runs[-1].parent), outcome=state.outcome, steps=rows)
 
 
-# ------------------------------------------------------------------ env install / env plan
+# ------------------------------------------------------------------ env install
 
 def _runs(name: str) -> list[Path]:
     """Every operation on an environment, oldest first."""
@@ -254,7 +254,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
     if state is EnvState.unchecked and not clean:
         return [validate], basis
     if env.packages.pip:
-        raise Refusal(f"{name} declares pip packages, and the installer has no pip step (envs.md § 4.1)")
+        raise Refusal(f"{name} declares pip packages, and the installer has no pip step (definitions.md § 4.1)")
     t = target(ctx, name, f.install_fingerprint)
     if t.env.proven_toolchain and t.env.proven_toolchain.mpi:
         settings.launcher(ctx, f"{name}'s toolchain check runs MPI on {toolchain.RANKS} ranks")
@@ -327,19 +327,6 @@ class EnvInstall:
                 issues.append(_not_ready(after, state, outcomes))
             status = "failed" if env_status == "failed" else status
         return InstallOutcome(plan=plan, status=status, environments=results, issues=issues)
-
-
-class PlanResult(Result):
-    plan: Plan = Field(description="the steps `install` would run now, with their commands")
-
-    def text(self) -> str:
-        return self.plan.text()
-
-
-@operation(ENV_PLAN, result=PlanResult)
-def env_plan(req: PlanRequest, ctx: Context) -> PlanResult:
-    """The steps `env install` would run now, with their exact commands, without running them."""
-    return PlanResult(plan=EnvInstall.plan(InstallRequest(**req.model_dump()), ctx))
 
 
 # ------------------------------------------------------------------ env validate

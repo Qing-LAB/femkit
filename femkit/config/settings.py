@@ -16,7 +16,7 @@ import tomlkit
 from pydantic import AfterValidator, ConfigDict, Field, PositiveInt
 from typing import Annotated
 
-from femkit.core import dirs, paths, text, view
+from femkit.core import dirs, paths, view
 from femkit.core.errors import Refusal, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import document_set, read_document, write_document
