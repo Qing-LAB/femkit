@@ -175,7 +175,13 @@ reading, and settles the `sacctmgr` column names and the shape of
 ### M3 — local jobs
 
 Job request, prepare, run script, run state machine;
-`job prepare|launch|status|cancel` on the workstation; the engine tier. Open:
+`job prepare|launch|status|cancel` on the workstation; the engine tier. It
+begins with this machine measured by one owner — its GPUs, the manager's
+version, an environment's row, the login-node advice, the scheduler's detection
+and place in `femkit/schedulers/`; the machine record's state declared; each
+configuration key's words, question, what its absence blocks and its default
+declared on `UserConfig`, with the template and `config init`'s questions
+derived; `job probe`'s read and write kept apart and its results typed. Open:
 
 - how `env validate --gpu` is requested as a job (`envs.md` § 5): its command
   runs femkit, in the control environment, from the target's checkout;
@@ -254,25 +260,80 @@ contracts and [`../process/conventions.md`](../process/conventions.md) § 2, and
 the person's agreement before the next step starts. Running anything — the
 geometry script, meshing, solving — is milestone X, designed after R.
 
-- **B. A clean base.** Every uncommitted change is read against the agreed
-  contracts: what fits is kept, what was made for the first web design or is
-  redundant, unused or duplicated is removed — the tests that read source
-  code among it (`testing.md` § 3); the result is committed in pieces the
-  person approves. Acceptance: the basic tier green; the review finding nothing
-  left that no contract asks for, and no test that reads code.
+- **B. A sound base.** A whole-system evaluation (the person's direction,
+  2026-11-24, § 6) found the framework's gaps behind most defects. What the
+  steps after B stand on is fixed here; every other finding is scheduled at the
+  start of the step that first works on its code (D, G, X, M3, M6), so fixing
+  never holds up the plan. In it, in order:
+  1. **Residue out, contracts true.** Removed (the person's decision):
+     `packages.pip`, `maturity`, `env plan`, `study expand`'s scan of
+     `prepared/`, `cases.named`, `Binding.mesher`, `netgen.toml` (its measured
+     orders moved into ADR 0012 first), the mesher shape-kind rule in
+     `definitions.md`, the first page's own command-line text; dead parameters
+     and imports. `femkit/models/` frozen: `models.md` and `framework.md` say
+     what it is today and point at `docs/reference/models.md`; its defects are
+     requirements on C–F (below), and only its schema cache is fixed. Status
+     marks made exact (`framework.md`; `web.md` §§ 6, 8.2, 8.3, 9.2;
+     `testing.md`'s engine tier; `materials.md`; `jobs.md`; M2, M4, M5, M7
+     here), `envs.md`'s dated measurements moved to their ADRs, citations
+     corrected.
+  2. **Refusals and the door.** `core.md` § 9's kinds complete, the missing
+     statement `framework.md` § 4 refuses among them, and every bare `Refusal`
+     given its kind; a next step's shape needs nothing above the standard
+     library, so the supervisor loads no pydantic; one key-path formatter;
+     every value a request or a file carries checked by its schema, with the
+     registries handed to the loader — never an import-time assertion, a
+     comment or a test standing in for it (generic readers, CMake options,
+     toolchain languages, scheduler readers and probe roles, page contexts).
+  3. **The facts of a run, published by core.** One grammar and one reader
+     each for the operation address and its folder's time, the event log's
+     name, record kinds and fold, step outcomes, the lock subject, time stamps
+     from the context, a process's liveness by its identity, the stop grace,
+     the tail length, and the user directories with their variables; the
+     routes, envs and the tests read them and nothing else.
+  4. **The apply protocol in core.** An operation declares how its basis is
+     observed, and core refuses a stale plan before any step runs, with its
+     next step; a step carries what it runs, and apply runs that; a plan
+     declares every subject it uses (`web build` holds `env-web`); `persist`
+     reads, lists, deletes, appends and swaps a folder atomically, and is the
+     only writer; observing writes nothing and needs no package manager.
+  5. **Definitions found through the context, listed once.** A test points
+     femkit at definitions of its own through the API; one table of definition
+     types is read by the catalogue, `schema check`, `schema docs` and the
+     reference.
+  6. **One test kit.** An operation called through the registry, a project
+     made through the API, a prefix and a record built once; directories
+     isolated from core's list; canaries over `<state>`, `<runtime>`, `<cache>`
+     and `<data>/locks`; the machine a test stands on stated, not implied by a
+     tripwire; findings matched by kind, code and subject; plain `pytest`
+     working.
+  7. **Bugs in code that stays:** a zero power kept in a unit; two unknown
+     machine identities matching; a changed queue printed as Python; a passing
+     upstream test inside a class judged failed; an empty `node --version`; a
+     leftover token file; a port dropped on a login node; `except Exception`
+     hiding a defect; the runner reading a collecting run as unusable; each
+     step log written twice; a defect answered as HTML by the server; the
+     supervisor ending when its child fails (the policy is the person's).
+
+  Acceptance: the basic and web tiers green, each rule above with a test seen
+  to fail without it; a review of the whole system finding nothing left in B's
+  scope; the person's agreement before C.
 - **C. The framework.** `femkit/projects/` — the layout as data, names as
   paths and grouping folders, transactions and undo, addresses, opening a
   project part by part, naming a project by its path or the folder a command
-  runs in — with every existing reader and writer of project files moved onto
-  it; state machines declared as data (`core.md` § 7); the one-way rules of
-  `framework.md` § 1, held by design and checked by the step's review of the
-  source. Acceptance, through the API: a part broken by hand is a finding and
-  blocks no edit of another part; a part renamed into another group with every
-  reference to it rewritten, in one undo; undo reaching back as far as
-  `projects.undo` says and no further; a project named from the root and from
-  inside its folder alike; a project zipped and unpacked under another root
-  opening as before. The review finds no package but `projects` forming a
-  project path or opening a project's file.
+  runs in — proven on a layout of the tests' own (the person's decision,
+  2026-11-24): the framework names no part kind, and `femkit/models/` stays as
+  it is until D replaces it whole. It carries what the models taught: one name
+  rule for every request, set, rename and new; a part named whole wherever it is
+  shown; one opened project handed to every operation; one transaction for every
+  writer, undo included; the address and the grammar of a value still to fill
+  declared once and served to the page. Acceptance, through the API: a part
+  broken by hand is a finding and blocks no edit of another part; a part
+  renamed into another group with every reference to it rewritten, in one undo;
+  undo reaching back as far as `projects.undo` says and no further; a project
+  named from the root and from inside its folder alike; a project zipped and
+  unpacked under another root opening as before. The review finds no package
+  but `projects` forming a project path or opening a project's file.
 - **D. The parts.** The schemas of the new tree: the project file and its
   parameters, a component's contract and its assignment, a physics, a mesh
   recipe, an observable set, a study with its steps and axes by address, an
@@ -282,6 +343,17 @@ geometry script, meshing, solving — is milestone X, designed after R.
   open in the new tree; `project check` checking every pairing from the
   contracts — a group a physics needs that the component does not promise a
   finding on the study — and marking unchecked what needs the geometry.
+  D begins with results written in the vocabulary (`web.md` § 7; the person's
+  decision): a result declares its rows, findings and next steps, one renderer
+  per surface draws them, closed values are typed, and the graph document and
+  `project check` are built on it. D carries what the models taught: axes —
+  numerics included — checked against their schema at load; one walk over
+  references (fields, keys by address, parameters in expressions) giving parsed
+  targets; the study checked by `project check`; one resolution of parameters;
+  an axis's reason a field of its own; fixes derived from the layout; a study
+  that does not expand shown by `case list`. At its end `femkit/models/` and
+  the old Laplace test data are removed, the `two_material` science test
+  carried over.
 - **E. Materials.** The property list, the dispersion models, the material
   format, the global and local libraries, a property's data for a case,
   `material add`, the refractiveindex.info importer (its YAML library an
@@ -294,12 +366,15 @@ geometry script, meshing, solving — is milestone X, designed after R.
   receiving femkit's shipped materials, and a changed shipped material offered,
   never applied; a dataset varying with a variable the step does not supply
   refused; an edited global material making new cases on expansion, the old
-  ones kept and flagged by `case list`.
+  ones kept and flagged by `case list`. E carries: a table's digest required
+  at load; a range's variable supplied by the step kind; the phasor
+  conventions and the passive sign declared once.
 - **F. Detail as text.** Each part's text and the help of every key it may
   hold; `project write` as one transaction; templates generated from the
   schemas, the formulation and the property list. Acceptance: every action the
   graph document offers plans; a written text keeps its comments; the Laplace
   project's detail written from templates and its example script alone.
+  F carries: no schema fragment built by hand.
 - **G. The page.** The Project workspace — the overview and the detail views,
   the grouping boxes, the diagram arranging itself with Tidy and its view file,
   the editor with its help for every part and the geometry script, the palette
@@ -312,6 +387,15 @@ geometry script, meshing, solving — is milestone X, designed after R.
   kind, operation, address or sentence named in the page's code, no style
   outside its layers and no hand-written type of server data; every element
   exercised in a browser.
+
+  G begins with the state machines as data (`core.md` § 7) — environments, the
+  server, the machine record, the control environment, and the page's own
+  action and context machines as declared tables — and what the page reads
+  from the server: the facts of a run, the door's refusal kinds, typed results
+  and one route table. It adds the five elements `web.md` § 9.2 names and the
+  kernel lacks (Form, TextEditor, Keys, Confirm, Busy), replaces the kernel's
+  own TOML parser, frees the graph and field elements of the old model, and
+  keeps of the first page only its document rendering.
 
   First, what step B's review found in the kernel and elements, fixed as each
   part enters the page (the person's decision, 2026-11-24):
@@ -368,6 +452,17 @@ after ([`../contracts/geometry.md`](../contracts/geometry.md) § 4). In it:
   region names proven; the model's shape kinds and `netgen.toml` removed; the
   benchmarks converted to example scripts with contracts;
 - after X, not in it: importing a CAD file through a standard import script.
+
+X begins with what its runs stand on: one block in core that owns a child
+process — its start, output, wait and stop with one escalation and one grace —
+with the web server's supervisor moved onto it (M3's open item); one way to run
+a command inside an environment, the manager's facts in its kind; code that runs
+inside an environment as its own lowest layer, and the environment file's schema
+apart from the environment it builds (the person's decision); whether
+`jobs.md` §§ 1–5 survive or are rewritten with X, and the fate of what was built
+ahead for them — `Resources`, the scheduler kind's job variables, the record's
+settings, the activation keys that gate readiness, the probe's 120-second
+manager run (the person's decision).
 
 Acceptance: the Laplace and `two_material` geometry built from their scripts in
 run folders; a run refused before it starts for a missing parameter or a file
@@ -524,10 +619,6 @@ milestone that first needs it starts, or sooner if cheap.
   and hashes every file of the engine package: a change to `cuda.py` marks the
   CPU environments `unchecked`, and a translator's change would too. Count only
   what each environment's checks import — first needed by M6.
-- **Manager facts in generic code**: the activation variables
-  (`envs/manager.py`), `conda-meta` spelled three times (`envs/state.py`,
-  `jobs/probe.py`, `jobs/setup.py`), the explicit-lock parser in
-  `envs/install.py`. Each becomes a manager-kind field or a registered reader.
 - **The engine adapter is a set of module attributes** (`engines/__init__.py`);
   a missing one raises `AttributeError` (exit 1), not `DefinitionError`.
 - **The engine-version rule is looser in code than in `definitions.md` § 5.3**:
@@ -538,9 +629,8 @@ milestone that first needs it starts, or sooner if cheap.
   by M7.
 - **A run copies its inputs** (`jobs.md` § 1), so a large mesh is kept in
   `final/` and again in every run.
-- **`maturity` has no reader**; **`env plan` repeats `install --dry-run`**;
-  **`doctor` prints the preamble's two commands under both the configuration
-  and the record row**. Each is deleted, given its one use, or said once.
+- **`doctor` prints the preamble's two commands under both the configuration
+  and the record row**: said once, with M3's machine facts.
 
 ## 5. The bowtie model's data
 
@@ -648,7 +738,32 @@ approved as written:
   tests check the API and never read code (`framework.md` § 1, `testing.md`
   § 3).
 
+**Taken by the person** (2026-11-24):
+
+- Before building on existing code, the whole system is evaluated: what the
+  next step stands on is fixed first, and every other finding is scheduled at
+  the start of the step that first works on its code; fixing never holds up the
+  plan (§ 3, R step B).
+- `femkit/models/` is frozen: its defects become requirements on R steps C–F,
+  which replace it, instead of fixes.
+- Step C proves the project framework on a layout of the tests' own; the state
+  machines as data move to the start of G.
+- The leftovers listed in § 3, B.1 are removed; the mesh step stays a step of
+  its own, so another mesher can join it later (ADR 0012).
+
 **Open, the person's** (the proposed answer in each contract):
+
+- **Before B:** whether a review of the whole
+  system joins the review schedule (§ 2) at every milestone's end and before
+  work that builds on existing code (proposed); one refusal kind for a missing
+  statement, or separate kinds for "not found" and "already there"; whether the
+  web server's supervisor stays up when its application fails, to start the
+  fixed one at the next restart (proposed, `web.md` § 4), or ends.
+- **Before D:** results written in the vocabulary (proposed), or the
+  vocabulary cut back to next steps and help; whether a next step carries the
+  command line's text or each surface writes it.
+- **Before X:** code that runs inside an environment as its own layer; the fate
+  of `jobs.md` §§ 1–5 and of what was built ahead for them.
 
 
 - **A YAML library** for the refractiveindex.info importer, an environment
