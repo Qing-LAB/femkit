@@ -52,7 +52,7 @@
 | key | type | default | meaning |
 |---|---|---|---|
 | `conda` | list of text | empty | conda constraints the manager solves |
-| `pip` | list of text | empty | Python packages conda-forge does not have; not built yet — an environment that lists one is refused |
+| `pip` | list of text | empty | Python packages conda-forge does not have; not built yet, so an environment that lists one does not load (definitions.md § 4.1) |
 | `forbid` | list of text | empty | package families that must be absent from the solved lock |
 
 ## Provides

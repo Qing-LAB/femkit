@@ -10,7 +10,7 @@ import pytest
 
 from femkit.core.dirs import CONTROL
 from femkit.core.operations import Context
-from femkit.core.schema import DefinitionError, load_toml
+from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.definitions import catalogue
 from femkit.definitions.catalogue import CUDA_SUFFIX, CatalogueError, data_root, load_environments
 from femkit.definitions.models import EnvironmentDefinition
@@ -345,3 +345,13 @@ def test_a_benchmark_that_misstates_itself_does_not_load(change, at):
     with pytest.raises(DefinitionError) as caught:
         validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units()), "root": data_root() / "formulations"})
     assert at in [path for path, _ in caught.value.problems]
+
+
+def test_an_environment_listing_a_pip_package_does_not_load():
+    """Fails if an environment listing a pip package loads, though femkit installs nothing with
+    pip: the package would be missing from the environment it builds (definitions.md § 4.1)."""
+    data = tomllib.loads(_shipped("ngsolve"))
+    data["packages"]["pip"] = ["requests"]
+    with pytest.raises(DefinitionError) as caught:
+        validate(EnvironmentDefinition, data, "ngsolve.toml", context={"engines": registered()})
+    assert "packages.pip" in [path for path, _ in caught.value.problems]

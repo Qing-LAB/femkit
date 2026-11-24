@@ -68,7 +68,8 @@ def refuse(model: str, problems: list[tuple[tuple, str]]) -> None:
         ])
 
 
-def _key_path(loc: tuple) -> str:
+def key_path(loc: tuple) -> str:
+    """A validation error's location as a key path: dots between keys, `[i]` for a list's item."""
     out = ""
     for part in loc:
         if isinstance(part, int):
@@ -86,7 +87,7 @@ def validate(model: type[M], data: Any, file: Path | str, context: dict | None =
         for err in exc.errors():
             # pydantic adds the validator kind (function-after, …) to a location; drop it
             loc = tuple(p for p in err["loc"] if not (isinstance(p, str) and p.startswith("function-")))
-            problems.append((_key_path(loc), err["msg"].removeprefix("Value error, ")))
+            problems.append((key_path(loc), err["msg"].removeprefix("Value error, ")))
         raise DefinitionError(file, problems) from None
 
 

@@ -14,7 +14,7 @@ import sys
 import pytest
 
 from femkit.config.operations import ConfigSet
-from femkit.core.errors import Refusal, UsageError
+from femkit.core.errors import Refused, Unstated, UsageError
 from femkit.core.operations import Context, SilentObserver
 from femkit.core.persist import write_json
 from femkit.definitions.models import Agreement, Check, Expectation
@@ -196,7 +196,7 @@ def test_validate_gpu_is_refused_without_current_cpu_results(declared):
     """Fails if `validate --gpu` runs on an unchecked environment, recording GPU results that
     cannot qualify it and reporting no GPU qualification at all (envs.md § 5)."""
     declared(program("cpu"), gpu_program("gpu"))
-    with pytest.raises(Refusal):
+    with pytest.raises(Refused):
         validate(gpu=True)
 
 
@@ -268,9 +268,9 @@ def test_a_check_on_several_ranks_is_refused_before_anything_runs_without_a_laun
     finding out only when that check fails (envs.md § 5)."""
     declared(program("mpi", ranks=2), launcher=False)
     c = ctx()
-    with pytest.raises(Refusal):
+    with pytest.raises(Unstated):
         EnvValidate.plan(EnvValidate.request(name=NAME), c)
-    with pytest.raises(Refusal):
+    with pytest.raises(Unstated):
         EnvInstall.plan(EnvInstall.request(names=[NAME]), c)
 
 

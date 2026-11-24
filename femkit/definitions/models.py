@@ -72,11 +72,20 @@ RelativePath = Annotated[str, AfterValidator(_relative_path)]
 
 class Packages(Model):
     conda: list[str] = Field(default_factory=list, description="conda constraints the manager solves")
-    pip: list[str] = Field(default_factory=list, description="Python packages conda-forge does not have; not built "
-                                                             "yet — an environment that lists one is refused")
+    pip: list[str] = Field(default_factory=list,
+                           description="Python packages conda-forge does not have; not built yet, so an environment "
+                                       "that lists one does not load (definitions.md § 4.1)")
     forbid: list[str] = Field(
         default_factory=list, description="package families that must be absent from the solved lock"
     )
+
+    @field_validator("pip")
+    @classmethod
+    def _no_pip_yet(cls, pip: list[str]) -> list[str]:
+        if pip:
+            raise ValueError("femkit installs nothing with pip yet: take each from conda-forge, or build it "
+                             "(definitions.md § 4.1)")
+        return pip
 
 
 class Provides(Model):
@@ -127,16 +136,20 @@ class Source(Model):
     )
 
 
-# Options the framework sets itself; a definition may not declare them (definitions.md § 4.2).
-FRAMEWORK_OPTIONS = frozenset({
-    "CMAKE_INSTALL_PREFIX", "CMAKE_GENERATOR", "CMAKE_BUILD_TYPE", "CMAKE_PREFIX_PATH",
-    "CMAKE_FIND_ROOT_PATH", "CMAKE_FIND_ROOT_PATH_MODE_PACKAGE", "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY",
-    "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE", "CMAKE_FIND_ROOT_PATH_MODE_PROGRAM",
-    "CMAKE_INSTALL_RPATH", "CMAKE_BUILD_RPATH", "CMAKE_INSTALL_RPATH_USE_LINK_PATH",
-    "CMAKE_SKIP_RPATH", "CMAKE_SKIP_INSTALL_RPATH", "BUILD_TESTING",
-    "CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY", "CMAKE_EXPORT_NO_PACKAGE_REGISTRY",
-    "CMAKE_FIND_USE_PACKAGE_REGISTRY", "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY", "CMAKE_CUDA_ARCHITECTURES",
-})
+# The options the framework owns (definitions.md § 4.2), with the CMake type of each it sets; those
+# without one it leaves at CMake's own default. A definition may declare none of them.
+FRAMEWORK_OPTIONS: dict[str, str | None] = {
+    "CMAKE_BUILD_TYPE": "STRING", "BUILD_TESTING": "BOOL",
+    "CMAKE_INSTALL_PREFIX": "PATH", "CMAKE_PREFIX_PATH": "PATH", "CMAKE_FIND_ROOT_PATH": "PATH",
+    "CMAKE_FIND_ROOT_PATH_MODE_PACKAGE": "STRING", "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY": "STRING",
+    "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE": "STRING", "CMAKE_FIND_ROOT_PATH_MODE_PROGRAM": "STRING",
+    "CMAKE_FIND_USE_PACKAGE_REGISTRY": "BOOL", "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY": "BOOL",
+    "CMAKE_INSTALL_RPATH_USE_LINK_PATH": "BOOL", "CMAKE_INSTALL_RPATH": "STRING",
+    "CMAKE_CUDA_ARCHITECTURES": "STRING",
+    "CMAKE_GENERATOR": None, "CMAKE_BUILD_RPATH": None, "CMAKE_SKIP_RPATH": None,
+    "CMAKE_SKIP_INSTALL_RPATH": None, "CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY": None,
+    "CMAKE_EXPORT_NO_PACKAGE_REGISTRY": None,
+}
 
 BUILD_OPTION_PLACEHOLDERS = frozenset({"prefix", "source", "build"})
 
@@ -180,7 +193,7 @@ class Build(Model):
     @field_validator("options", "cuda_options")
     @classmethod
     def _options(cls, options: dict) -> dict:
-        owned = sorted(set(options) & FRAMEWORK_OPTIONS)
+        owned = sorted(set(options) & FRAMEWORK_OPTIONS.keys())
         if owned:
             raise ValueError(f"framework-owned options cannot be declared: {', '.join(owned)}")
         for key, value in options.items():

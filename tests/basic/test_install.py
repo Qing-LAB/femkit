@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from femkit.config.operations import ConfigSet
-from femkit.core.errors import Refusal
+from femkit.core.errors import Unstated
 from femkit.core.operations import Context, Plan, SilentObserver, Step, run_steps
 from femkit.envs import layout
 from femkit.envs.operations import EnvInstall
@@ -46,8 +46,9 @@ def cuda():
 
 
 def test_a_cuda_build_is_refused_until_its_architectures_are_configured(manager):
-    """Fails if a CUDA build is planned with no GPU architectures to target (config.md § 3.1)."""
-    with pytest.raises(Refusal):
+    """Fails if a CUDA build is planned with no GPU architectures to target, or refused as
+    anything but a setting not stated (config.md § 3.1, core.md § 9)."""
+    with pytest.raises(Unstated):
         plan()
     set_key("build.cuda_architectures", '["89"]')
     assert ids(plan())[0] == "create"

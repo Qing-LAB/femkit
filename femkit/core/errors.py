@@ -18,13 +18,19 @@ class Refusal(Exception):
     def __init__(self, message: str, next: Iterable[Action] = ()):
         super().__init__(message)
         self.next = tuple(next)
-        from femkit.core.view import Action  # held at the door: a next step is never bare text
-        if not all(isinstance(n, Action) for n in self.next):
-            raise TypeError(f"a refusal's next steps are Actions, not {[type(n).__name__ for n in self.next]}")
+        if self.next:  # held at the door: a next step is never bare text; a refusal with none needs no vocabulary
+            from femkit.core.view import Action
+            if not all(isinstance(n, Action) for n in self.next):
+                raise TypeError(f"a refusal's next steps are Actions, not {[type(n).__name__ for n in self.next]}")
 
 
 class Refused(Refusal):
-    """A state does not allow the action (core.md § 7)."""
+    """A state does not allow the action (core.md § 7) — making what exists already among them."""
+
+
+class Unstated(Refusal):
+    """Something the work needs is not stated, and femkit never guesses it (framework.md § 4): a
+    setting, the package manager, a scheduler's kind or command."""
 
 
 class Busy(Refusal):
@@ -40,4 +46,4 @@ class PlanStale(Refusal):
 
 
 class UsageError(Refusal):
-    """A request that does not validate: bad usage."""
+    """A request that does not validate: bad usage — naming what does not exist among it."""

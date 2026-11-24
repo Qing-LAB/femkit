@@ -20,7 +20,7 @@ from typing import Any
 from femkit.config import probe as config_probe
 from femkit.config import settings
 from femkit.core import dirs, process, view
-from femkit.core.errors import Refusal, UsageError
+from femkit.core.errors import Refusal, Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.definitions import catalogue
 from femkit.definitions.models import SchedulerKind
@@ -65,7 +65,7 @@ def scheduler_kind(ctx: Context, named: str | None, declared: dict[str, str]) ->
         raise UsageError("--set declares a scheduler command; name its kind with --scheduler")
     name, why = config_probe.detect_scheduler(kinds)
     if name is None:
-        raise Refusal(why, (view.command(JOB_PROBE,
+        raise Unstated(why, (view.command(JOB_PROBE,
                                          fills=[view.Fill(field="scheduler", label="the scheduler's kind", example="KIND")]),))
     return name, kinds[name], why
 
@@ -152,6 +152,11 @@ def _environments(ctx: Context) -> Any:
 def measure(ctx: Context, scheduler: str | None, declared: dict[str, str]) -> Record:
     """The record of this machine, as measured here now."""
     kind_name, kind, why = scheduler_kind(ctx, scheduler, declared)
+    for key in declared:                      # a role is the kind's: a mistyped one is never dropped silently
+        _, part, role = key.split(".")
+        if role not in getattr(kind, part):
+            raise UsageError(f"{key}: the {kind_name} kind has no {part} role {role!r}; "
+                             f"it has {', '.join(getattr(kind, part)) or 'none'}")
     sources: dict[str, str] = {"scheduler.kind": why, "host": "platform, /proc/meminfo, " + HOST_GPU_QUERY[0],
                                "manager": "the manager kind's queries", "environments": "env list",
                                "settings": "config.toml"}

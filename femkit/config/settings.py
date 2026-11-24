@@ -17,7 +17,7 @@ from pydantic import AfterValidator, ConfigDict, Field, PositiveInt
 from typing import Annotated
 
 from femkit.core import dirs, paths, view
-from femkit.core.errors import Refusal, UsageError
+from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import document_set, read_document, write_document
 from femkit.core.schema import DefinitionError, Model, classes, field_extras, load_toml, validate
@@ -201,7 +201,7 @@ def launcher(ctx: Context, needed_by: str) -> list[str]:
     mpi = load(ctx).config.launch.mpi
     if mpi is None:
         from femkit.config.requests import CONFIG_SET  # the requests are built from this module's keys
-        raise Refusal(f"{needed_by}, and launch.mpi is unset",
+        raise Unstated(f"{needed_by}, and launch.mpi is unset",
                       (view.command(CONFIG_SET, key="launch.mpi", note="this machine's launcher",
                                     fills=[view.Fill(field="value", label="launch.mpi",
                                                               example='["mpirun", "-np", "{ranks}"]')]),))

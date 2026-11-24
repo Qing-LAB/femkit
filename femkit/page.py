@@ -10,7 +10,7 @@ from typing import Literal, Mapping
 from pydantic import Field
 
 from femkit.core.operations import Operation
-from femkit.core.schema import DefinitionError, Model, classes, items_of, load_toml
+from femkit.core.schema import DefinitionError, Model, classes, field_extras, items_of, load_toml
 from femkit.definitions import catalogue
 from femkit.models.schema import OBJECTS
 
@@ -74,8 +74,8 @@ def load(ops: Mapping[str, Operation]) -> Page:
     """The declaration, refused unless all it names exists among ``ops``, the operations the
     page is served with: each workspace's document and each context's choices a read-only
     operation, each context's rows and keys in that operation's result, each dependence a
-    declared context, each object type with its icon, each workspace key once — a page that
-    loads it never draws a part it cannot fill."""
+    declared context, each object type with its icon, each workspace key once, and each request
+    field's `context` a declared one — a page that loads it never draws a part it cannot fill."""
     p = load_toml(path(), Page)
     contexts, problems = {c.key for c in p.context}, []
 
@@ -102,6 +102,9 @@ def load(ops: Mapping[str, Operation]) -> Page:
         problems += [(f"context.{i}", f"{c.choices}'s rows have no key {key!r}")
                      for key in filter(None, (c.value_key, c.label_key))
                      if not records or key not in records[0].model_fields]
+    problems += [("context", f"{op.name}'s field {name!r} takes the context {taken!r}, which is not declared")
+                 for op in ops.values() for name, field in op.request.model_fields.items()
+                 if (taken := field_extras(field).get("context")) is not None and taken not in contexts]
     kinds = {o.kind for o in OBJECTS}
     problems += [("kinds", f"the object type {k!r} has no icon") for k in sorted(kinds - set(p.kinds))]
     problems += [("kinds", f"{k!r} is no object type") for k in sorted(set(p.kinds) - kinds)]

@@ -12,7 +12,7 @@ import pytest
 from femkit import schedulers
 from femkit.config import settings
 from femkit.config.operations import ConfigInit, ConfigSet
-from femkit.core.errors import Refusal, UsageError
+from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, validate
 from femkit.definitions.catalogue import load_schedulers
@@ -102,13 +102,14 @@ def test_only_a_record_of_this_machine_is_compared_with_its_config():
 
 @pytest.mark.parametrize("fields, refusal", [
     ({"write": True, "name": "local"}, UsageError),          # local is this machine's own record
-    ({"write": True}, Refusal),                               # activation.preamble unset
+    ({"write": True}, Unstated),                              # activation.preamble unset
     ({"set": ["partitions.p1.max_time=1:00:00"]}, UsageError),  # only command paths are declarable
+    ({"set": ["scheduler.commands.sumbit=/opt/x"], "scheduler": "slurm"}, UsageError),  # a role the kind has not
     ({"name": "../elsewhere"}, UsageError),                   # a name is a file name, nothing more
 ])
 def test_the_probe_refuses_before_it_measures(fields, refusal):
     """Fails if `job probe` measures (and so starts outside programs — the tripwires catch
-    it) before refusing what it can tell from the request and config.toml (jobs.md § 9.2)."""
+    it) before refusing what it can tell from the request, the kind and config.toml (jobs.md § 9.2)."""
     with pytest.raises(refusal):
         JobProbe.plan(JobProbe.request.model_validate(fields), Context.from_process())
 

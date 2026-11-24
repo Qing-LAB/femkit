@@ -733,13 +733,15 @@ approved as written:
 - The leftovers listed in § 3, B.1 are removed; the mesh step stays a step of
   its own, so another mesher can join it later (ADR 0012). The `pip` list stays:
   its use is designed with X.
+- A refusal of something the person has not stated is a kind of its own; naming
+  what does not exist is a malformed request, and making what exists already is
+  a state that does not allow it (`core.md` § 9).
 
 **Open, the person's** (the proposed answer in each contract):
 
 - **Before B:** whether a review of the whole
   system joins the review schedule (§ 2) at every milestone's end and before
-  work that builds on existing code (proposed); one refusal kind for a missing
-  statement, or separate kinds for "not found" and "already there"; whether the
+  work that builds on existing code (proposed); whether the
   web server's supervisor stays up when its application fails, to start the
   fixed one at the next restart (proposed, `web.md` § 4), or ends.
 - **Before D:** results written in the vocabulary (proposed), or the

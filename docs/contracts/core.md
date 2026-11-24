@@ -59,6 +59,7 @@ def classes(annotation), keys_of(annotation), values_of(annotation), items_of(an
 def optional(annotation) -> bool                        # whether it allows None, through Annotated and unions
 def described(field) -> str                             # its description, and its `doc` reference after it
 def field_named(cls, key) -> tuple[str, FieldInfo] | None   # the field a file writes as `key`, alias or name
+def key_path(loc) -> str                                # a problem's place: `builds[1].options`, in a file or a request
 def matching(pattern, **field), whole(pattern) -> str   # a text field its pattern holds whole; the pattern tied to both ends
 def references(instance) -> Iterator[tuple[location, type, name]]   # every name its `ref` fields hold
 
@@ -362,11 +363,19 @@ class Refusal(Exception):        # refused before acting: exit 2
 
 class DefinitionError(Refusal)   # a declared file does not load (§ 2); defined in core/schema.py
 class Refused(Refusal)           # a state does not allow the action (§ 7)
+class Unstated(Refusal)          # something the work needs is not stated, and femkit never guesses it
 class Busy(Refusal)              # the subject's lock is held (§ 5)
 class ConsentDeclined(Refusal)   # the person said no, or no terminal and no --yes
 class PlanStale(Refusal)         # the state changed between plan and apply (api.md § 3)
 class UsageError(Refusal)        # a request that does not validate (api.md § 4.1)
 ```
+
+Every refusal is one of these kinds, never a bare `Refusal`; the kind tells a
+surface or a script what sort of problem it is, and its next steps say what to
+do. `Unstated` is the missing statement [`framework.md`](framework.md) § 4
+refuses: a setting, the package manager, a scheduler's kind or command. A
+request naming what does not exist is a `UsageError`; one making what exists
+already is `Refused`, as the state of the thing it names does not allow it.
 
 A finding a person should act on but that does not stop the operation is an
 `Issue` in the result (§ 10), not an exception. Which findings refuse and which

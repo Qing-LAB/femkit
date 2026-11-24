@@ -9,7 +9,7 @@ from pydantic import Field
 from femkit.config import settings
 from femkit.config.probe import place
 from femkit.core import locks, process, text, view
-from femkit.core.errors import PlanStale, Refusal, UsageError
+from femkit.core.errors import PlanStale, Unstated, UsageError
 from femkit.core.eventlog import EventLog, fold
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
@@ -179,10 +179,10 @@ def default_environments() -> list[str]:
 def _requested(req) -> list[str]:
     if req.all:
         if req.names:
-            raise Refusal("give environment names or --all, not both")
+            raise UsageError("give environment names or --all, not both")
         return default_environments()
     if not req.names:
-        raise Refusal("name an environment, or --all", (view.command(ENV_LIST),))
+        raise UsageError("name an environment, or --all", (view.command(ENV_LIST),))
     return list(dict.fromkeys(req.names))
 
 
@@ -253,14 +253,12 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
     checks.refusals(ctx, env, cpu)
     if state is EnvState.unchecked and not clean:
         return [validate], basis
-    if env.packages.pip:
-        raise Refusal(f"{name} declares pip packages, and the installer has no pip step (definitions.md § 4.1)")
     t = target(ctx, name, f.install_fingerprint)
     if t.env.proven_toolchain and t.env.proven_toolchain.mpi:
         settings.launcher(ctx, f"{name}'s toolchain check runs MPI on {toolchain.RANKS} ranks")
     cuda_builds = [b.id for b in t.env.builds if b.cuda_architectures]
     if cuda_builds and not settings.load(ctx).config.build.cuda_architectures:
-        raise Refusal(f"{name} builds {', '.join(cuda_builds)} with CUDA, and build.cuda_architectures is unset",
+        raise Unstated(f"{name} builds {', '.join(cuda_builds)} with CUDA, and build.cuda_architectures is unset",
                       (view.command(CONFIG_SET, key="build.cuda_architectures",
                                     fills=[view.Fill(field="value", label="the GPUs' architectures", example='["80"]')]),))
     fingerprint, finished = last_operation(name)

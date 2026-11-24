@@ -23,7 +23,7 @@ from femkit.core.eventlog import EventLog
 from femkit.core.issues import Issue
 from femkit.core.locks import subject_lock
 from femkit.core.view import Verb
-from femkit.core.schema import Model
+from femkit.core.schema import Model, key_path
 
 T = TypeVar("T")
 
@@ -260,8 +260,7 @@ class Operation:
         try:
             return self.request.model_validate(data)
         except ValidationError as exc:
-            problems = "; ".join(
-                f"{'.'.join(str(p) for p in e['loc']) or 'request'}: {e['msg']}" for e in exc.errors())
+            problems = "; ".join(f"{key_path(e['loc']) or 'request'}: {e['msg']}" for e in exc.errors())
             raise UsageError(problems) from None
 
     def run(self, req: Model, ctx: Context) -> Result:

@@ -84,24 +84,18 @@ def target(ctx: Context, name: str, install_fingerprint: str) -> Target:
 def cmake_options(t: Target, build: Build) -> list[tuple[str, str, str]]:
     """(key, type, value): the framework's options, then the declared ones (definitions.md § 4.2)."""
     p = str(t.prefix)
-    options = [
-        ("CMAKE_BUILD_TYPE", "STRING", "Release"),
-        ("BUILD_TESTING", "BOOL", "ON"),
-        ("CMAKE_INSTALL_PREFIX", "PATH", p),
-        ("CMAKE_PREFIX_PATH", "PATH", p),
-        ("CMAKE_FIND_ROOT_PATH", "PATH", p),
-        ("CMAKE_FIND_ROOT_PATH_MODE_PACKAGE", "STRING", "ONLY"),
-        ("CMAKE_FIND_ROOT_PATH_MODE_LIBRARY", "STRING", "ONLY"),
-        ("CMAKE_FIND_ROOT_PATH_MODE_INCLUDE", "STRING", "ONLY"),
-        ("CMAKE_FIND_ROOT_PATH_MODE_PROGRAM", "STRING", "ONLY"),
-        ("CMAKE_FIND_USE_PACKAGE_REGISTRY", "BOOL", "OFF"),
-        ("CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY", "BOOL", "OFF"),
-        ("CMAKE_INSTALL_RPATH_USE_LINK_PATH", "BOOL", "ON"),
-        ("CMAKE_INSTALL_RPATH", "STRING", ";".join(str(t.prefix / r) for r in build.rpath)),
-    ]
+    set_here = {
+        "CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON",
+        "CMAKE_INSTALL_PREFIX": p, "CMAKE_PREFIX_PATH": p, "CMAKE_FIND_ROOT_PATH": p,
+        "CMAKE_FIND_ROOT_PATH_MODE_PACKAGE": "ONLY", "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY": "ONLY",
+        "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE": "ONLY", "CMAKE_FIND_ROOT_PATH_MODE_PROGRAM": "ONLY",
+        "CMAKE_FIND_USE_PACKAGE_REGISTRY": "OFF", "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY": "OFF",
+        "CMAKE_INSTALL_RPATH_USE_LINK_PATH": "ON",
+        "CMAKE_INSTALL_RPATH": ";".join(str(t.prefix / r) for r in build.rpath),
+    }
     if build.cuda_architectures:
-        options.append(("CMAKE_CUDA_ARCHITECTURES", "STRING", ";".join(t.cuda_architectures or [])))
-    assert {k for k, _, _ in options} <= FRAMEWORK_OPTIONS, "a framework option missing from FRAMEWORK_OPTIONS"
+        set_here["CMAKE_CUDA_ARCHITECTURES"] = ";".join(t.cuda_architectures or [])
+    options = [(k, FRAMEWORK_OPTIONS[k], v) for k, v in set_here.items()]   # each one's type is the table's
     values = {"prefix": p}
     values.update({f"source:{s.id}": str(t.source_dir(s.id)) for s in t.env.sources})
     values.update({f"build:{b.id}": str(t.build_dir(b.id)) for b in t.env.builds})

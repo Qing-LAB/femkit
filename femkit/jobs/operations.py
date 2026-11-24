@@ -10,7 +10,7 @@ from femkit.config import settings
 from femkit.config.operations import stating
 from femkit.config.requests import CONFIG_INIT
 from femkit.core import text, view
-from femkit.core.errors import PlanStale, Refusal, UsageError
+from femkit.core.errors import PlanStale, Unstated, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.schema import Model
@@ -100,11 +100,11 @@ class JobProbe:
         file = record.path(name)
         declared = probe.declarations(req.set)
         if req.write and (unset := settings.unstated(settings.load(ctx).config)):
-            raise Refusal(f"{' and '.join(unset)} {'is' if len(unset) == 1 else 'are'} unset, and every job "
+            raise Unstated(f"{' and '.join(unset)} {'is' if len(unset) == 1 else 'are'} unset, and every job "
                           "prepared for this record needs it (config.md § 3.1)", stating(CONFIG_INIT, unset))
         new = probe.measure(ctx, req.scheduler, declared)
         if req.write and isinstance(new.scheduler.commands.get("submit"), record.Unknown):
-            raise Refusal(f"the {new.scheduler.kind} submit command was not found",
+            raise Unstated(f"the {new.scheduler.kind} submit command was not found",
                           (view.command(JOB_PROBE, write=True, scheduler=new.scheduler.kind,
                                         fills=[view.Fill(field="set", label="scheduler.commands.submit",
                                                                 example="scheduler.commands.submit=PATH")]),))

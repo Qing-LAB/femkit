@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from pydantic import Field
+
 from femkit import page, registry
-from femkit.core.schema import DefinitionError
+from femkit.core.operations import Result, operation
+from femkit.core.schema import DefinitionError, Model
+from femkit.core.view import Verb
 
 
 def test_the_shipped_page_declaration_loads():
@@ -34,3 +38,26 @@ def test_a_page_declaration_naming_what_does_not_exist_is_refused(tmp_path, monk
     with pytest.raises(DefinitionError) as refused:
         page.load(registry.operations())
     assert where in [p for p, _ in refused.value.problems]
+
+
+class Where(Model):
+    where: str = Field(description="a context the page does not declare", json_schema_extra={"context": "galaxy"})
+
+
+class Nothing(Result):
+    def text(self) -> str:
+        return ""
+
+
+@operation(Verb("toy.where", Where), result=Nothing)
+def toy_where(req: Where, ctx) -> Nothing:
+    """An operation whose field takes a context the page does not declare."""
+    return Nothing()
+
+
+def test_a_request_field_taking_a_context_the_page_does_not_declare_is_refused():
+    """Fails if the declaration loads beside an operation whose field takes a context it does not
+    declare: that field's form could never start from the page's context (web.md § 8.1)."""
+    with pytest.raises(DefinitionError) as refused:
+        page.load({**registry.operations(), toy_where.name: toy_where})
+    assert "context" in [p for p, _ in refused.value.problems]
