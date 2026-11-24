@@ -35,7 +35,7 @@ its progress log, its one-run-per-batch lock and the states it reports
   checks what comes back and what is written.
 - **Field** first proves the toolchain on this machine: each default engine
   environment's packages, solved by the install's own `create` step and put
-  through its own `toolchain` step (`tests/field/test_toolchain.py`; [`envs.md`](envs.md)
+  through its own `toolchain` step (`tests/field/test_toolchain_on_this_machine.py`; [`envs.md`](envs.md)
   § 4.5), and probes the machine (`tests/field/test_job_probe.py`). Not built
   yet: a tiny environment from a test definition in `tests/field/data/`,
   walked through its states (`absent → ready`, a changed definition →

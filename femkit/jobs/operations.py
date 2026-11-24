@@ -142,7 +142,7 @@ class JobProbe:
 
         status, log = run_steps(plan, ctx, observer, do)
         return ProbeOutcome(plan=plan, status=status, log=str(log) if plan.steps else None,
-                            record=plan.basis["record"], file=str(file) if plan.steps and status == "done" else None,
+                            record=plan.holds["record"], file=str(file) if plan.steps and status == "done" else None,
                             write=_write(req), issues=plan.issues)
 
 

@@ -30,9 +30,10 @@ def test_a_page_declaration_naming_what_does_not_exist_is_refused(definitions, o
     """Fails if a declaration naming an operation that does not exist or changes things, a field
     or key its result lacks, a context it does not declare, or leaving an object type without its
     icon, loads — the page would draw a part it cannot fill (web.md § 8.1)."""
-    text = page.path().read_text(encoding="utf-8")
+    copy = definitions / "web" / "page.toml"           # the test's own copy, by the path it was given
+    text = copy.read_text(encoding="utf-8")
     assert old in text
-    page.path().write_text(text.replace(old, new, 1), encoding="utf-8")
+    copy.write_text(text.replace(old, new, 1), encoding="utf-8")
     with pytest.raises(DefinitionError) as refused:
         page.load(registry.operations())
     assert where in [p for p, _ in refused.value.problems]

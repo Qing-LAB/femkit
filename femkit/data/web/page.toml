@@ -14,7 +14,7 @@ title = "Model"
 icon = "workflow"
 tagline = "The physics as a graph: shapes become regions, regions take materials and conditions."
 help = "Add from the palette, wire a port to what it names, and follow the next step until the model is complete."
-document = "model.nowhere"
+document = "model.graph"
 context = ["project", "study"]
 empty = "Open a project to build its model — choose one, or make a new one."
 
@@ -52,8 +52,8 @@ key = "study"
 label = "study"
 help = "A study varies the model's parameters and numerics; its cases are what runs."
 choices = "study.list"
-rows = "nothing"
-depends = ["study"]
+rows = "studies"
+depends = ["project"]
 
 [[context]]
 key = "environment"
@@ -61,10 +61,11 @@ label = "environment"
 help = "An engine environment; with one chosen, each node shows how it would run there."
 choices = "env.list"
 rows = "rows"
-value_key = "nowhere"
+value_key = "name"
 depends = []
 
 [kinds]
+parameter = "variable"
 frame = "ruler"
 geometry = "shapes"
 conventions = "scale"

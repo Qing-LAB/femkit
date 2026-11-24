@@ -184,9 +184,9 @@ def test_channels_hold_one_bare_name_a_line(definitions, line):
     """Fails if channels.txt loads holding a blank line, a comment or stray spaces: the install
     script passes each line to the manager as a channel exactly as it stands, so femkit and the
     script would solve with different channels (definitions.md § 3)."""
-    from femkit.definitions.catalogue import control_files, load_control
+    from femkit.definitions.catalogue import load_control
     assert load_control().channels and load_control().python_minor
-    channels, _ = control_files()
+    channels = definitions / "channels.txt"            # the test's own copy, by the path it was given
     channels.write_text(channels.read_text() + line + "\n")
     with pytest.raises(DefinitionError):
         load_control()

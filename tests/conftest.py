@@ -55,7 +55,9 @@ def isolated_dirs(tmp_path, monkeypatch):
 @pytest.fixture
 def definitions(tmp_path, monkeypatch) -> Path:
     """The shipped definitions copied into the test's own folder, and femkit pointed at the copy
-    (`FEMKIT_DEFINITIONS_DIR`, § 2.1): a test edits a definition there, never a function of femkit's."""
+    (`FEMKIT_DEFINITIONS_DIR`, § 2.1): a test edits a definition there, never a function of femkit's,
+    and writes only by the path returned here — never by one femkit forms, which would reach the
+    shipped files if femkit stopped reading the variable."""
     import shutil
     from femkit.definitions import catalogue
     copy = tmp_path / "definitions"
