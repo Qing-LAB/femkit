@@ -12,7 +12,7 @@ from typing import Any, Iterable, Sequence
 
 from femkit.core.commandline import word
 from femkit.core.issues import Issue
-from femkit.core.view import Action
+from femkit.core.view import Action, Next, Report, Table, Text
 
 PAD = "    "
 MARK = {"error": "x", "warning": "!", "info": "-"}
@@ -74,3 +74,21 @@ def findings(issues: Iterable[Issue]) -> list[str]:
         out.append(f"  {MARK[issue.severity]} {issue.message}")
         out += [f"  {line}" for line in commands(issue.next)]
     return out
+
+
+def report(shown: Report, issues: Iterable[Issue] = ()) -> str:
+    """A result's report as the command line writes it (web.md § 7.6): each line; each table's
+    rows under its headings, an action in a cell as its command; each next block; then the
+    findings."""
+    out: list[str] = []
+    for block in shown.blocks:
+        if isinstance(block, Text):
+            out.append(block.text)
+        elif isinstance(block, Table):
+            cells = [[str(row.get(c.key, "")) if not isinstance(row.get(c.key), Action) else str(row[c.key])
+                      for c in block.columns] for row in block.rows]
+            heads = [c.label for c in block.columns]
+            out += table(([heads] if any(heads) else []) + cells)
+        elif isinstance(block, Next):
+            out += next_block(block.label, block.actions)
+    return "\n".join(out + findings(issues))

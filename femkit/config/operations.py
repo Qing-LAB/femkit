@@ -33,13 +33,19 @@ class DirectoryRow(Model):
 class PathResult(Result):
     directories: list[DirectoryRow] = Field(description=f"femkit's directories: {', '.join(dirs.VARIABLES)}")
 
-    def text(self) -> str:
-        lines = ["femkit's directories"]
-        lines += text.table((d.name, d.path, f"# from {d.rule}") for d in self.directories)
+    def report(self) -> view.Report:
+        blocks: list = [view.Text(text="femkit's directories"),
+                        view.Table(columns=[view.Column(key="name", label="directory"),
+                                            view.Column(key="path", label="path"),
+                                            view.Column(key="rule", label="from")],
+                                   rows=[{"name": d.name, "path": d.path, "rule": d.rule} for d in self.directories])]
         for d in self.directories:
-            lines.append(f"  in {d.name}:")
-            lines += [f"{text.PAD}{e}" for e in d.entries] or [f"{text.PAD}(empty)"]
-        return "\n".join(lines)
+            if not d.entries:
+                blocks.append(view.Text(text=f"in {d.name}: empty"))
+                continue
+            blocks += [view.Text(text=f"in {d.name}:"),
+                       view.Table(columns=[view.Column(key="entry", label="")], rows=[{"entry": e} for e in d.entries])]
+        return view.Report(blocks=blocks)
 
 
 @operation(CONFIG_PATH, result=PathResult)
@@ -70,11 +76,13 @@ class ShowResult(Result):
     file: str | None = Field(description="the file that answered; none when absent")
     rows: list[ShowRow] = Field(description="every key, in the model's order")
 
-    def text(self) -> str:
-        lines = [f"read {self.file}" if self.file else "no config.toml: every key is unset"]
-        lines += text.table((r.key, text.show(r.value)) if r.value is not None
-                            else (r.key, f"unset  # {r.unset}") for r in self.rows)
-        return "\n".join(lines)
+    def report(self) -> view.Report:
+        return view.Report(blocks=[
+            view.Text(text=f"read {self.file}" if self.file else "no config.toml: every key is unset"),
+            view.Table(columns=[view.Column(key="key", label="key"), view.Column(key="value", label="value"),
+                                view.Column(key="unset", label="when unset")],
+                       rows=[{"key": r.key, "value": text.show(r.value), "unset": r.unset if r.value is None else ""}
+                             for r in self.rows])])
 
 
 @operation(CONFIG_SHOW, result=ShowResult)
@@ -94,10 +102,10 @@ def config_show(req: ShowRequest, ctx: Context) -> ShowResult:
 class SetOutcome(Outcome):
     file: str = Field(default="", description="the file written")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         if not self.plan.steps:
-            return f"nothing to change in {self.file}"
-        return f"{self.plan.steps[0].describe}\n  in {self.file}"
+            return view.Report(blocks=[view.Text(text=f"nothing to change in {self.file}")])
+        return view.Report(blocks=[view.Text(text=f"{self.plan.steps[0].describe}, in {self.file}")])
 
 
 def _value(raw: str) -> Any:
@@ -170,12 +178,14 @@ class InitOutcome(Outcome):
     file: str = Field(default="", description="the file written")
     rows: list[InitRow] = Field(default_factory=list, description="every key, in the model's order")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         added = sum(r.status == "added" for r in self.rows)
-        lines = [f"{self.file}: {text.count(added, 'key')} added"]
-        lines += text.table((r.status, r.key, text.show(r.value) if r.status != "unset" else "unset", f"# {r.note}" if r.note else "")
-                            for r in self.rows)
-        return "\n".join(lines + text.findings(self.issues))
+        return view.Report(blocks=[
+            view.Text(text=f"{self.file}: {text.count(added, 'key')} added"),
+            view.Table(columns=[view.Column(key="status", label="status"), view.Column(key="key", label="key"),
+                                view.Column(key="value", label="value"), view.Column(key="note", label="when unset")],
+                       rows=[{"status": r.status, "key": r.key, "value": text.show(r.value), "note": r.note}
+                             for r in self.rows])])
 
 
 def _given(req) -> dict[str, Any]:

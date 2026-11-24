@@ -3,10 +3,13 @@ import { apply, lines, NeedToken, OperationInfo, planOperation, Refused, runOper
 import { Form, requestFrom, Values } from "./Form";
 import { Progress } from "./Progress";
 import { Findings, Value } from "./Value";
+import { ActionButton } from "./elements/ActionButton";
+import { Report } from "./elements/Report";
 import type { Action } from "./generated/schemas";
 
 // One operation as a form, its plan, its outcome (web.md § 2): a read-only one is run; a
-// changing one is planned, shown, and applied with the digest of the plan shown.
+// changing one is planned, shown, and applied with the digest of the plan shown. A result is
+// drawn from its report; one that carries none yet, field by field.
 
 type Phase =
   | { kind: "idle" }
@@ -140,8 +143,12 @@ export function OperationView({ op, onNeedToken }: { op: OperationInfo; onNeedTo
       {phase.kind === "done" && (
         <div className={`card result ${phase.ok ? "ok" : "not-ok"}`}>
           <h2>{op.changes ? "Outcome" : "Result"} <span className={`badge ${phase.ok ? "done" : "failed"}`}>{phase.ok ? "ok" : "not ok"}</span></h2>
-          <Findings issues={phase.result.issues} />
-          <Value value={phase.result} />
+          {phase.result.report ? <Report result={phase.result} /> : (
+            <>
+              <Findings issues={phase.result.issues} />
+              <Value value={phase.result} />
+            </>
+          )}
         </div>
       )}
 
@@ -149,7 +156,7 @@ export function OperationView({ op, onNeedToken }: { op: OperationInfo; onNeedTo
         <div className="card result not-ok">
           <h2>Refused <span className="badge failed">{phase.kind2}</span></h2>
           <p>{phase.message}</p>
-          {phase.next.length > 0 && <pre className="next">{phase.next.map((a) => a.command).join("\n")}</pre>}
+          {phase.next.length > 0 && <div className="next">{phase.next.map((a, i) => <ActionButton key={i} action={a} small />)}</div>}
         </div>
       )}
     </section>

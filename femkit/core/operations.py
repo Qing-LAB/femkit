@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Mapping, Protocol, TypeVar
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, model_serializer
 
 from femkit.core import clock, dirs, text, view
 from femkit.core.errors import PlanStale, UsageError
@@ -64,8 +64,21 @@ class Result(Model):
     def ok(self) -> bool:
         return not any(i.severity == "error" for i in self.issues)
 
+    def report(self) -> view.Report:
+        """What a person reads, as data, built from the result's fields alone (api.md § 2.3)."""
+        raise NotImplementedError(f"{type(self).__name__} builds no report")
+
     def text(self) -> str:
-        raise NotImplementedError(f"{type(self).__name__} must render its own text")
+        """The report as the command line writes it."""
+        return text.report(self.report(), self.issues)
+
+    @model_serializer(mode="wrap")
+    def _with_report(self, handler):
+        """The report goes with the result's JSON: the page draws it (web.md § 7.6)."""
+        data = handler(self)
+        if type(self).report is not Result.report:
+            data["report"] = self.report().model_dump(mode="json")
+        return data
 
 
 class Step(Model):
@@ -379,8 +392,8 @@ def operation(
         doc = " ".join((target.__doc__ or "").split())
         if not doc:
             raise TypeError(f"{name}: an operation's docstring is its help; write one")
-        if result.text is Result.text:
-            raise TypeError(f"{name}: {result.__name__} writes no text(); a result is read on a terminal too")
+        if result.text is Result.text and result.report is Result.report:
+            raise TypeError(f"{name}: {result.__name__} builds no report(); a result is read on a terminal too")
         if changes:
             if not isinstance(target, type) or not all(hasattr(target, m) for m in ("plan", "apply")):
                 raise TypeError(f"{name}: a changing operation is a class with plan and apply")

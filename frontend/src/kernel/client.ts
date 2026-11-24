@@ -50,6 +50,11 @@ export function setToken(value: string): void {
   try { sessionStorage.setItem(KEY, value); } catch { /* the token lives only in this page */ }
 }
 
+/** What every request carries: the token, as a Bearer header. */
+export function authorization(): string {
+  return `Bearer ${token ?? ""}`;
+}
+
 /** The document viewer's address, in a tab of its own, its token handed over as the page's was. */
 export function viewerAddress(document?: string, section?: string | null): string {
   const parts = [`token=${token ?? ""}`, document ? `doc=${encodeURIComponent(document)}` : "",
@@ -61,7 +66,7 @@ async function send(path: string, body?: unknown): Promise<Response | Outcome<ne
   try {
     return await fetch(path, {
       method: body === undefined ? "GET" : "POST",
-      headers: { Authorization: `Bearer ${token ?? ""}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      headers: { Authorization: authorization(), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: "omit",
     });

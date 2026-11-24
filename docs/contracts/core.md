@@ -167,6 +167,9 @@ def append_text(path, text) -> None                    # a log's lines added at 
 def touch(path) -> Path                                # made empty if absent; its time now
 def remove(path) -> None                               # a file, or a folder with all it holds; absent is no error
 def make_folder(path) -> Path                          # a folder, with the folders above it; there already is no error
+def move(source, path) -> Path                         # a file renamed in one step, the folders above path made
+def remove_empty_folders(path, stop) -> None           # path and each folder above it removed while empty, up to stop
+def read_text(path) -> str | None                      # a file's text as its bytes hold it; None when no file is there
 def empty_folder(path) -> Path                         # an empty folder, whatever was there
 def copy_tree(source, path) -> Path                    # a folder copied to a place not there yet
 def replace_folder(fresh, path) -> None                # fresh takes path's place whole: old moved aside, fresh
@@ -215,7 +218,7 @@ every folder.
 ```python
 @contextmanager
 def subject_lock(subject: str, *, shared: bool = False) -> Iterator[None]    # raises Busy
-def is_held(subject: str) -> bool       # held alone: something is changing it
+def is_held(subject: str) -> bool       # held alone by another process: something else is changing it
 def require_free(subject: str) -> None  # raises Busy while anyone holds it, shared or alone; takes nothing
 def held_fd(subject: str) -> int        # the descriptor this process holds it on, to hand to a process it starts
 def adopt(fd: int, by: str | None = None, next: Iterable[dict] = ()) -> None   # each next step as its Action's JSON
@@ -240,7 +243,8 @@ def holders() -> dict[str, int]         # subject -> pid, from the kernel's lock
   ([`web.md`](web.md) § 4). `is_held` answers whether something holds it
   alone — is changing it; `require_free` refuses while anyone holds it.
 - `Busy` means **another** process holds it. The process that holds it reads
-  its own subject as not busy: its facts function is told so.
+  its own subject as not busy: `is_held` and `require_free` leave its own hold
+  out, so what it observes under its own lock reads as it would under none.
   — only so `Busy` can name the live ones and offer those commands as its next
   steps; nothing is decided from its content. A holder alone rewrites the file;
   a shared holder adds its line.

@@ -52,12 +52,13 @@ class DoctorResult(Result):
     def ok(self) -> bool:
         return all(r.ready for r in self.rows) and super().ok()
 
-    def text(self) -> str:
-        lines = ["this machine is ready" if self.ok() else "this machine is not ready"]
-        lines += text.table(("-" if r.ready else "!", r.subject, r.state) for r in self.rows)
-        for r in self.rows:
-            lines += text.next_block(f"for {r.subject}", r.next) if not r.ready else []
-        return "\n".join(lines)
+    def report(self) -> view.Report:
+        return view.Report(blocks=[
+            view.Text(text="this machine is ready" if self.ok() else "this machine is not ready"),
+            view.Table(columns=[view.Column(key=k, label="") for k in ("mark", "subject", "state")],
+                       rows=[{"mark": "-" if r.ready else "!", "subject": r.subject, "state": r.state}
+                             for r in self.rows]),
+            *(view.Next(label=f"for {r.subject}", actions=r.next) for r in self.rows if not r.ready and r.next)])
 
 
 CONTROL_STAMP = "control.sha256"  # in the control prefix's records; written last by the install script
@@ -146,19 +147,21 @@ class BootstrapOutcome(Outcome):
     def ok(self) -> bool:
         return super().ok() and self.doctor is not None and self.doctor.ok()
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         failed = [r.part for r in self.rows if r.status not in ("done", "left alone")]
         problems = ([f"{text.count(len(failed), 'part')} did not finish ({', '.join(failed)})"]
                     if failed else []) + (["doctor reports a problem"] if self.doctor and not self.doctor.ok() else [])
-        lines = ["bootstrap did not finish: " + "; ".join(problems) if problems
-                 else "bootstrap complete: every part done and this machine is ready"]
-        lines += text.table((r.part, r.status, r.detail, f"# {r.log}" if r.log else "") for r in self.rows)
+        blocks = [view.Text(text="bootstrap did not finish: " + "; ".join(problems) if problems
+                            else "bootstrap complete: every part done and this machine is ready"),
+                  view.Table(columns=[view.Column(key=k, label="") for k in ("part", "status", "detail", "log")],
+                             rows=[{"part": r.part, "status": r.status, "detail": r.detail, "log": r.log or ""}
+                                   for r in self.rows])]
         if self.doctor is not None:
-            lines += ["doctor: " + self.doctor.text().replace("\n", "\n  ")]
-        lines += text.findings(self.issues)
+            verdict, *rest = self.doctor.report().blocks
+            blocks += [view.Text(text=f"doctor: {verdict.text}"), *rest]
         if self.entry:
-            lines += text.next_block("enter femkit day to day on this machine", self.entry)
-        return "\n".join(lines)
+            blocks.append(view.Next(label="enter femkit day to day on this machine", actions=self.entry))
+        return view.Report(blocks=blocks)
 
 
 def _as_bootstrap(issue: Issue) -> Issue:

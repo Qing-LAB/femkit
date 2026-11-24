@@ -50,11 +50,11 @@ def test_a_value_is_toml_text_and_a_bare_word_is_refused():
     for a number (config.md § 3, web.md § 7.3)."""
     ctx = Context.from_process()
     with refused(UsageError, "not-toml", "/data/projects"):
-        planned("config.set", key="web.projects", value="/data/projects")
+        planned("config.set", key="paths.projects", value="/data/projects")
     with refused(UsageError, "invalid-value", "build.jobs"):
         planned("config.set", key="build.jobs", value="true")
-    apply("config.set", key="web.projects", value='"/data/projects"')
-    assert str(settings.load(Context.from_process()).config.web.projects) == "/data/projects"
+    apply("config.set", key="paths.projects", value='"/data/projects"')
+    assert str(settings.load(Context.from_process()).config.paths.projects) == "/data/projects"
 
 
 def test_show_says_where_each_value_came_from_or_what_its_absence_means():
@@ -64,6 +64,17 @@ def test_show_says_where_each_value_came_from_or_what_its_absence_means():
     assert rows["build.cuda_architectures"].source == "config.toml"
     assert rows["activation.preamble"].source == "unset"
     assert rows["activation.preamble"].unset == settings.key("activation.preamble").unset
+
+
+def test_show_carries_its_report_a_table_naming_each_key():
+    """Fails if `config show`'s JSON lacks the report the page draws, or its table leaves out a
+    key or the value the file holds (web.md § 7.6, api.md § 2.3)."""
+    init()
+    report = run("config.show").model_dump(mode="json")["report"]
+    (table,) = [b for b in report["blocks"] if b["kind"] == "table"]
+    rows = {row["key"]: row for row in table["rows"]}
+    assert list(rows) == [k.dotted for k in settings.keys()]
+    assert rows["build.cuda_architectures"]["value"] == "80"
 
 
 def test_init_with_nothing_to_add_still_reports_kept_ignored_and_blocking_keys():

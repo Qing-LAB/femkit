@@ -13,6 +13,12 @@ export const Registry = createContext<Map<string, OperationInfo>>(new Map());
 
 export type Given = Record<string, Value>;
 
+/** Whether a value a document holds is an action — a table's cell holds a value or one (web.md
+ *  § 7.5). An action is written with every field it has, its call and its shell line among them. */
+export function isAction(v: unknown): v is Action {
+  return typeof v === "object" && v !== null && "label" in v && "call" in v && "shell" in v;
+}
+
 /** How a fill is named among an action's values: its hole's name, or its field. */
 export function fillKey(f: Fill): string {
   return f.hole ? f.hole.replace(/^"?<|>"?$/g, "") : f.field;

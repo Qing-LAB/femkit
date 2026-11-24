@@ -1,0 +1,5 @@
+.report { display: grid; gap: var(--space-3); min-width: 0; }
+.report__text { margin: 0; overflow-wrap: anywhere; }
+.report__next { display: grid; gap: var(--space-2); }
+.report__label { margin: 0; font-size: var(--text-sm); font-weight: var(--weight-strong); color: var(--text); }
+.report__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }

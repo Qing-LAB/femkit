@@ -11,9 +11,9 @@ from __future__ import annotations
 import functools
 import json
 from dataclasses import dataclass
-from typing import Any, Iterable, Literal
+from typing import Annotated, Any, Iterable, Literal
 
-from pydantic import BaseModel, Field as Describe
+from pydantic import BaseModel, Discriminator, Field as Describe
 
 from femkit.core import commandline, dirs
 from femkit.core.markdown import headings
@@ -24,10 +24,17 @@ from femkit.core.schema import Model, field_extras
 @dataclass(frozen=True)
 class Verb:
     """An operation by its name, with its request model: declared once, beside the request,
-    and read both by the operation's declaration and by every next step that names it."""
+    and read both by the operation's declaration and by every next step that names it. Each
+    is known here as it is declared, so a surface writes an action from its call alone."""
 
     name: str
     request: type[BaseModel]
+
+    def __post_init__(self) -> None:
+        _VERBS[self.name] = self
+
+
+_VERBS: dict[str, Verb] = {}
 
 
 class DocRef(Model):
@@ -113,11 +120,20 @@ class Action(Model):
     operation — a shell's activation, a scheduler's interactive command."""
 
     label: str = Describe(description="what a person reads on it")
-    command: str = Describe(description="the command a person types, written once from the call or the shell line")
     note: str | None = Describe(default=None, description="a remark a command line writes after it")
     call: Call | None = Describe(default=None, description="the operation it runs; none for a shell line")
+    shell: str | None = Describe(default=None, description="the line a person types, for what is no operation")
     fills: list[Fill] = Describe(default_factory=list, description="each value still to fill, in the order asked")
     help: Help | None = Describe(default=None, description="what it does")
+
+    @property
+    def command(self) -> str:
+        """The command a person types, written from the call — never stored (web.md § 7.2)."""
+        if self.call is None:
+            return self.shell or ""
+        verb = _VERBS[self.call.operation]
+        filled = {f.field: f.example or f.field.upper() for f in self.fills if f.hole is None}
+        return commandline.typed(commandline.words(verb.name, verb.request, self.call.request, filled))
 
     def __str__(self) -> str:
         return self.command + (f"   # {self.note}" if self.note else "")
@@ -140,14 +156,14 @@ def command(verb: Verb, *, label: str | None = None, note: str | None = None,
     }) for f in fills]
     words = commandline.words(operation, request, values,
                               {f.field: f.example or f.field.upper() for f in fills if f.hole is None})
-    return Action(label=label or " ".join(words), command=commandline.typed(words), note=note,
+    return Action(label=label or " ".join(words), note=note,
                   call=Call(operation=operation, request=json.loads(json.dumps(values, default=str))),
                   fills=fills)
 
 
 def shell(line: str, *, note: str | None = None) -> Action:
     """A line a person types that is no operation of femkit's."""
-    return Action(label=line, command=line, note=note)
+    return Action(label=line, shell=line, note=note)
 
 
 class Field(Model):
@@ -168,8 +184,32 @@ class Column(Model):
 
 
 class Table(Model):
+    """Rows under their columns (web.md § 7.5); a cell holds a value, or an `Action`."""
+
+    kind: Literal["table"] = "table"
     columns: list[Column] = Describe(default_factory=list)
     rows: list[dict[str, Any]] = Describe(default_factory=list)
+
+
+class Text(Model):
+    """One line a person reads (web.md § 7.6)."""
+
+    kind: Literal["text"] = "text"
+    text: str
+
+
+class Next(Model):
+    """A heading and the actions under it: what a person may do next (web.md § 7.6)."""
+
+    kind: Literal["next"] = "next"
+    label: str
+    actions: list[Action] = Describe(default_factory=list)
+
+
+class Report(Model):
+    """What a result shows a person, as data; its findings follow its blocks (web.md § 7.6)."""
+
+    blocks: list[Annotated[Text | Table | Next, Discriminator("kind")]] = Describe(default_factory=list)
 
 
 # ------------------------------------------------------------------ the routes' answers (web.md § 1)

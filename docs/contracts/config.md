@@ -67,8 +67,8 @@ is not a setting. How Python learns the manager without it is
 
 | key | meaning | when unset |
 |---|---|---|
-| `projects.undo` | how many edits of a project `project undo` reaches back through ([`projects.md`](projects.md) § 7); decided by the person, not built yet (plan § 3, R step C) | 100 |
-| `paths.projects` | the projects root: the person's material library and their projects ([`projects.md`](projects.md) § 1); replacing `web.projects`; decided by the person (plan § 6), not built yet (plan § 3, R) | the page cannot list or create projects, and `material add --from` and `material import --into library` are refused, naming this key |
+| `projects.undo` | how many edits of a project undo reaches back through ([`projects.md`](projects.md) § 7); decided by the person | 100 |
+| `paths.projects` | the projects root: the person's material library and their projects ([`projects.md`](projects.md) § 1); decided by the person (plan § 6) | no project is listed, made or named; each says so, naming this key |
 | `paths.environments` | where engine environment prefixes are created (the control environment's place is fixed, [`envs.md`](envs.md) § 1) — on a cluster, typically project storage rather than a small home quota | `<data>/environments` |
 | `build.cuda_architectures` | GPU architectures the CUDA environments target, e.g. `["80", "90"]` ([`definitions.md`](definitions.md) § 4.5); the default environments never read it | installing an environment with a build compiled for CUDA (both CUDA environments have one) is refused, naming this key |
 | `build.jobs` | parallel compile jobs | the CPUs this process may use (its CPU affinity: on a cluster, the allocation's share, never the whole login node) |
@@ -77,10 +77,8 @@ is not a setting. How Python learns the manager without it is
 | `activation.command` | how a shell on this machine then enters an environment: `source activate`, the activate script on `PATH` (a cluster's `module load mamba` puts it there); or `conda activate` / `mamba activate`, the manager's shell function, which exists only once the manager's hook file is sourced — femkit sources it first, from the kind's `activate.hook` under the manager's root ([`definitions.md`](definitions.md) § 6) | `job probe --write` and `job prepare` are refused, naming this key |
 
 The web server's keys — `[web.auth]`, `web.tls`, `web.trust_proxy`,
-`web.public_name`, `web.projects`, `web.upload_max_mb` — are
-[`web.md`](web.md) § 5's and § 8.6's; `web.projects` is built, and becomes
-`paths.projects`, decided, once plan § 3, R lands; the others are not built yet
-(plan § 3, M7).
+`web.public_name`, `web.upload_max_mb` — are [`web.md`](web.md) § 5's and
+§ 8.6's, not built yet (plan § 3, M7); `web.projects` became `paths.projects`.
 
 Every key is optional in the file, and its absence has the one consequence the
 table states. Unknown keys are refused at load. The schema model is the
@@ -124,7 +122,7 @@ someone said nothing is needed.
   `added` or `kept`; it never replaces a value.
 - `config set KEY VALUE` validates and writes one key, keeping the file's
   comments and layout. `VALUE` is TOML text, as the file writes it —
-  `config set web.projects '"/data/projects"'` — and a bare word is refused,
+  `config set paths.projects '"/data/projects"'` — and a bare word is refused,
   never guessed to be text ([`web.md`](web.md) § 7.3). `config show` prints every key with its value and where
   it came from: the file, or the "when unset" rule.
 

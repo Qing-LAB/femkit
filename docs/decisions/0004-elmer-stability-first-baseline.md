@@ -44,7 +44,7 @@ How others deploy Elmer, as read on 2026-10-12:
 
 These references justify a regular released baseline. They do not measure
 which version is most used, prove CUDA compatibility or make the build
-production-qualified; the definition says `maturity = "candidate"`.
+production-qualified.
 
 ## UMFPACK: the failure it avoids
 

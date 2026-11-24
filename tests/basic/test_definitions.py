@@ -9,6 +9,7 @@ import pytest
 
 from tests.kit import planned, refused, run
 from femkit.core.dirs import CONTROL
+from femkit.core.errors import UsageError
 from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.definitions import catalogue
 from femkit.core.view import RefusalAnswer
@@ -234,7 +235,6 @@ def test_the_web_environment_takes_the_control_environments_packages_by_referenc
     lists them — its server would run femkit on other versions — or the control environment
     holds the web's flask or Node.js (definitions.md § 4.7, ADR 0009)."""
     from femkit.definitions.catalogue import load_control
-    from femkit.envs.operations import EnvInstall
     plan = planned("env.install", names=["web"])[1]
     create = list(next(s for s in plan.steps if s.id.endswith("/create")).argv)
     control = load_control().dependencies
@@ -245,7 +245,6 @@ def test_the_web_environment_takes_the_control_environments_packages_by_referenc
 def test_a_tool_environment_without_control_packages_holds_only_its_own(manager, definitions):
     """Fails if the create planned for a tool environment that does not ask for femkit's
     libraries installs them, or the Python femkit's own programs need (definitions.md § 4.7)."""
-    from femkit.envs.operations import EnvInstall
     data = definitions
     (data / "environments" / "tool.toml").write_text(
         'description = "a tool"\nversion = "v1"\nversion_command = ["tool", "--version"]\n'
@@ -363,3 +362,30 @@ def test_a_toolchain_naming_a_language_femkit_cannot_check_is_refused_when_it_lo
     with pytest.raises(CatalogueError) as caught:
         load_environments()
     assert [(Path(e.file).name, e.problems[0][0]) for e in caught.value.errors] == [("ngsolve.toml", "toolchain")]
+
+
+def test_a_mesher_is_checked_against_the_environments_as_loaded_and_a_broken_one_said_once(definitions):
+    """Fails if a mesher may not name a CUDA environment — one no file is named after — or if a
+    broken environment file leaves every mesher unchecked, or is reported again under the
+    meshers (definitions.md § 4.5, models.md § 6.5)."""
+    from femkit.definitions.catalogue import load_meshers
+    mesher = definitions / "meshers" / "gmsh.toml"
+    shipped = mesher.read_text()
+    mesher.write_text(shipped.replace('provided_by = "elmer"', 'provided_by = "elmer-cuda"', 1))
+    assert load_meshers()["gmsh"].provided_by == "elmer-cuda"
+    (definitions / "environments" / "web.toml").write_text("this is [ no TOML\n")
+    mesher.write_text(shipped.replace('provided_by = "elmer"', 'provided_by = "nowhere"', 1))
+    with pytest.raises(CatalogueError) as caught:
+        load_meshers()
+    assert [Path(e.file).name for e in caught.value.errors] == ["gmsh.toml"]
+
+
+def test_the_definitions_folder_is_read_as_the_directories_are(monkeypatch, tmp_path):
+    """Fails if FEMKIT_DEFINITIONS_DIR is taken relative to where the command runs, or its `~`
+    is not the home folder (config.md § 2)."""
+    monkeypatch.setenv(catalogue.VARIABLE, "relative/definitions")
+    with refused(UsageError, "not-absolute", catalogue.VARIABLE):
+        data_root()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv(catalogue.VARIABLE, "~/definitions")
+    assert data_root() == tmp_path / "definitions"

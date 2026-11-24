@@ -1,8 +1,15 @@
 # Projects contract — the projects root, a project's tree, and the one door
 
 **Role:** contract
-**Status:** current, approved by the person (plan § 6); nothing in it is
-built yet (plan § 3, R)
+**Status:** current, approved by the person (plan § 6); built in
+`femkit/projects/`, proven on a layout of the tests' own (plan § 3, R step C):
+finding and naming projects (§ 1), names and groups (§ 3), the layout's part
+kinds (§ 4), addresses and the rename of a part (§ 5), opening each part on its
+own and its citations (§ 6), transactions and undo (§ 7). Not built: the
+shipped layout and the part kinds' schemas (§§ 2–3), object types in the
+layout (§ 4), renaming an entry and the addresses a value holds (§ 5), schemas
+registered at start, the global library and what cannot be checked yet (§§ 6–7),
+the project commands and the states of § 8 (plan § 3, R steps D and E)
 **Authority:** where projects live; the tree of a project — every folder and
 file, what it holds, who writes it, which door reads it, and whether it moves
 with the project; the part kinds and what each may cite; addresses; the one

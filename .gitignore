@@ -34,7 +34,8 @@ pip-wheel-metadata/
 /.test-progress/
 /test-artifacts/
 
-# Generated studies and solver output are never source files.
-projects/
-work/
+# Generated studies and solver output are never source files: the top-level folders only
+# (femkit/projects/ is the package that opens a project).
+/projects/
+/work/
 frontend/node_modules/

@@ -5,7 +5,6 @@ The one model of a record, and its one reader and writer. Reading a record never
 
 from __future__ import annotations
 
-import hashlib
 import re
 from pathlib import Path
 from typing import Any, Literal
@@ -166,7 +165,7 @@ def write(file: Path, record: Record) -> Path:
 
 
 def sha256(file: Path) -> str | None:
-    return hashlib.sha256(file.read_bytes()).hexdigest() if file.exists() else None
+    return persist.sha256(file)
 
 
 def listing() -> list[tuple[str, Path, Record | None, str]]:

@@ -25,19 +25,23 @@ _XDG = {
 }
 
 
-def _resolve(which: str) -> Path:
-    """`~` is expanded; a relative directory is refused, never taken from where
+def folder_from(variable: str, value: str, what: str) -> Path:
+    """A folder a variable names: `~` expanded; a relative one refused, never taken from where
     the command runs (config.md § 2). scripts/install-env.sh applies the same rule."""
-    own, (xdg, fallback) = VARIABLES[which], _XDG[which]
-    if os.environ.get(own):
-        path = Path(os.environ[own]).expanduser()
-    else:
-        path = Path(os.environ.get(xdg) or str(Path.home() / fallback)).expanduser() / "femkit"
+    path = Path(value).expanduser()
     if not path.is_absolute():
         from femkit.core import view  # here, not at the top: the supervisor imports this module (web.md § 4)
-        raise UsageError(f"the {which} directory must be an absolute path, not {path}", (view.shell(f"export {own}=/absolute/path"),),
-                         code="not-absolute", subject=own)
+        raise UsageError(f"{what} must be an absolute path, not {path}", (view.shell(f"export {variable}=/absolute/path"),),
+                         code="not-absolute", subject=variable)
     return path
+
+
+def _resolve(which: str) -> Path:
+    own, (xdg, fallback) = VARIABLES[which], _XDG[which]
+    if os.environ.get(own):
+        return folder_from(own, os.environ[own], f"the {which} directory")
+    return folder_from(xdg, str(Path(os.environ.get(xdg) or str(Path.home() / fallback)) / "femkit"),
+                       f"the {which} directory")
 
 
 def config_dir() -> Path:
@@ -65,13 +69,7 @@ def runtime_dir() -> Path:
     """`<state>/run/<host>/`, or `FEMKIT_RUNTIME_DIR` (config.md § 2): a running server's
     pidfile, token and socket. Host-keyed, because a shared home is seen by every login node."""
     own = os.environ.get(VARIABLES["runtime"])
-    path = Path(own).expanduser() if own else state_dir() / "run" / host()
-    if not path.is_absolute():
-        from femkit.core import view  # here, not at the top: the supervisor imports this module (web.md § 4)
-        raise UsageError(f"the runtime directory must be an absolute path, not {path}",
-                         (view.shell(f"export {VARIABLES['runtime']}=/absolute/path"),),
-                         code="not-absolute", subject=VARIABLES["runtime"])
-    return path
+    return folder_from(VARIABLES["runtime"], own, "the runtime directory") if own else state_dir() / "run" / host()
 
 
 CONTROL = "control"  # the control environment's name (envs.md § 1)

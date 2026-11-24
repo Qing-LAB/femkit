@@ -21,50 +21,59 @@ from femkit.jobs.requests import JOB_MACHINES, JOB_PROBE
 
 
 
-def _lines(r: Record) -> list[str]:
+def _table(rows: list[dict], *keys: str) -> view.Table:
+    """Rows under columns with no heading: each cell says what it is."""
+    return view.Table(columns=[view.Column(key=k, label="") for k in keys], rows=rows)
+
+
+def _pairs(pairs) -> view.Table:
+    """Each name beside its value."""
+    return _table([{"key": k, "value": v} for k, v in pairs], "key", "value")
+
+
+def _record(r: Record) -> list[view.Text | view.Table]:
     """A record as a person reads it (api.md § 4.4)."""
     def show(v) -> str:
         return f"unknown ({v.unknown})" if isinstance(v, record.Unknown) else text.show(v)
 
-    lines = [f"identity     {show(r.identity)}   # measured {r.measured.time} on a {r.measured.where}",
-             f"host         {r.host.os}, {r.host.architecture}, {show(r.host.cores)} cores, "
-             f"{show(r.host.memory_mib)} MiB"]
-    if isinstance(r.host.gpus, list):
-        lines += [f"  gpu        {g.model} (compute {g.compute_capability}, {g.memory_mib} MiB)" for g in r.host.gpus]
+    def nodes(p: record.Partition) -> str:
+        groups = "; ".join(f"{g.count}× {show(g.cores)} cores, {show(g.memory_mib)} MiB"
+                           + (", " + " ".join(f"{n} {t}" for t, n in g.gpus.items()) if g.gpus else "")
+                           + f", {show(g.architecture)}" for g in p.node_groups)
+        return f"max {show(p.max_time)}; {groups or 'no nodes listed'}"
+
+    m, s = r.manager, r.settings
+    blocks = [view.Text(text=f"identity: {show(r.identity)}, measured {r.measured.time} on a {r.measured.where}"),
+              view.Text(text=f"host: {r.host.os}, {r.host.architecture}, {show(r.host.cores)} cores, "
+                             f"{show(r.host.memory_mib)} MiB"),
+              _pairs([("gpu", f"{g.model} (compute {g.compute_capability}, {g.memory_mib} MiB)") for g in r.host.gpus]
+                     if isinstance(r.host.gpus, list) else [("gpus", show(r.host.gpus))]),
+              view.Text(text=f"manager: {show(m.kind)} {show(m.version)} at {show(m.path)}; "
+                             f"platform {show(m.platform)}; run enters: {show(m.run_enters)}"),
+              view.Text(text=f"scheduler: {r.scheduler.kind}"),
+              _pairs((role, show(where)) for role, where in {**r.scheduler.commands, **r.scheduler.probe}.items())]
+    if not isinstance(r.partitions, dict):
+        blocks.append(view.Text(text=f"partitions: {show(r.partitions)}"))
+    elif r.partitions:
+        blocks += [view.Text(text="partitions"), _pairs((name, nodes(p)) for name, p in r.partitions.items())]
+    if not isinstance(r.queues, list):
+        blocks.append(view.Text(text=f"queues: {show(r.queues)}"))
+    elif r.queues:
+        blocks += [view.Text(text="queues"), _table(
+            [{"partition": q.partition, "qos": q.qos or "(no QOS)", "time": f"max {show(q.max_time)}",
+              "cpus": f"cpus {show(q.max_cpus)}", "gpus": f"gpus {show(q.max_gpus)}"} for q in r.queues],
+            "partition", "qos", "time", "cpus", "gpus")]
+    if not isinstance(r.environments, dict):
+        blocks.append(view.Text(text=f"environments: {show(r.environments)}"))
+    elif r.environments:
+        blocks += [view.Text(text="environments"), _table(
+            [{"name": n, "state": e.state, "gpu": f"gpu {e.gpu}" if e.gpu else ""} for n, e in r.environments.items()],
+            "name", "state", "gpu")]
     else:
-        lines.append(f"  gpus       {show(r.host.gpus)}")
-    m = r.manager
-    lines.append(f"manager      {show(m.kind)} {show(m.version)} at {show(m.path)}; platform {show(m.platform)}; "
-                 f"run enters: {show(m.run_enters)}")
-    lines.append(f"scheduler    {r.scheduler.kind}")
-    lines += text.table((role, show(where)) for role, where in {**r.scheduler.commands, **r.scheduler.probe}.items())
-    if isinstance(r.partitions, dict):
-        if r.partitions:
-            lines.append("partitions")
-            for name, p in r.partitions.items():
-                groups = "; ".join(
-                    f"{g.count}× {show(g.cores)} cores, {show(g.memory_mib)} MiB"
-                    + (", " + " ".join(f"{n} {t}" for t, n in g.gpus.items()) if g.gpus else "")
-                    + f", {show(g.architecture)}" for g in p.node_groups)
-                lines.append(f"  {name}: max {show(p.max_time)}; {groups or 'no nodes listed'}")
-    else:
-        lines.append(f"partitions   {show(r.partitions)}")
-    if isinstance(r.queues, list):
-        if r.queues:
-            lines.append("queues")
-            lines += text.table((q.partition, q.qos or "(no QOS)", f"max {show(q.max_time)}",
-                                 f"cpus {show(q.max_cpus)}", f"gpus {show(q.max_gpus)}") for q in r.queues)
-    else:
-        lines.append(f"queues       {show(r.queues)}")
-    if isinstance(r.environments, dict):
-        lines.append("environments" + ("" if r.environments else "  none installed"))
-        lines += text.table((n, e.state, f"gpu {e.gpu}" if e.gpu else "") for n, e in r.environments.items())
-    else:
-        lines.append(f"environments {show(r.environments)}")
-    s = r.settings
-    lines.append(f"settings     environments {s.environments}; mpi {text.show(s.mpi) if s.mpi else 'unset'}; "
-                 f"preamble {text.show(s.preamble) if s.preamble is not None else 'unset'}")
-    return lines
+        blocks.append(view.Text(text="environments: none installed"))
+    blocks.append(view.Text(text=f"settings: environments {s.environments}; mpi {text.show(s.mpi) if s.mpi else 'unset'}; "
+                                 f"preamble {text.show(s.preamble) if s.preamble is not None else 'unset'}"))
+    return [b for b in blocks if not isinstance(b, view.Table) or b.rows]   # no GPU, no command found: no table
 
 
 # ------------------------------------------------------------------ job probe
@@ -74,14 +83,13 @@ class ProbeOutcome(Outcome):
     file: str | None = Field(default=None, description="the file written; none when not written")
     write: view.Action | None = Field(default=None, description="what writes the record shown")
 
-    def text(self) -> str:
-        r = record.Record.model_validate(self.record)
+    def report(self) -> view.Report:
         head = (f"wrote {self.file}" if self.file else "measured; nothing written") \
             if self.status == "done" else "writing the record failed"
-        lines = [head] + ["  " + line for line in _lines(r)] + text.findings(self.issues)
-        if not self.file and self.status == "done":
-            lines += text.next_block("to write it", [self.write] if self.write else [])
-        return "\n".join(lines)
+        blocks = [view.Text(text=head), *_record(Record.model_validate(self.record))]
+        if not self.file and self.status == "done" and self.write:
+            blocks.append(view.Next(label="to write it", actions=[self.write]))
+        return view.Report(blocks=blocks)
 
 
 def _name(req: ProbeRequest) -> str:
@@ -167,19 +175,18 @@ class MachineRow(Model):
 class MachinesResult(Result):
     rows: list[MachineRow] = Field(default_factory=list, description="every record listed")
     record: dict | None = Field(default=None, description="the one record asked for")
+    directory: str = Field(default="", description="where the machine records are")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         if self.record is not None:
-            r = Record.model_validate(self.record)
-            row = self.rows[0]
-            lines = [f"{row.name}: {row.status}   # {row.path}"] + ["  " + line for line in _lines(r)]
-            lines += ["  sources"] + text.table((k, v) for k, v in r.sources.items())
-            return "\n".join(lines + text.findings(self.issues))
+            r, row = Record.model_validate(self.record), self.rows[0]
+            return view.Report(blocks=[view.Text(text=f"{row.name}: {row.status} — {row.path}"), *_record(r),
+                                       view.Text(text="sources"), _pairs(r.sources.items())])
         if not self.rows:
-            return f"no machine records in {record.machines_dir()}"
-        lines = [f"{text.count(len(self.rows), 'machine record')}"]
-        lines += text.table((r.name, r.status, r.summary, f"# {r.detail}") for r in self.rows)
-        return "\n".join(lines + text.findings(self.issues))
+            return view.Report(blocks=[view.Text(text=f"no machine records in {self.directory}")])
+        return view.Report(blocks=[view.Text(text=text.count(len(self.rows), "machine record")), _table(
+            [{"name": r.name, "status": r.status, "summary": r.summary, "detail": r.detail} for r in self.rows],
+            "name", "status", "summary", "detail")])
 
 
 @operation(JOB_MACHINES, result=MachinesResult)
@@ -215,4 +222,4 @@ def job_machines(req: MachinesRequest, ctx: Context) -> MachinesResult:
     one = found[0][2].data() if req.name is not None and found[0][2] is not None else None
     if req.name is not None and found[0][2] is None:
         issues.append(Issue(severity="error", code="unreadable", subject=req.name, message=found[0][3]))
-    return MachinesResult(rows=rows, record=one, issues=issues)
+    return MachinesResult(rows=rows, record=one, directory=str(record.machines_dir()), issues=issues)

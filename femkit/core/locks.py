@@ -32,10 +32,11 @@ def lock_path(subject: str) -> Path:
 
 
 def is_held(subject: str) -> bool:
-    """Whether a live process holds the subject's lock alone — is changing it; observed, never
-    decided from the file's text. A shared hold is a use, and leaves this False."""
+    """Whether another live process holds the subject's lock alone — is changing it; observed,
+    never decided from the file's text. A shared hold is a use, and leaves this False; this
+    process's own hold is no other's: what it observes under its own lock reads as free."""
     path = lock_path(subject)
-    if not path.exists():
+    if subject in _held or not path.exists():
         return False
     fd = os.open(path, os.O_RDONLY)
     try:
@@ -110,6 +111,9 @@ def _busy(subject: str, fd: int) -> Busy:
 def subject_lock(subject: str, *, shared: bool = False) -> Iterator[None]:
     """The subject's lock, held alone — to change the subject — or ``shared``, to use it while
     others may use it too (core.md § 5)."""
+    if subject in _held:                                   # this process holds it already: one hold, kept
+        yield
+        return
     path = lock_path(subject)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_RDWR | os.O_CREAT | (os.O_APPEND if shared else 0), 0o644)

@@ -16,10 +16,6 @@
           "default": null,
           "description": "the operation it runs; none for a shell line"
         },
-        "command": {
-          "description": "the command a person types, written once from the call or the shell line",
-          "type": "string"
-        },
         "fills": {
           "description": "each value still to fill, in the order asked",
           "items": {
@@ -54,13 +50,25 @@
           ],
           "default": null,
           "description": "a remark a command line writes after it"
+        },
+        "shell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the line a person types, for what is no operation"
         }
       },
       "required": [
         "label",
-        "command",
         "note",
         "call",
+        "shell",
         "fills",
         "help"
       ],
@@ -257,6 +265,11 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "static": {
+          "default": "",
+          "description": "the folder the bundle is written into",
+          "type": "string"
+        },
         "status": {
           "description": "whether every step finished",
           "enum": [
@@ -278,7 +291,8 @@
         "plan",
         "status",
         "log",
-        "written"
+        "written",
+        "static"
       ],
       "title": "BuildOutcome",
       "type": "object"
@@ -2198,6 +2212,11 @@
     "MachinesResult": {
       "additionalProperties": false,
       "properties": {
+        "directory": {
+          "default": "",
+          "description": "where the machine records are",
+          "type": "string"
+        },
         "issues": {
           "description": "findings a person should act on",
           "items": {
@@ -2229,7 +2248,8 @@
       "required": [
         "issues",
         "rows",
-        "record"
+        "record",
+        "directory"
       ],
       "title": "MachinesResult",
       "type": "object"
@@ -2289,6 +2309,33 @@
         "path"
       ],
       "title": "NewProjectOutcome",
+      "type": "object"
+    },
+    "Next": {
+      "additionalProperties": false,
+      "description": "A heading and the actions under it: what a person may do next (web.md \u00a7 7.6).",
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "next",
+          "default": "next",
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "label",
+        "actions"
+      ],
+      "title": "Next",
       "type": "object"
     },
     "OperationInfo": {
@@ -2660,7 +2707,7 @@
             }
           ],
           "default": null,
-          "description": "the projects folder, web.projects; none while it is unset"
+          "description": "the projects folder, paths.projects; none while it is unset"
         }
       },
       "required": [
@@ -2756,6 +2803,41 @@
         "next"
       ],
       "title": "RefusalAnswer",
+      "type": "object"
+    },
+    "Report": {
+      "additionalProperties": false,
+      "description": "What a result shows a person, as data; its findings follow its blocks (web.md \u00a7 7.6).",
+      "properties": {
+        "blocks": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "next": "#/$defs/Next",
+                "table": "#/$defs/Table",
+                "text": "#/$defs/Text"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/Text"
+              },
+              {
+                "$ref": "#/$defs/Table"
+              },
+              {
+                "$ref": "#/$defs/Next"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "blocks"
+      ],
+      "title": "Report",
       "type": "object"
     },
     "Result": {
@@ -3317,12 +3399,18 @@
     },
     "Table": {
       "additionalProperties": false,
+      "description": "Rows under their columns (web.md \u00a7 7.5); a cell holds a value, or an `Action`.",
       "properties": {
         "columns": {
           "items": {
             "$ref": "#/$defs/Column"
           },
           "type": "array"
+        },
+        "kind": {
+          "const": "table",
+          "default": "table",
+          "type": "string"
         },
         "rows": {
           "items": {
@@ -3333,10 +3421,31 @@
         }
       },
       "required": [
+        "kind",
         "columns",
         "rows"
       ],
       "title": "Table",
+      "type": "object"
+    },
+    "Text": {
+      "additionalProperties": false,
+      "description": "One line a person reads (web.md \u00a7 7.6).",
+      "properties": {
+        "kind": {
+          "const": "text",
+          "default": "text",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "title": "Text",
       "type": "object"
     },
     "ValidateOutcome": {

@@ -40,11 +40,7 @@ STOP_WAIT = GRACE + 5.0
 # ------------------------------------------------------------------ requests
 
 def _target(req: TargetRequest | StatusRequest) -> Listen:
-    """The server a request names: on the socket, or on its port — never both, a stated
-    port never dropped."""
-    if req.socket and req.port is not None:
-        raise UsageError(f"--socket names the server on the Unix socket, --port {req.port} one on TCP: give one",
-                         code="socket-and-port", subject="port")
+    """The server a request names: on the socket, or on its port (its schema refuses both)."""
     return Listen.unix() if req.socket else Listen(port=req.port or DEFAULT_PORT)
 
 
@@ -224,15 +220,18 @@ class ServeOutcome(Outcome):
     forwarding: str | None = Field(default=None, description="for a socket: the line to run on your own machine")
     server_log: str | None = Field(default=None, description="the server's log")
 
-    def text(self) -> str:
-        lines = [self.plan.text(brief=True)] if self.status == "failed" else []
+    def report(self) -> view.Report:
+        blocks: list = []
+        if self.status == "failed":
+            blocks += [view.Text(text=line) for line in self.plan.text(brief=True).splitlines()]
         if self.address and self.status == "done":
-            lines.append(f"serving on {self.listen}")
+            blocks.append(view.Text(text=f"serving on {self.listen}"))
             if self.forwarding:
-                lines.append(f"on your own machine:  {self.forwarding}")
-            lines.append(f"open:  {self.address}")
-        lines += [f"log: {self.server_log}"] if self.server_log else []
-        return "\n".join(lines + text.findings(self.issues)) or "nothing to do"
+                blocks.append(view.Next(label="on your own machine", actions=[view.shell(self.forwarding)]))
+            blocks.append(view.Text(text=f"open:  {self.address}"))
+        if self.server_log:
+            blocks.append(view.Text(text=f"log: {self.server_log}"))
+        return view.Report(blocks=blocks)
 
 
 def _outcome(plan: Plan, status: str, where: Path, listen: Listen, token: str | None) -> ServeOutcome:
@@ -480,7 +479,8 @@ class ServeStop:
         return Plan(steps=steps)   # the running supervisor holds the server's lock
 
     def observe(self, req: TargetRequest, ctx: Context, held: bool) -> dict:
-        """The server's state: what a stop does depends on it."""
+        """The server's state: what a stop does depends on it — read under the lock it holds on a
+        stale server as under none (core.md § 5)."""
         return {"state": MACHINE.observe(facts(_target(req).name)).value}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
@@ -532,23 +532,27 @@ class StatusResult(Result):
     servers: list[ServerRow] = Field(default_factory=list)
     address: str | None = Field(default=None, description="for one named, running server: the address with its token")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         if not self.servers:
-            return "no server is running"
-        rows = []
-        for s in self.servers:
-            pids = f"pid {s.supervisor}" + (f", child {s.child}" if s.child else "") if s.supervisor else ""
-            where = s.listen or s.name
-            mode = " (foreground)" if s.foreground else ""
-            answers = "" if s.answers is None else ("answers" if s.answers else f"NOT ANSWERING: {s.said}")
-            rows.append((where + (f" on {s.host}" if s.state == "elsewhere" else ""), s.state + mode, pids, answers))
-        lines = text.table(rows, indent="")
+            return view.Report(blocks=[view.Text(text="no server is running")])
+        rows = [{"server": (s.listen or s.name) + (f" on {s.host}" if s.state == "elsewhere" else ""),
+                 "state": s.state + (" (foreground)" if s.foreground else ""),
+                 "pids": f"pid {s.supervisor}" + (f", child {s.child}" if s.child else "") if s.supervisor else "",
+                 "answers": "" if s.answers is None else "answers" if s.answers else f"NOT ANSWERING: {s.said}"}
+                for s in self.servers]
+        columns = [view.Column(key=k, label="") for k in ("server", "state", "pids", "answers")]
+        blocks: list = [view.Table(columns=columns, rows=rows)]
         if self.address:
-            lines.append(f"open:  {self.address}")
-        if any(s.answers is False for s in self.servers):
-            lines.append("a server that is up and not answering: `kill -USR1` its child to dump its stacks "
-                         "into the stacks log, then decide on `serve restart`")
-        return "\n".join(lines + text.findings(self.issues))
+            blocks.append(view.Text(text=f"open:  {self.address}"))
+        actions = []
+        for s in self.servers:
+            if s.answers is False:
+                actions += [view.shell(f"kill -USR1 {s.child}")] if s.child else []
+                actions.append(view.command(SERVE_RESTART, **protocol.target(s.name)))
+        if actions:
+            blocks.append(view.Next(label="up and not answering: dump its child's stacks into the stacks log, "
+                                          "then decide on a restart", actions=actions))
+        return view.Report(blocks=blocks)
 
 
 def _row(name: str) -> ServerRow:

@@ -216,7 +216,7 @@ outer     = { dimension = 2 }         # faces the script picks out
 
 The standard import script reads the file, takes the bodies' names from it, and
 leaves a marked place for the person to pick out the faces the file does not
-name. Measured (Gmsh's version not recorded; measured again with X): Gmsh
+name. Measured (Gmsh's version not recorded): Gmsh
 reads the names of a STEP file's solids; whether
 FreeCAD writes them is not measured. Not built yet (plan § 3, X).
 

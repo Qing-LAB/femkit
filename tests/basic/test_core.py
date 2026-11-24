@@ -59,7 +59,7 @@ def test_a_disallowed_action_is_refused_with_the_allowed_commands():
                             "nothing": Action("nothing to do")},
                  Light.off: {}})
     assert m.observe(True) is Light.on and m.observe(False) is Light.off
-    with pytest.raises(Refused) as caught:
+    with refused(Refused, "not-allowed", "hall") as caught:
         m.require(Light.on, "on", "hall")
     assert [n.command for n in caught.value.next] == ["python -m femkit light off hall",
                                                       "python -m femkit light off hall --dim"]
@@ -67,14 +67,19 @@ def test_a_disallowed_action_is_refused_with_the_allowed_commands():
 
 
 def test_a_second_holder_of_a_subject_is_refused_not_queued():
-    """Fails if a second mutation of one subject waits or proceeds instead of being
-    refused immediately (core.md § 5)."""
-    with subject_lock("env-x"):
+    """Fails if a second command changing one subject waits or proceeds instead of being refused
+    at once, or if one process's own nested hold is taken for a second holder (core.md § 5)."""
+    first = hold("env-x", "alone")                       # another command, changing it
+    try:
         with refused(Busy, "held", "env-x"):
             with subject_lock("env-x"):
                 pass
-    with subject_lock("env-x"):  # released when the first holder left
-        pass
+    finally:
+        first.stdin.close()
+        first.wait()
+    with subject_lock("env-x"):  # released when the first holder left; held again inside, one hold
+        with subject_lock("env-x"):
+            pass
 
 
 def test_users_share_a_lock_and_a_change_is_refused_naming_each_and_what_ends_it():

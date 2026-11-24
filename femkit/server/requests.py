@@ -29,6 +29,14 @@ class ServeRequest(Model):
         return self
 
 
+def _one_server(req):
+    """`--socket` names the server on the Unix socket, `--port` one on TCP: a request naming both
+    is refused by its schema, never one of them dropped (web.md § 4)."""
+    if req.socket and req.port is not None:
+        raise ValueError("--socket and --port name two servers: give one")
+    return req
+
+
 class TargetRequest(Model):
     """Which server."""
 
@@ -36,6 +44,7 @@ class TargetRequest(Model):
     socket: bool = Field(False, description="the server on the Unix socket")
     force: bool = Field(False, description="even while the server's child holds an operation's lock "
                                            "(an install started from the page), which then stops with it")
+    _one = model_validator(mode="after")(_one_server)
 
 
 class StatusRequest(Model):
@@ -43,6 +52,7 @@ class StatusRequest(Model):
 
     port: int | None = Field(None, ge=1, le=65535, description="only the server on this TCP port")
     socket: bool = Field(False, description="only the server on the Unix socket")
+    _one = model_validator(mode="after")(_one_server)
 
 
 class BuildRequest(Model):

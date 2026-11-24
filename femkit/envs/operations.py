@@ -49,9 +49,11 @@ class EnvRow(Model):
 class ListResult(Result):
     rows: list[EnvRow] = Field(description="every engine environment")
 
-    def text(self) -> str:
-        return "\n".join(["environments"] + text.table(
-            (r.name, r.state.value, f"gpu {r.gpu}" if r.gpu else "", f"# {r.description}") for r in self.rows))
+    def report(self) -> view.Report:
+        return view.Report(blocks=[view.Text(text="environments"), view.Table(
+            columns=[view.Column(key=k, label="") for k in ("name", "state", "gpu", "description")],
+            rows=[{"name": r.name, "state": r.state.value, "gpu": f"gpu {r.gpu}" if r.gpu else "",
+                   "description": r.description} for r in self.rows])])
 
 
 @operation(ENV_LIST, result=ListResult)
@@ -72,10 +74,10 @@ def env_list(req: ListRequest, ctx: Context) -> ListResult:
 class CleanOutcome(Outcome):
     name: str = Field(default="", description="the environment")
 
-    def text(self) -> str:
-        if not self.plan.steps:
-            return f"{self.name} is not installed; nothing to remove"
-        return f"{self.name} removed; its lock is kept" if self.status == "done" else f"removing {self.name} failed"
+    def report(self) -> view.Report:
+        said = f"{self.name} is not installed; nothing to remove" if not self.plan.steps else \
+            f"{self.name} removed; its lock is kept" if self.status == "done" else f"removing {self.name} failed"
+        return view.Report(blocks=[view.Text(text=said)])
 
 
 @operation(ENV_CLEAN, result=CleanOutcome, changes=True,
@@ -114,11 +116,13 @@ class LogResult(Result):
     outcome: Literal["done", "failed"] | None = Field(default=None, description="how it ended; none when it did not")
     steps: list[StepState] = Field(default_factory=list, description="its steps, in order")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         if self.operation is None:
-            return "no operation has run on it yet"
-        lines = [f"last operation: {self.outcome or 'did not end'}   # {self.operation}"]
-        return "\n".join(lines + text.table((s.outcome, s.id, s.log or "") for s in self.steps))
+            return view.Report(blocks=[view.Text(text="no operation has run on it yet")])
+        return view.Report(blocks=[
+            view.Text(text=f"last operation: {self.outcome or 'did not end'} — {self.operation}"),
+            view.Table(columns=[view.Column(key=k, label="") for k in ("outcome", "id", "log")],
+                       rows=[{"outcome": s.outcome, "id": s.id, "log": s.log or ""} for s in self.steps])])
 
 
 @operation(ENV_LOG, result=LogResult)
@@ -185,16 +189,15 @@ class EnvResult(Model):
 class InstallOutcome(Outcome):
     environments: list[EnvResult] = Field(default_factory=list, description="each environment, in order")
 
-    def text(self) -> str:
-        lines = ["installed" if self.ok() else "the install failed" if self.status == "failed"
-                 else "installed; not every environment is ready"]
-        lines += text.table((e.name, e.status, e.state.value if e.state else "",
-                             f"# {e.validation or e.log}" if e.validation or e.log else "")
-                            for e in self.environments)
-        lines += text.findings(self.issues)
-        failed = [e for e in self.environments if e.status == "failed"]
-        lines += text.next_block("read what failed", [view.command(ENV_LOG, name=e.name) for e in failed])
-        return "\n".join(lines)
+    def report(self) -> view.Report:
+        said = "installed" if self.ok() else "the install failed" if self.status == "failed" \
+            else "installed; not every environment is ready"
+        blocks = [view.Text(text=said), view.Table(
+            columns=[view.Column(key=k, label="") for k in ("name", "status", "state", "log")],
+            rows=[{"name": e.name, "status": e.status, "state": e.state.value if e.state else "",
+                   "log": e.validation or e.log or ""} for e in self.environments])]
+        failed = [view.command(ENV_LOG, name=e.name) for e in self.environments if e.status == "failed"]
+        return view.Report(blocks=blocks + ([view.Next(label="read what failed", actions=failed)] if failed else []))
 
 
 def _failures(outcomes, ids) -> str:
@@ -335,13 +338,12 @@ class ValidateOutcome(Outcome):
     gpu: str | None = Field(default=None, description="its GPU qualification afterwards")
     outcomes: list[CheckOutcome] = Field(default_factory=list, description="every recorded check outcome")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         head = f"{self.name}: {self.state.value if self.state else 'not validated'}"
-        lines = [head + (f", GPU {self.gpu}" if self.gpu else "")]
-        lines += text.table((o.outcome, o.id, o.reason, f"# {o.log}" if o.log and o.outcome == "failed" else "")
-                            for o in self.outcomes)
-        lines += text.findings(self.issues)
-        return "\n".join(lines)
+        return view.Report(blocks=[view.Text(text=head + (f", GPU {self.gpu}" if self.gpu else "")), view.Table(
+            columns=[view.Column(key=k, label="") for k in ("outcome", "id", "reason", "log")],
+            rows=[{"outcome": o.outcome, "id": o.id, "reason": o.reason,
+                   "log": o.log if o.log and o.outcome == "failed" else ""} for o in self.outcomes])])
 
 
 @operation(ENV_VALIDATE, result=ValidateOutcome, changes=True,

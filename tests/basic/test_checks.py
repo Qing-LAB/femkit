@@ -200,7 +200,7 @@ def test_validate_gpu_is_refused_where_no_gpu_check_is_declared(declared):
     one (envs.md § 5; definitions.md § 4.5)."""
     declared(program("cpu"), name=DEFINITION)
     for when in ("before its first validate", "once validated"):
-        with pytest.raises(UsageError) as caught:
+        with refused(UsageError, "no-gpu-check", DEFINITION) as caught:
             validate(DEFINITION, gpu=True)
         assert [n.command for n in caught.value.next] == [f"python -m femkit env validate {NAME} --gpu"], when
         validate(DEFINITION)

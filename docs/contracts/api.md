@@ -85,7 +85,7 @@ The name is unique; the registry refuses a duplicate at start.
 class Result(Model):
     issues: list[Issue] = []
     def ok(self) -> bool                  # default: no issue of severity "error"
-    def text(self) -> str                 # what a person reads; required
+    def report(self) -> Report            # what a person reads, as data (web.md § 7.6); required
 
 class Outcome(Result):                    # the result of apply
     plan: Plan
@@ -94,7 +94,9 @@ class Outcome(Result):                    # the result of apply
     def ok(self) -> bool                  # status == "done" and no error issue
 ```
 
-- `text()` renders only fields of the model; it decides nothing.
+- `report()` builds only from fields of the model; it decides nothing. The
+  command line writes it as text, the page draws it; the report is part of the
+  result's JSON.
 - A result field carries a description like a request field; the JSON a
   program reads is `model_dump(mode="json")`, nothing else.
 - An operation whose answer is a verdict (`doctor`: ready or not) overrides

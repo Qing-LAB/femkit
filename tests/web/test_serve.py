@@ -109,9 +109,9 @@ def test_a_running_server_holds_its_environment_until_it_stops(server):
     """Fails if the web environment can be changed under a running server — its supervisor not
     holding `env-web` shared — or the refusal does not offer this server's stop, or the hold
     outlives the server (web.md § 4, core.md § 5)."""
-    with pytest.raises(Busy) as caught:
+    with refused(Busy, "held", "env-web") as caught:
         locks.require_free("env-web")
-    assert f"the web server on 127.0.0.1:{server}" in str(caught.value)
+    assert f"the web server on 127.0.0.1:{server}" in str(caught.value)      # the holder named, as the person reads it
     assert [n.command for n in caught.value.next] == [f"python -m femkit serve stop --port {server}"]
     assert apply("serve.stop", port=server).ok()
     locks.require_free("env-web")
@@ -196,7 +196,7 @@ def test_a_port_stated_where_the_server_would_listen_on_a_socket_is_refused(requ
 @pytest.mark.parametrize("verb", ["serve.stop", "serve.status"])
 def test_a_port_stated_beside_the_socket_is_refused_not_dropped(verb):
     """Fails if `--socket --port N` acts on the socket's server and drops the port stated (web.md § 4)."""
-    with refused(UsageError, "socket-and-port", "port"):
+    with refused(UsageError, "invalid-request", verb):
         (apply if verb == "serve.stop" else run)(verb, socket=True, port=9000)
 
 
@@ -252,6 +252,8 @@ def test_stop_holds_a_stale_servers_lock_while_it_cleans(server):
     finally:
         holder.stdin.close()
         holder.wait()
+    assert op.apply(plan, c).ok()                                        # the start gone: stop cleans under its lock
+    assert not protocol.pidfile(name).exists() and MACHINE.observe(facts(name)) is ServerState.stopped
 
 
 def test_a_token_file_an_ended_server_left_does_not_stop_the_next_start():

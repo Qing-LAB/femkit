@@ -12,8 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from femkit.core import view
-from femkit.core.errors import UsageError
-from femkit.core.dirs import CONTROL
+from femkit.core.dirs import CONTROL, folder_from
 from femkit.core.locks import SUBJECT
 from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, load_toml, validate
@@ -34,10 +33,7 @@ def data_root() -> Path:
     own = os.environ.get(VARIABLE)
     if not own:
         return Path(__file__).resolve().parent.parent / "data"
-    path = Path(own).expanduser()                              # read as the directories' variables are (config.md § 2)
-    if not path.is_absolute():
-        raise UsageError(f"{VARIABLE} must be an absolute path, not {path}", code="not-absolute", subject=VARIABLE)
-    return path
+    return folder_from(VARIABLE, own, "the definitions folder")   # read as the directories' variables are
 
 
 class CatalogueError(DefinitionError):
@@ -160,7 +156,12 @@ def schedulers(ctx: Context) -> dict[str, SchedulerKind]:
 
 def load_meshers() -> dict[str, MesherDefinition]:
     """Every mesher; each names an engine environment that provides it (models.md § 6.5)."""
-    return _load_dir(data_root() / "meshers", MesherDefinition, {"environments": set(load_environments())})
+    try:
+        environments = set(load_environments())
+    except CatalogueError:                          # said once, by the environments' own loading; each file's
+        directory = data_root() / "environments"    # name stands for its environments meanwhile
+        environments = {n for p in directory.glob("*.toml") for n in (p.stem, p.stem + CUDA_SUFFIX)}
+    return _load_dir(data_root() / "meshers", MesherDefinition, {"environments": environments})
 
 
 def meshers(ctx: Context) -> dict[str, MesherDefinition]:

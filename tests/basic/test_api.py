@@ -223,8 +223,8 @@ def test_a_refusal_exits_2_with_its_next_commands():
     out = run("toy", "write", "a", "--refuse", "--yes", "--json")
     assert out.exit_code == 2
     (later,) = json.loads(out.stdout)["next"]
-    assert later["command"] == "python -m femkit toy write later"
-    assert later["call"] == {"operation": "toy.write", "request": {"word": "later"}}
+    assert later["call"] == {"operation": "toy.write", "request": {"word": "later"}} and "command" not in later
+    assert "python -m femkit toy write later" in run("toy", "write", "a", "--refuse", "--yes").output   # written from it
     assert WRITTEN == []
 
 
@@ -245,7 +245,7 @@ def test_an_operation_whose_result_writes_no_text_is_refused():
     class Bare(Result):
         """A result with no text of its own."""
 
-    with pytest.raises(TypeError, match="writes no text"):
+    with pytest.raises(TypeError, match="builds no report"):
         @operation(view.Verb("toy.bare", EchoRequest), result=Bare)
         def bare(req, ctx):
             """Answers with nothing a person can read."""
@@ -304,9 +304,9 @@ def test_nothing_to_do_still_answers_with_the_outcome_and_asks_no_consent():
 def test_a_refusal_offers_the_command_as_typed_so_it_can_be_pasted():
     """Fails if the commands a refusal offers lose the person's arguments, so pasting
     them is a usage error (api.md § 4.4)."""
-    out = run("toy", "write", "two words", "--json")  # no terminal, no --yes
-    assert [n["command"] for n in json.loads(out.stdout)["next"]] == ["python -m femkit toy write 'two words' --dry-run",
-                                                                     "python -m femkit toy write 'two words' --yes"]
+    out = run("toy", "write", "two words")  # no terminal, no --yes
+    assert "python -m femkit toy write 'two words' --dry-run" in out.output
+    assert "python -m femkit toy write 'two words' --yes" in out.output
 
 
 def test_a_plans_question_is_asked_on_a_terminal_and_never_under_yes():
@@ -376,7 +376,7 @@ def test_a_plan_whose_facts_changed_is_refused_before_any_step_and_offered_again
     SHELF["book"] = "draft"
     plan = Shelve.plan(Shelve.request(), ctx)
     SHELF["book"] = "revised"
-    with pytest.raises(PlanStale) as caught:
+    with refused(PlanStale, "basis-changed", "toy") as caught:
         Shelve.apply(plan, ctx)
     assert [a.call.operation for a in caught.value.next] == ["toy.shelve"]
     assert not operations_root("toy").exists()                     # no step ran

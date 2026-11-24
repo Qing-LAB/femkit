@@ -36,7 +36,7 @@ class Refusal(Exception):
         """Its kind (core.md § 9): the type just below `Refusal` — a narrower class a domain keeps
         for itself is still answered as its kind."""
         mro = type(self).__mro__
-        return mro[mro.index(Refusal) - 1].__name__
+        return mro[max(mro.index(Refusal) - 1, 0)].__name__   # a bare Refusal, which none raises, is "Refusal"
 
 
 class Refused(Refusal):

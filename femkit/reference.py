@@ -59,11 +59,14 @@ class Loaded(Model):
 class SchemaCheckResult(Result):
     loaded: list[Loaded] = Field(default_factory=list, description="each type of shipped definition that loaded")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         if not self.ok():
-            return "\n".join(["shipped definitions that do not load"] + text.findings(self.issues))
-        return "\n".join(["every shipped definition loads"] + text.table(
-            (row.type, text.show(row.names) if row.names else row.files) for row in self.loaded))
+            return view.Report(blocks=[view.Text(text="shipped definitions that do not load")])
+        return view.Report(blocks=[
+            view.Text(text="every shipped definition loads"),
+            view.Table(columns=[view.Column(key="type", label=""), view.Column(key="loaded", label="")],
+                       rows=[{"type": row.type, "loaded": text.show(row.names) if row.names else row.files}
+                             for row in self.loaded])])
 
 
 @operation(SCHEMA_CHECK, result=SchemaCheckResult)
@@ -225,11 +228,12 @@ def render_page(name: str) -> str:
 class DocsOutcome(Outcome):
     written: list[str] = Field(default_factory=list, description="pages written")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         if not self.written:
-            return "docs/reference/ and the page's schemas are up to date"
-        return "\n".join([f"wrote {text.count(len(self.written), 'page')}"]
-                         + [f"  {p}" for p in self.written])
+            return view.Report(blocks=[view.Text(text="docs/reference/ and the page's schemas are up to date")])
+        return view.Report(blocks=[view.Text(text=f"wrote {text.count(len(self.written), 'page')}"),
+                                   view.Table(columns=[view.Column(key="page", label="")],
+                                              rows=[{"page": p} for p in self.written])])
 
 
 def schemas_file() -> Path:

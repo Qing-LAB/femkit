@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { hasToken, NeedToken, OperationInfo, operations, setToken, viewerAddress } from "./api";
+import { Notifications } from "./elements/Notifications";
+import { Registry } from "./kernel/action";
 import { OperationView } from "./OperationView";
 
 // The first page: the Operations workspace and the documents, until the page is rebuilt on the
@@ -46,34 +48,37 @@ function OperationsWorkspace({ onNeedToken }: { onNeedToken: () => void }) {
     return out;
   }, [ops, filter]);
 
+  const registry = useMemo(() => new Map((ops ?? []).map((o) => [o.name, o] as const)), [ops]);   // what every action runs by
   const op = ops?.find((o) => o.name === selected) ?? null;
   return (
-    <div className="shell workspace-shell">
-      <aside className="sidebar">
-        <div className="brand">femkit</div>
-        <input className="search" type="search" placeholder="Find an operation" value={filter}
-          onChange={(e) => setFilter(e.target.value)} />
-        <nav>
-          {[...groups].map(([g, list]) => (
-            <div className="group" key={g}>
-              <div className="group-name">{g}</div>
-              {list.map((o) => (
-                <button key={o.name} className={`nav-item ${o.name === selected ? "active" : ""}`}
-                  onClick={() => setSelected(o.name)} title={o.name}>
-                  <span>{o.name.includes(".") ? o.name.split(".").slice(1).join(" ") : o.name}</span>
-                  {o.changes && <span className="dot" aria-label="changes things" />}
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
-      </aside>
-      <main>
-        {error && <div className="card result not-ok"><p>{error}</p></div>}
-        {!ops && !error && <p className="muted">Loading…</p>}
-        {op && <OperationView op={op} onNeedToken={onNeedToken} />}
-      </main>
-    </div>
+    <Registry.Provider value={registry}>
+      <div className="shell workspace-shell">
+        <aside className="sidebar">
+          <div className="brand">femkit</div>
+          <input className="search" type="search" placeholder="Find an operation" value={filter}
+            onChange={(e) => setFilter(e.target.value)} />
+          <nav>
+            {[...groups].map(([g, list]) => (
+              <div className="group" key={g}>
+                <div className="group-name">{g}</div>
+                {list.map((o) => (
+                  <button key={o.name} className={`nav-item ${o.name === selected ? "active" : ""}`}
+                    onClick={() => setSelected(o.name)} title={o.name}>
+                    <span>{o.name.includes(".") ? o.name.split(".").slice(1).join(" ") : o.name}</span>
+                    {o.changes && <span className="dot" aria-label="changes things" />}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+        </aside>
+        <main>
+          {error && <div className="card result not-ok"><p>{error}</p></div>}
+          {!ops && !error && <p className="muted">Loading…</p>}
+          {op && <OperationView op={op} onNeedToken={onNeedToken} />}
+        </main>
+      </div>
+    </Registry.Provider>
   );
 }
 
@@ -90,6 +95,7 @@ export function App() {
         <button className="quiet" onClick={() => window.open(viewerAddress(), "_blank", "noopener")}>Documents ↗</button>
       </header>
       <div className="workspace"><OperationsWorkspace onNeedToken={lostToken} /></div>
+      <Notifications />
     </div>
   );
 }

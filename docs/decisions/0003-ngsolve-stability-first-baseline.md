@@ -16,7 +16,7 @@ femkit builds the regular NGSolve **6.2.2606** release, with the exact Netgen
 commit that release records as its submodule. An established, deployed release
 is preferred over a feature-new one. Upstream sources are not patched, MPI,
 MUMPS and Hypre are not silently disabled, and release numbering is not taken
-as production readiness: the definition says `maturity = "candidate"`. Python
+as production readiness. Python
 is 3.12, the minor every environment shares (`control.txt`,
 [`definitions.md`](../contracts/definitions.md) § 3).
 

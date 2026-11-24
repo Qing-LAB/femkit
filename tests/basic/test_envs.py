@@ -8,7 +8,6 @@ import pytest
 
 from tests.kit import apply, ctx, hold, installed, planned, refused, run
 from femkit.core.errors import PlanStale, Refused
-from femkit.core.locks import subject_lock
 from femkit.core.persist import write_json
 from femkit.definitions.models import Check
 from femkit.core import dirs
@@ -93,10 +92,14 @@ def test_an_environment_is_looked_at_with_no_manager_named_and_as_the_manager_th
 
 def test_a_held_lock_reads_busy_and_refuses_every_action():
     """Fails if a second command can act on an environment another holds (envs.md § 3.2 rule 1, § 3.3)."""
-    with subject_lock(layout.subject(NAME)):
+    other = hold(layout.subject(NAME), "alone")                     # another command, changing it
+    try:
         assert state() is EnvState.busy
         with refused(Refused, "not-allowed", NAME):
             planned("env.clean", name=NAME)
+    finally:
+        other.stdin.close()
+        other.wait()
 
 
 def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manager):
@@ -104,10 +107,9 @@ def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manag
     `web`'s — makes it read busy, or lets install, clean or validate run under it instead of
     refusing with what ends that use (envs.md § 3.2, web.md § 4)."""
     from femkit.core.errors import Busy
-    from femkit.envs.operations import EnvInstall, EnvValidate
     user = hold(layout.subject(NAME), "shared")
     try:
-        with pytest.raises(Busy) as caught:                 # absent: an install has steps
+        with refused(Busy, "held", layout.subject(NAME)) as caught:   # absent: an install has steps
             planned("env.install", names=[NAME])[1]
         assert [n.command for n in caught.value.next] == ["end it"]
         installed(NAME, outcomes=[passed("cpu")])
@@ -144,6 +146,16 @@ def test_doctor_reports_an_environment_that_is_not_ready():
     """Fails if doctor counts an environment ready that is not (envs.md § 6.1)."""
     result = run("doctor")
     assert {r.subject: r.ready for r in result.rows}[NAME] is False and not result.ok()
+
+
+def test_a_result_carries_its_report_as_the_blocks_a_page_draws():
+    """Fails if `env list`'s JSON lacks its report, or the report's table does not name each
+    environment with its state — what the page draws with no code of its own (web.md § 7.6)."""
+    result = run("env.list")
+    (table,) = [b for b in result.model_dump(mode="json")["report"]["blocks"] if b["kind"] == "table"]
+    assert {"name", "state"} <= {c["key"] for c in table["columns"]}
+    shown = {row["name"]: row["state"] for row in table["rows"]}
+    assert shown == {r.name: r.state.value for r in result.rows} and shown[NAME] == "absent"
 
 
 def test_clean_removes_the_prefix_through_the_manager_while_holding_its_lock(manager):

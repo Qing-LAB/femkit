@@ -57,6 +57,13 @@ class Paths(Section):
         "fixed) — on a cluster, typically project storage rather than a small home quota",
         json_schema_extra=_unset("<data>/environments"),
     )
+    projects: AbsolutePath | None = Field(
+        default=None,
+        strict=False,  # TOML has no path type: the text becomes a path
+        description="the projects root: the person's global material library and their projects",
+        json_schema_extra={**_unset("no project is listed, made or named; each says so, naming this key"),
+                           "doc": "projects.md § 1"},
+    )
 
 
 class BuildChoices(Section):
@@ -97,12 +104,11 @@ class Activation(Section):
     )
 
 
-class Web(Section):
-    projects: AbsolutePath | None = Field(
+class ProjectChoices(Section):
+    undo: PositiveInt | None = Field(
         default=None,
-        strict=False,  # TOML has no path type: the text becomes a path
-        description="the folder whose projects the page lists, and where a new one is made",
-        json_schema_extra={**_unset("the page lists no projects; a project is named by its folder"), "doc": "web.md § 8.6"},
+        description="how many edits of a project undo reaches back through",
+        json_schema_extra={**_unset("100"), "doc": "projects.md § 7"},
     )
 
 
@@ -113,7 +119,7 @@ class UserConfig(Model):
     build: BuildChoices = Field(default_factory=BuildChoices, description="how builds are made")
     launch: Launch = Field(default_factory=Launch, description="how processes start")
     activation: Activation = Field(default_factory=Activation, description="how a job's shell gets ready")
-    web: Web = Field(default_factory=Web, description="the web page's places")
+    projects: ProjectChoices = Field(default_factory=ProjectChoices, description="how a project's edits are kept")
 
 
 # ------------------------------------------------------------------ the keys
@@ -208,6 +214,14 @@ def launcher(ctx: Context, needed_by: str) -> list[str]:
                                                               example='["mpirun", "-np", "{ranks}"]')]),),
                   code="setting-unset", subject="launch.mpi")
     return mpi
+
+
+UNDO = 100   # `projects.undo` when unset (config.md § 3)
+
+
+def undo_limit(config: UserConfig) -> int:
+    """How many transactions a project's undo reaches back through (projects.md § 7)."""
+    return UNDO if config.projects.undo is None else config.projects.undo
 
 
 def value_of(config: UserConfig, k: Key) -> Any:

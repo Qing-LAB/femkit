@@ -1,9 +1,11 @@
-// Every request the page makes (web.md § 1, § 5): the token from the address's fragment,
-// kept in this tab's session storage, sent as Bearer; never a cookie.
+// Every request the first page makes (web.md § 1, § 5), with the token the kernel's client keeps:
+// taken from the address's fragment, kept in this tab's session storage, sent as Bearer; never a
+// cookie.
 
-import type { Action } from "./generated/schemas";
+import type { Action, OperationInfo as Listed } from "./generated/schemas";
+import { authorization } from "./kernel/client";
 
-const KEY = "femkit-token";
+export { hasToken, setToken, viewerAddress } from "./kernel/client";
 
 export class NeedToken extends Error {}
 
@@ -13,13 +15,8 @@ export class Refused extends Error {
   }
 }
 
-export interface OperationInfo {
-  name: string;
-  description: string;
-  changes: boolean;
-  request: JsonSchema;
-  result: JsonSchema;
-}
+/** An operation as the registry lists it, its schemas read as the forms read them. */
+export type OperationInfo = Listed & { request: JsonSchema; result: JsonSchema };
 
 export interface JsonSchema {
   type?: string | string[];
@@ -40,45 +37,8 @@ export interface JsonSchema {
   additionalProperties?: boolean | JsonSchema;
 }
 
-/** The token: taken once from the address's fragment, then removed from it; the rest of the
- * fragment (the viewer's document and section) stays. */
-export function takeToken(): string | null {
-  const match = window.location.hash.match(/token=([A-Za-z0-9_-]+)/);
-  try {
-    if (match) {
-      sessionStorage.setItem(KEY, match[1]);
-      const rest = window.location.hash.slice(1).split("&").filter((p) => !p.startsWith("token=")).join("&");
-      history.replaceState(null, "", window.location.pathname + window.location.search + (rest ? "#" + rest : ""));
-    }
-    return sessionStorage.getItem(KEY);
-  } catch {
-    return match ? match[1] : null;
-  }
-}
-
-export function setToken(token: string): void {
-  try {
-    sessionStorage.setItem(KEY, token);
-  } catch {
-    /* storage refused: the token lives only in this page */
-  }
-  current = token;
-}
-
-let current: string | null = takeToken();
-
-export function hasToken(): boolean {
-  return current !== null && current !== "";
-}
-
-/** The address of the document viewer, in a tab of its own, its token handed over as the page's was. */
-export function viewerAddress(doc?: string, at?: string): string {
-  const parts = [`token=${current ?? ""}`, doc ? `doc=${encodeURIComponent(doc)}` : "", at ? `at=${encodeURIComponent(at)}` : ""];
-  return "/docs#" + parts.filter(Boolean).join("&");
-}
-
 async function send(path: string, body?: unknown): Promise<Response> {
-  const headers: Record<string, string> = { Authorization: `Bearer ${current ?? ""}` };
+  const headers: Record<string, string> = { Authorization: authorization() };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",

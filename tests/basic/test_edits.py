@@ -395,7 +395,7 @@ def test_an_edit_is_taken_back_and_made_again_and_never_over_a_hand_edit(project
 
 
 def test_projects_are_listed_under_the_projects_folder_and_made_there(tmp_path):
-    """Fails if a project is listed or made anywhere but under web.projects, the list does not
+    """Fails if a project is listed or made anywhere but under paths.projects, the list does not
     name what sets the folder while it is unset, or a project is made over one already there
     (web.md § 8.6)."""
     from femkit.config.operations import ConfigSet
@@ -404,13 +404,13 @@ def test_projects_are_listed_under_the_projects_folder_and_made_there(tmp_path):
         req = op.request_from(request)
         return op.apply(op.plan(req, ctx()), ctx()) if op.changes else op.run(req, ctx())
     unset = run("project.list")
-    assert unset.root is None and unset.issues[0].next[0].call.request == {"key": "web.projects"}
+    assert unset.root is None and unset.issues[0].next[0].call.request == {"key": "paths.projects"}
     with pytest.raises(Refused, match="unset"):
         run("project.new", name="first")
     root = tmp_path / "projects"
     root.mkdir()
     c = ctx()
-    apply("config.set", key="web.projects", value=f'"{root}"')
+    apply("config.set", key="paths.projects", value=f'"{root}"')
     run("project.new", name="first")
     assert (root / "first").is_dir()
     edit("set", root / "first", "study:check:numerics.geometry_order", "1")

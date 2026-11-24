@@ -19,7 +19,7 @@ person's permissions, on their workstation or in their cluster account.
 - **The web interface listens only locally by default**: on
   `127.0.0.1`, or on a cluster login node on a Unix socket only its owner can
   open; every request carries its token, and serving it beyond the machine
-  requires TLS ([`web.md`](docs/contracts/web.md) §§ 4–5; TLS is not built yet).
+  requires TLS ([`web.md`](docs/contracts/web.md) §§ 4–5; TLS is not built yet, plan § 3, M7).
 
 ## Reporting a problem
 

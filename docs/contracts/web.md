@@ -533,12 +533,11 @@ server says when it starts that every account on this machine can then reach
 it.
 
 **Uploads.** A file reaches the server only through `PUT /api/upload`, whose
-`project` names a project inside the server's projects folder (`web.projects`;
-the projects root, `paths.projects`, once plan § 3, R lands)
+`project` names a project under the projects root (`paths.projects`)
 — checked as a path inside it, opened without following links — and which streams the file,
 under its own size limit and the project's total quota (`web.upload_max_mb`),
 to a temporary file renamed to `<project>/.femkit/uploads/<sha256>`, and
-answers with the hash. While `web.projects` or `web.upload_max_mb` is unset,
+answers with the hash. While `paths.projects` or `web.upload_max_mb` is unset,
 uploads are refused, naming the key. The operation
 that adds a customization names that hash and a name under `custom/` that
 follows [`models.md`](models.md) § 8.2's rule, and opens the path without
@@ -604,8 +603,9 @@ and the page each render their own way.
 
 `Action {label, call, fills, help}` — something a person may do.
 
-- `call` is an operation with its request, or a `shell` line for what is no
-  operation: a shell's activation line, a scheduler's interactive command.
+- `call` is an operation with its request, or `shell` a line for what is no
+  operation: a shell's activation line, a scheduler's interactive command. It
+  holds no command text: each surface writes its own from the call.
 - `fills` — each value the request still needs, by its path: a `Field` (§ 7.3)
   to type or choose it, or the node kinds whose names may fill it.
 - Whether it reads, changes or removes, and whether it asks for confirmation,
@@ -652,7 +652,17 @@ do, it leaves the value to fill, with its choices.
 
 ### 7.5 Table
 
-`Table {columns, rows}`, each column with its label and help.
+`Table {columns, rows}`, each column with its label and help; a cell holds a
+value, or an `Action` — a row's own next step.
+
+### 7.6 Report
+
+`Report {blocks}` — what a result shows a person, as data: each block a
+`Text` (one line a person reads), a `Table` (§ 7.5), or a `Next` (a heading and
+its actions). A result's findings follow its blocks. A result builds its
+report from its own fields and decides nothing ([`api.md`](api.md) § 2.3);
+the command line writes it as text, the page draws it — one renderer each, so
+a new operation's result shows on both with no code of its own on either.
 
 ## 8. What the server declares
 
@@ -724,8 +734,7 @@ order ([`models.md`](models.md) § 11.2) — stays in view with its actions.
 ### 8.6 Projects
 
 `project list` lists the projects under the projects root, `paths.projects`
-(replacing `web.projects`, decided, not built yet; [`config.md`](config.md) § 3,
-[`projects.md`](projects.md) § 1), and `project new` creates one there, whole; `study
+([`config.md`](config.md) § 3, [`projects.md`](projects.md) § 1), and `project new` creates one there, whole; `study
 list` lists a project's studies. They are the context's choices (§ 8.1).
 
 ### 8.7 Schemas for the page

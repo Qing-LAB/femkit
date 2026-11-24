@@ -423,7 +423,7 @@ class ProjectRow(Model):
 
 
 class ProjectList(Result):
-    root: str | None = Field(default=None, description="the projects folder, web.projects; none while it is unset")
+    root: str | None = Field(default=None, description="the projects folder, paths.projects; none while it is unset")
     projects: list[ProjectRow] = Field(default_factory=list)
 
     def text(self) -> str:
@@ -434,22 +434,22 @@ class ProjectList(Result):
 
 
 def _projects_folder(ctx: Context) -> Path | None:
-    return settings.load(ctx).config.web.projects
+    return settings.load(ctx).config.paths.projects
 
 
 def _state_the_folder() -> view.Action:
-    return view.command(CONFIG_SET, key="web.projects", label="choose the projects folder",
+    return view.command(CONFIG_SET, key="paths.projects", label="choose the projects folder",
                         fills=[view.Fill(field="value", label="the projects folder", example='"/path/to/projects"')])
 
 
 @operation(PROJECT_LIST, result=ProjectList)
 def project_list(req: ProjectsRequest, ctx: Context) -> ProjectList:
-    """The projects under web.projects, each with its studies (web.md § 8.6)."""
+    """The projects under paths.projects, each with its studies (web.md § 8.6)."""
     root = _projects_folder(ctx)
     if root is None:
-        return ProjectList(issues=[Issue(severity="info", code="projects-unset", subject="web.projects",
+        return ProjectList(issues=[Issue(severity="info", code="projects-unset", subject="paths.projects",
                                          label="the projects folder",
-                                         message="web.projects is unset, so no project is listed; a project is named "
+                                         message="paths.projects is unset, so no project is listed; a project is named "
                                                  "by its folder.", next=(_state_the_folder(),))])
     folders = sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")) if root.is_dir() else []
     return ProjectList(root=str(root), projects=[ProjectRow(name=p.name, path=str(p), studies=studies(p))
@@ -479,12 +479,12 @@ class NewProjectOutcome(Outcome):
 @operation(PROJECT_NEW, result=NewProjectOutcome, changes=True,
            subject=lambda req: ["projects"])
 class ProjectNew:
-    """Make a new, empty project under web.projects (web.md § 8.6)."""
+    """Make a new, empty project under paths.projects (web.md § 8.6)."""
 
     def plan(self, req: NewProjectRequest, ctx: Context) -> Plan:
         root = _projects_folder(ctx)
         if root is None:
-            raise Refused("web.projects is unset: there is no projects folder to make a project in",
+            raise Refused("paths.projects is unset: there is no projects folder to make a project in",
                           (_state_the_folder(),))
         target = root / req.name
         if target.exists():

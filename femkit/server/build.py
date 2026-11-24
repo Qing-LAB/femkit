@@ -94,12 +94,14 @@ def licenses(work: Path) -> str:
 
 class BuildOutcome(Outcome):
     written: list[str] = Field(default_factory=list, description="what was written into the checkout")
+    static: str = Field(default="", description="the folder the bundle is written into")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         if self.status != "done":
-            return "\n".join([self.plan.text(brief=True), f"log: {self.log}"] + text.findings(self.issues))
-        return "\n".join([f"built the page: {text.count(len(self.written), 'file')} in "
-                          f"{text.path(static_dir())}"] + text.findings(self.issues))
+            return view.Report(blocks=[view.Text(text=line) for line in self.plan.text(brief=True).splitlines()]
+                               + [view.Text(text=f"log: {self.log}")])
+        return view.Report(blocks=[view.Text(text=f"built the page: {text.count(len(self.written), 'file')} in "
+                                                  f"{text.path(self.static)}")])
 
 
 @operation(WEB_BUILD, result=BuildOutcome, changes=True, subject=lambda req: ["web-build"])
@@ -157,7 +159,7 @@ class WebBuild:
             return ("done" if result.ok else "failed"), log
 
         status, where = run_steps(plan, ctx, observer, do)
-        return BuildOutcome(plan=plan, status=status, log=str(where), written=written)
+        return BuildOutcome(plan=plan, status=status, log=str(where), written=written, static=str(static_dir()))
 
 
 def _version(result) -> str:
