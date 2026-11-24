@@ -14,7 +14,7 @@ from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.probe import Where
-from femkit.core import dirs, persist
+from femkit.core import dirs, persist, text
 from femkit.core.errors import UsageError
 from femkit.core.schema import DefinitionError, Model, load_toml
 
@@ -142,7 +142,8 @@ def machines_dir() -> Path:
 
 def path(name: str) -> Path:
     if not NAME.fullmatch(name):
-        raise UsageError(f"{name!r} is not a machine name: letters, digits, '.', '_' and '-'")
+        raise UsageError(f"{name!r} is not a machine name: letters, digits, '.', '_' and '-'", code="bad-name",
+                         subject=name)
     return machines_dir() / f"{name}.toml"
 
 
@@ -228,14 +229,26 @@ def differences(old: Record, new: Record) -> list[str]:
     """What changed, part by part, leaving out when it was measured."""
     a, b = _flat(old.data()), _flat(new.data())
     skip = ("measured.", "sources.")
-    return [f"{k}: {a.get(k, '(absent)')} -> {b.get(k, '(absent)')}"
+    return [f"{k}: {_shown(a, k)} -> {_shown(b, k)}"
             for k in sorted(set(a) | set(b)) if not k.startswith(skip) and a.get(k) != b.get(k)]
 
 
+def _shown(flat: dict[str, Any], key: str) -> str:
+    """One value of a record as a person reads it: an unknown with its reason."""
+    if key not in flat:
+        return "(absent)"
+    value = flat[key]
+    return f"unknown ({value['unknown']})" if isinstance(value, dict) and set(value) == {"unknown"} else text.show(value)
+
+
 def _flat(value: Any, where: str = "") -> dict[str, Any]:
-    if isinstance(value, dict) and value and set(value) != {"unknown"}:
-        out: dict[str, Any] = {}
-        for k, v in value.items():
-            out.update(_flat(v, f"{where}.{k}" if where else str(k)))
-        return out
-    return {where: value}
+    """Every value of a record at its dotted address; a list's items at their index — a queue
+    is `queues.0.max_time` — so a change names the one value that changed."""
+    items = value.items() if isinstance(value, dict) and set(value) != {"unknown"} else \
+        enumerate(value) if isinstance(value, list) and value and isinstance(value[0], dict) else None
+    if not items:
+        return {where: value}
+    out: dict[str, Any] = {}
+    for k, v in items:
+        out.update(_flat(v, f"{where}.{k}" if where else str(k)))
+    return out

@@ -237,6 +237,7 @@ matches is the state.
 | state | observed when | counts printed as a result? |
 |---|---|---|
 | `no-data` | no log | — |
+| `running` | no `done` and no `collected` — collecting the tests; the writer's pid exists and the log changed within the silence limit | progress only |
 | `unusable` | no `start` (the file was cut under a writer), or no `collected` (collection never finished) | no |
 | `interleaved` | records from more than one `run` | no |
 | `partial` | `done`, but fewer tests ran than were collected | no |

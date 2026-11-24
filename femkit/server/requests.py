@@ -9,10 +9,13 @@ from femkit.core.schema import Model
 from pydantic import Field, model_validator
 
 
+DEFAULT_PORT = 8000
+
+
 class ServeRequest(Model):
     """Where the server listens, and how its log is kept."""
 
-    port: int = Field(8000, ge=1, le=65535, description="the TCP port on 127.0.0.1")
+    port: int | None = Field(None, ge=1, le=65535, description=f"the TCP port on 127.0.0.1; {DEFAULT_PORT} when not given")
     socket: bool = Field(False, description="listen on a Unix socket only this account can open — the default "
                                             "on a cluster's login node")
     tcp: bool = Field(False, description="listen on TCP, even on a cluster's login node")
@@ -29,7 +32,7 @@ class ServeRequest(Model):
 class TargetRequest(Model):
     """Which server."""
 
-    port: int = Field(8000, ge=1, le=65535, description="the server on this TCP port")
+    port: int = Field(DEFAULT_PORT, ge=1, le=65535, description="the server on this TCP port")
     socket: bool = Field(False, description="the server on the Unix socket")
     force: bool = Field(False, description="even while the server's child holds an operation's lock "
                                            "(an install started from the page), which then stops with it")

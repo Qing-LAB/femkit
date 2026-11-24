@@ -166,10 +166,10 @@ def default_environments() -> list[str]:
 def _requested(req) -> list[str]:
     if req.all:
         if req.names:
-            raise UsageError("give environment names or --all, not both")
+            raise UsageError("give environment names or --all, not both", code="contradiction", subject="names")
         return default_environments()
     if not req.names:
-        raise UsageError("name an environment, or --all", (view.command(ENV_LIST),))
+        raise UsageError("name an environment, or --all", (view.command(ENV_LIST),), code="unnamed", subject="names")
     return list(dict.fromkeys(req.names))
 
 
@@ -252,7 +252,8 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
     if cuda_builds and not settings.load(ctx).config.build.cuda_architectures:
         raise Unstated(f"{name} builds {', '.join(cuda_builds)} with CUDA, and build.cuda_architectures is unset",
                       (view.command(CONFIG_SET, key="build.cuda_architectures",
-                                    fills=[view.Fill(field="value", label="the GPUs' architectures", example='["80"]')]),))
+                                    fills=[view.Fill(field="value", label="the GPUs' architectures", example='["80"]')]),),
+                      code="setting-unset", subject="build.cuda_architectures")
     fingerprint, finished = last_operation(name)
     resume = state is EnvState.incomplete and not clean and fingerprint == t.install_fingerprint
     remove_first = f.prefix_kind != "absent" and not resume
@@ -351,8 +352,10 @@ class EnvValidate:
             cuda = req.name + catalogue.CUDA_SUFFIX
             if cuda in catalogue.load(ctx).environments:  # definitions.md § 4.5
                 raise UsageError(f"{req.name} is built without CUDA; its CUDA build is {cuda}",
-                                 (view.command(ENV_VALIDATE, name=cuda, gpu=True),))
-            raise UsageError(f"{req.name} declares no GPU check", (view.command(ENV_VALIDATE, name=req.name),))
+                                 (view.command(ENV_VALIDATE, name=cuda, gpu=True),), code="no-gpu-check",
+                                 subject=req.name)
+            raise UsageError(f"{req.name} declares no GPU check", (view.command(ENV_VALIDATE, name=req.name),),
+                             code="no-gpu-check", subject=req.name)
         MACHINE.require(state, "validate --gpu" if req.gpu else "validate", req.name)  # envs.md § 3.3
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         checks.refusals(ctx, chosen)

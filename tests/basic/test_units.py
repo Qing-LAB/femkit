@@ -90,11 +90,13 @@ def test_what_the_grammar_does_not_read_is_refused(units, text):
 
 
 def test_a_conversion_is_exact_and_refused_across_dimensions(units):
-    """Fails if a conversion rounds, or answers for a unit of another dimension (core.md § 11)."""
+    """Fails if a conversion rounds, answers for a unit of another dimension, or keeps a dimension
+    raised to the power zero (core.md § 11)."""
     assert units.convert(units.parse("1 m"), "nm") == 10**9
     assert units.convert(units.parse("633 nm"), "µm") == Fraction(633, 1000)
     with pytest.raises(UnitError):
         units.convert(units.parse("1 V"), "m")
+    assert units.parse("m^0 + 1") == units.parse("2")                      # a zero power leaves no dimension
 
 
 BASE = {"dimensions": {"length": "m"}, "prefixes": {"m": -3, "k": 3},

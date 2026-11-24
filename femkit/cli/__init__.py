@@ -256,10 +256,11 @@ def _consent(plan: Plan, yes: bool, tag: str, again: str) -> None:
         return
     if not _can_ask():
         raise ConsentDeclined("there is no terminal to ask on",
-                              (view.shell(f"{again} --dry-run"), view.shell(f"{again} --yes")))
+                              (view.shell(f"{again} --dry-run"), view.shell(f"{again} --yes")), code="no-terminal",
+                              subject=plan.operation)
     click.echo(_tagged(tag, plan.text()), err=True)
     if not click.confirm("Proceed?", default=False, err=True):
-        raise ConsentDeclined("declined; nothing was changed")
+        raise ConsentDeclined("declined; nothing was changed", code="declined", subject=plan.operation)
 
 
 def _execute(op: Operation, values: dict) -> int:

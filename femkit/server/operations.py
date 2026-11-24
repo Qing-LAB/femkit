@@ -18,20 +18,20 @@ from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.probe import place
-from femkit.core import dirs, locks, text, view
+from femkit.core import dirs, locks, persist, text, view
 from femkit.core.errors import PlanStale, Refused, UsageError
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import open_private, private_dir
 from femkit.core.process import GRACE, Identity, end, start_detached, tail
-from femkit.core.schema import Model
+from femkit.core.schema import DefinitionError, Model
 from femkit.definitions import catalogue
 from femkit.server import health, protocol, supervisor
 from femkit.server.protocol import LOOPBACK, Listen, event_line
 from femkit.server.state import MACHINE, ServerState, facts, require
 from femkit.config.requests import CONFIG_SHOW
 from femkit.envs.requests import ENV_INSTALL
-from femkit.server.requests import (SERVE_FOREGROUND, SERVE_RESTART, SERVE_START, SERVE_STATUS, SERVE_STOP,
-                                    ServeRequest, StatusRequest, TargetRequest)
+from femkit.server.requests import (DEFAULT_PORT, SERVE_FOREGROUND, SERVE_RESTART, SERVE_START, SERVE_STATUS,
+                                    SERVE_STOP, ServeRequest, StatusRequest, TargetRequest)
 
 ANSWER_WAIT = 30.0     # seconds a start or a restart waits for the child to answer
 STOP_WAIT = GRACE + 5.0
@@ -55,8 +55,12 @@ def _listen(req: ServeRequest, ctx: Context) -> Listen:
     """A Unix socket when asked, or on a cluster's login node unless TCP is asked (web.md § 4)."""
     login = place(catalogue.schedulers(ctx), ctx.env).where == "login node"
     if req.socket or (login and not req.tcp):
+        if req.port is not None:  # a port stated is never dropped
+            raise UsageError(f"the server would listen on a Unix socket here, not on port {req.port}",
+                             (view.command(SERVE_START, tcp=True, port=req.port), view.command(SERVE_START, socket=True)),
+                             code="port-without-tcp", subject="port")
         return Listen.unix()
-    return Listen(port=req.port)
+    return Listen(port=req.port or DEFAULT_PORT)
 
 
 # ------------------------------------------------------------------ what start refuses
@@ -78,7 +82,7 @@ def web_python(ctx: Context) -> str:
     state = observe(ctx, WEB)[1]
     if state is not EnvState.ready:
         raise Refused(f"the {WEB} environment, which runs the server, is {state.value}",
-                      (view.command(ENV_INSTALL, names=[WEB]),))
+                      (view.command(ENV_INSTALL, names=[WEB]),), code="environment-not-ready", subject=WEB)
     return str(layout.prefix(ctx, WEB) / "bin" / "python")
 
 
@@ -88,12 +92,13 @@ def _preflight(listen: Listen, ctx: Context) -> None:
     private_dir(dirs.runtime_dir())
     if listen.socket and len(listen.socket.encode()) > protocol.SOCKET_PATH_MAX:
         raise UsageError(f"the socket's path is longer than a Unix socket's {protocol.SOCKET_PATH_MAX} bytes: "
-                         f"{listen.socket}", (view.shell("export FEMKIT_RUNTIME_DIR=/a/shorter/path"),))
+                         f"{listen.socket}", (view.shell("export FEMKIT_RUNTIME_DIR=/a/shorter/path"),),
+                         code="socket-path-too-long", subject=listen.socket)
     try:
         settings.load(ctx, fresh=True)
-    except Exception as exc:  # what a fresh child would meet reading it
+    except (DefinitionError, OSError) as exc:  # what a fresh child would meet reading it
         raise Refused(f"config.toml does not load, so the server could not start: {exc}",
-                      (view.command(CONFIG_SHOW),)) from None
+                      (view.command(CONFIG_SHOW),), code="config-does-not-load", subject="config.toml") from None
 
 
 def _clear_left_socket(path: Path) -> None:
@@ -102,7 +107,8 @@ def _clear_left_socket(path: Path) -> None:
     if not path.exists() and not path.is_symlink():
         return
     if not stat.S_ISSOCK(path.lstat().st_mode):
-        raise Refused(f"{path} is in the way and is not a socket; remove it, or set FEMKIT_RUNTIME_DIR")
+        raise Refused(f"{path} is in the way and is not a socket; remove it, or set FEMKIT_RUNTIME_DIR",
+                      code="not-a-socket", subject=str(path))
     probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         probe.connect(str(path))
@@ -111,7 +117,8 @@ def _clear_left_socket(path: Path) -> None:
         return
     finally:
         probe.close()
-    raise Refused(f"{path} is held by another program", (view.command(SERVE_STATUS),))
+    raise Refused(f"{path} is held by another program", (view.command(SERVE_STATUS),), code="address-held",
+                  subject=str(path))
 
 
 def _bind(listen: Listen) -> socket.socket:
@@ -125,7 +132,8 @@ def _bind(listen: Listen) -> socket.socket:
             sock.bind(listen.socket)
         except OSError as exc:
             sock.close()
-            raise Refused(f"{listen.socket} cannot be listened on: {exc.strerror}") from None
+            raise Refused(f"{listen.socket} cannot be listened on: {exc.strerror}", code="cannot-listen",
+                          subject=listen.socket) from None
         finally:
             os.umask(old)
     else:
@@ -139,7 +147,8 @@ def _bind(listen: Listen) -> socket.socket:
                 raise Refused(f"{listen.describe()} is held by another program",
                               (view.shell(f"ss -ltnp 'sport = :{listen.port}'", note="which one"),
                                view.command(SERVE_START, note="another port",
-                                            fills=[view.Fill(field="port", label="another port")]))) from None
+                                            fills=[view.Fill(field="port", label="another port")])),
+                              code="address-held", subject=listen.describe()) from None
             raise
     sock.listen(128)
     sock.set_inheritable(True)
@@ -147,7 +156,10 @@ def _bind(listen: Listen) -> socket.socket:
 
 
 def _write_token(listen: Listen) -> str:
+    """A new token. Written under the server's lock, so one left there is an ended server's —
+    one it could not remove — and is replaced."""
     token = secrets.token_urlsafe(32)
+    persist.remove(protocol.token_file(listen.name))
     with open_private(protocol.token_file(listen.name), "x") as fh:  # exclusively, never through a link
         fh.write(token)
     return token
@@ -161,14 +173,14 @@ def _read_token(name: str) -> str | None:
 
 
 def address(listen: Listen, token: str) -> str:
-    port = listen.port or 8000
+    port = listen.port or DEFAULT_PORT    # a socket's: the local port its forwarding line names
     return f"http://{LOOPBACK}:{port}/#token={token}"
 
 
 def forwarding(listen: Listen) -> str | None:
     if not listen.socket:
         return None
-    return f"ssh -o ExitOnForwardFailure=yes -L {LOOPBACK}:8000:{listen.socket} {dirs.host()}"
+    return f"ssh -o ExitOnForwardFailure=yes -L {LOOPBACK}:{DEFAULT_PORT}:{listen.socket} {dirs.host()}"
 
 
 def _end_stale(f) -> list[str]:
@@ -322,7 +334,8 @@ class ServeForeground:
 
     def plan(self, req: ServeRequest, ctx: Context) -> Plan:
         if threading.current_thread() is not threading.main_thread():
-            raise UsageError("serve foreground runs in a terminal; from here, use serve start")
+            raise UsageError("serve foreground runs in a terminal; from here, use serve start", code="no-terminal",
+                             subject="serve.foreground")
         return _start_plan(req, ctx, detached=False)
 
     def observe(self, req: ServeRequest, ctx: Context, held: bool) -> dict:
@@ -383,14 +396,16 @@ def _child_locks(f, force: bool, verb: view.Verb) -> None:
     if held:
         raise Refused(f"the server's child holds {', '.join(held)}: an operation started from the page runs, "
                       f"and would stop with it",
-                      (view.command(verb, force=True, **protocol.target(f.name)),))
+                      (view.command(verb, force=True, **protocol.target(f.name)),), code="operation-running",
+                      subject=f.name)
 
 
 def _signal(f, sig: int) -> Identity:
     """Signal the supervisor the pidfile names, only when it is that process."""
     who = f.pidfile.supervisor
     if not who.alive():
-        raise PlanStale("the supervisor ended since the plan; plan again", (view.command(SERVE_STATUS),))
+        raise PlanStale("the supervisor ended since the plan; plan again", (view.command(SERVE_STATUS),),
+                        subject=f.name)
     os.kill(who.pid, sig)
     return who
 

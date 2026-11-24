@@ -179,12 +179,15 @@ class RefusalAnswer(Model):
     may do instead."""
 
     refused: str = Describe(description="the kind of refusal, `Refused`, `PlanStale`, …")
+    code: str = Describe(description="which refusal of its kind: what a script tells it apart by")
+    subject: str | None = Describe(default=None, description="what it is about")
     message: str = Describe(description="why")
     next: list[Action] = Describe(default_factory=list, description="what a person may do instead")
 
     @classmethod
     def of(cls, exc: Refusal) -> "RefusalAnswer":
-        return cls(refused=type(exc).__name__, message=str(exc), next=list(exc.next))
+        return cls(refused=type(exc).__name__, code=exc.code, subject=exc.subject, message=str(exc),
+                   next=list(exc.next))
 
 
 class DefectAnswer(Model):

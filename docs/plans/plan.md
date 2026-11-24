@@ -285,8 +285,9 @@ geometry script, meshing, solving — is milestone X, designed after R.
      made through the API, a prefix and a record built once; directories
      isolated from core's list; canaries over `<state>`, `<runtime>`, `<cache>`
      and `<data>/locks`; the machine a test stands on stated, not implied by a
-     tripwire; findings matched by kind, code and subject; plain `pytest`
-     working.
+     tripwire; findings and refusals matched by kind, code and subject — a
+     refusal carries its code and subject, as a finding does (the person's
+     decision); plain `pytest` working.
   7. **Bugs in code that stays:** a zero power kept in a unit; two unknown
      machine identities matching; a changed queue printed as Python; a passing
      upstream test inside a class judged failed; an empty `node --version`; a
@@ -331,7 +332,8 @@ geometry script, meshing, solving — is milestone X, designed after R.
   references (fields, keys by address, parameters in expressions) giving parsed
   targets; the study checked by `project check`; one resolution of parameters;
   an axis's reason a field of its own; fixes derived from the layout; a study
-  that does not expand shown by `case list`. At its end `femkit/models/` and
+  that does not expand shown by `case list`; every refusal names its code and
+  subject, the default code going (`core.md` § 9). At its end `femkit/models/` and
   the old Laplace test data are removed, the `two_material` science test
   carried over.
 - **E. Materials.** The property list, the dispersion models, the material
@@ -751,6 +753,9 @@ approved as written:
 - Once B's part 4 lands, Elmer, NGSolve and `web` are rebuilt from nothing and
   validated on this workstation, proving the installer end to end; the CUDA
   environments stay with the person's cluster runs.
+- A refusal carries a code and the subject it is about, as a finding does, so a
+  script, the page and the tests tell refusals apart without reading their
+  wording (`core.md` § 9).
 
 **Open, the person's** (the proposed answer in each contract):
 

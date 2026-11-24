@@ -89,5 +89,6 @@ class Machine(Generic[F, S]):
         refusal names it, where its name is not that."""
         allowed = self.actions[state]
         if action not in allowed:
-            raise Refused(f"{label or name} is {state.value}: `{action}` is not allowed", self.next(state, name))
+            raise Refused(f"{label or name} is {state.value}: `{action}` is not allowed", self.next(state, name),
+                          code="not-allowed", subject=name)
         return allowed[action]

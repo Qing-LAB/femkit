@@ -59,15 +59,19 @@ def test_job_machines_lists_every_record_marking_one_that_does_not_load():
     assert rows == {"cluster-a": "ok", "cluster-b": "does not load"}
 
 
-def test_only_a_record_of_this_machine_is_compared_with_its_config():
+@pytest.mark.parametrize("identity", ["this-host", {"unknown": "the host name printed nothing"}],
+                         ids=["known", "unknown"])
+def test_only_a_record_of_this_machine_is_compared_with_its_config(identity):
     """Fails if `local` is not marked stale when this machine's settings changed, or if
-    another machine's record is compared with this machine's config.toml (jobs.md § 9.3)."""
+    another machine's record is compared with this machine's config.toml — two identities
+    neither probe could read name no machine (jobs.md § 9.3)."""
     ctx = Context.from_process()
     ConfigInit.apply(ConfigInit.plan(ConfigInit.request.model_validate(
         {"no_preamble": True, "cuda_architectures": ["80"], "mpi": ["mpirun", "-np", "{ranks}"]}), ctx), ctx)
     here = record.settings_now(settings.load(ctx, fresh=True).config)
-    record.write(record.path("local"), a_record(identity="this-host", settings=here.model_dump(exclude_none=True)))
-    record.write(record.path("cluster-a"), a_record())  # its settings are not this machine's, and never compared
+    record.write(record.path("local"), a_record(identity=identity, settings=here.model_dump(exclude_none=True)))
+    other = identity if isinstance(identity, dict) else "cluster-a"
+    record.write(record.path("cluster-a"), a_record(identity=other))  # not this machine's settings: never compared
     ctx = Context.from_process()
     assert {r.name: r.status for r in job_machines.run(job_machines.request(), ctx).rows} == {"cluster-a": "ok", "local": "ok"}
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.preamble", value='["module load y"]'), ctx), ctx)
@@ -163,3 +167,14 @@ def test_the_entry_is_the_activation_the_person_stated(command, hook_on_disk, ex
     # conda 26.7.1's `info --json` answer, measured, cut to the one key the kind file reads
     m = answering(root / "bin" / "conda", {"root_prefix": str(root)}, monkeypatch)
     assert m.activation(prefix, command) == [e.format(p=prefix, root=root) for e in expected]
+
+
+def test_a_changed_record_names_each_value_that_changed_as_a_person_reads_it():
+    """Fails if a re-probe's changes print a queue, or any list of parts, as program text
+    instead of naming the one value that changed (jobs.md § 9.2)."""
+    old = a_record()
+    queue = {**old.data()["queues"][0], "max_time": "2-00:00:00"}
+    new = a_record(queues=[queue], host={**old.data()["host"], "gpus": {"unknown": "nvidia-smi printed nothing"}})
+    assert record.differences(old, new) == [
+        "host.gpus: unknown (nvidia-smi not found on PATH) -> unknown (nvidia-smi printed nothing)",
+        "queues.0.max_time: 1-00:00:00 -> 2-00:00:00"]

@@ -157,8 +157,10 @@ def resolve(ctx: Context) -> Manager:
     named_here = named(ctx)
     if not named_here:
         raise Unstated("no package manager is named: run femkit in the activated control environment, "
-                      "or through scripts/install-env.sh", (view.shell("bash scripts/install-env.sh list"),))
+                      "or through scripts/install-env.sh", (view.shell("bash scripts/install-env.sh list"),),
+                      code="manager-unnamed", subject=VARIABLE)
     path = Path(named_here)
     if path.name not in kinds:
-        raise UsageError(f"{path} is a manager femkit has no kind file for (it has: {', '.join(sorted(kinds))})")
+        raise UsageError(f"{path} is a manager femkit has no kind file for (it has: {', '.join(sorted(kinds))})",
+                         code="no-such-kind", subject=str(path))
     return Manager(path, path.name, kinds[path.name], ctx.env)

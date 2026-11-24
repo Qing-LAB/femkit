@@ -110,7 +110,7 @@ class WebBuild:
         state = observe(ctx, TOOL)[1]
         if state is not EnvState.ready:
             raise Refused(f"the {TOOL} tool environment, which builds the page, is {state.value}",
-                          (view.command(ENV_INSTALL, names=[TOOL]),))
+                          (view.command(ENV_INSTALL, names=[TOOL]),), code="environment-not-ready", subject=TOOL)
         m, prefix, work = resolve(ctx), layout.prefix(ctx, TOOL), work_root() / "work"
         steps = [Step(id="copy", describe=f"copy the declared sources of frontend/ to {text.path(work)}")]
         if req.relock:
@@ -154,11 +154,19 @@ class WebBuild:
         return BuildOutcome(plan=plan, status=status, log=str(where), written=written)
 
 
+def _version(result) -> str:
+    """The last line a tool's `--version` printed; what was not printed is said, never guessed."""
+    lines = result.stdout.strip().splitlines()
+    if result.ok and lines:
+        return lines[-1]
+    return f"not measured: {result.argv[-2]} --version " + ("printed nothing" if result.ok else f"exited {result.returncode}")
+
+
 def _ship(work: Path, m, ctx: Context, written: list[str]) -> str:
     """The bundle replaces femkit/web/static/ whole; build.json is written last."""
     prefix = layout.prefix(ctx, TOOL)
-    versions = {tool: run(m.in_prefix(prefix, [tool, "--version"]), env=confined(m.environment), timeout=60)
-                .stdout.strip().splitlines()[-1] for tool in ("node", "npm")}
+    versions = {tool: _version(run(m.in_prefix(prefix, [tool, "--version"]), env=confined(m.environment), timeout=60))
+                for tool in ("node", "npm")}
     static, fresh = static_dir(), static_dir().with_name("static.new")
     persist.remove(fresh)
     persist.copy_tree(work / "dist", fresh)

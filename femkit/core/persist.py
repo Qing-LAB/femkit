@@ -194,13 +194,13 @@ def private_dir(path: Path) -> Path:
         folder.mkdir(mode=PRIVATE_DIR)
     info = path.lstat()
     if stat.S_ISLNK(info.st_mode) or info.st_uid != os.getuid():
-        raise UsageError(f"{path} is not a folder of this account's own")
+        raise UsageError(f"{path} is not a folder of this account's own", code="not-private", subject=str(path))
     if info.st_mode & 0o077:
         os.chmod(path, PRIVATE_DIR)
     for above in path.resolve().parents:
         if _replaceable_by_others(above.stat()):
             raise UsageError(f"{above} lets other accounts replace what is inside it, so {path} below it "
-                             "cannot be kept private")
+                             "cannot be kept private", code="not-private", subject=str(path))
     return path
 
 

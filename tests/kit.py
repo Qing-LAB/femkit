@@ -1,5 +1,5 @@
 """What tests share, written once (testing.md § 3): a context for one command, an operation called
-through the registry as a surface calls it, a lock held by another process, an environment left as
+through the registry as a surface calls it, a refusal told apart by its code, a lock held by another process, an environment left as
 an install leaves it, and a machine record. Each test file takes these from here, never from
 another test file."""
 
@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from contextlib import contextmanager
+
+import pytest
 
 from femkit import registry
+from femkit.core.errors import Refusal
 from femkit.core.operations import Context
 from femkit.core.persist import write_json
 from femkit.envs import layout
@@ -43,6 +47,16 @@ with locks.subject_lock(sys.argv[1], shared=sys.argv[2] == "shared"):
     print("held", flush=True)
     sys.stdin.read()
 """
+
+
+@contextmanager
+def refused(kind: type[Refusal], code: str, subject: str | None = None):
+    """The block refused with ``kind`` and ``code`` — and, given one, about ``subject``: a refusal
+    told apart by its code, never its wording (core.md § 9)."""
+    with pytest.raises(kind) as caught:
+        yield caught
+    assert caught.value.code == code, (caught.value.code, str(caught.value))
+    assert subject is None or caught.value.subject == subject, (caught.value.subject, str(caught.value))
 
 
 def hold(subject: str, mode: str) -> subprocess.Popen:

@@ -144,7 +144,8 @@ def key(dotted: str) -> Key:
     for k in keys():
         if k.dotted == dotted:
             return k
-    raise UsageError(f"no key {dotted!r}; keys: {', '.join(k.dotted for k in keys())}")
+    raise UsageError(f"no key {dotted!r}; keys: {', '.join(k.dotted for k in keys())}", code="no-such-key",
+                     subject=dotted)
 
 
 #: What nothing on a machine reveals: a person states it, and it is never proposed (config.md § 3.1).
@@ -204,7 +205,8 @@ def launcher(ctx: Context, needed_by: str) -> list[str]:
         raise Unstated(f"{needed_by}, and launch.mpi is unset",
                       (view.command(CONFIG_SET, key="launch.mpi", note="this machine's launcher",
                                     fills=[view.Fill(field="value", label="launch.mpi",
-                                                              example='["mpirun", "-np", "{ranks}"]')]),))
+                                                              example='["mpirun", "-np", "{ranks}"]')]),),
+                  code="setting-unset", subject="launch.mpi")
     return mpi
 
 
@@ -245,7 +247,7 @@ def with_values(values: dict[str, Any]) -> tomlkit.TOMLDocument:
     try:
         validate(UserConfig, doc.unwrap(), path)
     except DefinitionError as exc:
-        raise UsageError(exc.summary()) from None
+        raise UsageError(exc.summary(), code="invalid-value", subject=", ".join(values)) from None
     return doc
 
 

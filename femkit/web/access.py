@@ -28,9 +28,11 @@ HEADERS = {
 OPEN = ("/api/health",)  # the one /api route that needs no token
 
 
-def refusal(status: int, kind: str, message: str) -> Response:
-    """A refusal at the door, as the vocabulary's one refusal answer (web.md § 7)."""
-    response = jsonify(view.RefusalAnswer(refused=kind, message=message).model_dump(mode="json"))
+def refusal(status: int, code: str, message: str) -> Response:
+    """A refusal at the door, as the vocabulary's one refusal answer (web.md § 7): who may not ask
+    (401, 403) is `Refused`, a request the door cannot take a `UsageError`; ``code`` says which."""
+    kind = "Refused" if status in (401, 403) else "UsageError"
+    response = jsonify(view.RefusalAnswer(refused=kind, code=code, message=message).model_dump(mode="json"))
     response.status_code = status
     return response
 

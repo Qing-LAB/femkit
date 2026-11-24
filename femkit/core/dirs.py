@@ -35,7 +35,8 @@ def _resolve(which: str) -> Path:
         path = Path(os.environ.get(xdg) or str(Path.home() / fallback)).expanduser() / "femkit"
     if not path.is_absolute():
         from femkit.core import view  # here, not at the top: the supervisor imports this module (web.md § 4)
-        raise UsageError(f"the {which} directory must be an absolute path, not {path}", (view.shell(f"export {own}=/absolute/path"),))
+        raise UsageError(f"the {which} directory must be an absolute path, not {path}", (view.shell(f"export {own}=/absolute/path"),),
+                         code="not-absolute", subject=own)
     return path
 
 
@@ -68,7 +69,8 @@ def runtime_dir() -> Path:
     if not path.is_absolute():
         from femkit.core import view  # here, not at the top: the supervisor imports this module (web.md § 4)
         raise UsageError(f"the runtime directory must be an absolute path, not {path}",
-                         (view.shell(f"export {VARIABLES['runtime']}=/absolute/path"),))
+                         (view.shell(f"export {VARIABLES['runtime']}=/absolute/path"),),
+                         code="not-absolute", subject=VARIABLES["runtime"])
     return path
 
 

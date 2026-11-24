@@ -173,7 +173,10 @@ def summarise(batch: str, path: str, now: float | None = None) -> dict:
     start_t = gen[0].get("time", 0)
     last_t = max((r.get("time", start_t) for r in gen), default=start_t)
 
-    if collected is None:
+    alive = not done and _writer_is_alive(gen[0], path, now)
+    if collected is None and alive:
+        state, why = "running", "collecting the tests"
+    elif collected is None:
         state, why = "unusable", "no `collected` record: collection never finished, so there is no total"
     elif strays:
         state, why = "interleaved", f"records from {len(strays) + 1} runs share this generation"
@@ -185,7 +188,7 @@ def summarise(batch: str, path: str, now: float | None = None) -> dict:
             f"plugin error; read {os.path.splitext(path)[0]}.out")
     elif done:
         state, why = "done", None
-    elif _writer_is_alive(gen[0], path, now):
+    elif alive:
         state, why = "running", None
     else:
         state, why = "abandoned", f"no `done` record and the writer is gone after {ran} tests: a fragment"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.kit import refused
 from femkit.config import probe, settings
 from femkit.config.operations import ConfigInit, ConfigSet, config_path, config_show
 from femkit.core import dirs
@@ -48,9 +49,9 @@ def test_a_value_is_toml_text_and_a_bare_word_is_refused():
     the file would, or fails on a value of the wrong type instead of refusing it — here `true`
     for a number (config.md § 3, web.md § 7.3)."""
     ctx = Context.from_process()
-    with pytest.raises(UsageError, match="not a TOML value"):
+    with refused(UsageError, "not-toml", "/data/projects"):
         ConfigSet.plan(ConfigSet.request(key="web.projects", value="/data/projects"), ctx)
-    with pytest.raises(UsageError, match="build.jobs"):
+    with refused(UsageError, "invalid-value", "build.jobs"):
         ConfigSet.plan(ConfigSet.request(key="build.jobs", value="true"), ctx)
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="web.projects", value='"/data/projects"'), ctx), ctx)
     assert str(settings.load(Context.from_process()).config.web.projects) == "/data/projects"

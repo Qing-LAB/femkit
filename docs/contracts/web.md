@@ -281,8 +281,8 @@ the `server` domain never imports the web package, as no domain imports a
 surface. The
 supervisor imports only the standard library and the core's file and process
 building blocks — never flask, the web package or another domain — so a change
-that breaks the application leaves the supervisor running, to start the fixed
-child at the next `restart`. Everything `start` refuses — a server already
+that breaks the application never breaks the supervisor: it says what its child
+printed, and ends cleanly (below). Everything `start` refuses — a server already
 running, a held address, an unsafe runtime folder, a configuration that does
 not load — it refuses before it detaches, with the listening socket already
 open: after that nothing reaches the terminal. Starting
@@ -301,7 +301,9 @@ program can take it in that gap.
 on the node can connect to it or take its place. The person forwards it with
 SSH from their own machine, with the forwarding line `start` prints (§ 5),
 and opens the printed address there. Elsewhere it listens on TCP, `127.0.0.1` and
-`--port`; `--socket` and `--tcp` choose either explicitly.
+`--port`; `--socket` and `--tcp` choose either explicitly. A `--port` where the
+server would listen on a socket is refused, offering it with `--tcp`: a stated
+port is never dropped.
 
 **Files**, each in a directory of the person's own account:
 
@@ -331,8 +333,11 @@ folder above it is writable by others.
   stale.
 - **The supervisor respawns a child that dies by a signal**, and gives up after
   two such deaths within 30 s, saying so in the log and removing the pidfile, the
-  socket and the token. A child that exits with an error — a configuration it
-  cannot load — is not respawned.
+  socket and the token. A child that exits by itself — an application that
+  does not import, a configuration it cannot load — is not respawned: the
+  supervisor ends too, saying so in the log and removing the same files, so
+  `status` shows the server stopped and `serve start` brings it back, with a
+  new token.
 - **It never kills a running child on its own.** A server that is up but not
   answering is a question, not a verdict: its stacks are dumped and read
   (`kill -USR1`), and a person decides on `serve restart`.
@@ -407,7 +412,11 @@ out.
   they tell their own server from another program on the address without ever
   sending the token. On a Unix socket the server also checks the connecting
   process's account (`SO_PEERCRED`) is its owner's. A request without the
-  token gets 401 in JSON; the page then asks for it.
+  token gets 401 in JSON; the page then asks for it. A refusal at the door is
+  the one refusal answer: `Refused` for who may not ask (401, 403), a
+  `UsageError` for a request the door cannot take, each with its code —
+  `token`, `host`, `origin`, `content-type`, `size`, `route`, `method`, `body`,
+  `nonce`; too many event streams open is `Busy`, code `streams`.
 - The event stream is read with `fetch`, which sends the header; a browser's
   `EventSource` cannot.
 - Tokens are compared in constant time. A restart keeps the token; `serve

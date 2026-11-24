@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.kit import apply, run
+from tests.kit import apply, refused, run
 from femkit import registry
 from femkit.core import clock, locks
 from femkit.core.eventlog import EventLog
-from femkit.core.errors import Busy, Refused
+from femkit.core.errors import Busy, Refused, UsageError
 from femkit.core.operations import Context, OperationAddress, operations_root
 from femkit.core.view import Verb
 from femkit.core.process import GRACE, Identity, end, identify
@@ -101,7 +101,7 @@ def test_start_serves_with_its_token_and_a_second_start_is_refused(server):
     assert health.ask(Listen(port=server), token)[0]
     assert not health.ask(Listen(port=server), "another token")[0]  # an impostor's proof would not match
     assert stat.S_IMODE(protocol.token_file(name).stat().st_mode) == 0o600
-    with pytest.raises(Refused):
+    with refused(Refused, "not-allowed", str(server)):
         apply("serve.start", port=server, tcp=True)
 
 
@@ -153,6 +153,23 @@ def test_a_child_killed_by_a_signal_is_respawned_and_twice_in_30_s_the_superviso
     assert "giving up" in protocol.log_file(name).read_text()
 
 
+def test_a_child_that_exits_by_itself_ends_the_supervisor_and_the_server_is_stopped(server):
+    """Fails if a child exiting with an error is respawned, or leaves a supervisor serving
+    nothing, or its files behind: the next child cannot load config.toml, and the server is
+    then stopped, as `status` sees it (web.md § 4)."""
+    from femkit.core import dirs
+    name = str(server)
+    p = protocol.read_pidfile(protocol.pidfile(name))
+    dirs.config_dir().mkdir(parents=True, exist_ok=True)
+    (dirs.config_dir() / "config.toml").write_text("[no_such_section]\nx = 1\n")
+    os.kill(p.child.pid, signal.SIGKILL)  # the respawned child meets the broken file
+    assert wait_until(lambda: not p.supervisor.alive())
+    assert MACHINE.observe(facts(name)) is ServerState.stopped
+    assert not protocol.pidfile(name).exists() and not protocol.token_file(name).exists()
+    log = protocol.log_file(name).read_text()
+    assert "config.toml does not load" in log and "not respawned" in log
+
+
 def test_a_supervisor_killed_outright_leaves_a_stale_server_its_child_ends_with(server):
     """Fails if a supervisor's death goes unobserved, or leaves its child serving: the lock is
     released by the kernel, the child ends by its parent-death signal, and `start` clears
@@ -166,6 +183,31 @@ def test_a_supervisor_killed_outright_leaves_a_stale_server_its_child_ends_with(
     assert MACHINE.observe(facts(name)) is ServerState.running
 
 
+@pytest.mark.parametrize("request_", [{"port": 9000}, {"port": 9000, "socket": True}], ids=["login node", "--socket"])
+def test_a_port_stated_where_the_server_would_listen_on_a_socket_is_refused(request_):
+    """Fails if `start` drops a stated port and listens on a Unix socket — the default on a login
+    node, which these tests stand on, or asked with --socket — instead of refusing, offering
+    the port over TCP (web.md § 4)."""
+    with refused(UsageError, "port-without-tcp", "port") as caught:
+        apply("serve.start", **request_)
+    assert caught.value.next[0].call.request == {"tcp": True, "port": 9000}
+
+
+def test_a_token_file_an_ended_server_left_does_not_stop_the_next_start():
+    """Fails if a token file left without a pidfile — its server ended before removing it —
+    makes `start` fail instead of being replaced (web.md § 4)."""
+    port = free_port()
+    left = protocol.token_file(str(port))
+    left.parent.mkdir(parents=True, exist_ok=True)
+    left.write_text("an ended server's token")
+    try:
+        started = apply("serve.start", port=port, tcp=True)
+        assert started.ok(), started.text()
+        assert left.read_text() != "an ended server's token"
+    finally:
+        ended(str(port))
+
+
 def test_an_address_held_by_another_program_is_refused_before_anything_detaches():
     """Fails if `start` detaches a supervisor that cannot serve, instead of refusing in the
     terminal (web.md § 4)."""
@@ -173,7 +215,7 @@ def test_an_address_held_by_another_program_is_refused_before_anything_detaches(
         holder.bind(("127.0.0.1", 0))
         holder.listen(1)
         port = holder.getsockname()[1]
-        with pytest.raises(Refused, match="held by another program"):
+        with refused(Refused, "address-held"):
             apply("serve.start", port=port, tcp=True)
     assert not protocol.pidfile(str(port)).exists() and not protocol.token_file(str(port)).exists()
 
@@ -185,7 +227,7 @@ def test_restart_over_a_configuration_that_does_not_load_is_refused_and_the_serv
     (dirs.config_dir()).mkdir(parents=True, exist_ok=True)
     (dirs.config_dir() / "config.toml").write_text("[no_such_section]\nx = 1\n")
     before = protocol.read_pidfile(protocol.pidfile(str(server)))
-    with pytest.raises(Refused, match="config.toml does not load"):
+    with refused(Refused, "config-does-not-load", "config.toml"):
         apply("serve.restart", port=server)
     assert protocol.read_pidfile(protocol.pidfile(str(server))).child == before.child
 
@@ -204,13 +246,14 @@ def test_stop_is_refused_while_the_child_holds_an_operation_lock_unless_forced(s
         assert holders.get("env-demo") == os.getpid()
         # the test process plays the child: the pidfile names it as the child
         Pidfile(p.supervisor, identify(os.getpid()), p.host, p.listen, p.foreground).write()
-        with pytest.raises(Refused, match="env-demo"):
+        with refused(Refused, "operation-running", str(server)) as caught:
             apply("serve.stop", port=server)
+        assert "env-demo" in str(caught.value)                       # the lock it holds, named
         op, ctx = registry.operations()["serve.stop"], Context.from_process()
         Pidfile(p.supervisor, p.child, p.host, p.listen, p.foreground).write()
         planned = op.plan(op.request_from({"port": server}), ctx)  # planned while the child held nothing
         Pidfile(p.supervisor, identify(os.getpid()), p.host, p.listen, p.foreground).write()
-        with pytest.raises(Refused, match="env-demo"):  # and checked again when applying
+        with refused(Refused, "operation-running", str(server)):     # and checked again when applying
             op.apply(planned, ctx)
         assert apply("serve.stop", port=server, force=True).ok()  # forced, it stops all the same
     finally:
@@ -389,6 +432,35 @@ def test_an_apply_over_several_runs_reports_each_and_ends():
     assert lines[-1]["ok"] is True
 
 
+@pytest.mark.parametrize("route", ["/api/demo/broken", "/api/demo/broken/plan"], ids=["a run", "a plan"])
+def test_a_defect_anywhere_in_a_route_is_answered_in_json_with_no_trace(route):
+    """Fails if an error femkit did not expect — here met reading the request, before the
+    operation runs — is answered as an HTML page or shows its stack trace, instead of the
+    defect answer (web.md § 5)."""
+    from femkit.core.operations import Operation, Plan, Result
+    from femkit.core.schema import Model
+    from femkit.web.app import create_app
+    from pydantic import model_validator
+
+    class Req(Model):
+        @model_validator(mode="before")
+        @classmethod
+        def _broken(cls, data):
+            raise RuntimeError("a defect in reading the request")
+
+    class Impl:
+        def plan(self, req, ctx): return Plan()
+        def run(self, req, ctx): return Result()
+
+    changes = route.endswith("/plan")
+    op = Operation(Verb("demo.broken", Req), Result, changes, "a test operation", Impl())
+    client = create_app("t", Listen(port=8000), operations={**registry.operations(), op.name: op}).test_client()
+    answer = client.post(route, headers={"Authorization": "Bearer t", "Host": "127.0.0.1:8000",
+                                         "Content-Type": "application/json"}, data="{}")
+    assert answer.status_code == 500 and answer.is_json and answer.get_json()["defect"] == "RuntimeError"
+    assert "Traceback" not in answer.get_data(as_text=True)
+
+
 def test_a_running_steps_log_is_found_while_it_runs():
     """Fails if a step that reports its log to the apply's observer leaves no `step-log` record,
     so the page's live line has nothing to show (web.md § 1, core.md § 6)."""
@@ -496,7 +568,7 @@ def test_a_runtime_folder_others_could_replace_is_refused(tmp_path):
     open_folder = tmp_path / "open"
     open_folder.mkdir()
     open_folder.chmod(0o777)
-    with pytest.raises(UsageError, match="lets other accounts replace"):
+    with refused(UsageError, "not-private", str(open_folder / "run")):
         private_dir(open_folder / "run")
     assert stat.S_IMODE(private_dir(tmp_path / "closed" / "run").stat().st_mode) == 0o700
 
@@ -520,7 +592,7 @@ def test_a_socket_file_left_by_an_ended_server_is_cleared_and_a_live_one_refused
         with socket.socket(socket.AF_UNIX) as live:
             live.bind(str(path))
             live.listen(1)
-            with pytest.raises(Refused, match="held by another program"):
+            with refused(Refused, "address-held", str(path)):
                 apply("serve.start", socket=True)
         assert not protocol.pidfile(protocol.SOCKET_NAME).exists()
     finally:

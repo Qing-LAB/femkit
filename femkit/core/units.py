@@ -43,7 +43,7 @@ class Quantity:
         return Quantity(self.value / other.value, _combine(self.dimension, other.dimension, -1))
 
     def __pow__(self, power: int) -> Quantity:
-        return Quantity(self.value ** power, tuple((n, p * power) for n, p in self.dimension))
+        return Quantity(self.value ** power, tuple((n, p * power) for n, p in self.dimension if p * power))  # m^0: none
 
 
 # ------------------------------------------------------------------ the table

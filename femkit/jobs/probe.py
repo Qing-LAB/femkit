@@ -44,10 +44,10 @@ def declarations(pairs: list[str]) -> dict[str, str]:
     for pair in pairs:
         key, sep, value = pair.partition("=")
         if not sep or not value:
-            raise UsageError(f"--set takes KEY=VALUE, not {pair!r}")
+            raise UsageError(f"--set takes KEY=VALUE, not {pair!r}", code="not-key-value", subject=pair)
         if not DECLARABLE.fullmatch(key):
             raise UsageError(f"{key} cannot be declared; only scheduler.commands.ROLE and scheduler.probe.ROLE "
-                             "(where a scheduler command is) can")
+                             "(where a scheduler command is) can", code="not-declarable", subject=key)
         out[key] = value
     return out
 
@@ -57,14 +57,17 @@ def scheduler_kind(ctx: Context, named: str | None, declared: dict[str, str]) ->
     kinds = catalogue.schedulers(ctx)
     if named is not None:
         if named not in kinds:
-            raise UsageError(f"no scheduler kind {named!r}; kinds: {', '.join(sorted(kinds))}")
+            raise UsageError(f"no scheduler kind {named!r}; kinds: {', '.join(sorted(kinds))}", code="no-such-kind",
+                             subject=named)
         return named, kinds[named], "named by --scheduler"
     if declared:
-        raise UsageError("--set declares a scheduler command; name its kind with --scheduler")
+        raise UsageError("--set declares a scheduler command; name its kind with --scheduler", code="unnamed",
+                         subject="scheduler")
     name, why = config_probe.detect_scheduler(kinds)
     if name is None:
         raise Unstated(why, (view.command(JOB_PROBE,
-                                         fills=[view.Fill(field="scheduler", label="the scheduler's kind", example="KIND")]),))
+                                         fills=[view.Fill(field="scheduler", label="the scheduler's kind", example="KIND")]),),
+                      code="scheduler-unknown", subject="scheduler")
     return name, kinds[name], why
 
 
@@ -154,7 +157,7 @@ def measure(ctx: Context, scheduler: str | None, declared: dict[str, str]) -> Re
         _, part, role = key.split(".")
         if role not in getattr(kind, part):
             raise UsageError(f"{key}: the {kind_name} kind has no {part} role {role!r}; "
-                             f"it has {', '.join(getattr(kind, part)) or 'none'}")
+                             f"it has {', '.join(getattr(kind, part)) or 'none'}", code="no-such-role", subject=key)
     sources: dict[str, str] = {"scheduler.kind": why, "host": "platform, /proc/meminfo, " + HOST_GPU_QUERY[0],
                                "manager": "the manager kind's queries", "environments": "env list",
                                "settings": "config.toml"}

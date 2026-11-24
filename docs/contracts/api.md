@@ -236,7 +236,7 @@ operation-specific.
 
 | option | on | meaning |
 |---|---|---|
-| `--json` | all | print exactly one JSON document on stdout: the result (for a changing operation, its outcome, even when there was nothing to do), or for `--dry-run` the plan, or for a refusal `{"refused": …, "message": …, "next": […]}` |
+| `--json` | all | print exactly one JSON document on stdout: the result (for a changing operation, its outcome, even when there was nothing to do), or for `--dry-run` the plan, or for a refusal `{"refused": …, "code": …, "subject": …, "message": …, "next": […]}` (core.md § 9) |
 | `--dry-run` | changing | print the plan and stop; never asks or writes, and starts nothing but the plan's read-only probes |
 | `--yes`, `-y` | changing | consent given in advance |
 

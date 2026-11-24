@@ -86,7 +86,8 @@ class ProbeOutcome(Outcome):
 
 def _name(req: ProbeRequest) -> str:
     if req.name == LOCAL:
-        raise UsageError("`local` is this machine's own record: write it with `job probe --write`, no --name")
+        raise UsageError("`local` is this machine's own record: write it with `job probe --write`, no --name",
+                         code="reserved-name", subject=LOCAL)
     return req.name or LOCAL
 
 
@@ -101,13 +102,15 @@ class JobProbe:
         declared = probe.declarations(req.set)
         if req.write and (unset := settings.unstated(settings.load(ctx).config)):
             raise Unstated(f"{' and '.join(unset)} {'is' if len(unset) == 1 else 'are'} unset, and every job "
-                          "prepared for this record needs it (config.md § 3.1)", stating(CONFIG_INIT, unset))
+                          "prepared for this record needs it (config.md § 3.1)", stating(CONFIG_INIT, unset),
+                          code="setting-unset", subject=", ".join(unset))
         new = probe.measure(ctx, req.scheduler, declared)
         if req.write and isinstance(new.scheduler.commands.get("submit"), record.Unknown):
             raise Unstated(f"the {new.scheduler.kind} submit command was not found",
                           (view.command(JOB_PROBE, write=True, scheduler=new.scheduler.kind,
                                         fills=[view.Fill(field="set", label="scheduler.commands.submit",
-                                                                example="scheduler.commands.submit=PATH")]),))
+                                                                example="scheduler.commands.submit=PATH")]),),
+                          code="command-not-found", subject="scheduler.commands.submit")
         issues = [Issue(severity="info", code="note", subject=name, message=n) for n in new.notes]
         issues += [Issue(severity="info", code="not-measured", subject=where, message=f"{where}: {why}")
                    for where, why in record.unknowns(new)]
@@ -188,7 +191,7 @@ def job_machines(req: MachinesRequest, ctx: Context) -> MachinesResult:
         found = [f for f in found if f[0] == req.name]
         if not found:
             raise UsageError(f"no machine record {req.name!r} in {record.machines_dir()}",
-                             (view.command(JOB_MACHINES),))
+                             (view.command(JOB_MACHINES),), code="no-such-record", subject=req.name)
     rows, issues = [], []
     local = next((r for n, _, r, _ in found if n == LOCAL and r is not None), None)
     for name, file, r, problem in found:
@@ -197,7 +200,7 @@ def job_machines(req: MachinesRequest, ctx: Context) -> MachinesResult:
             continue
         # A record of this machine — local, or one naming local's identity — is compared with
         # this machine's config.toml; another machine's cannot be, and is never marked (§ 9.3).
-        mine = name == LOCAL or (local is not None and r.identity == local.identity)
+        mine = name == LOCAL or (local is not None and isinstance(r.identity, str) and r.identity == local.identity)  # two unknowns name no machine
         drift = record.stale(r, config) if mine else []
         if drift:
             issues.append(Issue(severity="warning", code="stale", subject=name, message="; ".join(drift),

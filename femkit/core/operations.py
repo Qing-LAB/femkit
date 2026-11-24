@@ -320,7 +320,7 @@ class Operation:
             return self.request.model_validate(data)
         except ValidationError as exc:
             problems = "; ".join(f"{key_path(e['loc']) or 'request'}: {e['msg']}" for e in exc.errors())
-            raise UsageError(problems) from None
+            raise UsageError(problems, code="invalid-request", subject=self.name) from None
 
     def run(self, req: Model, ctx: Context) -> Result:
         assert not self.changes, f"{self.name} changes things: plan, then apply"
@@ -352,7 +352,8 @@ class Operation:
                 req = self.request.model_validate(plan.request)
                 if self.impl.observe(req, ctx, held=True) != plan.basis:
                     raise PlanStale(f"{', '.join(plan.subjects) or self.name} changed since the plan; plan it again",
-                                    (view.command(self.verb, **req.model_dump(mode="json", exclude_defaults=True)),))
+                                    (view.command(self.verb, **req.model_dump(mode="json", exclude_defaults=True)),),
+                                    subject=", ".join(plan.subjects) or self.name)
             recording = observer if isinstance(observer, _Recording) else _Recording(observer or SilentObserver(), ctx.now)
             return self.impl.apply(plan, ctx, recording)   # an apply inside another's records its steps once
 

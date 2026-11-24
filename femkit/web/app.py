@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Iterator
 
 from flask import Flask, Response, abort, jsonify, request, send_from_directory
+from werkzeug.exceptions import HTTPException
 
 from femkit import registry
 from femkit.core import eventlog, view
@@ -115,6 +116,15 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
     def bad_body(_):
         return access.refusal(400, "body", "the body is one JSON object: the request")
 
+    @app.errorhandler(Exception)
+    def defect(exc: Exception):
+        """Whatever else a route meets, answered in JSON, never as an HTML page (web.md § 5): an
+        HTTP error the door has no answer of its own for is refused with its status, anything
+        else is a defect."""
+        if isinstance(exc, HTTPException):
+            return access.refusal(exc.code or 400, "http", exc.description or exc.name)
+        return _defect(exc, app)
+
     # ------------------------------------------------------------ the routes
 
     @app.get("/api/health")
@@ -142,12 +152,7 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
         if not op.changes:
             abort(404)
         req = op.request_from(_body())  # a refusal of the body is the client's, never a defect
-        try:
-            plan = op.plan(req, Context.from_process())
-        except Refusal:
-            raise
-        except Exception as exc:
-            return _defect(exc, app)
+        plan = op.plan(req, Context.from_process())
         return _json(PlanAnswer(plan=plan, digest=plan.digest(), text=plan.text()))
 
     @app.post("/api/<path:name>/apply")
@@ -158,15 +163,10 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
         body = _body()
         req = op.request_from(body.get("request") if isinstance(body.get("request"), dict) else {})
         ctx = Context.from_process()
-        try:
-            plan = op.plan(req, ctx)
-        except Refusal:
-            raise
-        except Exception as exc:
-            return _defect(exc, app)
+        plan = op.plan(req, ctx)
         if plan.digest() != body.get("digest"):
             raise PlanStale("what this would do changed since you saw the plan; look at the new plan",
-                            ())
+                            subject=op.name)
         observer, done = _Started(), queue.Queue(maxsize=1)
 
         def work() -> None:  # runs to its end whether or not the page still reads (web.md § 1)
@@ -217,12 +217,7 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
         if op.changes:
             return access.refusal(405, "method", f"{op.name} changes things: POST to its /plan, then /apply")
         req = op.request_from(_body())
-        try:
-            result = op.run(req, Context.from_process())
-        except Refusal:
-            raise
-        except Exception as exc:
-            return _defect(exc, app)
+        result = op.run(req, Context.from_process())
         return _json(view.RunAnswer(ok=result.ok(), result=result.model_dump(mode="json")))
 
     @app.get("/api/events/<subject>/<at>")
@@ -233,8 +228,8 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
             # The slot is taken here, when the stream is read, so a response never read (HEAD)
             # holds none; a client that went away is found by the next keep-alive line.
             if not streams.acquire(blocking=False):
-                yield _line(view.RefusalAnswer(refused="streams", message=f"at most {STREAMS} event streams are "
-                                                                         "open at once"))
+                yield _line(view.RefusalAnswer(refused="Busy", code="streams", message=f"at most {STREAMS} event "
+                                                                                     "streams are open at once"))
                 return
             try:
                 sent, quiet = 0, 0.0

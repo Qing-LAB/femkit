@@ -2716,6 +2716,10 @@
       "additionalProperties": false,
       "description": "A refusal, as `--json` prints it and a route answers it: its kind, why, and what a person\nmay do instead.",
       "properties": {
+        "code": {
+          "description": "which refusal of its kind: what a script tells it apart by",
+          "type": "string"
+        },
         "message": {
           "description": "why",
           "type": "string"
@@ -2730,10 +2734,24 @@
         "refused": {
           "description": "the kind of refusal, `Refused`, `PlanStale`, \u2026",
           "type": "string"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what it is about"
         }
       },
       "required": [
         "refused",
+        "code",
+        "subject",
         "message",
         "next"
       ],

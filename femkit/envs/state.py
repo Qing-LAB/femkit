@@ -130,7 +130,7 @@ def definition(ctx: Context, name: str) -> EnvironmentDefinition:
     envs = catalogue.load(ctx).environments
     if name not in envs:
         raise UsageError(f"no environment {name!r}; environments: {', '.join(sorted(envs))}",
-                         (view.command(ENV_LIST),))
+                         (view.command(ENV_LIST),), code="no-such-environment", subject=name)
     return envs[name]
 
 

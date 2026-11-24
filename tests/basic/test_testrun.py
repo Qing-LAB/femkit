@@ -71,6 +71,8 @@ def test_each_state_is_observed_from_the_log(tmp_path, records, state):
 def test_a_live_writer_is_running_until_its_log_falls_silent(tmp_path):
     """Fails if a live run reads as dead, or a log silent past the limit still reads as
     running because its pid was reused (testing.md § 4.4)."""
+    collecting = write_log(tmp_path / "c.jsonl", [start(pid=os.getpid())])
+    assert testrun.summarise("c", str(collecting))["state"] == "running"         # still collecting
     path = write_log(tmp_path / "b.jsonl", [start(pid=os.getpid()), COLLECTED, rec("a")])
     assert testrun.summarise("b", str(path))["state"] == "running"
     later = time.time() + testrun.SILENCE_LIMIT + 1

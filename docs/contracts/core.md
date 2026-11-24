@@ -394,6 +394,8 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
 
 ```python
 class Refusal(Exception):        # refused before acting: exit 2
+    code: str                    # which refusal of its kind; without one of its own, its kind's: `plan-stale`
+    subject: str | None          # what it is about: a setting, an environment, a file, an address
     next: tuple[Action, ...]     # what a person may do instead (core/view.py)
 
 class DefinitionError(Refusal)   # a declared file does not load (§ 2); defined in core/schema.py
@@ -406,8 +408,11 @@ class UsageError(Refusal)        # a request that does not validate (api.md § 4
 ```
 
 Every refusal is one of these kinds, never a bare `Refusal`; the kind tells a
-surface or a script what sort of problem it is, and its next steps say what to
-do. `Unstated` is the missing statement [`framework.md`](framework.md) § 4
+surface or a script what sort of problem it is, its code and subject which one
+and about what — as a finding's do (§ 10) — and its next steps say what to do.
+A script, a surface or a test tells two refusals apart by kind, code and
+subject, never by their wording. Every refusal outside `femkit/models/` names
+its code and subject; the models domain gains them when step D rebuilds it. `Unstated` is the missing statement [`framework.md`](framework.md) § 4
 refuses: a setting, the package manager, a scheduler's kind or command. A
 request naming what does not exist is a `UsageError`; one making what exists
 already is `Refused`, as the state of the thing it names does not allow it.

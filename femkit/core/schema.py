@@ -43,7 +43,7 @@ class DefinitionError(Refusal):
     def __init__(self, file: Path | str, problems: Iterable[tuple[str, str]], next: Iterable[Action] = ()):
         self.file = str(file)
         self.problems = list(problems)
-        super().__init__("\n".join(self.lines()), next)
+        super().__init__("\n".join(self.lines()), next, code="definition-invalid", subject=self.file)
 
     def lines(self) -> list[str]:
         """Each problem on its own line, with its file and key path."""

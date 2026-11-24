@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from tests.kit import ctx, hold, installed
+from tests.kit import ctx, hold, installed, refused
 from femkit.config.operations import ConfigSet
 from femkit.core.errors import Refused
 from femkit.core.locks import subject_lock
@@ -116,7 +116,7 @@ def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manag
         installed(NAME, outcomes=[passed("cpu")])
         assert state() is EnvState.ready
         for op, request in ((EnvClean, EnvClean.request(name=NAME)), (EnvValidate, EnvValidate.request(name=NAME))):
-            with pytest.raises(Busy, match=f"a user of {layout.subject(NAME)}"):
+            with refused(Busy, "busy", layout.subject(NAME)):
                 op.plan(request, ctx())
     finally:
         user.communicate("")

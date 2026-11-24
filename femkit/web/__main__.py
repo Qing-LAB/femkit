@@ -44,9 +44,10 @@ def main(argv: list[str] | None = None) -> int:
     faulthandler.register(signal.SIGUSR1, file=stacks, all_threads=True)  # `kill -USR1`: every thread's stack
 
     from femkit.config import settings
+    from femkit.core.schema import DefinitionError
     try:
         settings.load(Context.from_process(), fresh=True)
-    except Exception as exc:  # noqa: BLE001 — a configuration that does not load: exit, not respawned
+    except (DefinitionError, OSError) as exc:  # a configuration that does not load: exit, not respawned
         print(protocol.event_line("error", f"config.toml does not load: {exc}"), end="", flush=True)
         return 2
     token = protocol.token_file(listen.name).read_text(encoding="utf-8").strip()

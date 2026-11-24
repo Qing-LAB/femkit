@@ -83,8 +83,9 @@ def label(name: str) -> str:
 def require(f: ServerFacts, state: ServerState, action: str) -> None:
     """Refused, with what the state allows; `elsewhere` and `starting` name why."""
     if state is ServerState.elsewhere and action not in MACHINE.allowed(state):
-        raise Refused(f"{label(f.name)} runs on {f.pidfile.host}, not here: act on it there")
+        raise Refused(f"{label(f.name)} runs on {f.pidfile.host}, not here: act on it there", code="elsewhere",
+                      subject=f.name)
     if state is ServerState.starting and action not in MACHINE.allowed(state):
         raise Busy(f"{label(f.name)} is being started or stopped by another command; look again in a moment",
-                   (view.command(SERVE_STATUS, **protocol.target(f.name)),))
+                   (view.command(SERVE_STATUS, **protocol.target(f.name)),), subject=f.name)
     MACHINE.require(state, action, f.name, label(f.name))

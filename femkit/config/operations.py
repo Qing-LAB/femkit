@@ -106,7 +106,7 @@ def _value(raw: str) -> Any:
     try:
         return plain_value(raw)
     except ValueError as exc:
-        raise UsageError(str(exc)) from None
+        raise UsageError(str(exc), code="not-toml", subject=raw) from None
 
 
 @operation(CONFIG_SET, result=SetOutcome, changes=True,
@@ -183,7 +183,8 @@ def _given(req) -> dict[str, Any]:
              if getattr(req, name) is not None}
     if req.no_preamble:
         if PREAMBLE in given:
-            raise UsageError("--preamble and --no-preamble contradict each other")
+            raise UsageError("--preamble and --no-preamble contradict each other", code="contradiction",
+                             subject=PREAMBLE)
         given[PREAMBLE] = []
     return given
 
