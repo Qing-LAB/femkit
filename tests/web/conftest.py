@@ -9,7 +9,7 @@ import pytest
 
 # The basic tier's tripwires hold here too: a web test reaches no manager, scheduler or solver,
 # nor the Node.js a build runs (testing.md § 2.1).
-from tests.basic.conftest import tripwire_dir, tripwire_script, tripwires  # noqa: F401
+from tests.basic.conftest import tripwire_dir, tripwires  # noqa: F401
 
 
 @pytest.fixture(autouse=True)

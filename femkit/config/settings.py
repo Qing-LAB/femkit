@@ -20,7 +20,7 @@ from femkit.core import dirs, paths, text, view
 from femkit.core.errors import Refusal, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import document_set, read_document, write_document
-from femkit.core.schema import DefinitionError, Model, load_toml, validate
+from femkit.core.schema import DefinitionError, Model, classes, field_extras, load_toml, validate
 from femkit.definitions.catalogue import data_root
 from femkit.definitions.models import Launcher
 
@@ -135,9 +135,8 @@ def keys() -> list[Key]:
     """Every key, read from the model."""
     out = []
     for section, field in UserConfig.model_fields.items():
-        for name, sub in field.annotation.model_fields.items():
-            out.append(Key(section, name, sub.annotation, sub.description or "",
-                           (sub.json_schema_extra or {})["unset"]))
+        for name, sub in classes(field.annotation)[0].model_fields.items():
+            out.append(Key(section, name, sub.annotation, sub.description or "", field_extras(sub)["unset"]))
     return out
 
 

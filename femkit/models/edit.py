@@ -16,7 +16,6 @@ from typing import Any
 
 import tomlkit
 
-from femkit.core import view
 from femkit.models import adds
 from femkit.core.errors import Refused, UsageError
 from femkit.core.persist import (document_has, document_rename, document_set, document_unset, document_write,
@@ -24,7 +23,7 @@ from femkit.core.persist import (document_has, document_rename, document_set, do
 from femkit.core.schema import DefinitionError, references, validate
 from femkit.core.units import Units, name_spans
 from femkit.models.address import Address
-from femkit.models.project import NEW_FILE, model_file, studies, study_file
+from femkit.models.project import NEW_FILE, file_of, studies
 from femkit.models.schema import NAME, OBJECTS, ModelFile, StudyFile, quantities
 
 
@@ -46,13 +45,13 @@ class Project:
     def read(cls, root: Path, units: Units, extra_study: str | None = None) -> "Project":
         p = cls(root, units)
         for study in [None, *studies(root), *([extra_study] if extra_study else [])]:
-            path = model_file(root) if study is None else study_file(root, study)
+            path = file_of(root, study)
             p.docs[study] = read_document(path, empty=NEW_FILE)
             p.digests[study] = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
         return p
 
     def path(self, study: str | None) -> Path:
-        return model_file(self.root) if study is None else study_file(self.root, study)
+        return file_of(self.root, study)
 
     def text(self, study: str | None) -> str:
         return tomlkit.dumps(self.docs[study])
@@ -168,7 +167,7 @@ def rename(project: Project, address: Address, new: str) -> None:
         raise UsageError(f"{address} is not a named object: one of "
                          + ", ".join(".".join(o.table) + ".<name>" for o in _named_types(address.study)))
     if not NAME.fullmatch(new):
-        raise UsageError(f"{new!r}: a name matches [a-z][a-z0-9_]*")
+        raise UsageError(f"{new!r}: a name matches {NAME.pattern}")
     doc = project.docs.get(address.study)
     old = address.path[-1]
     if doc is None or not document_has(doc, address.path):

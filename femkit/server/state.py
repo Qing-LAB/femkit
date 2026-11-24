@@ -11,7 +11,6 @@ from femkit.core.errors import Busy, Refused
 from femkit.core.states import Action, Machine, Rule
 from femkit.server import protocol
 from femkit.server.protocol import Pidfile
-from femkit.server.requests import ServeRequest, StatusRequest, TargetRequest
 from femkit.server.requests import SERVE_RESTART, SERVE_START, SERVE_STATUS, SERVE_STOP
 
 
@@ -44,14 +43,11 @@ def facts(name: str, *, mine: bool = False) -> ServerFacts:
                        pidfile_exists=path.exists(), pidfile=protocol.read_pidfile(path))
 
 
-def target(name: str) -> dict:
-    """How a request names this server: its port, or its socket."""
-    return {"socket": True} if name == protocol.SOCKET_NAME else {"port": int(name)}
 
 
-_start = Action("start", SERVE_START, target)
-_stop = Action("stop", SERVE_STOP, target)
-_restart = Action("restart", SERVE_RESTART, target)
+_start = Action("start", SERVE_START, protocol.target)
+_stop = Action("stop", SERVE_STOP, protocol.target)
+_restart = Action("restart", SERVE_RESTART, protocol.target)
 
 MACHINE: Machine[ServerFacts, ServerState] = Machine(
     name="server",
@@ -70,10 +66,10 @@ MACHINE: Machine[ServerFacts, ServerState] = Machine(
     actions={
         ServerState.elsewhere: {},
         ServerState.stopped: {"start": _start, "stop": Action("nothing to do")},
-        ServerState.stale: {"start": Action("remove the stale files, start", SERVE_START, target),
-                            "stop": Action("remove the stale files", SERVE_STOP, target)},
+        ServerState.stale: {"start": Action("remove the stale files, start", SERVE_START, protocol.target),
+                            "stop": Action("remove the stale files", SERVE_STOP, protocol.target)},
         ServerState.running: {"stop": _stop, "restart": _restart,
-                              "status": Action("look", SERVE_STATUS, target)},
+                              "status": Action("look", SERVE_STATUS, protocol.target)},
         ServerState.starting: {},
     },
 )
@@ -95,5 +91,5 @@ def require(f: ServerFacts, state: ServerState, action: str) -> None:
         raise Refused(f"{label(f.name)} runs on {f.pidfile.host}, not here: act on it there")
     if state is ServerState.starting and action not in MACHINE.allowed(state):
         raise Busy(f"{label(f.name)} is being started or stopped by another command; look again in a moment",
-                   (view.command(SERVE_STATUS, **target(f.name)),))
+                   (view.command(SERVE_STATUS, **protocol.target(f.name)),))
     MACHINE.require(state, action, f.name, label(f.name))

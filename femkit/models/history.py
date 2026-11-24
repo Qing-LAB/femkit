@@ -8,17 +8,17 @@ from pathlib import Path
 
 from pydantic import Field
 
-from femkit.core.persist import write_json
-from femkit.core.schema import Model
-from femkit.models.project import model_file, study_file
+from femkit.core.persist import read_json, write_json
+from femkit.core.schema import Model, validate
+from femkit.models.schema import STUDY
 
-HISTORY = 100  # models.md § 11.1: the edits `model undo` reaches back through
+HISTORY = 100  # the edits `model undo` reaches back through; to be the setting `projects.undo` (config.md § 3)
 FILE = Path(".femkit") / "history" / "history.json"
 
 
 class Change(Model):
     study: str | None = Field(description="the file: a study's, by its name; none: the model's — never a path, so "
-                                          "a record cannot name a file outside its project", pattern=r"^[a-z][a-z0-9_-]*$")
+                                          "a record cannot name a file outside its project", pattern=f"^{STUDY.pattern}$")
     before: str | None = Field(description="its text before the edit; none: it did not exist")
     after: str | None = Field(description="its text after the edit; none: it was removed")
 
@@ -35,7 +35,7 @@ class History(Model):
 
 def read(project: Path) -> History:
     path = project / FILE
-    return History.model_validate_json(path.read_text(encoding="utf-8")) if path.is_file() else History()
+    return validate(History, read_json(path), path) if path.is_file() else History()
 
 
 def write(project: Path, history: History) -> None:
@@ -52,7 +52,3 @@ def record(project: Path, label: str, changes: list[Change]) -> None:
 def text_of(path: Path) -> str | None:
     return path.read_text(encoding="utf-8") if path.exists() else None
 
-
-def path_of(project: Path, change: Change) -> Path:
-    """The file a change is to: the model's, or its study's, in this project."""
-    return model_file(project) if change.study is None else study_file(project, change.study)

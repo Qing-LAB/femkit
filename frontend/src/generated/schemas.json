@@ -1737,13 +1737,6 @@
           "default": null,
           "description": "what makes the last undone edit again"
         },
-        "studies": {
-          "description": "the project's studies",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "study": {
           "anyOf": [
             {
@@ -1775,7 +1768,6 @@
         "study",
         "formulation",
         "choices",
-        "studies",
         "nodes",
         "edges",
         "palette",

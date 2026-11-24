@@ -28,6 +28,7 @@ from femkit.engines import Output, cuda, reader, summary
 from femkit.envs import layout, manager
 from femkit.envs.manager import Manager, resolve
 from femkit.envs.records import CheckOutcome, ChecksRecord
+from femkit.envs.requests import ENV_VALIDATE, ValidateRequest
 
 # The shared code that runs and judges checks: a change to it re-validates (envs.md § 2). The toolchain's
 # program checks nothing, so it is not here: changing it must not mark every environment unchecked.
@@ -321,7 +322,8 @@ def run_validation(ctx: Context, name: str, gpu: bool, plan_steps: tuple[Step, .
     f = facts(ctx, name, holding_lock=True)
     r = runner(ctx, name)
     by_id = {c.id: c for c in r.env.checks}
-    plan = Plan(operation="env.validate", request={"name": name, "gpu": gpu}, subjects=(layout.subject(name),),
+    plan = Plan(operation=ENV_VALIDATE.name, request=ValidateRequest(name=name, gpu=gpu).model_dump(mode="json"),
+                subjects=(layout.subject(name),),
                 basis={"check_fingerprint": f.check_fingerprint}, steps=plan_steps)
     ran: dict[str, CheckOutcome] = {}
     recorded: list[CheckOutcome] = []

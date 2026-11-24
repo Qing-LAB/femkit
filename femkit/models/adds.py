@@ -9,10 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-import tomlkit
 from pydantic import Field
 
 from femkit.core import view
+from femkit.core.persist import inline_text
 from femkit.core.schema import Model
 from femkit.core.units import Units
 from femkit.definitions.formulations import FormulationDefinition
@@ -82,7 +82,7 @@ def palette(project: Path, study: str | None, f: FormulationDefinition | None, u
 def connect(project: Path, address: str, accepts: list[str], many: bool, names: list[str], label: str) -> view.Action:
     """What a wire drawn into a port does: the name it takes added to the list, or set."""
     hole = "<name>"
-    value = tomlkit.item([*names, hole] if many else hole).as_string()
+    value = inline_text([*names, hole] if many else hole)
     return view.command(MODEL_SET, label=f"connect {label}", project=str(project), address=address,
                         value=value, fills=[view.Fill(field="value", hole=hole, label=label, accepts=accepts)])
 
@@ -95,5 +95,5 @@ def cut(project: Path, at: str, held: str, name: str, names: list[str] | None = 
         return None
     if held == "item" and (rest := [n for n in names or [] if n != name]):
         return view.command(MODEL_SET, label=f"take {name} out of {at}", project=str(project),
-                            address=at, value=tomlkit.item(rest).as_string())
+                            address=at, value=inline_text(rest))
     return view.command(MODEL_UNSET, label=f"remove {at}", project=str(project), address=at)

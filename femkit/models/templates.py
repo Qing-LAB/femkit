@@ -10,6 +10,8 @@ from typing import Any
 
 import tomlkit
 
+from femkit.core.persist import inline_text
+
 #: What a key's example is, by the JSON type its fragment states: the one table of them.
 EXAMPLES = {"string": "…", "number": 0, "integer": 0, "boolean": False}
 
@@ -18,7 +20,7 @@ def text(schema: dict[str, Any], held: dict[str, Any] | None = None) -> str:
     """The template of an object whose fragment is ``schema``, ``held`` its keys already
     decided — its type; a value's template when ``schema`` is no table."""
     if "properties" not in _one(schema):
-        return _inline(_example(schema))
+        return inline_text(_example(schema))
     return "\n".join(_lines(_one(schema), held or {}, "")) + "\n"
 
 
@@ -26,7 +28,7 @@ def _lines(schema: dict[str, Any], held: dict[str, Any], header: str) -> list[st
     """An object's lines: its sentence, its held keys, then each other key commented — a key
     that is a table of optional keys as a table of its own, after the rest, as TOML orders them."""
     lines = [f"# {schema['description']}"] if schema.get("description") and not header else []
-    lines += [f"{tomlkit.key(k).as_string()} = {_inline(v)}" for k, v in held.items()]
+    lines += [f"{tomlkit.key(k).as_string()} = {inline_text(v)}" for k, v in held.items()]
     required = set(schema.get("required", []))
     tables = []
     for name, node in sorted(schema["properties"].items(), key=lambda kv: kv[0] not in required):
@@ -39,7 +41,7 @@ def _lines(schema: dict[str, Any], held: dict[str, Any], header: str) -> list[st
                        *(f"#{line[1:]}" if line.startswith("# ") and " = " in line else line
                          for line in _lines(own, {}, f"{header}{name}."))]
         else:
-            lines.append(f"# {tomlkit.key(name).as_string()} = {_inline(_example(node))}    # {note}")
+            lines.append(f"# {tomlkit.key(name).as_string()} = {inline_text(_example(node))}    # {note}")
     return lines + tables
 
 
@@ -73,12 +75,7 @@ def _hint(node: dict[str, Any]) -> str:
     node = _one(node)
     said = node.get("description", "")
     if node.get("enum"):
-        said += " — one of " + ", ".join(_inline(e) for e in node["enum"])
+        said += " — one of " + ", ".join(inline_text(e) for e in node["enum"])
     elif node.get("unit"):
         said += f" — a quantity in {node['unit']}, or another unit of its dimension"
     return said
-
-
-def _inline(value: Any) -> str:
-    return tomlkit.item(value).as_string() if not isinstance(value, dict) else \
-        "{ " + ", ".join(f"{tomlkit.key(k).as_string()} = {_inline(v)}" for k, v in value.items()) + " }"

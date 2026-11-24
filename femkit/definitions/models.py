@@ -91,7 +91,7 @@ class Provides(Model):
     modules: list[str] = Field(default_factory=list, description="Python modules the install's audit step imports")
 
 
-LANGUAGES = ("c", "cxx", "fortran")  # the toolchain program's languages (engines/toolchain.py), kept equal by a test
+LANGUAGES = ("c", "cxx", "fortran")  # the toolchain program's languages (engines/toolchain.py), a test runs it on each
 
 
 class Toolchain(Model):

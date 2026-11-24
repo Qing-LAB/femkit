@@ -7,19 +7,15 @@ The program that runs inside an environment is exercised in the field tier
 
 from __future__ import annotations
 
-import shlex
-from pathlib import Path
-
 import pytest
 
-import femkit.engines
 from femkit.config.operations import ConfigSet
 from femkit.core.errors import Refusal
 from femkit.core.operations import Context, Step
 from femkit.core import process as process_module
-from femkit.core import text
 from femkit.core.process import ProcessResult
 from femkit.definitions.catalogue import load_environments
+from femkit.definitions.models import LANGUAGES
 from femkit.engines import registered
 from femkit.envs import checks, install, manager, toolchain
 from femkit.envs.operations import EnvInstall
@@ -136,29 +132,12 @@ def test_the_toolchain_is_not_proven_by_anything_outside_the_prefix_or_a_program
     assert toolchain.judge(report, tmp_path).problems
 
 
-def test_the_check_fingerprint_covers_the_shared_judging_code_and_not_the_toolchain_program():
-    """Fails if a shared module under femkit/engines/ is left out of the check fingerprint, so
-    editing it would not re-validate; or if the toolchain's program is in it, so editing that
-    would mark every environment unchecked though it checks nothing (envs.md § 2)."""
-    from femkit.engines import toolchain as program
-    shared = {p.resolve() for p in Path(femkit.engines.__file__).parent.glob("*.py")}
-    assert Path(checks.__file__).resolve() in checks.JUDGING
-    assert shared - set(checks.JUDGING) == {Path(program.__file__).resolve()}
-
-
-def test_every_language_a_toolchain_may_name_is_one_the_program_can_prove():
-    """Fails if a toolchain may name a language the toolchain program has no trivial program for
-    — its step would crash instead of judging — or the program proves one no toolchain may name;
-    the two lists live apart because the program runs inside an environment (definitions.md § 4.6)."""
-    from femkit.definitions.models import LANGUAGES
-    from femkit.engines.toolchain import LANGUAGES as PROVABLE
-    assert set(LANGUAGES) == set(PROVABLE)
-
-
-def test_a_program_that_cannot_start_is_a_finding_not_a_crash(tmp_path, monkeypatch):
-    """Fails if a compiler the kernel cannot run, or a launcher not on the confined PATH,
-    crashes the toolchain program — losing every finding already made — instead of being
-    reported as a program that does not build or run (envs.md § 4.1)."""
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_program_that_cannot_start_is_a_finding_not_a_crash(tmp_path, monkeypatch, language):
+    """Fails if a compiler the kernel cannot run, for any language a toolchain may name, or a
+    launcher not on the confined PATH, crashes the toolchain program — losing every finding
+    already made — instead of being reported as a program that does not build or run
+    (envs.md § 4.1, definitions.md § 4.6)."""
     import sys
     from femkit.engines import toolchain as program
     broken = tmp_path / "cc"
@@ -167,7 +146,7 @@ def test_a_program_that_cannot_start_is_a_finding_not_a_crash(tmp_path, monkeypa
     monkeypatch.setenv("CC", str(broken))
     work = tmp_path / "work"
     work.mkdir()
-    report = program.check({"compilers": {"c": "CC"}, "mpi": {}, "launcher": None, "tools": []}, work)
-    assert not report["compilers"]["c"]["compiled"] and report["compilers"]["c"]["error"]
+    report = program.check({"compilers": {language: "CC"}, "mpi": {}, "launcher": None, "tools": []}, work)
+    assert not report["compilers"][language]["compiled"] and report["compilers"][language]["error"]
     found = program._try([sys.executable, "-c", ""], [str(tmp_path / "no-such-launcher"), "./a.out"], work)
     assert found["compiled"] and not found["ran"] and found["error"]

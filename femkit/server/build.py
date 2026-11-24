@@ -20,10 +20,8 @@ from femkit.core.errors import PlanStale, Refused
 from femkit.core.operations import Context, Outcome, Plan, Step, operation, run_steps
 from femkit.core.persist import atomic_write_text, write_json
 from femkit.core.process import run
-from femkit.core.schema import Model
 from femkit.envs import layout
 from femkit.envs.manager import confined, resolve
-from femkit.envs.requests import InstallRequest
 from femkit.envs.state import EnvState, observe
 from femkit.server.requests import BuildRequest
 from femkit.envs.requests import ENV_INSTALL

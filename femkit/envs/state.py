@@ -21,7 +21,6 @@ from femkit.engines import package_dir, registered
 from femkit.envs import checks, fingerprints, layout
 from femkit.envs.manager import resolve
 from femkit.envs.records import ChecksRecord, Manifest, read
-from femkit.envs.requests import CleanRequest, InstallRequest, ListRequest, ValidateRequest
 from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_VALIDATE
 
 

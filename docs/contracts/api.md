@@ -73,7 +73,7 @@ class EnvInstall:
 | `result` | a `Result` subclass (§ 2.3) |
 | `changes` | `False` (default): one function `(req, ctx) -> result`. `True`: a class with `plan` and `apply` (§ 3) |
 | `subject` | for a changing operation: the lock subjects it holds while applying (core.md § 5), from the request; or `"plan"` when they depend on what the plan observes — the plan names them (`serve start`: a login node listens on a socket unless asked otherwise, [`web.md`](web.md) § 4) |
-| `undoable` | for a changing operation that undo takes back: `True` — the edits of a project, each one transaction ([`projects.md`](projects.md) § 7; today `model set`, `unset`, `rename`); a surface offers the undo after it |
+| `undoable` | for a changing operation that undo takes back: `True` — the edits of a project, each one transaction ([`projects.md`](projects.md) § 7; today `model set`, `unset`, `rename`, `write`); a surface offers the undo after it |
 | `confirm` | for a changing operation: `True` (default) — a surface shows its plan and asks before applying; `False` only for a change a person can take back at once — an edit of a project recorded for undo ([`projects.md`](projects.md) § 7) — or one to no project data, the page's view file (`project view`, [`projects.md`](projects.md) § 2) — which the page applies as soon as it is committed ([`web.md`](web.md) § 9.1) |
 | docstring | the command's help and the route's description |
 

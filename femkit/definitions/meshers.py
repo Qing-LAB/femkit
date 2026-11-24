@@ -11,10 +11,6 @@ from pydantic import Field, ValidationInfo, model_validator
 
 from femkit.core.schema import Model, refuse
 
-# The model's shape kinds (models.md § 3), which `builds` names; a test keeps this list
-# and the model schema's shapes one and the same.
-ShapeKind = Literal["rectangle", "disk", "polygon", "box", "sphere", "cylinder", "extrusion",
-                    "union", "difference", "intersection", "import"]
 Control = Literal["size", "regions"]   # the study's mesh policy keys (models.md § 5)
 
 
@@ -37,7 +33,8 @@ class MesherDefinition(Model):
     description: str = Field(description="one line")
     provided_by: str = Field(description="the engine environment it runs in")
     dimensions: list[Literal[2, 3]] = Field(min_length=1, description="the dimensions it meshes")
-    builds: list[ShapeKind] = Field(description="the model's shape kinds it can build")
+    builds: list[str] = Field(description="the model's shape kinds it can build; `schema check` refuses one the "
+                                          "model has not")
     imports: list[Literal["step", "iges", "brep", "stl"]] = Field(default_factory=list,
                                                                   description="the CAD formats an `import` may be in")
     controls: list[Control] = Field(description="the mesh policy's keys it honors")

@@ -14,9 +14,9 @@ import pytest
 
 from femkit.config import settings
 from femkit.config.operations import ConfigInit, ConfigSet
-from femkit.core import dirs, text
+from femkit.core import dirs
 from femkit.core.operations import Context, Plan, Step
-from femkit.definitions.catalogue import load_catalogue, load_managers
+from femkit.definitions.catalogue import load_catalogue
 from femkit.engines import registered
 from femkit.envs.operations import EnvResult, InstallOutcome
 from femkit.envs.state import EnvState

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -78,7 +79,7 @@ HOLDER = """
 import sys
 from femkit.core import locks, view
 with locks.subject_lock(sys.argv[1], shared=sys.argv[2] == "shared"):
-    locks.adopt(locks.held_fd(sys.argv[1]), "a user of " + sys.argv[1], (view.shell("end it"),))
+    locks.adopt(locks.held_fd(sys.argv[1]), "a user of " + sys.argv[1], [view.shell("end it").model_dump(mode="json")])
     print("held", flush=True)
     sys.stdin.read()
 """
@@ -97,11 +98,13 @@ def hold(subject: str, mode: str):
 def test_users_share_a_lock_and_a_change_is_refused_naming_each_and_what_ends_it():
     """Fails if two users cannot hold a subject shared at once, if something can take it alone
     while one does — or one join while it is held alone — or if the refusal does not name each
-    live user and offer what ends its hold (core.md § 5)."""
+    live user and offer what ends its hold — a next step it cannot read offering nothing, never a
+    crash (core.md § 5)."""
     from femkit.core.locks import is_held, require_free
     from femkit.core.locks import lock_path
     lock_path("env-x").parent.mkdir(parents=True, exist_ok=True)
-    lock_path("env-x").write_text("pid 999999999: a holder long gone, in the old form\n")
+    lock_path("env-x").write_text('{"pid": 999999999, "by": "a holder long gone", "next": []}\n'
+                                  f'{{"pid": {os.getpid()}, "by": "a holder of another shape", "next": [{{"no": "action"}}]}}\n')
     users = [hold("env-x", "shared"), hold("env-x", "shared")]
     try:
         assert not is_held("env-x")                         # a use is not a change

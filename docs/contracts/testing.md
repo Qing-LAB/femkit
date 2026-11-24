@@ -112,8 +112,11 @@ it ends, and a difference fails the run, naming what changed:
   ([`web.md`](web.md) § 12) — are held by design where it can hold them, and
   by each milestone's independent review, which reads the source against them
   ([`../process/conventions.md`](../process/conventions.md) § 1). No test reads
-  code. The person's decision (plan § 6); today's tests that read source are
-  removed in plan § 3, R step B.
+  code, the person's decision (plan § 6), with one exception, theirs too: a
+  generated file is checked against its source — the reference pages rendered
+  again and compared ([`definitions.md`](definitions.md) § 2.3), the page's
+  bundle against the hashes of its sources ([`web.md`](web.md) § 3) — so a
+  change made without regenerating fails.
 - **Proven to fail.** Before a test is trusted, the rule it guards is broken in
   the code and the test is seen to fail.
 - **Retired with its design.** When a design is replaced, its tests are deleted

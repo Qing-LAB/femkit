@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -54,8 +55,7 @@ LAPLACE = [
 
 def test_the_laplace_model_is_built_from_an_empty_folder_by_model_set_alone(tmp_path):
     """Fails if `model set` cannot build the Laplace model from nothing, one edit at
-    a time with every state loadable, its findings ending at none — the plan's acceptance for
-    the graph's edits (plan § 3, M5)."""
+    a time with every state loadable, its findings ending at none (models.md § 11.1)."""
     seen = []
     for address, value in LAPLACE:
         edit("set", tmp_path, address, value)
@@ -66,7 +66,7 @@ def test_the_laplace_model_is_built_from_an_empty_folder_by_model_set_alone(tmp_
     example = tmp_path / "example"
     example.mkdir()
     model_file(example).write_text(examples()[0])
-    assert built == load_model(example, ctx())  # the very model models.md writes
+    assert built == load_model(example, ctx())  # the very model the example holds
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ def test_an_edit_keeps_the_files_comments_and_order(project):
 
 
 def test_an_edit_that_would_leave_a_file_unloadable_is_refused_and_writes_nothing(project):
-    """Fails if an edit that would leave the model or a study unloadable is written (§ 11.2)."""
+    """Fails if an edit that would leave the model or a study unloadable is written (models.md § 11.1)."""
     before = model_file(project).read_text()
     with pytest.raises(UsageError, match="unloadable"):
         edit("set", project, "model:regions.left", '{ kind = "domain", rest = true }')
@@ -127,8 +127,8 @@ def test_a_rename_changes_every_reference_and_expression_with_it(project):
     assert set(model.conditions) == {"west", "right", "sides"} and "west" in model.regions
     assert model.conditions["right"].model_extra["value"] == "voltage" and model.parameters["half"] == "voltage / 2"
     assert "# where things are" in model_file(project).read_text()
-    study = study_file(project, "check").read_text()
-    assert 'regions = { west = "0.01 m" }' in study and '[axes."parameters.voltage"]' in study
+    study = load_study(project, "check", ctx(), model)
+    assert study.numerics.mesh.regions == {"west": "0.01 m"} and "parameters.voltage" in study.axes
 
 
 def test_a_plan_made_before_a_file_changed_is_stale(project):
@@ -178,13 +178,12 @@ def test_a_finding_sits_on_the_node_it_names_and_the_palette_comes_from_the_form
     model_file(project).write_text(text.replace('sides = { kind = "insulating" }\n', ""))
     g = graph(project)
     sides = next(n for n in g.nodes if n.address == "model:regions.sides")
-    assert sides.findings and "no condition" in sides.findings[0].message
+    assert sides.findings and all(a.call.request["address"] == "model:conditions.sides" for a in sides.findings[0].next)
     conditions = {e.type: e for e in g.palette if e.kind == "condition"}
     assert set(conditions) == {"potential", "insulating", "surface_charge", "normal_flux", "interface"}
     assert conditions["surface_charge"].help.doc.section == "3-conditions-on-an-outer-boundary"
     template = next(f for f in conditions["surface_charge"].add.fills if f.field == "text").template
-    assert 'kind = "surface_charge"' in template.splitlines()
-    assert any(line.startswith('# value = "… C/m^2"') and "required" in line for line in template.splitlines())
+    assert tomllib.loads(written(template, value='"1 C/m^2"')) == {"kind": "surface_charge", "value": "1 C/m^2"}
     assert not any(e.kind == "shape" for e in g.palette)
 
 
@@ -313,7 +312,7 @@ def test_the_laplace_model_is_built_from_an_empty_folder_with_what_the_graph_doc
     """Fails if the page could not build the Laplace model from an empty folder by the
     graph document's actions alone — its choice, the findings' fixes, its palette's templates, a
     port's connect, a node's text — and what a person writes: the names, each choice a fix
-    leaves, each template filled, the geometry's text (plan § 3, M7 item 3)."""
+    leaves, each template filled, the geometry's text (web.md § 8.3, § 12)."""
     def page():
         return graph(tmp_path)
 

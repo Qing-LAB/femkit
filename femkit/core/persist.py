@@ -194,7 +194,7 @@ def document_text(doc: Any, key: Key) -> str:
     keys, its comments, its tables headed relative to it — a value as its TOML inline text."""
     item = _parent(doc, key, create=False)[key[-1]]
     if isinstance(item, tomlkit.items.InlineTable):          # one line, no comments: each key on its own
-        return "".join(f"{tomlkit.key(k).as_string()} = {_inline(v).as_string()}\n" for k, v in item.unwrap().items())
+        return "".join(f"{tomlkit.key(k).as_string()} = {inline_text(v)}\n" for k, v in item.unwrap().items())
     if not isinstance(item, tomlkit.items.Table):
         return item.as_string().strip()
     own = tomlkit.document()
@@ -206,6 +206,11 @@ def document_text(doc: Any, key: Key) -> str:
             _headers_from_keys(v)
             own.add(k, v)
     return tomlkit.dumps(own).strip() + "\n"
+
+
+def inline_text(value: Any) -> str:
+    """A plain value as TOML text on one line: a table inline, a list's tables inline in it."""
+    return _inline(value).as_string()
 
 
 def _inline(value: Any) -> Any:

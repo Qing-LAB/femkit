@@ -14,13 +14,11 @@ import threading
 import time
 from pathlib import Path
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.probe import place
-from femkit.config.requests import ShowRequest
 from femkit.core import dirs, locks, text, view
-from femkit.envs.requests import InstallRequest
 from femkit.core.errors import PlanStale, Refused, UsageError
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import open_private, private_dir
@@ -29,7 +27,8 @@ from femkit.core.schema import Model
 from femkit.definitions import catalogue
 from femkit.server import health, protocol, supervisor
 from femkit.server.protocol import LOOPBACK, Listen, event_line
-from femkit.server.state import MACHINE, ServerState, facts, require, target
+from femkit.server.state import MACHINE, ServerState, facts, require
+from femkit.core.view import Verb
 from femkit.server.requests import SERVE_RESTART, SERVE_STOP, ServeRequest, StatusRequest, TargetRequest
 from femkit.config.requests import CONFIG_SHOW
 from femkit.envs.requests import ENV_INSTALL
@@ -42,7 +41,14 @@ STOP_WAIT = protocol.STOP_GRACE + 5.0
 # ------------------------------------------------------------------ requests
 
 def _target_name(req: TargetRequest | StatusRequest) -> str:
-    return protocol.SOCKET_NAME if req.socket else str(req.port)
+    return protocol.target_name(req.socket, req.port)
+
+
+def _holds(listen: Listen) -> tuple[str, list[dict]]:
+    """What the server's locks' files say holds them, and what ends the hold, as its JSON
+    (core.md § 5): written by `serve start` and handed to the supervisor, which writes it."""
+    return (f"the web server on {listen.describe()}",
+            [view.command(SERVE_STOP, **protocol.target(listen.name)).model_dump(mode="json")])
 
 
 def _listen(req: ServeRequest, ctx: Context) -> Listen:
@@ -221,7 +227,7 @@ def _outcome(plan: Plan, status: str, where: Path, listen: Listen, token: str | 
 
 # ------------------------------------------------------------------ start and foreground
 
-def _start_plan(name: str, req: ServeRequest, ctx: Context, detached: bool) -> Plan:
+def _start_plan(req: ServeRequest, ctx: Context, detached: bool) -> Plan:
     listen = _listen(req, ctx)
     f = facts(listen.name)
     state = MACHINE.observe(f)
@@ -256,7 +262,7 @@ class ServeStart:
     """Start the web server in the background, supervised; print the address to open."""
 
     def plan(self, req: ServeRequest, ctx: Context) -> Plan:
-        plan = _start_plan("serve.start", req, ctx, detached=True)
+        plan = _start_plan(req, ctx, detached=True)
         return plan
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
@@ -278,7 +284,7 @@ class ServeStart:
                 use_fd = locks.held_fd(_web_subject())
                 argv = [sys.executable, "-m", "femkit.server.supervisor", "--python", web_python(ctx),
                         "--listen", json.dumps(listen.as_json()), "--fd", str(sock.fileno()),
-                        "--lock-fd", str(lock_fd), "--use-fd", str(use_fd),
+                        "--lock-fd", str(lock_fd), "--use-fd", str(use_fd), "--hold", json.dumps(_holds(listen)),
                         "--log-max-bytes", str(req.log_max_mb * 1024 * 1024), "--log-keep", str(req.log_keep)]
                 held["supervisor"] = start_detached(argv, keep_fds=(sock.fileno(), lock_fd, use_fd), cwd=dirs.checkout(),
                                                     log=protocol.supervisor_log(listen.name))
@@ -311,7 +317,7 @@ class ServeForeground:
     def plan(self, req: ServeRequest, ctx: Context) -> Plan:
         if threading.current_thread() is not threading.main_thread():
             raise UsageError("serve foreground runs in a terminal; from here, use serve start")
-        return _start_plan("serve.foreground", req, ctx, detached=False)
+        return _start_plan(req, ctx, detached=False)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         req = ServeRequest.model_validate(plan.request)
@@ -339,7 +345,7 @@ class ServeForeground:
                 held["token"] = _write_token(listen)
             elif step.id == "supervise":
                 for subject in (protocol.subject(listen.name), _web_subject()):  # the runner's holds, named as the server
-                    locks.adopt(locks.held_fd(subject), *listen.holds())
+                    locks.adopt(locks.held_fd(subject), *_holds(listen))
                 code = supervisor.supervise(listen, held["socket"].fileno(), web_python(ctx),
                                             log_max_bytes=req.log_max_mb * 1024 * 1024,
                                             log_keep=req.log_keep, echo=sys.stdout.buffer,
@@ -358,7 +364,7 @@ class ServeForeground:
 
 # ------------------------------------------------------------------ restart and stop
 
-def _child_locks(f, force: bool, verb: str) -> None:
+def _child_locks(f, force: bool, verb: Verb) -> None:
     """Refused while the child holds an operation's lock, unless forced, naming each."""
     child = f.pidfile.child if f.pidfile else None
     if child is None or force:
@@ -368,7 +374,7 @@ def _child_locks(f, force: bool, verb: str) -> None:
     if held:
         raise Refused(f"the server's child holds {', '.join(held)}: an operation started from the page runs, "
                       f"and would stop with it",
-                      (view.command({"restart": SERVE_RESTART, "stop": SERVE_STOP}[verb], force=True, **target(f.name)),))
+                      (view.command(verb, force=True, **protocol.target(f.name)),))
 
 
 def _signal(f, sig: int) -> Identity:
@@ -391,7 +397,7 @@ class ServeRestart:
         state = MACHINE.observe(f)
         require(f, state, "restart")
         _preflight(f.pidfile.listen, ctx)
-        _child_locks(f, req.force, "restart")
+        _child_locks(f, req.force, SERVE_RESTART)
         return Plan(basis={"state": state.value, "supervisor": f.pidfile.supervisor.as_json(),
                            "child": f.pidfile.child.as_json() if f.pidfile.child else None},
                     steps=(Step(id="signal", describe=f"ask the supervisor, pid {f.pidfile.supervisor.pid}, "
@@ -403,7 +409,7 @@ class ServeRestart:
         f = facts(_target_name(req))
         if f.pidfile is None or f.pidfile.supervisor.as_json() != plan.basis["supervisor"]:
             raise PlanStale("the server changed since the plan; plan again", (view.command(SERVE_STATUS),))
-        _child_locks(f, req.force, "restart")  # again: the page may have started one since the plan
+        _child_locks(f, req.force, SERVE_RESTART)  # again: the page may have started one since the plan
         listen, token, held = f.pidfile.listen, _read_token(f.name), {}
 
         def do(step: Step, where: Path):
@@ -434,7 +440,7 @@ class ServeStop:
         elif state is ServerState.stale:
             steps = (Step(id="clean", describe="remove the stale server's files, ending a child it left"),)
         else:
-            _child_locks(f, req.force, "stop")
+            _child_locks(f, req.force, SERVE_STOP)
             steps = (Step(id="signal", describe=f"stop the supervisor, pid {f.pidfile.supervisor.pid} (SIGTERM)"),
                      Step(id="gone", describe="wait until it has ended and released its lock"))
         return Plan(basis={"state": state.value,
@@ -450,7 +456,7 @@ class ServeStop:
         listen = f.pidfile.listen if f.pidfile else (Listen(socket=str(protocol.socket_path()))
                                                      if name == protocol.SOCKET_NAME else Listen(port=int(name)))
         if plan.basis["state"] == ServerState.running.value:
-            _child_locks(f, req.force, "stop")  # again: the page may have started one since the plan
+            _child_locks(f, req.force, SERVE_STOP)  # again: the page may have started one since the plan
 
         def do(step: Step, where: Path):
             if step.id == "clean":

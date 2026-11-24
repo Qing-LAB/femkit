@@ -7,8 +7,7 @@ from femkit.core.view import Verb
 
 from femkit.core.commandline import ARGUMENT
 from femkit.core.schema import Model
-from femkit.models.schema import NAME
-from femkit.models import address
+from femkit.models.schema import NAME, STUDY
 from pathlib import Path
 from pydantic import Field
 
@@ -31,7 +30,7 @@ class StudyRequest(Model):
 class CopyRequest(StudyRequest):
     """A study to start another from."""
 
-    to: str = Field(pattern=r"^[a-z][a-z0-9_-]*$", description="the new study's name")
+    to: str = Field(pattern=f"^{STUDY.pattern}$", description="the new study's name")
 
 
 class SetRequest(ProjectRequest):

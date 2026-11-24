@@ -9,7 +9,6 @@ import os
 import socket
 from pathlib import Path
 
-from femkit.core import view
 from femkit.core.errors import UsageError
 
 _DIRS = {
@@ -29,6 +28,7 @@ def _resolve(which: str) -> Path:
     else:
         path = Path(os.environ.get(xdg) or str(Path.home() / fallback)).expanduser() / "femkit"
     if not path.is_absolute():
+        from femkit.core import view  # here, not at the top: the supervisor imports this module (web.md § 4)
         raise UsageError(f"the {which} directory must be an absolute path, not {path}", (view.shell(f"export {own}=/absolute/path"),))
     return path
 
@@ -60,6 +60,7 @@ def runtime_dir() -> Path:
     own = os.environ.get("FEMKIT_RUNTIME_DIR")
     path = Path(own).expanduser() if own else state_dir() / "run" / host()
     if not path.is_absolute():
+        from femkit.core import view  # here, not at the top: the supervisor imports this module (web.md § 4)
         raise UsageError(f"the runtime directory must be an absolute path, not {path}",
                          (view.shell("export FEMKIT_RUNTIME_DIR=/absolute/path"),))
     return path

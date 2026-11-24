@@ -8,7 +8,6 @@ values and its description are defined; the loader turns any failure into one
 
 from __future__ import annotations
 
-import json
 import re
 import tomllib
 import types
@@ -139,9 +138,24 @@ def alternatives(annotation: Any) -> list[Any]:
     return [] if annotation is type(None) else [annotation]
 
 
+def optional(annotation: Any) -> bool:
+    """Whether an annotation allows `None`, through `Annotated` and unions."""
+    if typing.get_origin(annotation) is typing.Annotated:
+        return optional(typing.get_args(annotation)[0])
+    if typing.get_origin(annotation) in (typing.Union, types.UnionType):
+        return any(optional(a) for a in typing.get_args(annotation))
+    return annotation is type(None)
+
+
 def classes(annotation: Any) -> list[type[BaseModel]]:
     """The model classes an annotation may hold."""
     return [a for a in alternatives(annotation) if isinstance(a, type) and issubclass(a, BaseModel)]
+
+
+def keys_of(annotation: Any) -> Any:
+    """A table's keys' annotation; None when it holds no table."""
+    tables = [a for a in alternatives(annotation) if typing.get_origin(a) is dict]
+    return typing.get_args(tables[0])[0] if tables else None
 
 
 def values_of(annotation: Any) -> Any:
@@ -165,12 +179,6 @@ def closed(annotation: Any) -> list[str]:
 def field_named(cls: type[BaseModel], key: str) -> tuple[str, FieldInfo] | None:
     """The field a file writes as ``key``: by its alias, else its name."""
     return next(((n, f) for n, f in cls.model_fields.items() if (f.alias or n) == key), None)
-
-
-def json_text(value: Any) -> Any:
-    """A value a command line gives as JSON text, read; any other as it is. For a request field
-    that takes a table: `Annotated[dict[...], BeforeValidator(json_text)]`."""
-    return json.loads(value) if isinstance(value, str) else value
 
 
 # ---------------------------------------------------------------- field annotations

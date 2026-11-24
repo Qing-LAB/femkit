@@ -50,6 +50,7 @@ femkit/
 │                  bundle (web.md § 3)
 ├── registry.py    the one list of operation modules (api.md § 6)
 ├── reference.py   `schema check|docs`: they span every domain (definitions.md § 2.3)
+├── page.py        the page declaration, checked against the operations (web.md § 8.1)
 ├── cli/           the generic command-line adapter (api.md § 4)
 └── web/           the generic flask adapter (web.md), run in the `web`
                    environment; its built front end
@@ -61,7 +62,7 @@ tools/             developer tools that import nothing from femkit (testing.md �
 |---|---|---|
 | core | `core` | the standard library and declared third-party libraries |
 | domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `jobs`, `projects`, `materials`, `geometry`, `models`, `results`, `server` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
-| registry | `registry.py`, `reference.py` | every domain |
+| registry | `registry.py`, `reference.py`, `page.py` | every domain |
 | surfaces | `cli`, `web` | everything below; never each other |
 
 **One way to do each thing.** Decided by the person; not built yet (plan § 3, R step C). Each rule below

@@ -311,7 +311,7 @@ One mesher (models.md § 6.5).
 | `description` | text | required | one line |
 | `provided_by` | text | required | the engine environment it runs in |
 | `dimensions` | list of `2` \| `3` | required | the dimensions it meshes |
-| `builds` | list of `rectangle` \| `disk` \| `polygon` \| `box` \| `sphere` \| `cylinder` \| `extrusion` \| `union` \| `difference` \| `intersection` \| `import` | required | the model's shape kinds it can build |
+| `builds` | list of text | required | the model's shape kinds it can build; `schema check` refuses one the model has not |
 | `imports` | list of `step` \| `iges` \| `brep` \| `stl` | empty | the CAD formats an `import` may be in |
 | `controls` | list of `size` \| `regions` | required | the mesh policy's keys it honors |
 | `tolerance` | [Tolerance](#tolerance), optional | — | its geometric tolerance; absent: not known, and no feature can be checked against it |

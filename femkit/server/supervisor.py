@@ -17,7 +17,6 @@ import json
 import os
 import signal
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -144,12 +143,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--python", required=True, help="the web environment's Python, which runs the child")
     parser.add_argument("--lock-fd", type=int, required=True, help="the server's lock, inherited")
     parser.add_argument("--use-fd", type=int, required=True, help="the web environment's lock, held shared, inherited")
+    parser.add_argument("--hold", required=True, help="what its locks' files name as their holder, and the "
+                                                       "actions that end the hold, as JSON written by `serve start`")
     parser.add_argument("--log-max-bytes", type=int, required=True)
     parser.add_argument("--log-keep", type=int, required=True)
     args = parser.parse_args(argv)
     listen = Listen.from_json(json.loads(args.listen))
+    by, next = json.loads(args.hold)
     for fd in (args.lock_fd, args.use_fd):  # held from here for as long as this process runs
-        locks.adopt(fd, *listen.holds())
+        locks.adopt(fd, by, next)
     return supervise(listen, args.fd, args.python,
                      log_max_bytes=args.log_max_bytes, log_keep=args.log_keep)
 

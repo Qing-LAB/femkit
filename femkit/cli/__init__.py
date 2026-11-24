@@ -42,7 +42,7 @@ def _param(name: str, field: FieldInfo) -> click.Parameter:
 
 def _again(op: Operation, req: Any) -> str:
     """The command that asked for ``req``, as a person types it (api.md § 4.4)."""
-    return commandline.typed(commandline.words(op.name, op.request, req.model_dump(mode="json")))
+    return commandline.typed(commandline.words(op.name, op.request, req.model_dump(mode="json", exclude_defaults=True)))
 
 
 def _request(op: Operation, values: dict) -> Any:

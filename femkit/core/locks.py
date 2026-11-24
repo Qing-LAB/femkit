@@ -5,13 +5,12 @@ from __future__ import annotations
 import fcntl
 import json
 import os
-import re
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
-from femkit.core import dirs, view
+from femkit.core import dirs
 from femkit.core.errors import Busy
 
 
@@ -56,11 +55,11 @@ def require_free(subject: str) -> None:
 _held: dict[str, int] = {}  # subject -> the descriptor this process holds its lock on
 
 
-def _label(fd: int, by: str | None = None, next: tuple[view.Action, ...] = ()) -> None:
+def _label(fd: int, by: str | None = None, next: Iterable[dict] = ()) -> None:
     """This process's line in the lock's file: a holder alone rewrites it, a shared holder (its
-    descriptor opened to append) adds its line."""
-    line = json.dumps({"pid": os.getpid(), "by": by or " ".join(sys.argv),
-                       "next": [n.model_dump(mode="json") for n in next]}) + "\n"
+    descriptor opened to append) adds its line. ``next``: each action that ends the hold, as
+    its JSON — so a process that writes one need not import the vocabulary."""
+    line = json.dumps({"pid": os.getpid(), "by": by or " ".join(sys.argv), "next": list(next)}) + "\n"
     if not fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_APPEND:
         os.ftruncate(fd, 0)
     os.pwrite(fd, line.encode(), 0)                       # with O_APPEND, at the end
@@ -76,27 +75,29 @@ def _alive(pid: int) -> bool:
     return True
 
 
-OLD_LINE = re.compile(r"pid (\d+): (.*)")
-
-
 def _busy(subject: str, fd: int) -> Busy:
     """Busy naming the holders the file names that still run — each one's last line — and
     offering the commands that end their holds; what the file says only names, never decides."""
+    from pydantic import ValidationError
+    from femkit.core.view import Action
     said: dict[object, dict] = {}
     for raw in os.pread(fd, 1 << 16, 0).decode("utf-8", "replace").splitlines():
         try:
             line = json.loads(raw)
             said[int(line["pid"])] = line
         except (ValueError, KeyError, TypeError):
-            old = OLD_LINE.fullmatch(raw.strip())          # written before holders named their ends
-            if old:
-                said[int(old[1])] = {"by": old[2], "next": []}
-            elif raw.strip():
-                said[raw] = {"by": raw.strip(), "next": []}
+            if raw.strip():
+                said[raw] = {"by": raw.strip()}          # a line it cannot read: named as it is
     live = [(k, v) for k, v in said.items() if not isinstance(k, int) or _alive(k)]
     who = "; ".join(f"{v.get('by')} (pid {k})" if isinstance(k, int) else str(v["by"]) for k, v in live)
-    steps = [view.Action.model_validate(c) if isinstance(c, dict) else view.shell(str(c))
-             for _, v in live for c in v.get("next") or []]
+    steps: list[Action] = []
+    for _, v in live:
+        written = v.get("next")
+        for c in written if isinstance(written, list) else []:
+            try:
+                steps.append(Action.model_validate(c))
+            except ValidationError:                      # one it cannot read offers nothing
+                pass
     return Busy(f"{subject} is in use by {who or 'another process'}", {s.command: s for s in steps}.values())
 
 
@@ -127,9 +128,9 @@ def held_fd(subject: str) -> int:
     return _held[subject]
 
 
-def adopt(fd: int, by: str | None = None, next: tuple[view.Action, ...] = ()) -> None:
+def adopt(fd: int, by: str | None = None, next: Iterable[dict] = ()) -> None:
     """Take over a lock handed to this process, or name a hold anew: its file now names this
-    process as ``by``, with the commands that end its hold."""
+    process as ``by``, with the actions that end its hold, each as its JSON."""
     _label(fd, by, next)
 
 

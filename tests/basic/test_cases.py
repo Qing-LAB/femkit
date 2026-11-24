@@ -160,7 +160,7 @@ def table_model(project: Path, rows: str, convention: str, phasor: str = "exp(-i
 
 def test_a_table_is_converted_to_the_models_convention_and_a_gain_medium_refused(project):
     """Fails if a tabulated property keeps its source's convention, loses its rows' exact values,
-    or a passive material made active by a convention mismatch is accepted (models.md § 3)."""
+    or a passive material made active by a convention mismatch is accepted (materials.md § 6)."""
     m = table_model(project, "500, -5.5, -2.1\n700, -16.5, -1.1\n", "exp(+iwt)")
     m = m.model_copy(update={"parameters": {**m.parameters, "wavelength": "600 nm"}})
     resolved = cases.resolve(m, None, {}, catalogue.units(ctx()), project)
@@ -177,7 +177,7 @@ def test_a_table_is_converted_to_the_models_convention_and_a_gain_medium_refused
 
 def test_a_case_outside_a_propertys_range_is_refused(project):
     """Fails if a case is resolved at a value of a property's variable outside the range its
-    source covers, or with no value for that variable at all (models.md § 3)."""
+    source covers, or with no value for that variable at all (materials.md § 6)."""
     m = table_model(project, "500, -5.5, 2.1\n700, -16.5, 1.1\n", "exp(-iwt)")
     units = catalogue.units(ctx())
     with pytest.raises(Refused, match="states no parameter 'wavelength'"):

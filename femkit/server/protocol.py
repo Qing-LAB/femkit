@@ -14,11 +14,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from femkit.core import dirs, view
+from femkit.core import dirs
 from femkit.core.persist import open_private, write_json
 from femkit.core.process import Identity
-from femkit.server.requests import TargetRequest
-from femkit.server.requests import SERVE_STOP
 
 SOCKET_NAME = "sock"          # <name> of a server on a Unix socket; a TCP server's is its port
 LOOPBACK = "127.0.0.1"        # printed and bound as this, never `localhost` (web.md § 5)
@@ -26,6 +24,16 @@ SOCKET_PATH_MAX = 107         # bytes a Unix socket's path may hold, its termina
 FLAP_WINDOW = 30.0            # two deaths by a signal within this many seconds: the supervisor gives up
 STOP_GRACE = 5.0              # seconds between SIGTERM and SIGKILL
 CHILD_MODULE = "femkit.web"   # what the supervisor runs
+
+
+def target(name: str) -> dict:
+    """How a request names the server called ``name``: its port, or its socket."""
+    return {"socket": True} if name == SOCKET_NAME else {"port": int(name)}
+
+
+def target_name(socket: bool, port: int) -> str:
+    """The name of the server a request names."""
+    return SOCKET_NAME if socket else str(port)
 
 
 def subject(name: str) -> str:
@@ -74,11 +82,6 @@ class Listen:
 
     def describe(self) -> str:
         return self.socket if self.socket else f"{LOOPBACK}:{self.port}"
-
-    def holds(self) -> tuple[str, tuple[view.Action, ...]]:
-        """What its locks' files say holds them, and what ends the hold (core.md § 5)."""
-        target = {"socket": True} if self.socket else {"port": self.port}
-        return f"the web server on {self.describe()}", (view.command(SERVE_STOP, **target),)
 
     def as_json(self) -> dict:
         return {"socket": self.socket} if self.socket else {"port": self.port}

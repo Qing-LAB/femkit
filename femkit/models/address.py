@@ -7,13 +7,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 from femkit.core.errors import UsageError
-from femkit.models.project import model_file, study_file
+from femkit.models.schema import STUDY
 
 BARE = re.compile(r"[A-Za-z0-9_-]+")
-STUDY = re.compile(r"[a-z][a-z0-9_-]*")
 
 
 @dataclass(frozen=True)
@@ -31,9 +29,6 @@ class Address:
 
     def child(self, *steps: str) -> "Address":
         return Address(self.study, (*self.path, *steps))
-
-    def on_disk(self, project: Path) -> Path:
-        return model_file(project) if self.study is None else study_file(project, self.study)
 
 
 def _steps(text: str, whole: str) -> tuple[str, ...]:

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { hasToken, NeedToken, OperationInfo, operations, setToken, viewerAddress } from "./api";
 import { command, OperationView } from "./OperationView";
 
@@ -25,19 +25,17 @@ function TokenGate({ onToken }: { onToken: () => void }) {
   );
 }
 
-function OperationsWorkspace() {
+function OperationsWorkspace({ onNeedToken }: { onNeedToken: () => void }) {
   const [ops, setOps] = useState<OperationInfo[] | null>(null);
-  const [needToken, setNeedToken] = useState(!hasToken());
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => {
+  useEffect(() => {
     operations()
-      .then((list) => { setOps(list); setNeedToken(false); setSelected((s) => s ?? list[0]?.name ?? null); })
-      .catch((e) => (e instanceof NeedToken ? setNeedToken(true) : setError(String(e))));
-  };
-  useEffect(() => { if (!needToken) load(); }, [needToken]);
+      .then((list) => { setOps(list); setSelected((s) => s ?? list[0]?.name ?? null); })
+      .catch((e) => (e instanceof NeedToken ? onNeedToken() : setError(String(e))));
+  }, [onNeedToken]);
 
   const groups = useMemo(() => {
     const out = new Map<string, OperationInfo[]>();
@@ -48,7 +46,6 @@ function OperationsWorkspace() {
     return out;
   }, [ops, filter]);
 
-  if (needToken) return <p className="muted">This page has no access token.</p>;
   const op = ops?.find((o) => o.name === selected) ?? null;
   return (
     <div className="shell workspace-shell">
@@ -74,7 +71,7 @@ function OperationsWorkspace() {
       <main>
         {error && <div className="card result not-ok"><p>{error}</p></div>}
         {!ops && !error && <p className="muted">Loading…</p>}
-        {op && <OperationView op={op} onNeedToken={() => setNeedToken(true)} />}
+        {op && <OperationView op={op} onNeedToken={onNeedToken} />}
       </main>
     </div>
   );
@@ -83,6 +80,7 @@ function OperationsWorkspace() {
 
 export function App() {
   const [needToken, setNeedToken] = useState(!hasToken());
+  const lostToken = useCallback(() => setNeedToken(true), []);   // one function: the workspace's loader depends on it
   if (needToken) return <TokenGate onToken={() => setNeedToken(false)} />;
   return (
     <div className="app">
@@ -91,7 +89,7 @@ export function App() {
         <nav className="workspaces"><button className="active">Operations</button></nav>
         <button className="quiet" onClick={() => window.open(viewerAddress(), "_blank", "noopener")}>Documents ↗</button>
       </header>
-      <div className="workspace"><OperationsWorkspace /></div>
+      <div className="workspace"><OperationsWorkspace onNeedToken={lostToken} /></div>
     </div>
   );
 }

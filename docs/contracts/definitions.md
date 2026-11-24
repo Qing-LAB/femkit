@@ -23,8 +23,8 @@ What is configured per user or per machine is not here: it is
 
 ## 1. What a shipped definition is
 
-femkit ships seven types of definition under `femkit/data/`, beside the
-templates for user configuration:
+femkit ships these definitions under `femkit/data/`, beside the templates
+for user configuration:
 
 ```text
 femkit/data/
@@ -32,11 +32,12 @@ femkit/data/
 ├── control.txt                the control environment's packages, as `conda create --file` reads them
 ├── environments/<name>.toml   one per engine environment
 ├── formulations/<family>.toml a formulation family, stated for every engine (models.md § 4)
-├── meshers/<id>.toml          a mesher and what it builds (models.md § 6.5); decided: `gmsh.toml` alone,
-│                              with the hand-over to each engine (geometry.md § 8)
+├── meshers/<id>.toml          a mesher and what it builds; decided: `gmsh.toml` alone, with the
+│                              hand-over to each engine (geometry.md § 8)
 ├── managers/<kind>.toml       how to drive a package manager (conda, mamba)
 ├── schedulers/<kind>.toml     how to talk to a scheduler (local, slurm)
 ├── units.toml                 the units a value may be written in, with exact factors (core.md § 11)
+├── web/page.toml              the web page's own structure (web.md § 8.1)
 └── templates/                 starting text for user configuration files
 ```
 
@@ -112,7 +113,9 @@ reads every domain's models) renders `docs/reference/` from the schema models
 (the state tables are not rendered yet, [`core.md`](core.md) § 7). The
 committed pages are that output; a test renders them again and fails on any difference. Contracts,
 guides and help text link to the reference instead of restating fields.
-`python -m femkit schema check` loads every shipped definition; a test runs it.
+`python -m femkit schema check` loads every shipped definition, and refuses a
+mesher that builds a shape kind the model has not — the model's shapes are the
+one list of kinds; a test runs it.
 
 ## 3. `channels.txt` and `control.txt`
 

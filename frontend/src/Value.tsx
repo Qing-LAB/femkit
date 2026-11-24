@@ -1,6 +1,8 @@
 // A result, shown from its JSON alone: findings first, then each field — a list of rows as a
 // table, a record as a list of fields, anything else as text.
 
+import type { Action } from "./generated/schemas";
+
 export function Findings({ issues }: { issues: any[] }) {
   if (!issues?.length) return null;
   return (
@@ -9,7 +11,7 @@ export function Findings({ issues }: { issues: any[] }) {
         <li key={n} className={`finding ${i.severity}`}>
           <span className="severity">{i.severity}</span>
           <span className="message">{i.message}</span>
-          {i.next?.length > 0 && <pre className="next">{i.next.join("\n")}</pre>}
+          {i.next?.length > 0 && <pre className="next">{i.next.map((a: Action) => a.command).join("\n")}</pre>}
         </li>
       ))}
     </ul>

@@ -29,7 +29,6 @@ from femkit.envs.manager import confined, resolve
 from femkit.envs.state import INSTALLED, observe
 from femkit import schedulers
 from femkit.jobs.record import Record, settings_now
-from femkit.jobs.requests import ProbeRequest
 from femkit.jobs.requests import JOB_PROBE
 
 HOST_GPU_QUERY = ("nvidia-smi", "--query-gpu=name,compute_cap,memory.total", "--format=csv,noheader,nounits")

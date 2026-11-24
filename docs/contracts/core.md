@@ -40,8 +40,8 @@ module reads no file, probes nothing and starts nothing.
 | `issues` | `Issue` | 10 |
 | `units` | the unit table's schema, `Quantity`, `Units`: one grammar for a quantity, a unit and an expression of named quantities; conversion | 11 |
 | `text` | how a value, a path (from `~`), a count (`1 step`, `16 steps`), a table, a finding and a "next" block are shown | [`api.md`](api.md) § 4.4 |
-| `view` | the one vocabulary of what a person may read and do: `Help`, `Action`, `Field`, `Table` — every next step an `Action` (built, uncommitted; settled in plan § 3, R step B) | [`web.md`](web.md) § 7 |
-| `commandline` | the one mapping between a request's fields and a command's arguments, both ways: the command line parses by it, and an `Action` is written as a command by it (built, uncommitted; settled in plan § 3, R step B) | [`api.md`](api.md) § 4.1 |
+| `view` | the one vocabulary of what a person may read and do: `Help`, `Action`, `Field`, `Table` — every next step an `Action` | [`web.md`](web.md) § 7 |
+| `commandline` | the one mapping between a request's fields and a command's arguments, both ways: the command line parses by it, and an `Action` is written as a command by it | [`api.md`](api.md) § 4.1 |
 | `operations` | `Context`, `Plan`, `Step`, `Result`, `Outcome`, `Observer`, `operation` | [`api.md`](api.md) |
 
 ## 2. Schema — `core/schema.py`
@@ -54,8 +54,10 @@ def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact:
 def validate(model: type[M], data: Any, file: Path | str, context: dict | None = None) -> M
 def field_extras(field: FieldInfo) -> dict              # a field's annotations, its Annotated type's included
 def alternatives(annotation) -> list                    # what it may hold, through Annotated, Optional, unions
-def classes(annotation), values_of(annotation), items_of(annotation), closed(annotation)
-                                                        # its models; a table's values; a list's items; a Literal's texts
+def classes(annotation), keys_of(annotation), values_of(annotation), items_of(annotation), closed(annotation)
+                                                        # its models; a table's keys, values; a list's items; a Literal's texts
+def optional(annotation) -> bool                        # whether it allows None, through Annotated and unions
+def described(field) -> str                             # its description, and its `doc` reference after it
 def field_named(cls, key) -> tuple[str, FieldInfo] | None   # the field a file writes as `key`, alias or name
 def references(instance) -> Iterator[tuple[location, type, name]]   # every name its `ref` fields hold
 
@@ -157,6 +159,9 @@ def write_document(path, doc) -> Path                  # atomic
 def parse_value(text) -> Any                           # a TOML inline value as a person types it
 def document_has(doc, key) -> bool; document_set(doc, key, value); document_unset(doc, key)
 def document_rename(doc, key, new)                     # in place, its comment kept; headers rewritten from keys
+def document_text(doc, key) -> str                     # an entry as a person edits it: a table as its own document
+def document_write(doc, key, text)                     # an entry made what that text writes, its comments kept
+def inline_text(value) -> str                          # a plain value as TOML text on one line
 def private_dir(path: Path) -> Path     # 0700; refused when another account could enter it or replace it
 def open_private(path: Path, mode: str) -> IO   # 0600 from its first byte, never through a link;
                                                 # "a" appends, "w" truncates, "x" creates exclusively
@@ -191,7 +196,7 @@ def subject_lock(subject: str, *, shared: bool = False) -> Iterator[None]    # r
 def is_held(subject: str) -> bool       # held alone: something is changing it
 def require_free(subject: str) -> None  # raises Busy while anyone holds it, shared or alone; takes nothing
 def held_fd(subject: str) -> int        # the descriptor this process holds it on, to hand to a process it starts
-def adopt(fd: int, by: str | None = None, next: tuple[str, ...] = ()) -> None
+def adopt(fd: int, by: str | None = None, next: Iterable[dict] = ()) -> None   # each next step as its Action's JSON
                                         # a handed lock: its file now names the receiver, and what ends its hold
 def holders() -> dict[str, int]         # subject -> pid, from the kernel's lock table (/proc/locks): the
                                         # process that took the lock, which after a handover is not the holder
@@ -348,7 +353,7 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
 
 ```python
 class Refusal(Exception):        # refused before acting: exit 2
-    next: tuple[Action, ...]     # what a person may do instead (core/view.py; command text until plan § 3, R step B)
+    next: tuple[Action, ...]     # what a person may do instead (core/view.py)
 
 class DefinitionError(Refusal)   # a declared file does not load (§ 2); defined in core/schema.py
 class Refused(Refusal)           # a state does not allow the action (§ 7)
@@ -372,9 +377,9 @@ class Issue(Model):
     severity: Literal["error", "warning", "info"]
     code: str                    # stable, kebab-case, e.g. "preamble-unset"
     subject: str                 # what it is about: an environment, a key, a file, an address
-    label: str                   # what a person calls the subject (not built yet, plan § 3, R step B)
+    label: str | None = None     # what a person calls the subject, where its address is not that
     message: str                 # one whole sentence for a person
-    next: tuple[Action, ...] = ()  # what would resolve it (core/view.py; command text until plan § 3, R step B)
+    next: tuple[Action, ...] = ()  # what would resolve it (core/view.py)
 ```
 
 `code` is what tests and programs match on; `message` is free to change.
@@ -395,6 +400,8 @@ class Units:
     def symbols(self) -> list[str]                                 # every symbol read, prefixed ones included
     def parse(self, text: str, names: Mapping[str, Quantity] = {}) -> Quantity
     def convert(self, quantity: Quantity, unit: str) -> Fraction   # its value in that unit
+    def canonical(self, dimension) -> str | None                   # a base dimension's canonical unit: `m`
+    def of(self, dimension) -> list[str]                           # every symbol of it, prefixed ones included
 
 class UnitError(ValueError)                    # names the text and what in it is wrong
 ```

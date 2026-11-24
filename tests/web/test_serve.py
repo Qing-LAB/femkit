@@ -356,7 +356,7 @@ def fake_operation(runs: int, step_log: bool = False):
     """A changing operation that runs ``runs`` times, as an install over several environments
     does; with ``step_log``, its step reports a log to the apply's own observer and waits."""
     import threading as _t
-    from femkit.core.operations import Operation, Plan, Result, Step, run_steps
+    from femkit.core.operations import Operation, Plan, Step, run_steps
     from femkit.core.operations import Outcome
     from femkit.core.schema import Model
     release = _t.Event()
@@ -388,7 +388,7 @@ def test_an_apply_over_several_runs_reports_each_and_ends(tmp_path):
     environments would hang holding its locks (web.md § 1)."""
     from femkit.web.app import create_app
     op, _ = fake_operation(runs=3)
-    client = create_app("t", Listen(port=8000), operations={op.name: op}).test_client()
+    client = create_app("t", Listen(port=8000), operations={**registry.operations(), op.name: op}).test_client()
     headers = {"Authorization": "Bearer t", "Host": "127.0.0.1:8000", "Content-Type": "application/json"}
     digest = client.post("/api/demo/multi/plan", headers=headers, data="{}").get_json()["digest"]
     lines = [json.loads(l) for l in client.post("/api/demo/multi/apply", headers=headers,
@@ -404,7 +404,7 @@ def test_a_running_steps_log_is_found_while_it_runs():
     from femkit.core.operations import Context as Ctx
     from femkit.web.app import create_app
     op, release = fake_operation(runs=1, step_log=True)
-    client = create_app("t", Listen(port=8000), operations={op.name: op}).test_client()
+    client = create_app("t", Listen(port=8000), operations={**registry.operations(), op.name: op}).test_client()
     auth = {"Authorization": "Bearer t", "Host": "127.0.0.1:8000"}
     plan = op.plan(op.request_from({}), Ctx.from_process())
     worker = _t.Thread(target=op.apply, args=(plan, Ctx.from_process()))

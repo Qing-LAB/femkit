@@ -1,12 +1,14 @@
 // Every request the page makes (web.md § 1, § 5): the token from the address's fragment,
 // kept in this tab's session storage, sent as Bearer; never a cookie.
 
+import type { Action } from "./generated/schemas";
+
 const KEY = "femkit-token";
 
 export class NeedToken extends Error {}
 
 export class Refused extends Error {
-  constructor(public kind: string, message: string, public next: string[]) {
+  constructor(public kind: string, message: string, public next: Action[]) {
     super(message);
   }
 }
@@ -91,7 +93,7 @@ async function send(path: string, body?: unknown): Promise<Response> {
 async function json(response: Response): Promise<any> {
   const data = await response.json();
   if (data && typeof data === "object" && "refused" in data) {
-    throw new Refused(String(data.refused), String(data.message), (data.next as string[]) ?? []);
+    throw new Refused(String(data.refused), String(data.message), (data.next as Action[]) ?? []);
   }
   if (data && typeof data === "object" && "defect" in data) {
     throw new Refused("defect", `${data.message}${data.log ? ` (log: ${data.log})` : ""}`, []);

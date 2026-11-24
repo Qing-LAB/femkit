@@ -19,7 +19,6 @@ from femkit.core.units import Quantity, UnitError, Units
 from femkit.definitions.formulations import FormulationDefinition
 from femkit.core import view
 from femkit.models import check
-from femkit.models.requests import ProjectRequest
 from femkit.models.schema import Axis, ModelFile, Numerics, StudyFile, quantities
 from femkit.models.requests import CASE_LIST, MODEL_CHECK
 

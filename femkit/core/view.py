@@ -124,7 +124,7 @@ class Action(Model):
 
 
 def command(verb: Verb, *, label: str | None = None, note: str | None = None,
-            fills: Iterable[Fill] = (), help: Help | None = None, **values: Any) -> Action:
+            fills: Iterable[Fill] = (), **values: Any) -> Action:
     """The action that runs ``operation`` with ``values``: its command written once, by the
     command line's own mapping, a whole value still to fill shown as its example or its name,
     a hole as the text it stands in. A fill of a field the request takes as TOML text says so."""
@@ -142,12 +142,12 @@ def command(verb: Verb, *, label: str | None = None, note: str | None = None,
                               {f.field: f.example or f.field.upper() for f in fills if f.hole is None})
     return Action(label=label or " ".join(words), command=commandline.typed(words), note=note,
                   call=Call(operation=operation, request=json.loads(json.dumps(values, default=str))),
-                  fills=fills, help=help)
+                  fills=fills)
 
 
-def shell(line: str, *, label: str | None = None, note: str | None = None, help: Help | None = None) -> Action:
+def shell(line: str, *, note: str | None = None) -> Action:
     """A line a person types that is no operation of femkit's."""
-    return Action(label=label or line, command=line, note=note, help=help)
+    return Action(label=line, command=line, note=note)
 
 
 class Field(Model):

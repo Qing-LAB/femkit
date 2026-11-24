@@ -8,7 +8,7 @@ from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.operations import stating
-from femkit.config.requests import CONFIG_INIT, InitRequest
+from femkit.config.requests import CONFIG_INIT
 from femkit.core import text, view
 from femkit.core.errors import PlanStale, Refusal, UsageError
 from femkit.core.issues import Issue

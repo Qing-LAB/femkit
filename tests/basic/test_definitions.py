@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import tomllib
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from femkit.core.dirs import CONTROL
 from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, load_toml
+from femkit.definitions import catalogue
 from femkit.definitions.catalogue import CUDA_SUFFIX, CatalogueError, data_root, load_environments
 from femkit.definitions.models import EnvironmentDefinition
 from femkit.engines import registered
@@ -278,11 +280,6 @@ def test_a_conda_removal_names_the_declared_channels_and_a_mamba_one_none():
     assert mamba == ["/m/mamba", "env", "remove", "-y", "-p", "/p"]
 
 
-def catalogue_engines():
-    from femkit.engines import registered
-    return registered()
-
-
 DERIVED = {"description": "d", "section": "7-derived-quantities"}
 KIND = {"description": "d", "section": "3-conditions-on-an-outer-boundary", "on": ["boundary"],
         "parameters": {"value": {"unit": "V", "description": "d"}}}
@@ -312,26 +309,24 @@ def test_a_formulation_that_misstates_itself_does_not_load(change, at):
     assert at in [path for path, _ in caught.value.problems]
 
 
-def test_the_meshers_build_exactly_the_models_shape_kinds():
-    """Fails if a mesher may name a shape kind the model has not, or the model gains a kind no
-    mesher could ever declare: the two lists are one (models.md § 3, § 6.5)."""
-    import typing
-    from femkit.definitions.meshers import ShapeKind
-    from femkit.models.schema import Shape
-    kinds = set()
-    for member in typing.get_args(typing.get_args(Shape)[0]):
-        kinds |= set(typing.get_args(member.model_fields["kind"].annotation))
-    assert kinds == set(typing.get_args(ShapeKind))
-
+def test_schema_check_refuses_a_mesher_that_builds_a_shape_the_model_has_not(tmp_path, monkeypatch):
+    """Fails if a mesher naming a shape kind the model has not passes `schema check`: the
+    model's shapes are the one list of kinds (definitions.md § 2.3)."""
+    data = tmp_path / "data"
+    shutil.copytree(data_root(), data)
+    gmsh = data / "meshers" / "gmsh.toml"
+    gmsh.write_text(gmsh.read_text().replace('builds = ["rectangle",', 'builds = ["torus", "rectangle",', 1))
+    monkeypatch.setattr(catalogue, "data_root", lambda: data)
+    result = schema_check.run(schema_check.request(), Context.from_process())
+    assert [i.subject for i in result.issues if "'torus'" in i.message] == ["meshers/gmsh.toml"]
 
 @pytest.mark.parametrize("change, at", [
     ({"provided_by": "comsol"}, "provided_by"),                 # no such environment
     ({"imports": []}, "imports"),                              # builds `import`, imports nothing
-    ({"builds": ["torus"]}, "builds[0]"),                      # no such shape kind
 ])
 def test_a_mesher_that_misstates_itself_does_not_load(change, at):
-    """Fails if a mesher names an environment that does not exist, builds `import` with no
-    format, or a shape the model does not have (models.md § 6.5)."""
+    """Fails if a mesher names an environment that does not exist, or builds `import` with no
+    format (geometry.md § 8, definitions.md § 1)."""
     import tomllib
     from femkit.core.schema import DefinitionError, validate
     from femkit.definitions.catalogue import data_root

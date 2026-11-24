@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
+from femkit import page, registry
 from femkit.core.schema import DefinitionError
-from femkit.server import page
 
 
 def test_the_shipped_page_declaration_loads():
     """Fails if the page femkit ships names something that does not exist (web.md § 8.1)."""
-    assert page.load().workspaces
+    assert page.load(registry.operations()).workspaces
 
 
 @pytest.mark.parametrize("old, new, where", [
@@ -20,6 +20,7 @@ def test_the_shipped_page_declaration_loads():
     ('value_key = "name"', 'value_key = "nowhere"', "context.2"),                          # no such row key
     ('depends = ["project"]', 'depends = ["study"]', "context.1.depends"),                 # depends on itself
     ('parameter = "variable"\n', "", "kinds"),                                               # a kind without its icon
+    ('rows = "studies"\n', 'rows = "studies"\nvalue_key = "name"\n', "context.1"),          # a key of rows that are no records
 ])
 def test_a_page_declaration_naming_what_does_not_exist_is_refused(tmp_path, monkeypatch, old, new, where):
     """Fails if a declaration naming an operation that does not exist or changes things, a field
@@ -31,5 +32,5 @@ def test_a_page_declaration_naming_what_does_not_exist_is_refused(tmp_path, monk
     broken.write_text(text.replace(old, new, 1), encoding="utf-8")
     monkeypatch.setattr(page, "path", lambda: broken)
     with pytest.raises(DefinitionError) as refused:
-        page.load()
+        page.load(registry.operations())
     assert where in [p for p, _ in refused.value.problems]

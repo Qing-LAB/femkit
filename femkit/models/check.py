@@ -45,6 +45,12 @@ def owner(m: ModelFile, path: tuple[str, ...]) -> tuple[int, str]:
     return o.rank, o.label_of(key, o.entries(m).get(key))
 
 
+def formulation_choice(formulations: dict) -> dict:
+    """What the model's formulation may be, as a JSON schema fragment: the one place it is built."""
+    return {"type": "string", "enum": sorted(formulations),
+            "description": ModelFile.model_fields["formulation"].description}
+
+
 def findings(m: ModelFile, formulations: dict[str, FormulationDefinition], units: Units,
              project: Path) -> list[Issue]:
     """Every finding, in the chain's order."""
@@ -74,7 +80,7 @@ def findings(m: ModelFile, formulations: dict[str, FormulationDefinition], units
 
     if m.formulation is None:
         finding(("formulation",), "The model names no formulation.",
-                choose(("formulation",), "the formulation", {"type": "string", "enum": sorted(formulations)}))
+                choose(("formulation",), "the formulation", formulation_choice(formulations)))
         return _ordered(out)
     f = formulations.get(m.formulation)
     if f is None:
@@ -203,7 +209,7 @@ def _kinded(finding, remove, at: tuple, label: str, item: Kinded, allowed: dict[
             finding((*at, name), f"{label.capitalize()} takes no {name!r}; a {item.kind} takes "
                     f"{', '.join(spec.parameters) or 'nothing'}.", remove((*at, name)), code="model-invalid")
         else:
-            _dimension(finding, (*at, name), value, p.unit if (p := spec.parameters[name]) else "", params, units)
+            _dimension(finding, (*at, name), value, spec.parameters[name].unit, params, units)
 
 
 def _dimension(finding, at: tuple, value, unit: str, params: dict[str, Quantity], units: Units) -> None:

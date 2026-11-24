@@ -11,7 +11,6 @@ import json
 import queue
 import re
 import threading
-import time
 import traceback
 from pathlib import Path
 from typing import Iterator
@@ -22,10 +21,10 @@ from femkit import registry
 from femkit.core import eventlog, view
 from femkit.core.markdown import headings
 from femkit.core.errors import PlanStale, Refusal
-from femkit.core.operations import Context, Operation, Plan, PlanAnswer, SilentObserver, Step, operations_root
+from femkit.core.operations import Context, Operation, Plan, PlanAnswer, SilentObserver, operations_root
 from femkit.core.process import tail
 from femkit.server import health
-from femkit.server import page as page_declaration
+from femkit import page as page_declaration
 from femkit.server.protocol import Listen
 from femkit.web import access, docs
 
@@ -107,7 +106,7 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
     app.url_map.merge_slashes = False  # a path is taken as written, never rewritten into another
     access.install(app, token, listen)
     ops = operations if operations is not None else registry.operations()
-    declared = page_declaration.load()
+    declared = page_declaration.load(ops)
     streams = threading.BoundedSemaphore(STREAMS)
     stopping = threading.Event()  # set when the server stops: every event stream ends
     app.extensions["femkit.stopping"] = stopping

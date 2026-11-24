@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import tomlkit
-from pydantic import Field, create_model
+from pydantic import Field
 
 from femkit.config import probe, settings
 from femkit.core import dirs, paths, text, view
@@ -16,7 +16,7 @@ from femkit.core.issues import Issue
 from femkit.core.operations import Ask, Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.schema import Model
 from femkit.definitions import catalogue
-from femkit.config.requests import OPTION_KEYS, InitRequest, PathRequest, SetRequest, ShowRequest, option_name
+from femkit.config.requests import OPTION_KEYS, PathRequest, SetRequest, ShowRequest, option_name
 from femkit.config.requests import CONFIG_INIT, CONFIG_PATH, CONFIG_SET, CONFIG_SHOW
 
 
@@ -148,13 +148,13 @@ def stating(verb: view.Verb, dotted: list[str]) -> tuple[view.Action, ...]:
         preamble = settings.key(PREAMBLE)
         out += [view.command(verb, note="once per line",
                              fills=[view.Fill(field="preamble", label=preamble.dotted, example="LINE",
-                                                          help=view.Help(sentence=preamble.description))]),
+                                                          help=view.Help.of(preamble.description))]),
                 view.command(verb, no_preamble=True, note="none is needed here")]
     if COMMAND in dotted:
         command = settings.key(COMMAND)
         out += [view.command(verb, note="or 'conda activate', 'mamba activate'",
                              fills=[view.Fill(field=option_name(command), label=command.dotted, example="source activate",
-                                                                    help=view.Help(sentence=command.description))])]
+                                                                    help=view.Help.of(command.description))])]
     return tuple(out)
 
 class InitRow(Model):

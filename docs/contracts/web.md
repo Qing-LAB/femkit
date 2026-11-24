@@ -29,8 +29,8 @@ Two parts: a flask application built from the same registry as the command
 line ([`api.md`](api.md) § 6), and a page that runs in the browser. Both live
 in the `web` environment ([`envs.md`](envs.md) § 1): the server runs on its
 Python, and the page is built with its Node.js; the control environment holds
-neither. The routes and `serve` are built in token mode, and the page's
-operation, progress and documents views and the first page's Model workspace;
+neither. The routes and `serve` are built in token mode, and the first page's
+operation, progress and documents views;
 TLS, sign-in, `--no-auth`, uploads, the other views and the page's framework
 (§§ 6–12) are not built yet (plan § 3, M7), and these rules hold when they
 are. A basic test checks that every registered operation can be expressed this
@@ -41,7 +41,8 @@ page's form are [ADR 0009](../decisions/0009-web-front-end.md).
 
 | route | does |
 |---|---|
-| `GET /api/operations` | every operation: name, description, request and result JSON schemas |
+| `GET /api/operations` | every operation: name, description, whether it changes things, asks for confirmation and is taken back by undo, request and result JSON schemas |
+| `GET /api/page` | the page declaration (§ 8.1), loaded against the operations the server serves |
 | `POST /api/<name>` | a read-only operation: request JSON in, result JSON out |
 | `POST /api/<name>/plan` | a changing operation: request JSON in, plan JSON out |
 | `POST /api/<name>/apply` | `{"request": …, "digest": …}`: re-plans, refuses with `PlanStale` unless the new plan's digest equals the one the person saw, then applies. A refusal before the run starts is answered as any other; otherwise the answer is JSON lines: `{"operation": "<subject>/<time>"}` as each run starts — its operation directory, the address `GET /api/events/…` and `GET /api/tail/…` take; an operation over several subjects runs once per subject (core.md § 6) — and last the outcome, or the defect. The apply runs to its end whether or not the page still reads |
@@ -536,7 +537,7 @@ never as a document of its own.
 
 ## 6. The page's framework
 
-Built, uncommitted (plan § 3, R step B): the vocabulary (§ 7), the page
+Built (plan § 3, R step B): the vocabulary (§ 7), the page
 declaration and what the server declares but the layout and text and templates
 (§§ 8.2–8.3), the kernel and the elements in part (§ 9); the views, the shell,
 § 8.2's layout and § 8.3 are not (plan § 3, R), and the page as it

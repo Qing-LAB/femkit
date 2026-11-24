@@ -20,6 +20,11 @@ def study_file(project: Path, study: str) -> Path:
     return project / "studies" / study / "study.toml"
 
 
+def file_of(project: Path, study: str | None) -> Path:
+    """The file a study's name names in ``project``; none: the model's."""
+    return model_file(project) if study is None else study_file(project, study)
+
+
 def studies(project: Path) -> list[str]:
     root = project / "studies"
     return sorted(p.parent.name for p in root.glob("*/study.toml")) if root.is_dir() else []

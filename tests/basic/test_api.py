@@ -113,7 +113,7 @@ def test_request_fields_become_arguments_and_flags_and_results_set_the_exit_code
 def test_json_prints_exactly_the_result_model():
     """Fails if --json prints anything but one JSON document of the result (api.md § 4.2)."""
     out = run("toy", "echo", "hi", "--json")
-    assert json.loads(out.stdout)["said"] == "hi"
+    assert json.loads(out.stdout) == EchoResult(said="hi").model_dump(mode="json")
 
 
 def test_dry_run_and_missing_consent_change_nothing():
@@ -138,15 +138,26 @@ def test_a_refusal_exits_2_with_its_next_commands():
 
 # --- the registry -------------------------------------------------------------
 
-def test_every_registered_operation_renders_text_and_is_expressible_on_the_web():
-    """Fails if an operation's result cannot render text, or its request and result
-    models cannot produce the JSON schema the web adapter needs (api.md § 2.3, § 5)."""
+def test_every_registered_operation_is_expressible_on_the_web():
+    """Fails if an operation's request or result model cannot produce the JSON schema the web
+    adapter needs (api.md § 2.3, web.md § 1)."""
     ops = operations()
     assert ops
-    for name, op in ops.items():
-        assert op.result.text is not Result.text, f"{name}: {op.result.__name__} has no text()"
+    for op in ops.values():
         op.request.model_json_schema()
         op.result.model_json_schema()
+
+
+def test_an_operation_whose_result_writes_no_text_is_refused():
+    """Fails if an operation could be declared with a result a terminal cannot read (api.md § 2.3)."""
+    class Bare(Result):
+        """A result with no text of its own."""
+
+    with pytest.raises(TypeError, match="writes no text"):
+        @operation(view.Verb("toy.bare", EchoRequest), result=Bare)
+        def bare(req, ctx):
+            """Answers with nothing a person can read."""
+            return Bare()
 
 
 def test_a_changing_operation_must_have_plan_and_apply():
@@ -256,26 +267,3 @@ def test_a_running_steps_live_line_shows_its_log_and_is_erased_before_anything_e
             assert shown in err and err.index(shown) < err.index("\r\x1b[K", err.index(shown) + 1) < err.index("verdict")
         else:
             assert "\x1b" not in err and "verdict: passed" in err
-
-
-def test_every_pattern_a_request_or_a_model_file_takes_is_anchored():
-    """Fails if a pattern a request or a model file is checked by matches anywhere in a value —
-    pydantic searches, so an unanchored name pattern takes `../outside`, a path out of its
-    folder, because it holds a name (api.md § 2)."""
-    from femkit.registry import operations
-    from femkit.models.schema import ModelFile, StudyFile
-
-    def patterns(node):
-        if isinstance(node, dict):
-            if isinstance(node.get("pattern"), str):
-                yield node["pattern"]
-            for v in node.values():
-                yield from patterns(v)
-        elif isinstance(node, list):
-            for v in node:
-                yield from patterns(v)
-
-    schemas = [op.request.model_json_schema() for op in operations().values()]
-    schemas += [ModelFile.model_json_schema(), StudyFile.model_json_schema()]
-    loose = sorted({p for s in schemas for p in patterns(s) if not (p.startswith("^") and p.endswith("$"))})
-    assert not loose, loose

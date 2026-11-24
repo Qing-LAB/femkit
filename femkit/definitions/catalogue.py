@@ -12,7 +12,6 @@ from pathlib import Path
 
 from femkit.core import view
 from femkit.core.dirs import CONTROL
-from femkit.definitions.requests import CheckRequest
 from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.core.units import UnitTable, Units

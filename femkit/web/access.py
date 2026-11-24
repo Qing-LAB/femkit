@@ -10,6 +10,7 @@ import re
 
 from flask import Flask, Response, jsonify, request
 
+from femkit.core import view
 from femkit.server.protocol import LOOPBACK, Listen
 
 JSON_LIMIT = 1024 * 1024  # bytes: a request body larger is refused, 413
@@ -28,7 +29,8 @@ OPEN = ("/api/health",)  # the one /api route that needs no token
 
 
 def refusal(status: int, kind: str, message: str) -> Response:
-    response = jsonify({"refused": kind, "message": message, "next": []})
+    """A refusal at the door, as the vocabulary's one refusal answer (web.md § 7)."""
+    response = jsonify(view.RefusalAnswer(refused=kind, message=message).model_dump(mode="json"))
     response.status_code = status
     return response
 

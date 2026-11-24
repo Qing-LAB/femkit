@@ -18,7 +18,7 @@ from pydantic import Field
 from femkit.config import settings
 from femkit.config.operations import ConfigInit, stating, where_environments_go
 from femkit.config.probe import place
-from femkit.config.requests import CONFIG_INIT, InitRequest
+from femkit.config.requests import CONFIG_INIT
 from femkit.core import dirs, text, view
 from femkit.core.errors import Refusal
 from femkit.core.issues import Issue
@@ -33,8 +33,7 @@ from femkit.envs.state import MACHINE, EnvState, observe
 from femkit.jobs import record
 from femkit.jobs.operations import JobProbe
 from femkit.jobs.record import LOCAL
-from femkit.envs.requests import LogRequest
-from femkit.jobs.requests import BootstrapRequest, DoctorRequest, MachinesRequest, ProbeRequest
+from femkit.jobs.requests import BootstrapRequest, DoctorRequest
 from femkit.envs.requests import ENV_LOG
 from femkit.jobs.requests import DOCTOR, ENV_BOOTSTRAP, JOB_PROBE
 
@@ -167,7 +166,7 @@ def _as_bootstrap(issue: Issue) -> Issue:
     """A config init finding as bootstrap says it: bootstrap takes config init's options, so
     the `config init …` it names is `env bootstrap …`."""
     def as_bootstrap(step: view.Action) -> view.Action:
-        if step.call is None or step.call.operation != "config.init":
+        if step.call is None or step.call.operation != CONFIG_INIT.name:
             return step
         return view.command(ENV_BOOTSTRAP, note=step.note, fills=step.fills, **step.call.request)
     return issue.model_copy(update={"next": tuple(as_bootstrap(n) for n in issue.next)})

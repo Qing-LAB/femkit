@@ -10,7 +10,6 @@ import json
 
 import enum
 import html
-import types
 import typing
 from pathlib import Path
 from typing import Any
@@ -26,15 +25,17 @@ from femkit.core.issues import Issue
 from femkit.core.errors import PlanStale
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import atomic_write_text
-from femkit.core.schema import Model, described, field_extras
+from femkit.core.schema import (DefinitionError, Model, alternatives, classes, described, field_extras, items_of,
+                                keys_of, optional, values_of)
 from femkit.core.units import UnitTable, Units
 from femkit.definitions import catalogue
 from femkit.definitions.formulations import FormulationDefinition
 from femkit.definitions.meshers import MesherDefinition
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 from femkit.jobs.record import Record
-from femkit.models.schema import ModelFile, StudyFile
+from femkit.models.schema import QUANTITIES, SHAPE_KINDS, ModelFile, StudyFile
 from femkit.engines import registered
+from femkit import page
 from femkit.definitions.requests import SCHEMA_CHECK, SCHEMA_DOCS
 
 # page name -> (title, the files it describes, models)
@@ -74,6 +75,7 @@ class SchemaCheckResult(Result):
             ("units", f"units.toml, {text.count(self.units, 'symbol')}"),
             ("formulations", text.show(self.formulations)),
             ("meshers", text.show(self.meshers)),
+            ("page", "web/page.toml"),
         ]))
 
 
@@ -89,12 +91,26 @@ def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
             for err in exc.errors for path, reason in err.problems
         ]
         return SchemaCheckResult(issues=issues)
-    issues = _benchmark_issues(cat, ctx)
+    issues = _benchmark_issues(cat, ctx) + _mesher_issues(cat)
+    from femkit import registry               # here: the registry imports this module
+    try:
+        page.load(registry.operations())
+    except DefinitionError as exc:
+        issues += [Issue(severity="error", code="definition-invalid", subject=exc.file,
+                         message=f"{exc.file}: {where or '<file>'}: {reason}") for where, reason in exc.problems]
     if issues:
         return SchemaCheckResult(issues=issues)
     return SchemaCheckResult(environments=list(cat.environments), managers=list(cat.managers),
                        schedulers=list(cat.schedulers), units=len(Units(cat.units).symbols()),
                        formulations=list(cat.formulations), meshers=list(cat.meshers))
+
+
+def _mesher_issues(cat) -> list[Issue]:
+    """A mesher may build only the model's shape kinds: the shapes' own kinds are the one list."""
+    return [Issue(severity="error", code="definition-invalid", subject=f"meshers/{name}.toml",
+                  message=f"meshers/{name}.toml: builds: {kind!r} is no shape kind of the model; "
+                          f"the kinds are {', '.join(SHAPE_KINDS)}")
+            for name, mesher in cat.meshers.items() for kind in mesher.builds if kind not in SHAPE_KINDS]
 
 
 def _benchmark_issues(cat, ctx: Context) -> list[Issue]:
@@ -137,20 +153,17 @@ def _benchmark_issues(cat, ctx: Context) -> list[Issue]:
 # ------------------------------------------------------------------ rendering
 
 def _type_name(annotation: Any) -> str:
-    origin = typing.get_origin(annotation)
-    args = typing.get_args(annotation)
-    if origin in (typing.Union, types.UnionType):
-        rest = [a for a in args if a is not type(None)]
-        name = " or ".join(_type_name(a) for a in rest)
-        return f"{name}, optional" if len(rest) < len(args) else name
-    if origin is typing.Annotated:
-        return _type_name(args[0])
-    if origin is typing.Literal:
-        return " \\| ".join(f"`{a}`" for a in args)
-    if origin in (list, tuple):
-        return f"list of {_type_name(args[0])}" if args else "list"
-    if origin is dict:
-        return f"table of {_type_name(args[0])} → {_type_name(args[1])}"
+    name = " or ".join(_one_type(a) for a in alternatives(annotation))
+    return f"{name}, optional" if optional(annotation) else name
+
+
+def _one_type(annotation: Any) -> str:
+    if typing.get_origin(annotation) is typing.Literal:          # its values, text or not
+        return " \\| ".join(f"`{a}`" for a in typing.get_args(annotation))
+    if (item := items_of(annotation)) is not None:
+        return f"list of {_type_name(item)}"
+    if (value := values_of(annotation)) is not None:
+        return f"table of {_type_name(keys_of(annotation))} → {_type_name(value)}"
     if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
         return " \\| ".join(f"`{m.value}`" for m in annotation)
     if isinstance(annotation, type) and issubclass(annotation, Model):
@@ -174,12 +187,10 @@ def _default(field: FieldInfo) -> str:
 
 
 def _nested(annotation: Any) -> list[type[Model]]:
-    if isinstance(annotation, type) and issubclass(annotation, Model):
-        return [annotation]
-    found = []
-    for arg in typing.get_args(annotation):
-        found += _nested(arg)
-    return found
+    """The models a field holds: as itself, as a list's items or a table's values."""
+    if annotation is None:
+        return []
+    return [*classes(annotation), *_nested(items_of(annotation)), *_nested(values_of(annotation))]
 
 
 def _cell(text: str) -> str:
@@ -204,9 +215,7 @@ def render_model(model: type[Model], seen: set) -> list[str]:
             names = target if isinstance(target, str) else ", ".join(f"its {k}s: {v}" for k, v in target.items())
             meaning += f". Refers by name to {_cell(names.replace('|', ' or '))}"
         if "quantity" in extra:
-            meaning += {"any": ". A quantity with its unit, or an expression of parameters",
-                        "length": ". A length", "coordinate": ". A bare number in the frame's unit, or a length",
-                        "unit": ". A unit"}[extra["quantity"]]
+            meaning += f". {QUANTITIES[extra['quantity']][1].capitalize()}"
         if "placeholders" in extra:
             meaning += ". Placeholders: " + ", ".join("`{%s}`" % p for p in extra["placeholders"])
         lines.append(f"| `{field.alias or name}` | {_type_name(field.annotation)} | {_default(field)} | {meaning} |")  # the key as written
@@ -254,9 +263,8 @@ def page_schemas() -> str:
     registered operation's result, the page declaration — as one JSON schema, in the form the
     server writes them."""
     from pydantic.json_schema import models_json_schema
-    from femkit import registry
+    from femkit import registry               # here: the registry imports this module
     from femkit.core import operations as surface
-    from femkit.server import page
     vocabulary = [m for module in (view, surface) for m in vars(module).values()
                   if isinstance(m, type) and issubclass(m, Model) and m.__module__ == module.__name__]
     results = {op.result for op in registry.operations().values()}
@@ -289,8 +297,8 @@ def icons_file() -> Path:
 def page_icons() -> str:
     """Every icon the page declaration names — a workspace's, a kind's — imported from the icon
     set by its component's name, and keyed by the name the declaration uses."""
-    from femkit.server import page
-    p = page.load()
+    from femkit import registry               # here: the registry imports this module
+    p = page.load(registry.operations())
     names = sorted({w.icon for w in p.workspaces} | set(p.kinds.values()))
     component = {n: "".join(part.capitalize() for part in n.split("-")) + "Icon" for n in names}  # never a global's name
     lines = ["// generated by `python -m femkit schema docs` from femkit/data/web/page.toml -- do not edit",

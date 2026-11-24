@@ -306,6 +306,8 @@ def operation(
         doc = " ".join((target.__doc__ or "").split())
         if not doc:
             raise TypeError(f"{name}: an operation's docstring is its help; write one")
+        if result.text is Result.text:
+            raise TypeError(f"{name}: {result.__name__} writes no text(); a result is read on a terminal too")
         if changes:
             if not isinstance(target, type) or not all(hasattr(target, m) for m in ("plan", "apply")):
                 raise TypeError(f"{name}: a changing operation is a class with plan and apply")

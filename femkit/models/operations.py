@@ -17,7 +17,7 @@ from femkit.config import settings
 from femkit.definitions import catalogue
 from femkit.models import adds, address, cases, check, edit, graph, history
 from femkit.models.schema import ModelFile
-from femkit.models.project import load_model, load_study, model_file, studies, study_file
+from femkit.models.project import file_of, load_model, load_study, model_file, studies, study_file
 from femkit.models.requests import (CopyRequest, GraphRequest, MODEL_SET, NewProjectRequest, ProjectRequest, ProjectsRequest, RenameRequest, SetRequest, StudyRequest, UnsetRequest, WriteRequest)
 from femkit.config.requests import CONFIG_SET
 from femkit.models.requests import CASE_LIST, MODEL_CHECK, MODEL_GRAPH, MODEL_REDO, MODEL_RENAME, MODEL_UNDO, MODEL_UNSET, MODEL_WRITE, PROJECT_LIST, PROJECT_NEW, STUDY_COPY, STUDY_EXPAND, STUDY_LIST
@@ -37,7 +37,7 @@ class CheckResult(Result):
 def model_check(req: ProjectRequest, ctx: Context) -> CheckResult:
     """Every rule of the model and its formulation but region coverage, which needs the
     geometry built; changes nothing (models.md § 3, § 11.2)."""
-    project = req.project.expanduser().resolve()
+    project = _project(req)
     model = load_model(project, ctx)
     issues: list[Issue] = check.findings(model, catalogue.formulations(ctx), catalogue.units(ctx), project)
     return CheckResult(project=str(project), issues=issues)
@@ -195,9 +195,8 @@ class EditOutcome(Outcome):
 
     def text(self) -> str:
         lines = [f"wrote {', '.join(Path(w).name for w in self.written) or 'nothing'}"]
-        findings = [i for i in self.issues if i.code.startswith("model-")]
-        lines.append(f"{text.count(len(findings), 'finding')} left" if findings else "the model is complete")
-        return "\n".join(lines + text.findings(findings))
+        lines.append(f"{text.count(len(self.issues), 'finding')} left" if self.issues else "the model is complete")
+        return "\n".join(lines + text.findings(self.issues))
 
 
 def _findings_after(project: "edit.Project", ctx: Context) -> list[Issue]:
@@ -260,7 +259,7 @@ class _Edit:
 class _Turn:
     """Undo or redo: the last edit that stands taken back, or the next undone one made again —
     refused when a file it changed has changed since, by hand (models.md § 11.1)."""
-    back = True
+    back: bool                              # undo; else redo
 
     def _edit(self, project: Path) -> tuple[history.History, history.Edit | None]:
         h = history.read(project)
@@ -273,12 +272,12 @@ class _Turn:
         if e is None:
             return Plan(basis={"at": h.at})
         for c in e.changes:
-            path = history.path_of(project, c)
+            path = file_of(project, c.study)
             if history.text_of(path) != (c.after if self.back else c.before):
                 raise Refused(f"{path.relative_to(project)} has changed since `{e.label}`, so it is not "
                               f"{'undone' if self.back else 'redone'}")
-        steps = tuple(Step(id=str(history.path_of(project, c).relative_to(project)),
-                           describe=f"{history.path_of(project, c).relative_to(project)}: "
+        steps = tuple(Step(id=str(file_of(project, c.study).relative_to(project)),
+                           describe=f"{file_of(project, c.study).relative_to(project)}: "
                                     f"{'take back' if self.back else 'make again'} {e.label}") for c in e.changes)
         return Plan(basis={"at": h.at}, steps=steps)
 
@@ -287,11 +286,11 @@ class _Turn:
         h, e = self._edit(project)
         if h.at != plan.basis["at"]:
             raise PlanStale("the project's edits changed since the plan; plan again")
-        texts = {str(history.path_of(project, c).relative_to(project)): c.before if self.back else c.after
+        texts = {str(file_of(project, c.study).relative_to(project)): c.before if self.back else c.after
                  for c in (e.changes if e else [])}
 
         def do(step: Step, where: Path):
-            target = project / step.id                     # the model's file or a study's: path_of made the id
+            target = project / step.id                     # the model's file or a study's: file_of made the id
             if texts[step.id] is None:
                 target.unlink(missing_ok=True)
             else:
@@ -381,7 +380,6 @@ class GraphResult(Result):
     study: str | None = Field(default=None, description="the study shown")
     formulation: str | None = Field(default=None, description="the model's formulation")
     choices: list[view.Field] = Field(default_factory=list, description="the model's fields that take one of a list")
-    studies: list[str] = Field(default_factory=list, description="the project's studies")
     nodes: list[graph.GraphNode] = Field(default_factory=list)
     edges: list[graph.GraphEdge] = Field(default_factory=list)
     palette: list[adds.Entry] = Field(default_factory=list, description="what may be added, in the chain's order")
@@ -411,9 +409,9 @@ def model_graph(req: GraphRequest, ctx: Context) -> GraphResult:
     f = formulations.get(model.formulation or "")
     nodes, edges, loose = graph.build(model, req.study, s, issues, project, f, units)
     formulation = ModelFile.model_fields["formulation"]
-    choice = {"type": "string", "enum": sorted(formulations), "description": formulation.description}
+    choice = check.formulation_choice(formulations)
     return GraphResult(
-        project=str(project), study=req.study, formulation=model.formulation, studies=studies(project),
+        project=str(project), study=req.study, formulation=model.formulation,
         choices=[view.Field(label="formulation", value=f'"{model.formulation}"' if model.formulation else None,
                             json_schema=choice, help=view.Help.of(formulation.description,
                                                                   field_extras(formulation).get("doc")),

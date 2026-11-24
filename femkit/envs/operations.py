@@ -8,7 +8,6 @@ from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.probe import place
-from femkit.config.requests import SetRequest
 from femkit.core import locks, process, text, view
 from femkit.core.errors import PlanStale, Refusal, UsageError
 from femkit.core.eventlog import EventLog, fold

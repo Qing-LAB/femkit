@@ -27,18 +27,23 @@ from femkit.core.units import Quantity, UnitError, Units
 from femkit.jobs.request import Resources
 
 NAME = re.compile(r"[a-z][a-z0-9_]*")
+STUDY = re.compile(r"[a-z][a-z0-9_-]*")  # a study's name: its folder's
 LENGTH = (("length", 1),)
 
-#: The `quantity` annotations of a fixed dimension, and that dimension: the one table the loader,
-#: the forms' units and the reference pages read.
-DIMENSIONS = {"length": LENGTH, "coordinate": LENGTH}
+#: Each `quantity` annotation: its dimension, when fixed, and what a reader is told it takes —
+#: the one table the loader, the forms' units and the reference pages read.
+QUANTITIES = {"any": (None, "a quantity with its unit, or an expression of parameters"),
+              "length": (LENGTH, "a length"),
+              "coordinate": (LENGTH, "a bare number in the frame's unit, or a length"),
+              "unit": (None, "a unit")}
+DIMENSIONS = {kind: dimension for kind, (dimension, _) in QUANTITIES.items() if dimension}
 
 Number = Union[int, Decimal]
 Coordinate = Union[int, Decimal, str]  # a bare number, in the frame's unit; or a length, or an expression
 
 
-def as_quantity(description: str, kind: str = "any", *, extra: dict | None = None, **kw: Any) -> Any:
-    return Field(description=description, json_schema_extra={"quantity": kind, **(extra or {})}, **kw)
+def as_quantity(description: str, kind: str = "any", **kw: Any) -> Any:
+    return Field(description=description, json_schema_extra={"quantity": kind}, **kw)
 
 
 def as_reference(description: str, target: str | dict, *, extra: dict | None = None, **kw: Any) -> Any:
@@ -51,7 +56,7 @@ SHAPE_KIND = Field(description="what shape it is")
 
 class Rectangle(Model):
     """An axis-aligned rectangle (2-D)."""
-    dimension: ClassVar[int | None] = 2  # the dimension it is drawn in; none: 2-D
+    dimension: ClassVar[int | None] = 2  # the dimension it is drawn in
     kind: Literal["rectangle"] = SHAPE_KIND
     corner: list[Coordinate] = as_quantity("its lower corner", "coordinate", min_length=2, max_length=2)
     size: list[Coordinate] = as_quantity("its width and height", "coordinate", min_length=2, max_length=2)
@@ -59,7 +64,7 @@ class Rectangle(Model):
 
 class Disk(Model):
     """A disk (2-D)."""
-    dimension: ClassVar[int | None] = 2  # the dimension it is drawn in; none: 2-D
+    dimension: ClassVar[int | None] = 2  # the dimension it is drawn in
     kind: Literal["disk"] = SHAPE_KIND
     center: list[Coordinate] = as_quantity("its center", "coordinate", min_length=2, max_length=2)
     radius: Coordinate = as_quantity("its radius", "coordinate")
@@ -67,14 +72,14 @@ class Disk(Model):
 
 class Polygon(Model):
     """A polygon (2-D), its vertices in order."""
-    dimension: ClassVar[int | None] = 2  # the dimension it is drawn in; none: 2-D
+    dimension: ClassVar[int | None] = 2  # the dimension it is drawn in
     kind: Literal["polygon"] = SHAPE_KIND
     points: list[list[Coordinate]] = as_quantity("its vertices", "coordinate", min_length=3)
 
 
 class Box(Model):
     """An axis-aligned box (3-D)."""
-    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in; none: 3-D
+    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in
     kind: Literal["box"] = SHAPE_KIND
     corner: list[Coordinate] = as_quantity("its lower corner", "coordinate", min_length=3, max_length=3)
     size: list[Coordinate] = as_quantity("its extent along each axis", "coordinate", min_length=3, max_length=3)
@@ -82,7 +87,7 @@ class Box(Model):
 
 class Sphere(Model):
     """A sphere (3-D)."""
-    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in; none: 3-D
+    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in
     kind: Literal["sphere"] = SHAPE_KIND
     center: list[Coordinate] = as_quantity("its center", "coordinate", min_length=3, max_length=3)
     radius: Coordinate = as_quantity("its radius", "coordinate")
@@ -90,7 +95,7 @@ class Sphere(Model):
 
 class Cylinder(Model):
     """A cylinder (3-D): the center of one end, its axis (length and direction), its radius."""
-    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in; none: 3-D
+    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in
     kind: Literal["cylinder"] = SHAPE_KIND
     base: list[Coordinate] = as_quantity("the center of one end", "coordinate", min_length=3, max_length=3)
     axis: list[Coordinate] = as_quantity("from that end to the other", "coordinate", min_length=3, max_length=3)
@@ -99,7 +104,7 @@ class Cylinder(Model):
 
 class Extrusion(Model):
     """A planar polygon swept along a vector (3-D)."""
-    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in; none: 3-D
+    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in
     kind: Literal["extrusion"] = SHAPE_KIND
     profile: list[list[Coordinate]] = as_quantity("the polygon's vertices, in one plane", "coordinate", min_length=3)
     along: list[Coordinate] = as_quantity("the sweep", "coordinate", min_length=3, max_length=3)
@@ -122,6 +127,8 @@ class Imported(Model):
 
 Shape = Annotated[Union[Rectangle, Disk, Polygon, Box, Sphere, Cylinder, Extrusion, Combined, Imported],
                   Field(discriminator="kind")]
+#: The shape kinds, read from the shapes themselves: the one list a mesher's `builds` names from.
+SHAPE_KINDS = [kind for shape in classes(Shape) for kind in closed(shape.model_fields["kind"].annotation)]
 
 
 class Frame(Model):
@@ -346,7 +353,7 @@ class Binding(Model):
     resources: Resources | None = Field(default=None, description="its job's resources", json_schema_extra={"doc": "jobs.md § 2"})
 
 
-AXIS_PATH = re.compile(r"(parameters\.[a-z][a-z0-9_]*|numerics(\.[a-z_]+)+)")
+AXIS_PATH = re.compile(rf"(parameters\.{NAME.pattern}|numerics(\.[a-z_]+)+)")
 
 
 class StudyFile(Model):
@@ -379,7 +386,7 @@ class StudyFile(Model):
                 problems.append((("axes", key), f"the model has no parameter {key.split('.', 1)[1]!r}"))
         for name in self.observables:
             if not NAME.fullmatch(name):
-                problems.append((("observables", name), "a name matches [a-z][a-z0-9_]*"))
+                problems.append((("observables", name), f"a name matches {NAME.pattern}"))
         values = model.parameter_values(units) if model is not None else {}
         problems += _quantities(self, units, values)
         if model is not None:
@@ -405,7 +412,7 @@ def _names(m: ModelFile) -> list[tuple[tuple, str]]:
     for where, table in tables.items():
         for name in table:
             if not NAME.fullmatch(name):
-                out.append(((*where.split("."), name), "a name matches [a-z][a-z0-9_]*"))
+                out.append(((*where.split("."), name), f"a name matches {NAME.pattern}"))
     return out
 
 

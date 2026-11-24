@@ -1,8 +1,7 @@
-"""model.toml and study.toml: the first tier of validity (models.md § 3, § 5, § 11.2)."""
+"""model.toml and study.toml: the first tier of validity (models.md § 11.1)."""
 
 from __future__ import annotations
 
-import re
 from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
@@ -70,7 +69,7 @@ def test_values_are_exact_whatever_their_spelling(project):
 
 def test_an_incomplete_model_loads(tmp_path):
     """Fails if a model being built — no regions, no conditions, a material not yet assigned —
-    is refused instead of loading with its findings to come (models.md § 11.2)."""
+    is refused instead of loading with its findings to come (models.md § 11.1)."""
     model_file(tmp_path).write_text('schema = 1\n[materials.vacuum.relative_permittivity]\nvalue = "1"\n'
                                     '[geometry.shapes.square]\nkind = "rectangle"\ncorner = [0, 0]\nsize = [1, 1]\n')
     m = load_model(tmp_path, ctx())  # no dimension, no regions, no assignment yet
@@ -93,7 +92,7 @@ def test_an_incomplete_model_loads(tmp_path):
 def test_a_model_that_would_not_load_is_refused_at_the_place(project, old, new, at):
     """Fails if a wrong type, an unknown key, a quantity the grammar does not read or a name
     that refers to nothing loads — or is reported anywhere but its key path (models.md
-    § 11.2, core.md § 2)."""
+    § 11.1, core.md § 2)."""
     edit(model_file(project), old, new)
     assert at in refused_at(project)
 

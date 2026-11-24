@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import shutil
 from fractions import Fraction
-from pathlib import Path
 
 import pytest
 
 from femkit import registry
 from femkit.core.operations import Context
 from femkit.definitions import catalogue
-
 
 
 def ctx() -> Context:
