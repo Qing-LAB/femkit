@@ -17,7 +17,7 @@ from femkit.core.operations import Context
 from femkit.core.states import Action, Machine, Rule
 from femkit.definitions import catalogue
 from femkit.definitions.models import EnvironmentDefinition
-from femkit.engines import package_dir, registered
+from femkit.engines import package_dir
 from femkit.envs import checks, fingerprints, layout
 from femkit.envs.manager import resolve
 from femkit.envs.records import ChecksRecord, Manifest, read
@@ -127,7 +127,7 @@ MACHINE: Machine[EnvFacts, EnvState] = Machine(
 
 
 def definition(ctx: Context, name: str) -> EnvironmentDefinition:
-    envs = catalogue.load(ctx, engines=registered()).environments
+    envs = catalogue.load(ctx).environments
     if name not in envs:
         raise UsageError(f"no environment {name!r}; environments: {', '.join(sorted(envs))}",
                          (view.command(ENV_LIST),))
@@ -136,7 +136,7 @@ def definition(ctx: Context, name: str) -> EnvironmentDefinition:
 
 def install_fingerprint(ctx: Context, name: str) -> str:
     env = definition(ctx, name)
-    cat = catalogue.load(ctx, engines=registered())
+    cat = catalogue.load(ctx)
     return fingerprints.install(env, cat.control, settings.load(ctx).config.build.cuda_architectures,
                                 resolve(ctx).kind_name)
 

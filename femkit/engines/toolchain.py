@@ -33,8 +33,8 @@ class Language:
 
 
 _MPI_C = "#include <mpi.h>\nint main(int c, char **v) { MPI_Init(&c, &v); MPI_Finalize(); return 0; }\n"
-# Every language a toolchain may name: the schema's LANGUAGES (definitions/models.py) — this program
-# runs inside an environment and cannot import the schema; a test runs it on each of them.
+# Every language a toolchain may name — the one list, which the definitions' schema reads; a test
+# runs the program on each of them.
 LANGUAGES = {
     "c": Language("C", "CFLAGS", ("t.c", '#include <stdio.h>\nint main(void) { puts("ok"); return 0; }\n'),
                   ("m.c", _MPI_C)),

@@ -22,9 +22,10 @@ concern to the contract that governs it
 femkit/
 ├── core/          building blocks (core.md); operation types (api.md)
 ├── data/          shipped definitions (definitions.md)
-├── definitions/   models and loader of the shipped definitions
-├── engines/<e>/   one package per engine: readers, version probe, check programs
+├── engines/       the readers every engine has, the toolchain program, and one package per
+│                  engine: its readers, version probe, check programs
 ├── schedulers/    readers of each scheduler kind's answers (jobs.md § 7)
+├── definitions/   models and loader of the shipped definitions
 ├── config/        user configuration (config.md)
 ├── envs/          environment lifecycle (envs.md)
 ├── jobs/          machine records and the probe; this machine's setup (`doctor`,
@@ -62,7 +63,8 @@ tools/             developer tools that import nothing from femkit (testing.md �
 | layer | packages | may import |
 |---|---|---|
 | core | `core` | the standard library and declared third-party libraries |
-| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `jobs`, `projects`, `materials`, `geometry`, `models`, `results`, `server` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its programs run inside an engine environment that holds no femkit dependency — a check program also imports what its environment provides (ngsolve, mpi4py, …); an engine never imports another engine |
+| programs and readers | `engines`, `schedulers` | the standard library, `femkit.core.process` and their own package only, because their programs run inside an environment that holds no femkit dependency — a check program also imports what its environment provides (ngsolve, mpi4py, …); an engine never imports another engine. Lowest of the domains, so the loader of the definitions reads their registries directly |
+| domains | `definitions`, `config`, `envs`, `jobs`, `projects`, `materials`, `geometry`, `models`, `results`, `server` | core, the programs and readers, and any domain earlier in this list |
 | registry | `registry.py`, `reference.py`, `page.py` | every domain |
 | surfaces | `cli`, `web` | everything below; never each other |
 

@@ -19,7 +19,6 @@ from femkit.core import dirs
 from femkit.core.errors import Refusal
 from femkit.core.operations import Context
 from femkit.definitions.catalogue import load_environments
-from femkit.engines import registered
 from tools.testrun import code_now
 
 REPO = Path(__file__).resolve().parent.parent
@@ -38,7 +37,7 @@ def _real_engine_root() -> Path:
         return dirs.environments_dir()
 
 
-REAL_ENVIRONMENTS = [REAL_CONTROL] + [_real_engine_root() / name for name in load_environments(None, registered())]
+REAL_ENVIRONMENTS = [REAL_CONTROL] + [_real_engine_root() / name for name in load_environments()]
 
 
 # ------------------------------------------------------------------ isolation

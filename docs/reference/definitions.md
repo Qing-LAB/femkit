@@ -183,7 +183,7 @@ The two ways a shell enters a prefix with this manager; this machine's activatio
 | key | type | default | meaning |
 |---|---|---|---|
 | `commands` | table of text → text | empty | role (submit, query, cancel, cluster) -&gt; the command's usual name; the probe records where each is found or declared |
-| `probe` | table of text → text | empty | role -&gt; a command that measures a machine of this kind; its readers arrive with M4 |
+| `probe` | table of text → text | empty | role -&gt; a command that measures a machine of this kind; the roles are its reader's, in femkit/schedulers/, and checked against it when the kind loads |
 | `mpi_launch` | list of text | required | the launcher `config init` proposes for `launch.mpi` on a machine of this kind. Placeholders: `{ranks}` |
 | `job_variables` | table of text → text | empty | role (id, ranks, cores_per_rank, cores_on_node, gpus, nodes) -&gt; the variable a job sees; `id` set means the process runs inside a job |
 | `interactive` | text, optional | — | the command that opens an interactive allocation, named by bootstrap's login-node warning and when an install step on a login node of this kind is killed (envs.md § 6.2); never with a partition |

@@ -16,7 +16,6 @@ import pytest
 
 from femkit.config.probe import GPU_QUERY
 from femkit.definitions.catalogue import load_environments, load_managers, load_schedulers
-from femkit.engines import registered
 
 # Programs the tests' own process needs; never tripwired.
 NEEDED_BY_THE_TEST_PROCESS = frozenset({"python", "bash", "git"})
@@ -29,7 +28,7 @@ def tripwire_names() -> frozenset[str]:
     names = set(load_managers()) | NAMED_IN_CODE
     for kind in load_schedulers().values():
         names |= set(kind.commands.values()) | set(kind.probe.values()) | {kind.mpi_launch[0]}
-    for env in load_environments(None, registered()).values():
+    for env in load_environments().values():
         names |= set(env.provides.executables) | set(env.toolchain.mpi.values() if env.toolchain else ())
     return frozenset(names - NEEDED_BY_THE_TEST_PROCESS)
 

@@ -33,7 +33,6 @@ from femkit.definitions.meshers import MesherDefinition
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 from femkit.jobs.record import Record
 from femkit.models.schema import QUANTITIES, ModelFile, StudyFile
-from femkit.engines import registered
 from femkit import page
 from femkit.definitions.requests import SCHEMA_CHECK, SCHEMA_DOCS
 
@@ -82,7 +81,7 @@ class SchemaCheckResult(Result):
 def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
     """Load every shipped definition and report every problem, each with its file and key path."""
     try:
-        cat = catalogue.load(ctx, engines=registered())
+        cat = catalogue.load(ctx)
     except catalogue.CatalogueError as exc:
         return SchemaCheckResult(issues=[i for err in exc.errors for i in _issues(err)])
     from femkit import registry               # here: the registry imports this module

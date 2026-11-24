@@ -25,7 +25,6 @@ from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.schema import DefinitionError, Model
 from femkit.definitions import catalogue
-from femkit.engines import registered
 from femkit.envs import layout
 from femkit.envs.manager import resolve
 from femkit.envs.operations import EnvInstall, default_environments
@@ -121,7 +120,7 @@ def doctor(req: DoctorRequest, ctx: Context) -> DoctorResult:
     except Refusal as exc:
         return DoctorResult(rows=[*rows, DoctorRow(subject=ENGINES, state=f"unknown: {exc}", ready=False,
                                                    next=list(exc.next))])
-    for name, env in catalogue.load(ctx, engines=registered()).environments.items():
+    for name, env in catalogue.load(ctx).environments.items():
         _, state = observe(ctx, name)
         on_request = not env.default and state is EnvState.absent  # never installed: not this machine's lack
         rows.append(DoctorRow(subject=name, state=state.value + (", installed on request" if on_request else ""),

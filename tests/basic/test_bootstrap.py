@@ -17,7 +17,6 @@ from femkit.config.operations import ConfigInit, ConfigSet
 from femkit.core import dirs
 from femkit.core.operations import Context, Plan, Step
 from femkit.definitions.catalogue import load_catalogue
-from femkit.engines import registered
 from femkit.envs.operations import EnvResult, InstallOutcome
 from femkit.envs.state import EnvState
 from femkit.jobs import setup
@@ -25,7 +24,7 @@ from femkit.jobs.operations import ProbeOutcome
 
 GIVEN = {"cuda_architectures": ["80"], "mpi": ["mpirun", "-np", "{ranks}"]}  # nothing measured (basic tier)
 STATED = {"no_preamble": True, "activation": "source activate"}  # what only a person can state (config.md § 3.1)
-DEFAULT = sorted(n for n, e in load_catalogue(engines=registered()).environments.items() if e.default)
+DEFAULT = sorted(n for n, e in load_catalogue().environments.items() if e.default)
 
 
 def ctx() -> Context:
@@ -181,7 +180,7 @@ def test_doctor_holds_only_a_default_environment_against_the_machine():
     """Fails if doctor calls a machine not ready for a CUDA environment nobody asked for,
     or stops counting a default environment that is absent (envs.md § 6.1)."""
     rows = {r.subject: r.ready for r in setup.doctor.run(setup.doctor.request(), ctx()).rows}
-    on_request = [n for n, e in load_catalogue(engines=registered()).environments.items() if not e.default]
+    on_request = [n for n, e in load_catalogue().environments.items() if not e.default]
     assert on_request and all(rows[n] for n in on_request) and not any(rows[n] for n in DEFAULT)
 
 
@@ -195,7 +194,7 @@ def test_a_step_ended_by_sigkill_is_killed_and_names_the_interactive_allocation(
     from femkit.envs import install, operations
     from femkit.envs.manager import resolve
     monkeypatch.setattr(install.process, "run", lambda argv, log=None, **kw: ProcessResult(tuple(argv), code, "", "", log))
-    t = install.Target(name="ngsolve", env=load_environments(None, registered())["ngsolve"], prefix=tmp_path / "p",
+    t = install.Target(name="ngsolve", env=load_environments()["ngsolve"], prefix=tmp_path / "p",
                        manager=resolve(ctx()), channels=[], python_minor="3.12", cuda_architectures=None, jobs=1,
                        install_fingerprint="f", launcher=["mpirun", "-np", "{ranks}"])
     assert install.run_step(t, Step(id=step, describe="", argv=("x",)), tmp_path / "logs")[0] == install.KILLED
@@ -223,7 +222,7 @@ def test_a_compiler_killed_under_the_build_tool_makes_its_step_killed(log_line, 
         return ProcessResult(tuple(argv), 2, "", "", log)
 
     monkeypatch.setattr(install.process, "run", make)
-    t = install.Target(name="elmer", env=load_environments(None, registered())["elmer"], prefix=tmp_path / "p",
+    t = install.Target(name="elmer", env=load_environments()["elmer"], prefix=tmp_path / "p",
                        manager=resolve(ctx()), channels=[], python_minor="3.12", cuda_architectures=None, jobs=1,
                        install_fingerprint="f", launcher=["mpirun", "-np", "{ranks}"])
     assert install.run_step(t, Step(id="compile:elmer", describe="", argv=("x",)), tmp_path / "logs")[0] == expected

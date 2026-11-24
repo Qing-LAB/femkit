@@ -18,6 +18,7 @@ from femkit.core.errors import Refused, Unstated, UsageError
 from femkit.core.operations import Context, SilentObserver
 from femkit.core.persist import write_json
 from femkit.definitions.models import Agreement, Check, Expectation
+from femkit.engines import junit
 from femkit.envs import checks, layout, operations, state as state_module
 from femkit.envs.operations import EnvInstall, EnvValidate
 from femkit.envs.records import CheckOutcome, ChecksRecord, Manifest, read
@@ -279,11 +280,11 @@ def _junit(tmp_path, body: str, nodes: list[str]) -> dict:
     tests = tmp_path / "src" / "tests"
     tests.mkdir(parents=True)
     (tests / "test_x.py").write_text(body)
-    report = tmp_path / "junit.xml"
+    report = tmp_path / junit.FILE
     subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "junit_family=xunit2",
                     "--rootdir", str(tests), "--junitxml", str(report), *[str(tests / n.split("/")[-1]) for n in nodes]],
                    cwd=tmp_path, capture_output=True, env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"})
-    return checks.read_junit(report, nodes)
+    return junit.read(tmp_path, nodes)
 
 
 def test_the_junit_reader_passes_only_exactly_the_named_tests_all_passing(tmp_path):
@@ -294,4 +295,11 @@ def test_the_junit_reader_passes_only_exactly_the_named_tests_all_passing(tmp_pa
     with pytest.raises(ValueError):
         _junit(tmp_path / "2", body, named + ["tests/test_x.py::test_s"])
     with pytest.raises(ValueError):
-        checks.read_junit(tmp_path / "1" / "junit.xml", named[:1])
+        junit.read(tmp_path / "1", named[:1])
+
+
+def test_a_passing_test_inside_a_class_counts_as_passed(tmp_path):
+    """Fails if an upstream test written inside a class is judged failed though it passed: pytest's
+    report names it `module.Class::test`, as the reader must (definitions.md § 5.3)."""
+    body = "class TestC:\n    def test_m(self): pass\n"
+    assert _junit(tmp_path, body, ["tests/test_x.py::TestC::test_m"]) == {"tests": 1, "passed": 1}

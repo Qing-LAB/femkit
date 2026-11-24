@@ -24,7 +24,6 @@ from femkit.core.errors import Refusal, Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.definitions import catalogue
 from femkit.definitions.models import SchedulerKind
-from femkit.engines import registered
 from femkit.envs.manager import confined, resolve
 from femkit.envs.state import INSTALLED, observe
 from femkit import schedulers
@@ -139,7 +138,7 @@ def _manager(ctx: Context) -> dict:
 def _environments(ctx: Context) -> Any:
     try:
         out = {}
-        for name in sorted(catalogue.load(ctx, engines=registered()).environments):
+        for name in sorted(catalogue.load(ctx).environments):
             f, state = observe(ctx, name)
             out[name] = {"state": state.value, "gpu": f.gpu if state in INSTALLED else None,
                          "install_fingerprint": f.manifest.install_fingerprint if f.manifest else None,

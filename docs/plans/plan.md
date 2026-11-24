@@ -438,9 +438,8 @@ after ([`../contracts/geometry.md`](../contracts/geometry.md) § 4). In it:
 X begins with what its runs stand on: one block in core that owns a child
 process — its start, output, wait and stop with one escalation and one grace —
 with the web server's supervisor moved onto it (M3's open item); one way to run
-a command inside an environment, the manager's facts in its kind; code that runs
-inside an environment as its own lowest layer, and the environment file's schema
-apart from the environment it builds (the person's decision); whether
+a command inside an environment, the manager's facts in its kind; the
+environment file's schema apart from the environment it builds; whether
 `jobs.md` §§ 1–5 survive or are rewritten with X, and the fate of what was built
 ahead for them — `Resources`, the scheduler kind's job variables, the record's
 settings, the activation keys that gate readiness, the probe's 120-second
@@ -736,6 +735,9 @@ approved as written:
 - A refusal of something the person has not stated is a kind of its own; naming
   what does not exist is a malformed request, and making what exists already is
   a state that does not allow it (`core.md` § 9).
+- The programs that run inside an environment, and the readers, are the lowest
+  of the domains, so the loader of the definitions reads their registries
+  directly (`framework.md` § 1).
 
 **Open, the person's** (the proposed answer in each contract):
 
@@ -747,8 +749,8 @@ approved as written:
 - **Before D:** results written in the vocabulary (proposed), or the
   vocabulary cut back to next steps and help; whether a next step carries the
   command line's text or each surface writes it.
-- **Before X:** code that runs inside an environment as its own layer; the fate
-  of `jobs.md` §§ 1–5 and of what was built ahead for them.
+- **Before X:** the fate of `jobs.md` §§ 1–5 and of what was built ahead for
+  them.
 
 
 - **A YAML library** for the refractiveindex.info importer, an environment

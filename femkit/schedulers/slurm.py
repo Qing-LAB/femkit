@@ -217,6 +217,11 @@ def tres_caps(text: str) -> dict[str, Any]:
 
 # ------------------------------------------------------------------ the probe
 
+#: The probe roles this reader reads, which the kind file names (jobs.md § 7): scontrol for the
+#: cluster's name, partitions and nodes; sacctmgr for the QOS limits and the account's associations.
+PROBES = ("control", "accounts")
+
+
 def probe(paths: dict[str, Any], user: str) -> dict:
     """Run SLURM's probe commands and read them into the record's parts (jobs.md § 9.1).
 
@@ -226,7 +231,7 @@ def probe(paths: dict[str, Any], user: str) -> dict:
     """
     notes: list[str] = []
     sources: dict[str, str] = {}
-    control, accounts = paths.get("control"), paths.get("accounts")
+    control, accounts = (paths.get(role) for role in PROBES)
     have_control, have_accounts = isinstance(control, str), isinstance(accounts, str)
 
     identity: Any = unknown("scontrol not found")

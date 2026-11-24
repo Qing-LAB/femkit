@@ -1,7 +1,7 @@
 """Engine adapters, one package per engine (definitions.md § 1).
 
 An engine package registers its ID as ``ENGINE`` and its output readers as
-``READERS`` (definitions.md § 5.3). Discovery imports the packages only when
+``READERS`` (definitions.md § 5.3); ``GENERIC`` holds the readers every engine has. Discovery imports the packages only when
 asked; importing them probes and starts nothing. Everything under this package
 imports only the standard library and ``femkit.core.process``: check programs
 run from it inside engine environments, which hold no femkit dependency.
@@ -14,6 +14,8 @@ import pkgutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+from femkit.engines import junit, summary
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,13 @@ class Output:
 
 
 Reader = Callable[[Output], dict]
+
+#: The readers every engine has, run by the check runner itself (definitions.md § 5.3): each reads
+#: one finished check from its output, its engine and the tests the check names.
+GENERIC: dict[str, Callable[[Output, str, list[str]], dict]] = {
+    "summary": lambda output, engine, tests: summary.read(output.work, engine, output.version),
+    "junit": lambda output, engine, tests: junit.read(output.work, tests),
+}
 
 
 def _packages():

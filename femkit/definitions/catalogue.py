@@ -6,7 +6,6 @@ Loading reads only definition files: it probes nothing and starts nothing.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.core.units import UnitTable, Units
 from femkit.definitions.formulations import FormulationDefinition
 from femkit.definitions.meshers import MesherDefinition
+from femkit.schedulers import readers as scheduler_readers
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 from femkit.definitions.requests import SCHEMA_CHECK
 
@@ -81,7 +81,21 @@ def load_managers(root: Path | None = None) -> dict[str, ManagerKind]:
 
 
 def load_schedulers(root: Path | None = None) -> dict[str, SchedulerKind]:
-    return _load_dir((root or data_root()) / "schedulers", SchedulerKind)
+    """Every scheduler kind, each with commands or probe roles checked against its reader in
+    `femkit/schedulers/` (jobs.md § 7): a kind without one, or naming roles it does not read, is refused."""
+    directory = (root or data_root()) / "schedulers"
+    kinds, errors = _load_dir(directory, SchedulerKind), []
+    for name, kind in kinds.items():
+        module = scheduler_readers(name)
+        if module is None and (kind.commands or kind.probe):
+            errors.append(DefinitionError(directory / f"{name}.toml", [("", f"no reader in femkit/schedulers/ "
+                                                                            f"reads the {name} kind's commands")]))
+        elif module is not None and set(kind.probe) != set(module.PROBES):
+            errors.append(DefinitionError(directory / f"{name}.toml", [("probe", f"its reader reads the roles "
+                                                                                 f"{', '.join(module.PROBES)}")]))
+    if errors:
+        raise CatalogueError(errors)
+    return kinds
 
 
 def load_units(root: Path | None = None) -> UnitTable:
@@ -97,12 +111,11 @@ def load_formulations(root: Path | None = None) -> dict[str, FormulationDefiniti
 CUDA_SUFFIX = "-cuda"  # a definition's CUDA environment is named after it with this (definitions.md § 4.5)
 
 
-def load_environments(root: Path | None, engines: Mapping[str, frozenset[str]]) -> dict[str, EnvironmentDefinition]:
+def load_environments(root: Path | None = None) -> dict[str, EnvironmentDefinition]:
     """Every environment: one per definition, built without CUDA, and a second, `<name>-cuda`,
-    for a definition with a [cuda] part (definitions.md § 4.5). ``engines``: each registered
-    engine ID with its reader IDs (femkit.engines.registered())."""
+    for a definition with a [cuda] part (definitions.md § 4.5)."""
     directory = (root or data_root()) / "environments"
-    found = _load_dir(directory, EnvironmentDefinition, {"engines": engines})
+    found = _load_dir(directory, EnvironmentDefinition)
     taken = {name: f"{CONTROL!r} names the control environment (control.txt)" for name in found if name == CONTROL}
     taken |= {name: f"a name ending in {CUDA_SUFFIX!r} is a definition's CUDA environment"
               for name in found if name.endswith(CUDA_SUFFIX)}
@@ -121,10 +134,9 @@ def load_environments(root: Path | None, engines: Mapping[str, frozenset[str]]) 
     return dict(sorted(out.items()))
 
 
-def load(ctx: Context, *, engines: Mapping[str, frozenset[str]]) -> Catalogue:
+def load(ctx: Context) -> Catalogue:
     """The shipped catalogue, loaded once per invocation (api.md § 2.4)."""
-    key = ";".join(f"{e}:{','.join(sorted(r))}" for e, r in sorted(engines.items()))
-    return ctx.cached(f"catalogue:{key}", lambda: load_catalogue(engines=engines))
+    return ctx.cached("catalogue", load_catalogue)
 
 
 def schedulers(ctx: Context) -> dict[str, SchedulerKind]:
@@ -153,13 +165,13 @@ def units(ctx: Context) -> Units:
     return ctx.cached("units", lambda: Units(load_units()))
 
 
-def load_catalogue(root: Path | None = None, *, engines: Mapping[str, frozenset[str]]) -> Catalogue:
+def load_catalogue(root: Path | None = None) -> Catalogue:
     """Every definition, or every problem with every file."""
     errors: list[DefinitionError] = []
     parts: dict = {}
     loaders = {
         "control": lambda: load_control(root),
-        "environments": lambda: load_environments(root, engines),
+        "environments": lambda: load_environments(root),
         "managers": lambda: load_managers(root),
         "schedulers": lambda: load_schedulers(root),
         "units": lambda: load_units(root),

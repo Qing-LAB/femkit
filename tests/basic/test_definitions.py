@@ -14,7 +14,6 @@ from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.definitions import catalogue
 from femkit.definitions.catalogue import CUDA_SUFFIX, CatalogueError, data_root, load_environments
 from femkit.definitions.models import EnvironmentDefinition
-from femkit.engines import registered
 from femkit.reference import SchemaDocs, schema_check
 
 
@@ -34,7 +33,7 @@ def _load_problems(tmp_path, text: str) -> dict[str, str]:
     path = tmp_path / "environment.toml"
     path.write_text(text)
     try:
-        load_toml(path, EnvironmentDefinition, {"engines": registered()})
+        load_toml(path, EnvironmentDefinition)
     except DefinitionError as exc:
         return dict(exc.problems)
     return {}
@@ -90,7 +89,7 @@ def test_a_definition_with_a_cuda_part_is_two_environments_and_only_one_has_cuda
     names; or if the CUDA environment lacks its CUDA part — packages, nvcc, AmgX, its CUDA
     options switched on — or is a default (definitions.md § 4.5)."""
     declared = load_toml(data_root() / "environments" / "elmer.toml", EnvironmentDefinition)
-    envs = load_environments(None, registered())
+    envs = load_environments()
     cpu, gpu = envs["elmer"], envs["elmer-cuda"]
     assert not set(declared.cuda.packages) & set(cpu.packages.conda)
     assert set(declared.cuda.packages) <= set(gpu.packages.conda) and not gpu.default
@@ -178,7 +177,7 @@ def test_a_definition_may_not_take_another_environments_name(tmp_path, name):
     (tmp_path / "environments").mkdir()
     (tmp_path / "environments" / f"{name}.toml").write_text(_shipped("ngsolve"))
     with pytest.raises(CatalogueError) as refused:
-        load_environments(tmp_path, registered())
+        load_environments(tmp_path)
     assert [Path(e.file).stem for e in refused.value.errors] == [name]
 
 
@@ -226,7 +225,7 @@ def test_a_tool_environment_runs_no_engine_and_is_never_a_default(change, at):
     if data.get("version_command") is None:
         data.pop("version_command")
     with pytest.raises(DefinitionError) as caught:
-        validate(EnvironmentDefinition, data, "tool.toml", context={"engines": registered()})
+        validate(EnvironmentDefinition, data, "tool.toml")
     assert at in [path for path, _ in caught.value.problems]
 
 
@@ -353,5 +352,5 @@ def test_an_environment_listing_a_pip_package_does_not_load():
     data = tomllib.loads(_shipped("ngsolve"))
     data["packages"]["pip"] = ["requests"]
     with pytest.raises(DefinitionError) as caught:
-        validate(EnvironmentDefinition, data, "ngsolve.toml", context={"engines": registered()})
+        validate(EnvironmentDefinition, data, "ngsolve.toml")
     assert "packages.pip" in [path for path, _ in caught.value.problems]

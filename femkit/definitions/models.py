@@ -10,9 +10,11 @@ import re
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, Field, FiniteFloat, PositiveInt, ValidationInfo, field_validator, model_validator
+from pydantic import AfterValidator, Field, FiniteFloat, PositiveInt, field_validator, model_validator
 
 from femkit.core.schema import SHA256, Model, check_placeholders, matching, placeholders, refuse
+from femkit.engines import GENERIC, registered
+from femkit.engines.toolchain import LANGUAGES
 
 # ------------------------------------------------- channels.txt and control.txt
 
@@ -91,9 +93,6 @@ class Packages(Model):
 class Provides(Model):
     executables: list[str] = Field(default_factory=list, description="executables the install's audit step finds in the prefix")
     modules: list[str] = Field(default_factory=list, description="Python modules the install's audit step imports")
-
-
-LANGUAGES = ("c", "cxx", "fortran")  # the toolchain program's languages (engines/toolchain.py), a test runs it on each
 
 
 class Toolchain(Model):
@@ -206,7 +205,6 @@ class Build(Model):
 
 
 CHECK_PLACEHOLDERS = frozenset({"prefix", "work", "ranks", "threads"})
-GENERIC_READERS = frozenset({"summary", "junit"})  # read by the check runner itself (definitions.md § 5.3)
 
 
 class Expectation(Model):
@@ -336,14 +334,14 @@ class EnvironmentDefinition(Model):
 
     @field_validator("engine")
     @classmethod
-    def _engine_registered(cls, engine: str | None, info: ValidationInfo) -> str | None:
-        known = (info.context or {}).get("engines")
-        if engine is not None and known is not None and engine not in known:
+    def _engine_registered(cls, engine: str | None) -> str | None:
+        known = registered()
+        if engine is not None and engine not in known:
             raise ValueError(f"no engine adapter registers {engine!r} (registered: {', '.join(sorted(known)) or 'none'})")
         return engine
 
     @model_validator(mode="after")
-    def _references(self, info: ValidationInfo) -> "EnvironmentDefinition":
+    def _references(self) -> "EnvironmentDefinition":
         problems: list[tuple[tuple, str]] = []
         if (self.engine is None) == (self.version_command is None):
             problems.append((("engine",), "give an `engine`, or a tool's `version_command` (definitions.md § 4.7)"))
@@ -422,12 +420,12 @@ class EnvironmentDefinition(Model):
         cycle = _cycle({b.id: b.after for b in [*self.builds, *part.builds]})
         if cycle:
             problems.append((("builds",), f"builds depend on each other in a cycle: {' -> '.join(cycle)}"))
-        readers = ((info.context or {}).get("engines") or {}).get(self.engine)
+        readers = registered().get(self.engine)
         if readers is not None:
             for n, c in enumerate(self.checks):
-                if c.read not in readers | GENERIC_READERS:
+                if c.read not in readers | GENERIC.keys():
                     problems.append((("checks", n, "read"), f"no reader {c.read!r}: the generic readers and "
-                                     f"{self.engine}'s are {', '.join(sorted(readers | GENERIC_READERS))}"))
+                                     f"{self.engine}'s are {', '.join(sorted(readers | GENERIC.keys()))}"))
         refuse(type(self).__name__, problems)
         return self
 
@@ -637,7 +635,8 @@ class SchedulerKind(Model):
     )
     probe: dict[str, str] = Field(
         default_factory=dict,
-        description="role -> a command that measures a machine of this kind; its readers arrive with M4",
+        description="role -> a command that measures a machine of this kind; the roles are its reader's, in "
+                    "femkit/schedulers/, and checked against it when the kind loads",
     )
     mpi_launch: Launcher = Field(
         description="the launcher `config init` proposes for `launch.mpi` on a machine of this kind",

@@ -68,7 +68,7 @@ class Target:
 
 def target(ctx: Context, name: str, install_fingerprint: str) -> Target:
     from femkit.envs.state import definition
-    cat = catalogue.load(ctx, engines=engines.registered())
+    cat = catalogue.load(ctx)
     config = settings.load(ctx).config
     return Target(
         name=name, env=definition(ctx, name), prefix=layout.prefix(ctx, name), manager=resolve(ctx),

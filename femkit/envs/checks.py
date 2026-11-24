@@ -12,18 +12,16 @@ import json
 import math
 import re
 import time
-import xml.etree.ElementTree as ET
-from collections import Counter
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from femkit.config import settings
 from femkit.core import paths, process, text
 from femkit.core.operations import Context, Plan, Step, run_steps
 from femkit.core.persist import write_json
 from femkit.core.schema import render
-from femkit.definitions.models import GENERIC_READERS, Check, EnvironmentDefinition, Expectation
-from femkit.engines import Output, reader, summary, toolchain
+from femkit.definitions.models import Check, EnvironmentDefinition, Expectation
+from femkit.engines import GENERIC, Output, junit, reader, toolchain
 from femkit.envs import layout, manager
 from femkit.envs.manager import Manager, resolve
 from femkit.envs.records import CheckOutcome, ChecksRecord
@@ -33,7 +31,6 @@ from femkit.envs.requests import ENV_VALIDATE, ValidateRequest
 # but the toolchain's program, which checks nothing (envs.md § 2). A change to one re-validates.
 JUDGING = (Path(__file__).resolve(), *sorted(p.resolve() for p in Path(toolchain.__file__).parent.glob("*.py")
                                          if p.name != Path(toolchain.__file__).name))
-JUNIT = "junit.xml"
 START_MARKER = ".femkit-check-start"
 
 
@@ -65,7 +62,7 @@ def selected(env: EnvironmentDefinition, gpu: bool) -> list[Check]:
     return [c for c in env.checks if c.device or c.agree in groups]
 
 
-def refusals(ctx: Context, env: EnvironmentDefinition, checks: list[Check]) -> None:
+def refusals(ctx: Context, checks: list[Check]) -> None:
     """What makes the checks impossible to run, said before anything starts."""
     if any(c.kind == "command" and c.ranks > 1 for c in checks):
         settings.launcher(ctx, "a check runs on several MPI ranks")
@@ -117,29 +114,12 @@ def _ctest_dir(r: Runner, check: Check) -> Path:
     return where
 
 
-def relative_nodes(tests: list[str]) -> tuple[PurePosixPath, list[str]]:
-    """The deepest folder holding every named test, and the node IDs relative to it — the
-    root pytest runs from, as the upstream suite's own runner does."""
-    files = [PurePosixPath(node.split("::", 1)[0]) for node in tests]
-    root = PurePosixPath(*_common_parts([f.parent.parts for f in files]))
-    return root, [str(f.relative_to(root)) + "::" + node.split("::", 1)[1] for f, node in zip(files, tests)]
-
-
 def _pytest_root(r: Runner, check: Check) -> tuple[Path, list[str]]:
-    root, nodes = relative_nodes(check.tests)
+    root, nodes = junit.relative_nodes(check.tests)
     return layout.source_dir(r.prefix, r.env, check.source) / root, nodes
 
 
-def _common_parts(parts: list[tuple[str, ...]]) -> tuple[str, ...]:
-    common: list[str] = []
-    for column in zip(*parts):
-        if len(set(column)) != 1:
-            break
-        common.append(column[0])
-    return tuple(common)
-
-
-def _argv(r: Runner, check: Check, work: Path, test_dir: Path | None) -> list[str]:
+def _argv(r: Runner, check: Check, work: Path) -> list[str]:
     if check.kind == "command":
         values = {"prefix": str(r.prefix), "work": str(work), "ranks": str(check.ranks), "threads": str(check.threads)}
         argv = [render(a, values) for a in check.run]
@@ -154,7 +134,7 @@ def _argv(r: Runner, check: Check, work: Path, test_dir: Path | None) -> list[st
     return ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", *[a for p in check.plugins for a in ("-p", p)],
             "--import-mode=importlib",
             "-o", "addopts=", "-o", "junit_family=xunit2", "--rootdir", str(root), "--confcutdir", str(root),
-            "--junitxml", str(work / JUNIT), *[str(root / n) for n in nodes]]
+            "--junitxml", str(work / junit.FILE), *[str(root / n) for n in nodes]]
 
 
 def run_check(r: Runner, check: Check, work: Path) -> CheckOutcome:
@@ -178,7 +158,7 @@ def run_check(r: Runner, check: Check, work: Path) -> CheckOutcome:
     variables = _variables(r, check)
     if check.kind == "pytest":  # the upstream tests alone: no plugin installed in the prefix loads by itself
         variables.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYTHONDONTWRITEBYTECODE="1")
-    result = process.run(r.manager.in_prefix(r.prefix, _argv(r, check, work, test_dir)),
+    result = process.run(r.manager.in_prefix(r.prefix, _argv(r, check, work)),
                          env=variables, cwd=work, timeout=check.timeout, log=log)
     if result.timed_out:
         return failed(f"stopped after {check.timeout} s")
@@ -199,40 +179,8 @@ def run_check(r: Runner, check: Check, work: Path) -> CheckOutcome:
 
 def read(engine: str, check: Check, output: Output) -> dict:
     if check.read in GENERIC:
-        return GENERIC[check.read](check, output, engine)
+        return GENERIC[check.read](output, engine, check.tests)
     return reader(engine, check.read)(output)
-
-
-GENERIC = {
-    "summary": lambda check, output, engine: summary.read(output.work, engine, output.version),
-    "junit": lambda check, output, engine: read_junit(output.work / JUNIT, check.tests),
-}
-if set(GENERIC) != GENERIC_READERS:  # the declared IDs and the runner's readers are one list
-    raise ImportError(f"the runner reads {sorted(GENERIC)}; the definitions declare {sorted(GENERIC_READERS)}")
-
-
-def read_junit(path: Path, nodes: list[str]) -> dict:
-    """Exactly the named tests ran, once each, and passed — none skipped, missing or extra."""
-    try:
-        root = ET.parse(path).getroot()
-    except FileNotFoundError:
-        raise ValueError(f"pytest wrote no {path.name}") from None
-    except ET.ParseError as exc:
-        raise ValueError(f"{path.name} does not parse: {exc}") from None
-    suites = list(root) if root.tag == "testsuites" else [root]
-    observed: Counter = Counter()
-    for suite in suites:
-        for case in suite.iter("testcase"):
-            bad = next((tag for tag in ("failure", "error", "skipped") if case.find(tag) is not None), None)
-            if bad:
-                raise ValueError(f"{case.get('classname')}::{case.get('name')}: {bad}")
-            observed[f"{case.get('classname')}::{case.get('name')}"] += 1
-    _, relative = relative_nodes(nodes)
-    expected = Counter(f"{n.split('::', 1)[0].removesuffix('.py').replace('/', '.')}::{n.split('::', 1)[1]}"
-                       for n in relative)
-    if observed != expected:
-        raise ValueError(f"the report holds {dict(observed)}, not the named tests {dict(expected)}")
-    return {"tests": len(nodes), "passed": sum(observed.values())}
 
 
 # ------------------------------------------------------------------ judging

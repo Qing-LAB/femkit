@@ -15,8 +15,7 @@ from femkit.core.operations import Context, Step
 from femkit.core import process as process_module
 from femkit.core.process import ProcessResult
 from femkit.definitions.catalogue import load_environments
-from femkit.definitions.models import LANGUAGES
-from femkit.engines import registered
+from femkit.engines.toolchain import LANGUAGES
 from femkit.envs import checks, install, manager, toolchain
 from femkit.envs.operations import EnvInstall
 
@@ -28,7 +27,7 @@ def ctx() -> Context:
 def test_every_environment_with_builds_solves_its_own_toolchain():
     """Fails if an engine environment's solve lacks its toolchain's compilers, sysroot or build
     tools — they would come from wherever the solver or the host chose (definitions.md § 4.6)."""
-    for name, env in load_environments(None, registered()).items():
+    for name, env in load_environments().items():
         if env.builds:
             assert env.toolchain and set(env.toolchain.packages) <= set(env.packages.conda), name
 
@@ -75,7 +74,7 @@ def test_every_command_in_the_prefix_sees_none_of_the_shells_build_settings(monk
     monkeypatch.setattr(process_module, "run", lambda argv, log=None, env=None, **kw:
                         ran.append(env) or ProcessResult(tuple(argv), 1, "", "", log))  # each fails at once
     c = ctx()
-    env = load_environments(None, registered())["ngsolve"]
+    env = load_environments()["ngsolve"]
     t = install.Target(name="ngsolve", env=env, prefix=tmp_path / "p", manager=manager.resolve(c), channels=[],
                        python_minor="3.12", cuda_architectures=None, jobs=1, install_fingerprint="f",
                        launcher=["mpirun", "-np", "{ranks}"])

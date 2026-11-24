@@ -15,7 +15,6 @@ from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.schema import Model
 from femkit.definitions import catalogue
-from femkit.engines import registered
 from femkit.envs import checks, layout, toolchain
 from femkit.envs.manager import resolve
 from femkit.envs.records import CheckOutcome
@@ -27,7 +26,7 @@ from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_LOG, ENV_
 
 
 def _names(ctx: Context) -> list[str]:
-    return sorted(catalogue.load(ctx, engines=registered()).environments)
+    return sorted(catalogue.load(ctx).environments)
 
 
 def _next(state: EnvState, name: str) -> list[view.Action]:
@@ -56,7 +55,7 @@ class ListResult(Result):
 @operation(ENV_LIST, result=ListResult)
 def env_list(req: ListRequest, ctx: Context) -> ListResult:
     """Every engine environment with its state and GPU qualification."""
-    defs = catalogue.load(ctx, engines=registered()).environments
+    defs = catalogue.load(ctx).environments
     rows = []
     for name in _names(ctx):
         f, state = observe(ctx, name)
@@ -173,7 +172,7 @@ def last_operation(name: str) -> tuple[str | None, frozenset[str]]:
 
 def default_environments() -> list[str]:
     """What `env install --all` and `env bootstrap` install (envs.md § 1)."""
-    return sorted(n for n, e in catalogue.load_catalogue(engines=registered()).environments.items() if e.default)
+    return sorted(n for n, e in catalogue.load_catalogue().environments.items() if e.default)
 
 
 def _requested(req) -> list[str]:
@@ -250,7 +249,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
     cpu = checks.selected(env, gpu=False)
     validate = Step(id="validate", describe=f"validate: run its {text.count(len(cpu), 'CPU check')} (env validate)"
                     if cpu else "validate: it has no checks; record that (env validate)")
-    checks.refusals(ctx, env, cpu)
+    checks.refusals(ctx, cpu)
     if state is EnvState.unchecked and not clean:
         return [validate], basis
     t = target(ctx, name, f.install_fingerprint)
@@ -360,13 +359,13 @@ class EnvValidate:
         chosen = checks.selected(env, req.gpu)
         if req.gpu and not any(c.device for c in chosen):  # envs.md § 5: nothing to run, whatever its state
             cuda = req.name + catalogue.CUDA_SUFFIX
-            if cuda in catalogue.load(ctx, engines=registered()).environments:  # definitions.md § 4.5
+            if cuda in catalogue.load(ctx).environments:  # definitions.md § 4.5
                 raise UsageError(f"{req.name} is built without CUDA; its CUDA build is {cuda}",
                                  (view.command(ENV_VALIDATE, name=cuda, gpu=True),))
             raise UsageError(f"{req.name} declares no GPU check", (view.command(ENV_VALIDATE, name=req.name),))
         MACHINE.require(state, "validate --gpu" if req.gpu else "validate", req.name)  # envs.md § 3.3
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
-        checks.refusals(ctx, env, chosen)
+        checks.refusals(ctx, chosen)
         return Plan(basis=self._basis(f, state),
                     steps=tuple(checks.steps(chosen)))
 

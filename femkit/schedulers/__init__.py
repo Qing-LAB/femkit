@@ -1,9 +1,9 @@
 """Readers of each scheduler kind's answers (jobs.md § 7): one module per kind with commands.
 
 A kind's module is named after its kind file (`femkit/data/schedulers/<kind>.toml`) and
-exports ``probe(paths, user)``, which runs that kind's probe commands and reads their
-answers into the parts of a machine record (jobs.md § 9.1) as plain data. Nothing here
-runs at import.
+exports ``PROBES``, the probe roles it reads, and ``probe(paths, user)``, which runs that kind's
+probe commands and reads their answers into the parts of a machine record (jobs.md § 9.1) as
+plain data. The kind file is checked against it when it loads. Nothing here runs at import.
 """
 
 from __future__ import annotations
