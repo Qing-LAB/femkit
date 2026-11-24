@@ -609,63 +609,6 @@
       "title": "ContextPart",
       "type": "object"
     },
-    "CopyOutcome": {
-      "additionalProperties": false,
-      "properties": {
-        "issues": {
-          "description": "findings a person should act on",
-          "items": {
-            "$ref": "#/$defs/Issue"
-          },
-          "type": "array"
-        },
-        "log": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the operation directory holding its event log"
-        },
-        "plan": {
-          "$ref": "#/$defs/Plan",
-          "description": "the plan that was applied"
-        },
-        "status": {
-          "description": "whether every step finished",
-          "enum": [
-            "done",
-            "failed"
-          ],
-          "type": "string"
-        },
-        "written": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the new study.toml"
-        }
-      },
-      "required": [
-        "issues",
-        "plan",
-        "status",
-        "log",
-        "written"
-      ],
-      "title": "CopyOutcome",
-      "type": "object"
-    },
     "DefectAnswer": {
       "additionalProperties": false,
       "description": "An error femkit did not expect: its kind and the operation's log, never a stack trace.",
@@ -923,58 +866,6 @@
       "title": "Documents",
       "type": "object"
     },
-    "EditOutcome": {
-      "additionalProperties": false,
-      "properties": {
-        "issues": {
-          "description": "findings a person should act on",
-          "items": {
-            "$ref": "#/$defs/Issue"
-          },
-          "type": "array"
-        },
-        "log": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the operation directory holding its event log"
-        },
-        "plan": {
-          "$ref": "#/$defs/Plan",
-          "description": "the plan that was applied"
-        },
-        "status": {
-          "description": "whether every step finished",
-          "enum": [
-            "done",
-            "failed"
-          ],
-          "type": "string"
-        },
-        "written": {
-          "description": "the files the edit changed",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "issues",
-        "plan",
-        "status",
-        "log",
-        "written"
-      ],
-      "title": "EditOutcome",
-      "type": "object"
-    },
     "Ended": {
       "additionalProperties": false,
       "description": "The last line of an apply's answer, or the answer of an apply that ended before starting.",
@@ -992,75 +883,6 @@
         "outcome"
       ],
       "title": "Ended",
-      "type": "object"
-    },
-    "Entry": {
-      "additionalProperties": false,
-      "description": "One thing that may be added: of which object type and type, what it is, and the action\nthat adds it.",
-      "properties": {
-        "add": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Action"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the action that adds it: its name to fill, its text starting as its template; none until what it needs is chosen"
-        },
-        "help": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Help"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "what it is"
-        },
-        "kind": {
-          "description": "the object type it adds",
-          "doc": "models.md \u00a7 11.2",
-          "type": "string"
-        },
-        "needs": {
-          "anyOf": [
-            {
-              "const": "study",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the context that must be chosen first"
-        },
-        "type": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "its type within that: `boundary`, `potential`; none for an object type with no types"
-        }
-      },
-      "required": [
-        "kind",
-        "type",
-        "help",
-        "add",
-        "needs"
-      ],
-      "title": "Entry",
       "type": "object"
     },
     "EnvResult": {
@@ -1414,20 +1236,8 @@
           "description": "where the reference is written",
           "type": "string"
         },
-        "cut": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Action"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "what cuts it; none for a name used in a text"
-        },
         "held": {
-          "description": "how: a table's key or a value \u2014 `model unset` of the address cuts it; a list's item \u2014 the list set without it; a name used inside a value's text, cut only by editing that value",
+          "description": "how: a table's key, a value, a list's item, or a name used inside a value's text",
           "enum": [
             "key",
             "value",
@@ -1467,8 +1277,7 @@
         "port",
         "type",
         "address",
-        "held",
-        "cut"
+        "held"
       ],
       "title": "GraphEdge",
       "type": "object"
@@ -1540,22 +1349,6 @@
           "doc": "models.md \u00a7 11.2",
           "type": "integer"
         },
-        "remove": {
-          "$ref": "#/$defs/Action",
-          "description": "what removes it"
-        },
-        "rename": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Action"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "what renames it, the new name to fill; none: its key is no name (a condition is its region's)"
-        },
         "text": {
           "description": "its text as its file holds it, comments kept: its table as a TOML document of its own, or a value's inline text",
           "doc": "web.md \u00a7 8.3",
@@ -1572,10 +1365,6 @@
           ],
           "default": null,
           "description": "its type within that: a region's, a condition's"
-        },
-        "write": {
-          "$ref": "#/$defs/Action",
-          "description": "what writes its text, the text to fill"
         }
       },
       "required": [
@@ -1589,10 +1378,7 @@
         "text",
         "keys",
         "ports",
-        "findings",
-        "write",
-        "remove",
-        "rename"
+        "findings"
       ],
       "title": "GraphNode",
       "type": "object"
@@ -1608,12 +1394,8 @@
           "type": "array"
         },
         "address": {
-          "description": "where a wire drawn from it is written, by `model set`",
+          "description": "where its names are written",
           "type": "string"
-        },
-        "connect": {
-          "$ref": "#/$defs/Action",
-          "description": "what a wire drawn from it does: the name it takes to fill"
         },
         "help": {
           "anyOf": [
@@ -1649,8 +1431,7 @@
         "accepts",
         "many",
         "names",
-        "help",
-        "connect"
+        "help"
       ],
       "title": "GraphPort",
       "type": "object"
@@ -1720,28 +1501,9 @@
           },
           "type": "array"
         },
-        "palette": {
-          "description": "what may be added, in the chain's order",
-          "items": {
-            "$ref": "#/$defs/Entry"
-          },
-          "type": "array"
-        },
         "project": {
           "description": "the project",
           "type": "string"
-        },
-        "redo": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Action"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "what makes the last undone edit again"
         },
         "study": {
           "anyOf": [
@@ -1754,18 +1516,6 @@
           ],
           "default": null,
           "description": "the study shown"
-        },
-        "undo": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Action"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "what takes back the last edit"
         }
       },
       "required": [
@@ -1776,10 +1526,7 @@
         "choices",
         "nodes",
         "edges",
-        "palette",
         "next",
-        "undo",
-        "redo",
         "mermaid"
       ],
       "title": "GraphResult",
@@ -2343,11 +2090,7 @@
       "description": "One operation as `GET /api/operations` lists it.",
       "properties": {
         "changes": {
-          "description": "whether it is planned and applied",
-          "type": "boolean"
-        },
-        "confirm": {
-          "description": "whether a surface shows its plan and asks first",
+          "description": "whether it is planned, shown and applied once the person agrees",
           "type": "boolean"
         },
         "description": {
@@ -2367,18 +2110,12 @@
           "additionalProperties": true,
           "description": "its result's JSON schema",
           "type": "object"
-        },
-        "undoable": {
-          "description": "whether `model undo` takes it back",
-          "type": "boolean"
         }
       },
       "required": [
         "name",
         "description",
         "changes",
-        "confirm",
-        "undoable",
         "request",
         "result"
       ],

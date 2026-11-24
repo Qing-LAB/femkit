@@ -4,17 +4,16 @@
 **Status:** current, approved by the person (plan § 6); built in
 `femkit/projects/`, proven on a layout of the tests' own (plan § 3, R step C):
 finding and naming projects (§ 1), names and groups (§ 3), the layout's part
-kinds (§ 4), addresses and the rename of a part (§ 5), opening each part on its
-own and its citations (§ 6), transactions and undo (§ 7). Not built: the
-shipped layout and the part kinds' schemas (§§ 2–3), object types in the
-layout (§ 4), renaming an entry and the addresses a value holds (§ 5), schemas
-registered at start, the global library and what cannot be checked yet (§§ 6–7),
-the project commands and the states of § 8 (plan § 3, R steps D and E)
+kinds (§ 4), addresses (§ 5), opening each part on its own and its citations
+(§ 6). Not built: the shipped layout and the part kinds' schemas (§§ 2–3),
+object types in the layout (§ 4), schemas registered at start, the global
+library and what cannot be checked yet (§ 6), what femkit writes (§ 7), the
+states of § 8 (plan § 3, R steps D and E)
 **Authority:** where projects live; the tree of a project — every folder and
 file, what it holds, who writes it, which door reads it, and whether it moves
 with the project; the part kinds and what each may cite; addresses; the one
-door through which every read and write of a project passes; transactions and
-undo. What each part holds inside is the owning contract's:
+door through which every read and write of a project passes; what femkit
+writes into a project. What each part holds inside is the owning contract's:
 [`models.md`](models.md) (physics, studies, analyses),
 [`geometry.md`](geometry.md) (the geometry script and its contract, mesh recipes),
 [`materials.md`](materials.md) (materials and their assignment). The reasons
@@ -33,7 +32,7 @@ are [ADR 0011](../decisions/0011-project-structure.md).
 | One **address** grammar names every part and every value in it | 5 |
 | **One door**: only `femkit/projects/` forms a path in a project or reads or writes its files | 6 |
 | Each part **loads on its own**; a broken file is a finding on that part, never a refusal of the project | 6 |
-| Every change is **one transaction** — files created, changed, moved or deleted together; an edit is one undo step | 7 |
+| femkit **changes no file the person wrote**: they write every part in their own editor; femkit writes a template they ask for, and its own outputs | 7 |
 
 ```mermaid
 flowchart LR
@@ -85,7 +84,7 @@ projects root. It holds:
 ├── cases/<case id>/case.json       one resolved case
 ├── runs/                           what the steps write — geometry, meshes, solves — in run folders
 ├── results/<analysis>/             what an analysis produces
-└── .femkit/                        undo history, uploads, the page's view file
+└── .femkit/                        uploads, the page's view file
 ```
 
 | path | holds | written by | moves with the project |
@@ -103,12 +102,12 @@ projects root. It holds:
 | `cases/<id>/case.json` | one resolved case ([`models.md`](models.md) § 5.3) | `study expand` | yes |
 | `runs/` | each step's run folder — the geometry, the mesh, the solve ([`geometry.md`](geometry.md) § 4) — its run script, its log and its outputs | the run | yes; designed with execution (plan § 3, X) |
 | `results/<a>/` | an analysis's products | the analysis | yes |
-| `.femkit/` | undo history, uploads; `view.json`, where the page draws each node when the person chooses to remember it — no project data | femkit; `view.json` by `project view` | never: local; `view.json` may go along or be lost, harmlessly |
+| `.femkit/` | uploads; `view.json`, where the page draws each node when the person chooses to remember it — no project data | femkit; `view.json` by `project view` | never: local; `view.json` may go along or be lost, harmlessly |
 
 - **Only data, facts and design are the project's protected data.** Where the
   page draws a node is not: when the person chooses to remember it, it is kept
-  in `.femkit/view.json`, written by `project view` — an operation that asks
-  no confirmation, records no undo, and is never checked; no case, run or check
+  in `.femkit/view.json`, written by `project view` — an operation that writes
+  no project data, and is never checked; no case, run or check
   reads the file. It is a disposable side file, as a folder's thumbnail cache
   is: deleting it, or a project moved without it, loses only the positions,
   and the diagram arranges itself again ([`web.md`](web.md) § 2.2).
@@ -186,7 +185,7 @@ declaration; adding a part kind is an entry here and its schema.
 
 ## 5. Addresses
 
-One grammar names every part and every value in it, in edits, graph nodes,
+One grammar names every part and every value in it, in graph nodes,
 findings, match lines and decisions:
 
 ```text
@@ -201,12 +200,9 @@ material's opens with `GLOBAL/`: `component:bowtie:outputs.groups.gap`,
 `material:GLOBAL/metals/gold:properties.relative_permittivity`,
 `project:parameters.gap`. Entries are keyed by name, never by position.
 In an address, `material:<name>` is the project's own material and
-`material:GLOBAL/<name>` the global library's: an edit names its target
+`material:GLOBAL/<name>` the global library's: an address names its target
 exactly, and the fall-back to the global library is a component's assignment's
-alone ([`materials.md`](materials.md) § 4). Renaming a part — moving it to
-another group is one — or an entry is one transaction that moves its file where
-it has one and rewrites every address that names it: a citation, a reference, a
-decision's key.
+alone ([`materials.md`](materials.md) § 4).
 
 ## 6. The one door — `femkit/projects/`
 
@@ -233,33 +229,24 @@ decision's key.
   ([`geometry.md`](geometry.md) § 7).
 - **A part's text** is the file as it holds it, comments kept; a value's text
   is its TOML.
-- **Every operation** — check, graph, edits, expand, prepare, reduce, the page —
+- **Every operation** — check, graph, expand, prepare, reduce, the page —
   receives the opened project; none reads a file again on its own.
 
-## 7. Transactions and undo
+## 7. What femkit writes
 
-- **A change is one transaction**: a list of file steps — create, change, move,
-  delete — computed in the plan with nothing written. The plan reads the
-  project as the change would leave it, and refuses a change that would leave
-  a part it touches unloadable, or a reference into one broken, naming each
-  problem; a part broken by hand elsewhere never blocks it. An incomplete part
-  is allowed and shown as findings ([`models.md`](models.md) § 11.1).
-- **Apply** holds the project's lock ([`core.md`](core.md) § 5), refuses when
-  any file the plan read changed since (hashes), and writes every step or none.
-  A group folder is made by the first part written into it, and removed with
-  the last part moved or removed out of it: no empty group is left behind.
-- **Undo**: each transaction records each file's text before and after, and
-  each move, in `.femkit/history/`; `undo` and `redo` move through as many
-  edits as `projects.undo` says ([`config.md`](config.md) § 3) — refused when
-  a file has changed since, by hand. A record names files by their path in the
-  project, checked to lie inside it.
-- **The global library is not the project's**: a write to it is never in a
-  project's undo; its lock and its confirmation are
-  [`materials.md`](materials.md) § 4. Renaming or regrouping a global
-  material lists the projects under the root that use it, and is refused while
-  any does.
-- An edit, its undo and its redo ask no confirmation of the page
-  ([`api.md`](api.md) § 2): each is taken back at once.
+- **No file the person wrote.** The person writes every part in their own
+  editor; femkit reads it, checks it and says what is wrong and what would be
+  right, and never changes it (plan § 6). There is no command that sets,
+  writes, renames or undoes a part.
+- **A template the person asks for**: `project new` makes a new project's
+  whole tree from the layout and its templates, built apart and moved into
+  place whole, never over a project already there
+  ([`models.md`](models.md) § 11.1; [`web.md`](web.md) § 8.3).
+- **Its own outputs**: cases, runs and results, each written by the operation
+  that owns it, under the project's lock ([`core.md`](core.md) § 5), regenerated
+  rather than edited.
+- **The global library is not the project's**: its lock and its confirmation
+  are [`materials.md`](materials.md) § 4.
 
 ## 8. States of a part
 

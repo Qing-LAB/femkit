@@ -35,11 +35,12 @@ class ServerFacts:
         return self.pidfile is not None and self.pidfile.supervisor.alive()
 
 
-def facts(name: str, *, mine: bool = False) -> ServerFacts:
-    """``mine``: this process holds the server's lock (a start applying), so it reads it as free."""
+def facts(name: str) -> ServerFacts:
+    """What is observed of the server ``name``; its lock as another process holds it — this
+    process's own hold, a start applying, reads as free (core.md § 5)."""
     path = protocol.pidfile(name)
     return ServerFacts(name=name, here=dirs.host(),
-                       locked=not mine and locks.is_held(protocol.subject(name)),
+                       locked=locks.is_held(protocol.subject(name)),
                        pidfile_exists=path.exists(), pidfile=protocol.read_pidfile(path))
 
 

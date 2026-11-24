@@ -41,7 +41,7 @@ page's form are [ADR 0009](../decisions/0009-web-front-end.md).
 
 | route | does |
 |---|---|
-| `GET /api/operations` | every operation: name, description, whether it changes things, asks for confirmation and is taken back by undo, request and result JSON schemas |
+| `GET /api/operations` | every operation: name, description, whether it changes things, request and result JSON schemas |
 | `GET /api/page` | the page declaration (§ 8.1), loaded against the operations the server serves |
 | `POST /api/<name>` | a read-only operation: request JSON in, result JSON out |
 | `POST /api/<name>/plan` | a changing operation: request JSON in, plan JSON out |
@@ -61,8 +61,8 @@ request model and nothing else: no field takes executable text, a shell
 fragment, an environment variable or a path outside the folders the operation
 names. One exception, the person's decision (plan § 6;
 [ADR 0013](../decisions/0013-geometry-scripts.md)): a component's geometry
-script travels as the text of its file, written by `project write`, and is run
-only as the first step of a pipeline, in a run folder, its contract checked
+script is the person's own file in the project, and is run only as the first
+step of a pipeline, in a run folder, its contract checked
 before and after ([`geometry.md`](geometry.md) §§ 3–4).
 
 ## 2. The front end
@@ -70,13 +70,12 @@ before and after ([`geometry.md`](geometry.md) §§ 3–4).
 - **Built from the registry and the schemas, never from a list of its own.**
   Forms are rendered from the JSON schemas; the project graph from the graph
   document `project graph` returns ([`models.md`](models.md) § 11.2); the
-  palette, the port types and the statuses come from that document. Adding a
+  port types and the statuses come from that document. Adding a
   field, an operation or a node kind changes no front-end code.
-- **Writes only through plan and apply.** Every change the page makes — an
-  edit of the project, a decision, preparing a case — is an operation, planned
-  and applied with its plan's digest; a change a person can take back at once
-  — an edit recorded for undo — is applied as soon as it is committed, any
-  other shown as its plan first (§ 9.1). Where a node is drawn is no project
+- **Writes only through plan and apply, and never a file the person wrote.**
+  The person writes a project's files in their own editor (plan § 6); what the
+  page does — a decision, preparing a case — is an operation, shown as its plan
+  first and applied with its plan's digest (§ 9.1). Where a node is drawn is no project
   data at all (§ 2.2). The page holds no state the files do not. The one
   exception is an upload, which writes only
   into a project's upload area, which nothing reads until an operation names
@@ -95,8 +94,8 @@ before and after ([`geometry.md`](geometry.md) §§ 3–4).
 | view | shows | acts through |
 |---|---|---|
 | operation | any operation as a form, its plan, its outcome | the routes of § 1 |
-| project graph | the project's parts and their references — the overview, and the detail inside a part ([`models.md`](models.md) § 11.2); findings on each node; with an environment chosen, each node's worst match line | `project graph`, `project check`, `project set`, `project unset`, `project rename` |
-| node | the selected part's text as its file holds it — a component's geometry script included — beside the help of every key it may hold, and its findings; for an open match line, the decisions and customizations that resolve it | `project write`, `project unset`, `project rename` |
+| project graph | the project's parts and their references — the overview, and the detail inside a part ([`models.md`](models.md) § 11.2); findings on each node; with an environment chosen, each node's worst match line | `project graph`, `project check` |
+| node | the selected part's text as its file holds it — a component's geometry script included — beside the help of every key it may hold, and its findings; for an open match line, the decisions and customizations that resolve it | — |
 | review | `case prepare`'s plan — the match report, each decision, each customization with its hash, the translator's command — and `job prepare`'s — the inputs, those customizations changed, the steps, the command ([`models.md`](models.md) § 9.6) | apply with the digest |
 | progress | an operation's steps as they run, and the running step's log's last lines | `GET /api/events/…`, `GET /api/tail/…` |
 | jobs and results | runs, their states, the result tables; where each field file is, for ParaView | the job and result operations |
@@ -130,12 +129,13 @@ under one top bar, and the documents in a tab of their own (§ 2.3):
   ([`models.md`](models.md) § 6.2); with none chosen, the graph shows the
   description alone.
 - **Project** is the palette, the canvas and the inspector:
-  - **the palette** lists what may be added, each a template generated from
-    the schemas and the formulation (§ 8.3): a component from a template
+  - **the palette** lists the templates a part's text starts from, generated
+    from the schemas and the formulation (§ 8.3): a component from an example
     script; a physics, and its condition and source kinds grouped by where they
     may stand; a mesh recipe; an observable set; a study and an analysis; a
-    material from its template or from the library. Each entry's tooltip is its
-    sentence, linked to its section in the document viewer;
+    material from its template or from the library — each shown to copy into a
+    file of the person's. Each entry's tooltip is its sentence, linked to its
+    section in the document viewer;
   - **the canvas** shows the overview — one node per part, in the chain's
     order, wires the references between parts; the person's grouping folders
     as boxes that open and close ([`projects.md`](projects.md) § 3) — and,
@@ -144,11 +144,8 @@ under one top bar, and the documents in a tab of their own (§ 2.3):
     assigned to them; a physics' groups and the conditions and sources on them;
     a study's pairing and its axes
     and environments ([`models.md`](models.md) § 11.2). A component's named
-    groups are its ports; a port accepts only its own type. Dropping a palette
-    entry on the canvas, or on a node — a condition on a boundary group —
-    opens its add with what the drop names filled in; drawing or removing a
-    wire is the one transaction it means, applied at once with its Undo, as
-    every edit is (§ 9.1). **Where nodes stand is the page's alone**, never
+    groups are its ports; a port accepts only its own type. **Where nodes
+    stand is the page's alone**, never
     the project's: the canvas arranges them by itself in the chain's order —
     parameters, components, physics, mesh recipes and observable sets,
     studies, analyses — and **Tidy** arranges them so again. When the person
@@ -159,22 +156,19 @@ under one top bar, and the documents in a tab of their own (§ 2.3):
     from a layout library — dagre or ELK, as its documentation shows — a new
     dependency of the page, the person's to approve (plan § 3, R step G);
   - **the inspector** is the selected part's text, as its file holds it with
-    its comments, in an editor — a component's geometry script included; beside
-    it the help of every key the part may hold — its sentence, its unit or
-    choices, whether it is required, its defining section — and each port as a
-    choice of the names it may hold. Saving the text is one `project write`,
-    checked and undoable; a refusal is shown at its line. A component's
-    contract is edited beside its script, and the groups it promises are its
-    ports.
-    Below are the part's findings, each with its fix as a button, and, for an
-    open match line, the decisions and customizations that resolve it. The page
-    never edits a value field by field
+    its comments — a component's geometry script included; beside it the help
+    of every key the part may hold — its sentence, its unit or choices, whether
+    it is required, its defining section — and each port with the names it may
+    hold. A component's contract is shown beside its script, and the groups it
+    promises are its ports.
+    Below are the part's findings, each saying what is wrong and what would be
+    right, and, for an open match line, the decisions and customizations that
+    resolve it. The page edits nothing: the person writes the files
     ([ADR 0010](../decisions/0010-describe-the-system.md)).
-- **Every canvas action is also a keyboard action.** Adding, wiring and
-  removing each have their control in the palette and the inspector, so a
-  project is built as fully by keyboard as by mouse.
+- **Every canvas action is also a keyboard action**: moving through the
+  nodes, opening a part, a finding or a template.
 - **The bottom panel** holds the findings of `project check`, each leading to
-  its node and with its fix; the cases, with their axis values and, per
+  its node; the cases, with their axis values and, per
   environment, their match and preparation state (`case list`), and `study
   expand`; and the progress of the running operation (§ 2.1).
 - **Runs** is each case against each environment: the review before
@@ -551,7 +545,7 @@ Built: the vocabulary (§ 7), the page declaration (§ 8.1), § 8.3's fragments
 and templates over today's one-file model, the kernel's client, action hook
 and page state, and the elements of § 9.2 but `Form`, `TextEditor`, `Keys`,
 `Confirm` and `Busy`; none of it is wired into the page yet. Not built: the
-layout (§ 8.2, plan § 3, R step C), `project write` (§ 8.3, R step F), the
+layout (§ 8.2, plan § 3, R step C), the
 missing elements, the views and the shell (R step G); the page as it stands is
 the first page they replace. The page is held to the web discipline of
 [`../process/conventions.md`](../process/conventions.md) § 2.1, and to one
@@ -624,11 +618,11 @@ without importing the operation that runs it.
 
 `Field {label, key, value, schema, help, set}` — one value as a person sees
 it: a request's field in an operation's form, or a key an object may hold, in
-the help beside its text. The page edits a part's detail as text (§ 8.3),
-never field by field.
+the help beside its text. The page shows a part's detail as text (§ 8.3); the
+person writes it.
 
 - `value` is the TOML text the file holds — the one convention of every value
-  a person writes, `project set` and `config set` and the command line alike — so
+  a person writes, `config set` and the command line alike — so
   a decimal stays the text it was typed as.
 - `schema` is a self-contained JSON schema fragment of what it may hold: a
   quantity's carries its dimension and the unit table's symbols for it
@@ -703,33 +697,32 @@ Each node carries its **text** — its part's file as it holds it, comments
 kept, or the value's TOML — and its **keys**: a `Field` for every key it may
 hold, built from the schema and, for what a formulation or the property list
 declares, from those, by one builder of fragments — the very fragments the
-loader's schema states. Its `write` action is `project write`, which replaces
-that text as one transaction, recorded for undo ([`projects.md`](projects.md)
-§ 7).
+loader's schema states.
 
-A palette entry is a **template** generated from the same fragments: the
-object's type held, its required keys written to fill, and every optional key
-written as a comment with its sentence and its unit or choices, ready to
-uncomment. A template is where the part's text starts: an add opens it in the
-editor, and saving it is the write, checked as any write is — a template that
-leaves a required value open does not load until it is filled. A component
+A **template** is generated from the same fragments for each kind of part and
+object: the object's type held, its required keys written to fill, and every
+optional key written as a comment with its sentence and its unit or choices,
+ready to uncomment. A template is where a part's text starts: the page shows
+it to copy into a new file, and `project new` writes a new project's from them
+([`models.md`](models.md) § 11.1) — a template that leaves a required value
+open does not load until the person fills it. A component
 starts from one of femkit's example scripts with its contract
 ([`geometry.md`](geometry.md) § 2): geometry is the person's, and its examples
 are real scripts, not generated text. No other template text is written by
 hand, and no value is asked for field by field
 ([ADR 0010](../decisions/0010-describe-the-system.md)). Built over today's
-one-file model: the fragments, the keys and the templates; not built: `project
-write` and the property list's part (plan § 3, R step F).
+one-file model: the fragments, the keys and the templates; not built: the
+property list's part (plan § 3, R step F).
 
 ### 8.4 The way through
 
 The project's next step — the first finding of `project check`, in the chain's
 order ([`models.md`](models.md) § 11.2) — stays in view with its actions.
 
-### 8.5 Undo
+### 8.5 What the page writes
 
-`project undo` and `project redo` take back and make again the last edits, as
-[`projects.md`](projects.md) § 7 records them.
+No file the person wrote (plan § 6): only what an operation produces — cases,
+runs, results — each shown as its plan first, and the view file (§ 2.2).
 
 ### 8.6 Projects
 
@@ -780,11 +773,8 @@ holds it ([`testing.md`](testing.md) § 3).
       running --> refused
   ```
 
-  Every change is planned, and applied with its plan's digest. One whose
-  operation asks no confirmation — a change a person can take back at once: an
-  edit recorded for undo (§ 8.5) — is applied as soon as it is committed and
-  announced with its Undo; any other is shown as its plan
-  first, and applied with one press.
+  Every change is planned, shown as its plan first, and applied with one
+  press, with its plan's digest.
 - **The page state** (`kernel/state.ts`) — one store: the context, the
   workspace, the selection, the open drawer. The address mirrors the context,
   the workspace and the selection: a change of context or workspace is a
@@ -861,19 +851,16 @@ page's icon.
 - The words are the server's — the schemas', the formulations', the
   declaration's. The page names only its own controls, from the declaration.
 - Every action has a key path; the shortcuts are the declaration's.
-- After an action, what it added is selected and what it removed deselected.
-- A refusal names the field or the line it is about, and the form or the
-  editor shows it there.
+- A refusal names the field or the line it is about, and the form shows it there.
 - A project is chosen from those under the projects root, or created there.
 
 ## 12. Tests
 
 - The vocabulary round-trips; every action a document offers plans against its
-  operation; every template parses and names every key its schema allows; a
-  written text keeps its comments; the
+  operation; every template parses and names every key its schema allows; the
   generated schemas are fresh.
 - The page works on any project the server describes: served a project whose
-  fields and kinds are renamed, it still shows and edits them — the API's test
+  fields and kinds are renamed, it still shows them — the API's test
   of a page that names no field of its own.
 - The page's discipline — no field, kind, operation, address or sentence named
   in its code, no `fetch` outside the client, no style outside `elements/` and

@@ -275,7 +275,7 @@ def run_validation(ctx: Context, name: str, gpu: bool, plan_steps: tuple[Step, .
     The caller holds the environment's lock.
     """
     from femkit.envs.state import facts
-    f = facts(ctx, name, holding_lock=True)
+    f = facts(ctx, name)
     r = runner(ctx, name)
     by_id = {c.id: c for c in r.env.checks}
     plan = Plan(operation=ENV_VALIDATE.name, request=ValidateRequest(name=name, gpu=gpu).model_dump(mode="json"),

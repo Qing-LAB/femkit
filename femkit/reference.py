@@ -64,7 +64,7 @@ class SchemaCheckResult(Result):
             return view.Report(blocks=[view.Text(text="shipped definitions that do not load")])
         return view.Report(blocks=[
             view.Text(text="every shipped definition loads"),
-            view.Table(columns=[view.Column(key="type", label=""), view.Column(key="loaded", label="")],
+            view.Table(columns=view.columns("type", "loaded"),
                        rows=[{"type": row.type, "loaded": text.show(row.names) if row.names else row.files}
                              for row in self.loaded])])
 
@@ -232,7 +232,7 @@ class DocsOutcome(Outcome):
         if not self.written:
             return view.Report(blocks=[view.Text(text="docs/reference/ and the page's schemas are up to date")])
         return view.Report(blocks=[view.Text(text=f"wrote {text.count(len(self.written), 'page')}"),
-                                   view.Table(columns=[view.Column(key="page", label="")],
+                                   view.Table(columns=view.columns("page"),
                                               rows=[{"page": p} for p in self.written])])
 
 
@@ -313,7 +313,7 @@ class SchemaDocs:
         steps = tuple(Step(id=name, describe=f"write {text.path(dirs.checkout() / name)}") for name in sorted(stale))
         return Plan(steps=steps)
 
-    def observe(self, req: DocsRequest, ctx: Context, held: bool) -> dict:
+    def observe(self, req: DocsRequest, ctx: Context) -> dict:
         """The pages that differ from what the models render now: what the plan writes."""
         return {"stale": sorted(_stale())}
 

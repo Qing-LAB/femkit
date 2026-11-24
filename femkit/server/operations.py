@@ -242,12 +242,12 @@ def _outcome(plan: Plan, status: str, where: Path, listen: Listen, token: str | 
 
 # ------------------------------------------------------------------ start and foreground
 
-def _start_basis(req: ServeRequest, ctx: Context, held: bool) -> dict:
+def _start_basis(req: ServeRequest, ctx: Context) -> dict:
     """Where it would listen, that server's state, and the state of the environment it runs
     in: what a start rests on."""
     from femkit.envs.state import observe
     listen = _listen(req, ctx)
-    return {"state": MACHINE.observe(facts(listen.name, mine=held)).value, "listen": listen.as_json(),
+    return {"state": MACHINE.observe(facts(listen.name)).value, "listen": listen.as_json(),
             WEB: observe(ctx, WEB)[1].value}
 
 
@@ -278,7 +278,7 @@ def _start_plan(req: ServeRequest, ctx: Context, detached: bool) -> Plan:
 def _started(plan: Plan) -> tuple[Listen, object]:
     """Where it listens, as the plan rested on it, and its facts read by the start that holds its lock."""
     listen = Listen.from_json(plan.basis["listen"])
-    return listen, facts(listen.name, mine=True)
+    return listen, facts(listen.name)
 
 
 @operation(SERVE_START, result=ServeOutcome, changes=True, subject="plan")
@@ -288,8 +288,8 @@ class ServeStart:
     def plan(self, req: ServeRequest, ctx: Context) -> Plan:
         return _start_plan(req, ctx, detached=True)
 
-    def observe(self, req: ServeRequest, ctx: Context, held: bool) -> dict:
-        return _start_basis(req, ctx, held)
+    def observe(self, req: ServeRequest, ctx: Context) -> dict:
+        return _start_basis(req, ctx)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         # the runner holds the server's lock (subject "plan")
@@ -344,8 +344,8 @@ class ServeForeground:
                              subject="serve.foreground")
         return _start_plan(req, ctx, detached=False)
 
-    def observe(self, req: ServeRequest, ctx: Context, held: bool) -> dict:
-        return _start_basis(req, ctx, held)
+    def observe(self, req: ServeRequest, ctx: Context) -> dict:
+        return _start_basis(req, ctx)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         req = ServeRequest.model_validate(plan.request)
@@ -433,7 +433,7 @@ class ServeRestart:
                                                       "for a new child (SIGHUP)"),
                            Step(id="answer", describe="wait until the new child answers with the token")))
 
-    def observe(self, req: TargetRequest, ctx: Context, held: bool) -> dict:
+    def observe(self, req: TargetRequest, ctx: Context) -> dict:
         """The supervisor the pidfile names: the one a restart signals."""
         f = facts(_target(req).name)
         return {"supervisor": f.pidfile.supervisor.as_json() if f.pidfile else None}
@@ -478,7 +478,7 @@ class ServeStop:
                      Step(id="gone", describe="wait until it has ended and released its lock"))
         return Plan(steps=steps)   # the running supervisor holds the server's lock
 
-    def observe(self, req: TargetRequest, ctx: Context, held: bool) -> dict:
+    def observe(self, req: TargetRequest, ctx: Context) -> dict:
         """The server's state: what a stop does depends on it — read under the lock it holds on a
         stale server as under none (core.md § 5)."""
         return {"state": MACHINE.observe(facts(_target(req).name)).value}
@@ -540,7 +540,7 @@ class StatusResult(Result):
                  "pids": f"pid {s.supervisor}" + (f", child {s.child}" if s.child else "") if s.supervisor else "",
                  "answers": "" if s.answers is None else "answers" if s.answers else f"NOT ANSWERING: {s.said}"}
                 for s in self.servers]
-        columns = [view.Column(key=k, label="") for k in ("server", "state", "pids", "answers")]
+        columns = view.columns("server", "state", "pids", "answers")
         blocks: list = [view.Table(columns=columns, rows=rows)]
         if self.address:
             blocks.append(view.Text(text=f"open:  {self.address}"))

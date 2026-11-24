@@ -1,18 +1,16 @@
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Background, BackgroundVariant, Connection, Controls, Edge, Handle, MiniMap, Node, NodeProps, Position, ReactFlow,
+  Background, BackgroundVariant, Controls, Edge, Handle, MiniMap, Node, NodeProps, Position, ReactFlow,
   ReactFlowProvider, useEdgesState, useNodesState, useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Action, GraphEdge, GraphNode, GraphPort } from "../generated/schemas";
-import type { Given } from "../kernel/action";
+import type { GraphEdge, GraphNode } from "../generated/schemas";
 import { Icon } from "./Icon";
 import "./Graph.css";
 
 // The canvas (web.md § 9.2): a node from a graph node — its kind's icon, its place in the chain
 // as its colour, a handle for each port — and each reference a wire, drawn in the chain's order.
-// A port takes only what it accepts; every change is the document's own action, handed back to
-// the view to carry through.
+// It shows the project and changes nothing: the person writes the files (projects.md § 7).
 
 export interface GraphProps {
   nodes: GraphNode[];
@@ -20,12 +18,8 @@ export interface GraphProps {
   selected?: string;
   iconOf: (kind: string) => string;
   select: (address?: string) => void;
-  act: (action: Action, given?: Given) => void;
-  drop?: (payload: string, onto: GraphNode | undefined, at: { x: number; y: number }) => void;
-  dropType?: string;
 }
 
-const takes = (p: GraphPort, n: GraphNode) => p.accepts.includes(n.kind) || p.accepts.includes(`${n.kind}:${n.type}`);
 const COLUMN = 260, ROW = 104;
 
 function Card({ data, selected }: NodeProps) {
@@ -46,11 +40,11 @@ function Card({ data, selected }: NodeProps) {
 }
 const kinds = { fem: Card };
 
-function Canvas({ nodes, edges, selected, iconOf, select, act, drop, dropType }: GraphProps) {
+function Canvas({ nodes, edges, selected, iconOf, select }: GraphProps) {
   const byAddress = useMemo(() => new Map(nodes.map((n) => [n.address, n])), [nodes]);
   const [drawn, setDrawn, onNodesChange] = useNodesState<Node>([]);
   const [wires, setWires, onEdgesChange] = useEdgesState<Edge>([]);
-  const { screenToFlowPosition, fitView } = useReactFlow();
+  const { fitView } = useReactFlow();
   const [fitted, setFitted] = useState(false);
   useEffect(() => {
     const rows: Record<number, number> = {};
@@ -69,32 +63,11 @@ function Canvas({ nodes, edges, selected, iconOf, select, act, drop, dropType }:
     if (!fitted && nodes.length) { requestAnimationFrame(() => fitView({ padding: 0.2, maxZoom: 1 })); setFitted(true); }
   }, [nodes, fitted, fitView]);
 
-  const port = (c: Connection | Edge): { port: GraphPort; to: GraphNode } | null => {
-    const from = byAddress.get(c.source), to = byAddress.get(c.target);
-    const p = from?.ports?.find((x) => x.name === c.sourceHandle);
-    return p && to?.name && takes(p, to) ? { port: p, to } : null;
-  };
   return (
-    <div className="graph" onDragOver={(e: DragEvent) => {
-      if (dropType && e.dataTransfer.types.includes(dropType)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }
-    }} onDrop={(e: DragEvent) => {
-      if (!drop || !dropType || !e.dataTransfer.types.includes(dropType)) return;
-      e.preventDefault();
-      const id = (e.target as HTMLElement).closest(".react-flow__node")?.getAttribute("data-id");
-      drop(e.dataTransfer.getData(dropType), id ? byAddress.get(id) : undefined, screenToFlowPosition({ x: e.clientX, y: e.clientY }));
-    }}>
+    <div className="graph">
       <ReactFlow nodes={drawn} edges={wires} nodeTypes={kinds} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
         onNodeClick={(_, n) => select(n.id)} onPaneClick={() => select(undefined)}
-        isValidConnection={(c) => !!port(c)}
-        onConnect={(c) => { const w = port(c); if (w) act(w.port.connect, { name: w.to.name! }); }}
-        onBeforeDelete={async ({ nodes: gone, edges: cut }) => {
-          if (gone.length === 1) act(byAddress.get(gone[0].id)!.remove);
-          else if (!gone.length && cut.length === 1) {
-            const e = (cut[0].data as { edge: GraphEdge }).edge;
-            if (e.cut) act(e.cut);
-          }
-          return false;   // the canvas shows the files: what is removed goes through its action
-        }}
+        nodesConnectable={false} deleteKeyCode={null}
         proOptions={{ hideAttribution: true }} minZoom={0.3} maxZoom={1.6}>
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} className="graph__ground" />
         <Controls showInteractive={false} className="graph__controls" />

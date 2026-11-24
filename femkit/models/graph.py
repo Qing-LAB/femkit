@@ -22,23 +22,21 @@ from femkit.core.persist import document_text, read_document
 from femkit.core.schema import Model, classes, field_extras, items_of, references
 from femkit.core.units import Units, name_spans
 from femkit.definitions.formulations import FormulationDefinition
-from femkit.models import adds, fields
+from femkit.models import fields
 from femkit.models.address import Address, parse
 from femkit.models.project import NEW_FILE, model_file, study_file
-from femkit.models.requests import MODEL_RENAME, MODEL_UNSET, MODEL_WRITE
 from femkit.models.schema import OBJECTS, ModelFile, ObjectType, StudyFile, locate, object_type, quantities
 
 
 
 class GraphPort(Model):
     name: str = Field(description="the field that names another object, from the node")
-    address: str = Field(description="where a wire drawn from it is written, by `model set`")
+    address: str = Field(description="where its names are written")
     accepts: list[str] = Field(description="the node kinds it takes, as `kind` or `kind:type`: `material`, "
                                            "`region:boundary`; a port accepts only these (models.md § 11.2)")
     many: bool = Field(description="a list: a wire adds a name to it; else a wire sets it")
     names: list[str] = Field(default_factory=list, description="the names it holds now")
     help: view.Help | None = Field(default=None, description="its sentence, from the schema")
-    connect: view.Action = Field(description="what a wire drawn from it does: the name it takes to fill")
 
 
 class GraphNode(Model):
@@ -57,10 +55,6 @@ class GraphNode(Model):
                                                                      "text; required first")
     ports: list[GraphPort] = Field(default_factory=list, description="its fields that name another object")
     findings: list[Issue] = Field(default_factory=list, description="`model check`'s findings that name it")
-    write: view.Action = Field(description="what writes its text, the text to fill")
-    remove: view.Action = Field(description="what removes it")
-    rename: view.Action | None = Field(default=None, description="what renames it, the new name to fill; none: "
-                                                                 "its key is no name (a condition is its region's)")
 
 
 class GraphEdge(Model):
@@ -71,9 +65,7 @@ class GraphEdge(Model):
     type: str = Field(description="the reference's type: shape, region:boundary, material, parameter, …")
     address: str = Field(description="where the reference is written")
     held: Literal["key", "value", "item", "text"] = Field(
-        description="how: a table's key or a value — `model unset` of the address cuts it; a list's item — the "
-                    "list set without it; a name used inside a value's text, cut only by editing that value")
-    cut: view.Action | None = Field(default=None, description="what cuts it; none for a name used in a text")
+        description="how: a table's key, a value, a list's item, or a name used inside a value's text")
 
 
 def _objects(m: ModelFile, study: str | None, s: StudyFile | None
@@ -123,8 +115,7 @@ def _ports(project: Path, address: Address, o: ObjectType, type_: str | None, in
     out = []
 
     def port(name: str, at: str, accepts: list[str], many: bool, names: list[str], help: view.Help | None) -> None:
-        out.append(GraphPort(name=name, address=at, accepts=accepts, many=many, names=names, help=help,
-                             connect=adds.connect(project, at, accepts, many, names, name)))
+        out.append(GraphPort(name=name, address=at, accepts=accepts, many=many, names=names, help=help))
 
     if instance is not None:
         for path, target, many, for_type in _referring(type(instance)):
@@ -165,12 +156,7 @@ def _nodes(m: ModelFile, study: str | None, s: StudyFile | None, docs: dict[str 
         out.append(GraphNode(
             address=here, kind=o.kind, type=type_, label=label, name=address.path[-1] if o.named else None,
             rank=o.rank, help=fields.help_of(schema), text=document_text(docs[address.study], address.path),
-            keys=fields.keys(schema), ports=_ports(project, address, o, type_, instance, root, schema),
-            write=view.command(MODEL_WRITE, label=f"write {label}", project=str(project), address=here,
-                               fills=[view.Fill(field="text", label=label)]),
-            remove=view.command(MODEL_UNSET, label=f"remove {label}", project=str(project), address=here),
-            rename=view.command(MODEL_RENAME, label=f"rename {label}", project=str(project), address=here,
-                                fills=[view.Fill(field="name", label="its new name")]) if o.named else None))
+            keys=fields.keys(schema), ports=_ports(project, address, o, type_, instance, root, schema)))
     return out
 
 
@@ -226,15 +212,6 @@ def _edges(m: ModelFile, study: str | None, s: StudyFile | None, nodes: list[Gra
     return list(out.values())
 
 
-def _cut(project: Path, edge: GraphEdge, nodes: dict[str, GraphNode]) -> view.Action | None:
-    """What cuts a wire: for a list's item, the list it is in, from its port."""
-    target = nodes[edge.target].name or ""
-    port = next((p for p in nodes[edge.source].ports if p.name == edge.port), None)
-    if edge.held == "item" and port is not None:
-        return adds.cut(project, port.address, "item", target, port.names)
-    return adds.cut(project, edge.address, edge.held, target)
-
-
 def build(m: ModelFile, study: str | None, s: StudyFile | None, issues: list[Issue], project: Path,
           f: FormulationDefinition | None, units: Units) -> tuple[list[GraphNode], list[GraphEdge], list[Issue]]:
     """The nodes with their findings, the edges, and the findings no node holds."""
@@ -251,9 +228,7 @@ def build(m: ModelFile, study: str | None, s: StudyFile | None, issues: list[Iss
         (held.setdefault(holder, []) if holder in shown else loose).append(issue)
     nodes = [n.model_copy(update={"findings": held.get(n.address, [])})
              for n in nodes]
-    by_address = {n.address: n for n in nodes}
-    edges = [e.model_copy(update={"cut": _cut(project, e, by_address)}) for e in _edges(m, study, s, nodes)]
-    return nodes, edges, loose
+    return nodes, _edges(m, study, s, nodes), loose
 
 
 def mermaid(nodes: list[GraphNode], edges: list[GraphEdge]) -> str:

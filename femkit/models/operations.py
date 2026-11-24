@@ -11,16 +11,16 @@ from femkit.core import text, view
 from femkit.core.errors import PlanStale, Refusal, Refused, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.persist import atomic_write_text, inline_text, write_document, write_json
+from femkit.core.persist import inline_text, write_json
 from femkit.core.schema import Model, field_extras
 from femkit.config import settings
 from femkit.definitions import catalogue
-from femkit.models import adds, address, cases, check, edit, graph, history
+from femkit.models import cases, check, graph
 from femkit.models.schema import ModelFile
-from femkit.models.project import file_of, load_model, load_study, model_file, studies, study_file
-from femkit.models.requests import (CopyRequest, GraphRequest, MODEL_SET, NewProjectRequest, ProjectRequest, ProjectsRequest, RenameRequest, SetRequest, StudyRequest, UnsetRequest, WriteRequest)
+from femkit.models.project import load_model, load_study, studies, study_file
+from femkit.models.requests import GraphRequest, NewProjectRequest, ProjectRequest, ProjectsRequest, StudyRequest
 from femkit.config.requests import CONFIG_SET
-from femkit.models.requests import CASE_LIST, MODEL_CHECK, MODEL_GRAPH, MODEL_REDO, MODEL_RENAME, MODEL_UNDO, MODEL_UNSET, MODEL_WRITE, PROJECT_LIST, PROJECT_NEW, STUDY_COPY, STUDY_EXPAND, STUDY_LIST
+from femkit.models.requests import CASE_LIST, MODEL_CHECK, MODEL_GRAPH, PROJECT_LIST, PROJECT_NEW, STUDY_EXPAND, STUDY_LIST
 
 
 class CheckResult(Result):
@@ -103,42 +103,6 @@ class StudyExpand:
                              kept=plan.basis["kept"], issues=plan.issues)
 
 
-class CopyOutcome(Outcome):
-    written: str | None = Field(default=None, description="the new study.toml")
-
-    def text(self) -> str:
-        return f"wrote {self.written}" if self.written else "nothing written"
-
-
-@operation(STUDY_COPY, result=CopyOutcome, changes=True,
-           subject=lambda req: [_subject(_project(req))])
-class StudyCopy:
-    """Start a study from another: its study.toml, comments and all (models.md § 5)."""
-
-    def plan(self, req: CopyRequest, ctx: Context) -> Plan:
-        project = _project(req)
-        source, target = study_file(project, req.study), study_file(project, req.to)
-        if not source.is_file():
-            raise UsageError(f"{project} has no study {req.study!r} (it has: {', '.join(studies(project)) or 'none'})")
-        if target.exists():
-            raise Refused(f"the study {req.to!r} exists already; choose another name")
-        return Plan(steps=(Step(id="copy", describe=f"copy studies/{req.study}/study.toml to studies/{req.to}/"),))
-
-    def apply(self, plan: Plan, ctx: Context, observer) -> CopyOutcome:
-        req = CopyRequest.model_validate(plan.request)
-        project = _project(req)
-        target = study_file(project, req.to)
-
-        def do(step: Step, where: Path):
-            if target.exists():
-                raise PlanStale(f"the study {req.to!r} appeared since the plan")
-            atomic_write_text(target, study_file(project, req.study).read_text(encoding="utf-8"))
-            return "done", None
-
-        status, where = run_steps(plan, ctx, observer, do)
-        return CopyOutcome(plan=plan, status=status, log=str(where), written=str(target))
-
-
 class CaseRow(Model):
     id: str = Field(description="the case's ID")
     studies: list[str] = Field(description="the studies that produce it")
@@ -179,191 +143,6 @@ def case_list(req: ProjectRequest, ctx: Context) -> CaseListResult:
 
 # ------------------------------------------------------------------ edits
 
-class EditOutcome(Outcome):
-    written: list[str] = Field(default_factory=list, description="the files the edit changed")
-
-    def text(self) -> str:
-        lines = [f"wrote {', '.join(Path(w).name for w in self.written) or 'nothing'}"]
-        lines.append(f"{text.count(len(self.issues), 'finding')} left" if self.issues else "the model is complete")
-        return "\n".join(lines + text.findings(self.issues))
-
-
-def _findings_after(project: "edit.Project", ctx: Context) -> list[Issue]:
-    """What `model check` would find once the edit is made: shown, never refused (models.md § 11.1)."""
-    model, _ = project.load()
-    return [i.model_copy(update={"severity": "info"})
-            for i in check.findings(model, catalogue.formulations(ctx), catalogue.units(ctx), project.root)]
-
-
-class _Edit:
-    """One edit of the model or a study (models.md § 11.1). Each kind says what it changes and
-    how a person reads it; reading the files, checking them, writing them and recording the
-    edit for undo are done here, once."""
-
-    verb: view.Verb                         # its declaration's, written in by `@operation`
-
-    def change(self, project: "edit.Project", req) -> None:
-        raise NotImplementedError
-
-    def label(self, req) -> str:
-        raise NotImplementedError
-
-    def _edited(self, req, ctx: Context) -> "edit.Project":
-        project = edit.Project.read(_project(req), catalogue.units(ctx), extra_study=address.parse(req.address).study)
-        self.change(project, req)
-        return project
-
-    def plan(self, req, ctx: Context) -> Plan:
-        project = self._edited(req, ctx)
-        steps = tuple(Step(id=str(p.relative_to(project.root)), describe=f"{p.relative_to(project.root)}: "
-                                                                          f"{self.label(req)}")
-                      for p in edit.written(project))
-        return Plan(steps=steps, issues=_findings_after(project, ctx),
-                    basis={"files": {str(k): v for k, v in edit.Project.read(project.root, project.units,
-                                                                            None).digests.items()}})
-
-    def apply(self, plan: Plan, ctx: Context, observer) -> EditOutcome:
-        req = self.verb.request.model_validate(plan.request)
-        now = {str(k): v for k, v in edit.Project.read(_project(req), catalogue.units(ctx), None).digests.items()}
-        if now != plan.basis["files"]:
-            raise PlanStale("a file of the project changed since the plan; plan again")
-        project = self._edited(req, ctx)
-        files = {str(p.relative_to(project.root)): p for p in edit.written(project)}
-        study_of = {project.path(s): s for s in project.docs}
-        before = {k: history.text_of(p) for k, p in files.items()}
-
-        def do(step: Step, where: Path):
-            write_document(files[step.id], project.docs[study_of[files[step.id]]])
-            return "done", None
-
-        status, where = run_steps(plan, ctx, observer, do)
-        if status == "done" and files:
-            history.record(project.root, self.label(req),
-                           [history.Change(study=study_of[p], before=before[k], after=history.text_of(p))
-                            for k, p in files.items()])
-        return EditOutcome(plan=plan, status=status, log=str(where), written=[str(p) for p in files.values()],
-                           issues=_findings_after(project, ctx))
-
-
-class _Turn:
-    """Undo or redo: the last edit that stands taken back, or the next undone one made again —
-    refused when a file it changed has changed since, by hand (models.md § 11.1)."""
-    back: bool                              # undo; else redo
-
-    def _edit(self, project: Path) -> tuple[history.History, history.Edit | None]:
-        h = history.read(project)
-        i = h.at - 1 if self.back else h.at
-        return h, (h.edits[i] if 0 <= i < len(h.edits) else None)
-
-    def plan(self, req: ProjectRequest, ctx: Context) -> Plan:
-        project = _project(req)
-        h, e = self._edit(project)
-        if e is None:
-            return Plan(basis={"at": h.at})
-        for c in e.changes:
-            path = file_of(project, c.study)
-            if history.text_of(path) != (c.after if self.back else c.before):
-                raise Refused(f"{path.relative_to(project)} has changed since `{e.label}`, so it is not "
-                              f"{'undone' if self.back else 'redone'}")
-        steps = tuple(Step(id=str(file_of(project, c.study).relative_to(project)),
-                           describe=f"{file_of(project, c.study).relative_to(project)}: "
-                                    f"{'take back' if self.back else 'make again'} {e.label}") for c in e.changes)
-        return Plan(basis={"at": h.at}, steps=steps)
-
-    def apply(self, plan: Plan, ctx: Context, observer) -> EditOutcome:
-        project = _project(ProjectRequest.model_validate(plan.request))
-        h, e = self._edit(project)
-        if h.at != plan.basis["at"]:
-            raise PlanStale("the project's edits changed since the plan; plan again")
-        texts = {str(file_of(project, c.study).relative_to(project)): c.before if self.back else c.after
-                 for c in (e.changes if e else [])}
-
-        def do(step: Step, where: Path):
-            target = project / step.id                     # the model's file or a study's: file_of made the id
-            if texts[step.id] is None:
-                target.unlink(missing_ok=True)
-            else:
-                atomic_write_text(target, texts[step.id])
-            return "done", None
-
-        status, where = run_steps(plan, ctx, observer, do)
-        if status == "done" and e is not None:
-            history.write(project, h.model_copy(update={"at": h.at - 1 if self.back else h.at + 1}))
-        after = _findings_after(edit.Project.read(project, catalogue.units(ctx)), ctx) if model_file(project).exists() else []
-        return EditOutcome(plan=plan, status=status, log=str(where), written=[str(project / p) for p in texts],
-                           issues=after)
-
-
-@operation(MODEL_UNDO, result=EditOutcome, changes=True, confirm=False,
-           subject=lambda req: [_subject(_project(req))])
-class ModelUndo(_Turn):
-    """Take back the last edit of the model or a study: each file it changed restored to its
-    text before it; refused when one has changed since, by hand (models.md § 11.1)."""
-    back = True
-
-
-@operation(MODEL_REDO, result=EditOutcome, changes=True, confirm=False,
-           subject=lambda req: [_subject(_project(req))])
-class ModelRedo(_Turn):
-    """Make again the last edit undone (models.md § 11.1)."""
-    back = False
-
-
-@operation(MODEL_SET, result=EditOutcome, changes=True, confirm=False, undoable=True,
-           subject=lambda req: [_subject(_project(req))])
-class ModelSet(_Edit):
-    """Set one value of the model or a study, keeping the file's comments; refused when the
-    file would no longer load (models.md § 11.1). The first set in an empty folder creates
-    model.toml."""
-
-    def change(self, project, req: SetRequest) -> None:
-        edit.set_value(project, address.parse(req.address), req.value)
-
-    def label(self, req: SetRequest) -> str:
-        return f"set {req.address} = {req.value}"
-
-
-@operation(MODEL_WRITE, result=EditOutcome, changes=True, confirm=False, undoable=True,
-           subject=lambda req: [_subject(_project(req))])
-class ModelWrite(_Edit):
-    """Write an object's text — its table, comments and all, or a value — as one edit; refused
-    when any file of the project would no longer load (models.md § 11.1)."""
-
-    def change(self, project, req: WriteRequest) -> None:
-        edit.write(project, address.parse(req.address), req.text)
-
-    def label(self, req: WriteRequest) -> str:
-        return f"write {req.address}"
-
-
-@operation(MODEL_UNSET, result=EditOutcome, changes=True, confirm=False, undoable=True,
-           subject=lambda req: [_subject(_project(req))])
-class ModelUnset(_Edit):
-    """Remove one entry of the model or a study; refused while anything refers to it, listing
-    each place (models.md § 11.1)."""
-
-    def change(self, project, req: UnsetRequest) -> None:
-        edit.unset(project, address.parse(req.address))
-
-    def label(self, req: UnsetRequest) -> str:
-        return f"remove {req.address}"
-
-
-@operation(MODEL_RENAME, result=EditOutcome, changes=True, confirm=False, undoable=True,
-           subject=lambda req: [_subject(_project(req))])
-class ModelRename(_Edit):
-    """Rename a named object, and every reference to it: in the model, in every study, in
-    every expression using a renamed parameter (models.md § 11.1)."""
-
-    def change(self, project, req: RenameRequest) -> None:
-        edit.rename(project, address.parse(req.address), req.name)
-
-    def label(self, req: RenameRequest) -> str:
-        return f"rename {req.address} to {req.name}, and every reference to it"
-
-
-# ------------------------------------------------------------------ the graph
-
 class GraphResult(Result):
     project: str = Field(description="the project")
     study: str | None = Field(default=None, description="the study shown")
@@ -371,10 +150,7 @@ class GraphResult(Result):
     choices: list[view.Field] = Field(default_factory=list, description="the model's fields that take one of a list")
     nodes: list[graph.GraphNode] = Field(default_factory=list)
     edges: list[graph.GraphEdge] = Field(default_factory=list)
-    palette: list[adds.Entry] = Field(default_factory=list, description="what may be added, in the chain's order")
     next: Issue | None = Field(default=None, description="the model's next step: the first finding, in the chain's order")
-    undo: view.Action | None = Field(default=None, description="what takes back the last edit")
-    redo: view.Action | None = Field(default=None, description="what makes the last undone edit again")
     mermaid: str | None = Field(default=None, description="the graph as Mermaid text, when asked")
 
     def text(self) -> str:
@@ -403,14 +179,9 @@ def model_graph(req: GraphRequest, ctx: Context) -> GraphResult:
         project=str(project), study=req.study, formulation=model.formulation,
         choices=[view.Field(label="formulation", value=inline_text(model.formulation) if model.formulation else None,
                             json_schema=choice, help=view.Help.of(formulation.description,
-                                                                  field_extras(formulation).get("doc")),
-                            set=view.command(MODEL_SET, label="choose the formulation", project=str(project),
-                                             address="model:formulation",
-                                             fills=[view.Fill(field="value", label="formulation", json_schema=choice)]))],
-        nodes=nodes, edges=edges, issues=loose, palette=adds.palette(project, req.study, f, units),
+                                                                  field_extras(formulation).get("doc")))],
+        nodes=nodes, edges=edges, issues=loose,
         next=issues[0] if issues else None,
-        undo=view.command(MODEL_UNDO, label="undo", project=str(project)),
-        redo=view.command(MODEL_REDO, label="redo", project=str(project)),
         mermaid=graph.mermaid(nodes, edges) if req.mermaid else None)
 
 

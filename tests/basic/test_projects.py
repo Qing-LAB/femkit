@@ -1,5 +1,5 @@
 """The projects framework (projects.md): a project's parts opened each on its own, the files no
-part kind declares, renames with every reference rewritten, transactions and undo, the layout as
+part kind declares, the citations between parts, the layout as
 data, and a project named from the root or from inside its folder — proven on a layout and toy
 schemas of the tests' own, since the framework names no part kind (plan § 3, C)."""
 
@@ -7,22 +7,20 @@ from __future__ import annotations
 
 import copy
 import shutil
-from collections import Counter
 from pathlib import Path
 
 import pytest
 from pydantic import Field
 
 from tests import kit
-from femkit.core.errors import Refused, Unstated, UsageError
+from femkit.core.errors import Unstated, UsageError
 from femkit.core.persist import write_toml
 from femkit.core.schema import DefinitionError, Model
-from femkit.projects import addresses, door, layout, location, schemas, transactions
+from femkit.projects import addresses, door, layout, location, schemas
 from femkit.projects.addresses import Address
 from femkit.projects.door import Opened
 from femkit.projects.layout import Layout
 from femkit.projects.project import Project
-from femkit.projects.transactions import FileStep
 
 
 # ------------------------------------------------------------------ the tests' own layout
@@ -151,22 +149,6 @@ def tree(folder: Path) -> dict[str, bytes | None]:
             for p in sorted(folder.rglob("*")) if p.relative_to(folder).parts[0] != ".femkit"}
 
 
-def applied(opened: Opened, steps: list[FileStep]) -> None:
-    """``steps`` planned on the opened project as one transaction, and applied."""
-    tx = transactions.plan(opened.project, steps, read=opened.hashes, check=door.check(opened))
-    transactions.apply(tx, kit.ctx())
-
-
-def citations(opened: Opened, part: Address) -> Counter:
-    """The parts citing ``part``, each with how many times it does."""
-    return Counter(str(src.part) for src, cited in door.references(opened) if cited == part)
-
-
-def comments(text: str) -> list[str]:
-    """Each comment a TOML text holds (no value of ours holds a `#`)."""
-    return [line[line.index("#"):] for line in text.splitlines() if "#" in line]
-
-
 def findings(opened: Opened) -> list[tuple[str, str, str]]:
     return sorted((i.code, i.subject, i.severity) for i in opened.issues)
 
@@ -182,12 +164,11 @@ def optics(order: int) -> str:
     ("physics/heat.toml", "physics:heat", 'groups = ["arms"\n'),
     ("project.toml", "project", 'description = "a bowtie, swept"\ncomponents = "bowtie"\n'),
 ], ids=["a physics its schema refuses", "a physics that is no TOML", "the project file"])
-def test_a_part_broken_by_hand_is_a_finding_and_blocks_no_edit_of_another(demo, toy_layout, broken, address, text):
-    """Fails if a part that does not load stops the project opening, hides another part, is not
-    an `unloadable` finding on that part's address, or blocks a change to another part
-    (projects.md § 6: "each on its own: a part that does not load is a finding on that part —
-    and every other part is still read"; a project file that does not load leaves the components
-    and studies listed from their folders; § 7: "a part broken by hand elsewhere never blocks it")."""
+def test_a_part_broken_by_hand_is_a_finding_and_every_other_part_opens(demo, toy_layout, broken, address, text):
+    """Fails if a part that does not load stops the project opening, hides another part, or is not
+    an `unloadable` finding on that part's address (projects.md § 6: "each on its own: a part that
+    does not load is a finding on that part — and every other part is still read"; a project file
+    that does not load leaves the components and studies listed from their folders)."""
     (demo.folder / broken).write_text(text)
     opened = door.open_project(demo, toy_layout)
     assert findings(opened) == [("unloadable", address, "error")]
@@ -195,86 +176,7 @@ def test_a_part_broken_by_hand_is_a_finding_and_blocks_no_edit_of_another(demo, 
     part = opened.part(addresses.parse(address, toy_layout.named()))
     assert part.file == broken and part.data is None
     assert all(p.data is not None for a, p in opened.parts.items() if a != address)
-
-    applied(opened, [FileStep("change", "physics/optics.toml", text=optics(2))])
-    again = door.open_project(demo, toy_layout)
-    assert again.parts["physics:optics"].data.order == 2
-    assert (demo.folder / broken).read_text() == text
-    assert findings(again) == [("unloadable", address, "error")]
-
-
-# ------------------------------------------------------------------ (b) a rename, one transaction
-
-@pytest.mark.parametrize("kind, name, new, old_file, new_file, gone", [
-    ("component", "bowtie", "antennas/bowtie", "components/bowtie/component.toml",
-     "components/antennas/bowtie/component.toml", "components/bowtie"),
-    ("study", "sweeps/gap_sweep", "archive/gap_sweep", "studies/sweeps/gap_sweep.toml",
-     "studies/archive/gap_sweep.toml", "studies/sweeps"),
-], ids=["a component folder into a new group", "a study out of its group into another"])
-def test_a_part_renamed_into_another_group_rewrites_every_reference_and_is_one_undo(
-        demo, toy_layout, kind, name, new, old_file, new_file, gone):
-    """Fails if a rename into another group leaves a citation naming the old name, loses a
-    comment of a file it rewrites, changes anything else, leaves an emptied group folder behind,
-    or is not one transaction that one undo takes back whole and one redo does again
-    (projects.md § 5: "Renaming a part — moving it to another group is one — is one transaction
-    that moves its file where it has one and rewrites every address that names it"; § 7: "no empty
-    group is left behind", "an edit is one undo step"; § 6: a part's text keeps its comments)."""
-    old_address, new_address = Address(kind, name), Address(kind, new)
-    opened = door.open_project(demo, toy_layout)
-    before = tree(demo.folder)
-    cited = citations(opened, old_address)
-    assert cited, "the case renames a part that is cited"
-    citing = {src.part for src, part in door.references(opened) if part == old_address}
-    texts = {p: door.text(opened, p) for p in citing}
-
-    applied(opened, door.rename(opened, old_address, new))
-    renamed = door.open_project(demo, toy_layout)
-    moved = tree(demo.folder)
-    assert renamed.issues == []
-    listed = door.listing(demo, toy_layout)[kind]
-    assert new in listed and name not in listed
-    assert renamed.parts[str(new_address)].file == new_file and str(old_address) not in renamed.parts
-    assert renamed.parts[str(new_address)].data == opened.parts[str(old_address)].data
-    assert moved[new_file] == before[old_file] and gone not in moved
-    assert citations(renamed, new_address) == cited and not citations(renamed, old_address)
-    for p, text in texts.items():
-        assert all(c in door.text(renamed, p) for c in comments(text)), (str(p), door.text(renamed, p))
-    rewritten = {opened.parts[str(p)].file for p in citing} | {old_file}
-    untouched = {f: b for f, b in before.items() if b is not None and f not in rewritten}
-    assert {f: moved.get(f) for f in untouched} == untouched
-
-    transactions.undo(demo, kit.ctx())
-    assert tree(demo.folder) == before
-    with kit.refused(Refused, "nothing-to-undo"):
-        transactions.undo(demo, kit.ctx())
-    transactions.redo(demo, kit.ctx())
-    assert tree(demo.folder) == moved
-
-
-# ------------------------------------------------------------------ (c) how far undo reaches
-
-def test_undo_reaches_back_as_far_as_projects_undo_says_and_no_further(demo, toy_layout):
-    """Fails if undo takes back more edits than `projects.undo` says, or fewer, or redo does not
-    move forward through the same ones (projects.md § 7: "`undo` and `redo` move through as many
-    edits as `projects.undo` says"; config.md § 3)."""
-    kit.apply("config.set", key="projects.undo", value="2")
-    file = demo.folder / "physics" / "optics.toml"
-    for order in (2, 3, 4):
-        applied(door.open_project(demo, toy_layout), [FileStep("change", "physics/optics.toml", text=optics(order))])
-    assert file.read_text() == optics(4)
-
-    for order in (3, 2):
-        transactions.undo(demo, kit.ctx())
-        assert file.read_text() == optics(order)
-    with kit.refused(Refused, "nothing-to-undo"):
-        transactions.undo(demo, kit.ctx())
-    assert file.read_text() == optics(2)
-
-    for order in (3, 4):
-        transactions.redo(demo, kit.ctx())
-        assert file.read_text() == optics(order)
-    with kit.refused(Refused, "nothing-to-redo"):
-        transactions.redo(demo, kit.ctx())
+    assert (demo.folder / broken).read_text() == text              # read, never changed
 
 
 # ------------------------------------------------------------------ (d) naming a project
@@ -340,7 +242,7 @@ def test_a_project_zipped_and_unpacked_under_another_root_opens_as_before(tmp_pa
     after = door.open_project(moved, toy_layout)
     assert {a: (p.file, p.data) for a, p in after.parts.items()} == {a: (p.file, p.data) for a, p in before.parts.items()}
     assert findings(after) == findings(before) == [("unloadable", "physics:heat", "error")]
-    assert after.hashes == before.hashes
+    assert after.texts == before.texts
     assert door.listing(moved, toy_layout) == listed
     assert {a: door.text(after, p.address) for a, p in after.parts.items()} == texts
 
@@ -368,28 +270,7 @@ def test_a_file_no_part_kind_declares_is_a_stray_finding_and_never_read(demo, to
     opened = door.open_project(demo, toy_layout)
     assert findings(opened) == [("stray", relative, "warning") for relative in sorted(STRAYS)]
     assert set(opened.parts) == PARTS and all(p.data is not None for p in opened.parts.values())
-    assert [f for f in opened.hashes if f in STRAYS or f.startswith(("runs/", ".femkit/"))] == []
-
-
-# ------------------------------------------------------------------ (g) a change that breaks
-
-@pytest.mark.parametrize("step, problem", [
-    (FileStep("delete", "physics/optics.toml"), "study:sweeps/gap_sweep:physics"),
-    (FileStep("change", "physics/optics.toml", text='groups = ["gap"]\norder = "high"\n'), "physics:optics"),
-], ids=["deleting a cited part", "a part changed so that it does not load"])
-def test_a_change_leaving_a_reference_broken_or_a_part_unloadable_is_refused(demo, toy_layout, step, problem):
-    """Fails if a change that would leave a citation naming no part, or a part it touches
-    unloadable, is planned, or if the check does not name the citation or the part at its
-    address (projects.md § 7: "The plan reads the project as the change would leave it, and
-    refuses a change that would leave a part it touches unloadable, or a reference into one
-    broken, naming each problem")."""
-    opened = door.open_project(demo, toy_layout)
-    before = tree(demo.folder)
-    problems = door.check(opened)({step.path: step.text})
-    assert problem in [where for where, _why in problems], problems
-    with kit.refused(Refused, "change-breaks"):
-        transactions.plan(demo, [step], read=opened.hashes, check=door.check(opened))
-    assert tree(demo.folder) == before
+    assert [f for f in opened.texts if f in STRAYS or f.startswith(("runs/", ".femkit/"))] == []   # never read
 
 
 # ------------------------------------------------------------------ (h) the layout's own rules
@@ -442,74 +323,24 @@ def test_a_part_that_cannot_be_read_is_a_finding_and_the_rest_opens(demo, toy_la
     assert opened.parts["study:baseline"].data is not None
 
 
-def test_a_folder_part_renamed_takes_every_file_it_holds_and_undo_brings_them_back(demo, toy_layout):
-    """Fails if renaming a part held in a folder leaves a file of it behind, fails on one that holds
-    no text, takes a deeper own file for a part, or one undo does not put every byte back
-    (projects.md §§ 3, 5, 7)."""
+def test_a_folder_parts_other_files_are_its_own(demo, toy_layout):
+    """Fails if a file inside a part's folder — a component's script, a mesh it holds, a deeper
+    file of the part's own name — is taken for a part or for a stray file: a folder is a part or
+    a group, never both (projects.md § 3)."""
     (demo.folder / "components/bowtie/mesh.bin").write_bytes(b"\x80\x81\x00binary")
     (demo.folder / "components/bowtie/sub").mkdir()
-    (demo.folder / "components/bowtie/sub/component.toml").write_text("groups = []\n")   # the part's own, no part
+    (demo.folder / "components/bowtie/sub/component.toml").write_text("groups = []\n")
     opened = door.open_project(demo, toy_layout)
     assert "component:bowtie/sub" not in opened.parts and not opened.issues
-    before = tree(demo.folder)
-    applied(opened, door.rename(opened, Address("component", "bowtie"), "antennas/bowtie"))
-    assert (demo.folder / "components/antennas/bowtie/mesh.bin").read_bytes() == b"\x80\x81\x00binary"
-    assert (demo.folder / "components/antennas/bowtie/sub/component.toml").exists()
-    transactions.undo(demo, kit.ctx())
-    assert tree(demo.folder) == before
-
-
-@pytest.mark.parametrize("written", ['weights.heat = 1.0\n', '\n[weights]\nheat = 1.0  # its weight\n'],
-                         ids=["a dotted key", "a table"])
-def test_a_table_keyed_by_a_parts_name_is_rewritten_by_its_rename(demo, toy_layout, written):
-    """Fails if a rename misses a citation held as a table's key — written as a dotted key or as a
-    table — or loses its comment (projects.md § 5: "rewrites every address that names it")."""
-    study = demo.folder / "studies/baseline.toml"
-    study.write_text(study.read_text() + written)
-    opened = door.open_project(demo, toy_layout)
-    applied(opened, door.rename(opened, Address("physics", "heat"), "thermal/heat"))
-    text = study.read_text()
-    assert ("# its weight" in text) == ("# its weight" in written)
-    assert door.open_project(demo, toy_layout).parts["study:baseline"].data.weights == {"thermal/heat": 1.0}
 
 
 def test_a_citation_naming_either_of_two_kinds_finds_the_one_that_has_the_part(demo, toy_layout):
     """Fails if a citation that may name a component or a physics is taken as naming no part when
-    the physics exists, or is not rewritten when that physics is renamed (projects.md § 3)."""
+    the physics exists (projects.md § 3)."""
     study = demo.folder / "studies/baseline.toml"
     study.write_text(study.read_text() + 'also = "optics"\n')
     opened = door.open_project(demo, toy_layout)
     assert Address("physics", "optics") in [cited for _, cited in door.references(opened)]
-    applied(opened, door.rename(opened, Address("physics", "optics"), "light"))
-    assert 'also = "light"' in study.read_text()
-
-
-def test_a_change_is_refused_only_for_what_it_breaks(demo, toy_layout):
-    """Fails if renaming a part that already cited nothing is refused for that citation, which
-    the change did not break (projects.md § 7: "a part broken by hand elsewhere never blocks it")."""
-    study = demo.folder / "studies/baseline.toml"
-    study.write_text(study.read_text() + 'also = "nosuch"\n')
-    opened = door.open_project(demo, toy_layout)
-    applied(opened, door.rename(opened, Address("study", "baseline"), "old/baseline"))
-    assert (demo.folder / "studies/old/baseline.toml").exists()
-
-
-def test_a_rename_is_refused_where_the_name_is_taken_or_would_make_a_part_a_group(demo, toy_layout):
-    """Fails if a rename takes a name a part has, makes a part's folder a group or puts it inside
-    another part's, renames the project file, or names no part — each refused by its code
-    (projects.md §§ 3, 5; core.md § 9)."""
-    opened = door.open_project(demo, toy_layout)
-    with kit.refused(Refused, "name-taken", "physics:heat"):
-        door.rename(opened, Address("physics", "optics"), "heat")
-    (demo.folder / "components/round").mkdir()
-    (demo.folder / "components/round/component.toml").write_text("groups = []\n")
-    opened = door.open_project(demo, toy_layout)
-    with kit.refused(Refused, "name-taken", "component:bowtie/round"):
-        door.rename(opened, Address("component", "round"), "bowtie/round")
-    with kit.refused(UsageError, "unnamed-part", "project"):
-        door.rename(opened, Address("project", None), "other")
-    with kit.refused(UsageError, "no-such-part", "physics:nope"):
-        door.rename(opened, Address("physics", "nope"), "other")
 
 
 def test_a_value_is_read_at_its_address_as_its_file_writes_it(demo, toy_layout):

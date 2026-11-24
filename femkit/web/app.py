@@ -136,8 +136,7 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
 
     @app.get("/api/operations")
     def list_operations():
-        return jsonify([view.OperationInfo(name=op.name, description=op.doc, changes=op.changes, confirm=op.confirm,
-                                           undoable=op.undoable,
+        return jsonify([view.OperationInfo(name=op.name, description=op.doc, changes=op.changes,
                                            request=op.request.model_json_schema(),
                                            result=op.result.model_json_schema(mode="serialization")
                                            ).model_dump(mode="json") for op in ops.values()])

@@ -404,27 +404,6 @@ def _headers_from_keys(item: Any) -> None:
             _headers_from_keys(table)
 
 
-def move(source: Path, path: Path) -> Path:
-    """The file ``source`` renamed to ``path``, the folders above ``path`` made: one rename, so a
-    reader finds it at one place or the other, never both or neither."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    os.rename(source, path)
-    return path
-
-
-def remove_empty_folders(path: Path, stop: Path) -> None:
-    """``path`` and each folder above it removed while it is empty, up to ``stop``, which stays,
-    as does every folder not below it; a folder already gone is passed over."""
-    path, stop = Path(path), Path(stop)
-    while stop in path.parents:
-        if path.is_dir():
-            if any(path.iterdir()):
-                return
-            path.rmdir()
-        path = path.parent
-
-
 def read_text(path: Path) -> str | None:
     """A file's text as its bytes hold it — line endings kept, UTF-8 — or None when no file is there."""
     path = Path(path)

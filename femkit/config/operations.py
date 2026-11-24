@@ -35,16 +35,14 @@ class PathResult(Result):
 
     def report(self) -> view.Report:
         blocks: list = [view.Text(text="femkit's directories"),
-                        view.Table(columns=[view.Column(key="name", label="directory"),
-                                            view.Column(key="path", label="path"),
-                                            view.Column(key="rule", label="from")],
+                        view.Table(columns=view.columns("name", "path", "rule", name="directory", path="path", rule="from"),
                                    rows=[{"name": d.name, "path": d.path, "rule": d.rule} for d in self.directories])]
         for d in self.directories:
             if not d.entries:
                 blocks.append(view.Text(text=f"in {d.name}: empty"))
                 continue
             blocks += [view.Text(text=f"in {d.name}:"),
-                       view.Table(columns=[view.Column(key="entry", label="")], rows=[{"entry": e} for e in d.entries])]
+                       view.Table(columns=view.columns("entry"), rows=[{"entry": e} for e in d.entries])]
         return view.Report(blocks=blocks)
 
 
@@ -79,8 +77,7 @@ class ShowResult(Result):
     def report(self) -> view.Report:
         return view.Report(blocks=[
             view.Text(text=f"read {self.file}" if self.file else "no config.toml: every key is unset"),
-            view.Table(columns=[view.Column(key="key", label="key"), view.Column(key="value", label="value"),
-                                view.Column(key="unset", label="when unset")],
+            view.Table(columns=view.columns("key", "value", "unset", key="key", value="value", unset="when unset"),
                        rows=[{"key": r.key, "value": text.show(r.value), "unset": r.unset if r.value is None else ""}
                              for r in self.rows])])
 
@@ -131,7 +128,7 @@ class ConfigSet:
             Step(id=f"set:{req.key}", describe=f"set {req.key}: {text.show(old)} -> {text.show(new)}"),)
         return Plan(steps=steps)
 
-    def observe(self, req: SetRequest, ctx: Context, held: bool) -> dict:
+    def observe(self, req: SetRequest, ctx: Context) -> dict:
         """The key's value in config.toml now: what the plan changes from."""
         return {"old": settings.load(ctx, fresh=True).present().get(req.key)}
 
@@ -182,8 +179,7 @@ class InitOutcome(Outcome):
         added = sum(r.status == "added" for r in self.rows)
         return view.Report(blocks=[
             view.Text(text=f"{self.file}: {text.count(added, 'key')} added"),
-            view.Table(columns=[view.Column(key="status", label="status"), view.Column(key="key", label="key"),
-                                view.Column(key="value", label="value"), view.Column(key="note", label="when unset")],
+            view.Table(columns=view.columns("status", "key", "value", "note", status="status", key="key", value="value", note="when unset"),
                        rows=[{"status": r.status, "key": r.key, "value": text.show(r.value), "note": r.note}
                              for r in self.rows])])
 
@@ -291,7 +287,7 @@ class ConfigInit:
                                                    fills=[view.Fill(field="environments", label=ENVIRONMENTS, example="PATH")]),)))
         return Plan(holds={"values": values}, steps=steps, issues=issues, asks=_asks(ctx, given, present))
 
-    def observe(self, req, ctx: Context, held: bool) -> dict:
+    def observe(self, req, ctx: Context) -> dict:
         """The keys config.toml holds now: what the plan adds to."""
         return {"present": sorted(settings.load(ctx, fresh=True).present())}
 

@@ -191,6 +191,11 @@ class Table(Model):
     rows: list[dict[str, Any]] = Describe(default_factory=list)
 
 
+def columns(*keys: str, **labels: str) -> list[Column]:
+    """A table's columns by their keys; a heading only where ``labels`` gives one."""
+    return [Column(key=k, label=labels.get(k, "")) for k in keys]
+
+
 class Text(Model):
     """One line a person reads (web.md § 7.6)."""
 
@@ -248,9 +253,7 @@ class OperationInfo(Model):
 
     name: str = Describe(description="`group.verb`")
     description: str = Describe(description="its help")
-    changes: bool = Describe(description="whether it is planned and applied")
-    confirm: bool = Describe(description="whether a surface shows its plan and asks first")
-    undoable: bool = Describe(description="whether `model undo` takes it back")
+    changes: bool = Describe(description="whether it is planned, shown and applied once the person agrees")
     request: dict[str, Any] = Describe(description="its request's JSON schema")
     result: dict[str, Any] = Describe(description="its result's JSON schema")
 

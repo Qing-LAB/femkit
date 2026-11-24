@@ -154,9 +154,9 @@ def _built_by(manifest: Manifest | None, ctx: Context) -> str | None:
     return Path(named).name if named else None
 
 
-def facts(ctx: Context, name: str, *, holding_lock: bool = False) -> EnvFacts:
-    """``holding_lock``: the caller holds this environment's lock (an apply re-observing),
-    so the lock says nothing about anyone else."""
+def facts(ctx: Context, name: str) -> EnvFacts:
+    """What is observed of the environment ``name``; its lock as another process holds it —
+    this process's own hold reads as free (core.md § 5)."""
     env = definition(ctx, name)
     where = layout.prefix(ctx, name)
     kind = "absent" if not where.exists() else ("environment" if (where / "conda-meta").is_dir() else "directory")
@@ -164,7 +164,7 @@ def facts(ctx: Context, name: str, *, holding_lock: bool = False) -> EnvFacts:
     return EnvFacts(
         name=name,
         prefix=where,
-        locked=False if holding_lock else locks.is_held(layout.subject(name)),
+        locked=locks.is_held(layout.subject(name)),
         prefix_kind=kind,
         manifest=manifest,
         install_fingerprint=install_fingerprint(ctx, name, _built_by(manifest, ctx)),
@@ -175,8 +175,8 @@ def facts(ctx: Context, name: str, *, holding_lock: bool = False) -> EnvFacts:
     )
 
 
-def observe(ctx: Context, name: str, *, holding_lock: bool = False) -> tuple[EnvFacts, EnvState]:
-    f = facts(ctx, name, holding_lock=holding_lock)
+def observe(ctx: Context, name: str) -> tuple[EnvFacts, EnvState]:
+    f = facts(ctx, name)
     return f, MACHINE.observe(f)
 
 

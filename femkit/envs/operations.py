@@ -51,7 +51,7 @@ class ListResult(Result):
 
     def report(self) -> view.Report:
         return view.Report(blocks=[view.Text(text="environments"), view.Table(
-            columns=[view.Column(key=k, label="") for k in ("name", "state", "gpu", "description")],
+            columns=view.columns("name", "state", "gpu", "description"),
             rows=[{"name": r.name, "state": r.state.value, "gpu": f"gpu {r.gpu}" if r.gpu else "",
                    "description": r.description} for r in self.rows])])
 
@@ -94,8 +94,8 @@ class EnvClean:
         argv = tuple(m.remove(f.prefix, catalogue.load_control().channels))
         return Plan(steps=(Step(id="remove", describe=f"remove {text.path(f.prefix)}", argv=argv),))
 
-    def observe(self, req: CleanRequest, ctx: Context, held: bool) -> dict:
-        f, state = observe(ctx, req.name, holding_lock=held)
+    def observe(self, req: CleanRequest, ctx: Context) -> dict:
+        f, state = observe(ctx, req.name)
         return {"state": state.value, "prefix": str(f.prefix)}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> CleanOutcome:
@@ -121,7 +121,7 @@ class LogResult(Result):
             return view.Report(blocks=[view.Text(text="no operation has run on it yet")])
         return view.Report(blocks=[
             view.Text(text=f"last operation: {self.outcome or 'did not end'} — {self.operation}"),
-            view.Table(columns=[view.Column(key=k, label="") for k in ("outcome", "id", "log")],
+            view.Table(columns=view.columns("outcome", "id", "log"),
                        rows=[{"outcome": s.outcome, "id": s.id, "log": s.log or ""} for s in self.steps])])
 
 
@@ -193,7 +193,7 @@ class InstallOutcome(Outcome):
         said = "installed" if self.ok() else "the install failed" if self.status == "failed" \
             else "installed; not every environment is ready"
         blocks = [view.Text(text=said), view.Table(
-            columns=[view.Column(key=k, label="") for k in ("name", "status", "state", "log")],
+            columns=view.columns("name", "status", "state", "log"),
             rows=[{"name": e.name, "status": e.status, "state": e.state.value if e.state else "",
                    "log": e.validation or e.log or ""} for e in self.environments])]
         failed = [view.command(ENV_LOG, name=e.name) for e in self.environments if e.status == "failed"]
@@ -230,10 +230,10 @@ def _not_ready(f, state: EnvState, outcomes) -> Issue:
                  next=tuple(_next(state, f.name)))
 
 
-def _install_basis(ctx: Context, name: str, held: bool) -> dict:
+def _install_basis(ctx: Context, name: str) -> dict:
     """What an install of ``name`` rests on: its state, its install fingerprint, its place, the
     saved lock it would create from, and the earlier install it would resume."""
-    f, state = observe(ctx, name, holding_lock=held)
+    f, state = observe(ctx, name)
     builds = Path(named).name if (named := manager.named(ctx)) else None
     resumed, finished = last_install(name)
     return {"state": state.value, "install_fingerprint": f.install_fingerprint, "prefix": str(f.prefix),
@@ -286,9 +286,9 @@ class EnvInstall:
             checks.runner(ctx, name), checks.selected(definition(ctx, name), gpu=False))] for name in sorted(validated)}
         return Plan(holds={"checks": held}, steps=tuple(steps))   # what each validate runs, shown with the plan
 
-    def observe(self, req: InstallRequest, ctx: Context, held: bool) -> dict:
+    def observe(self, req: InstallRequest, ctx: Context) -> dict:
         """Each requested environment's install basis: every one re-observed before any is touched."""
-        return {name: _install_basis(ctx, name, held) for name in _requested(req)}
+        return {name: _install_basis(ctx, name) for name in _requested(req)}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> InstallOutcome:
         from femkit.envs.install import KILLED, run_step, target
@@ -297,7 +297,7 @@ class EnvInstall:
             if status == "failed":
                 results.append(EnvResult(name=name, status="not reached"))
                 continue
-            f = facts(ctx, name, holding_lock=True)
+            f = facts(ctx, name)
             mine = tuple(s.model_copy(update={"id": s.id.split("/", 1)[1]}) for s in plan.steps if s.id.startswith(f"{name}/"))
             env_status, where, killed, outcomes, validated = "done", None, [], [], None
             if mine:
@@ -320,7 +320,7 @@ class EnvInstall:
                 env_status, where = run_steps(sub, ctx, observer, do)
                 if killed:
                     issues.append(_killed(ctx, name, killed))
-            after, state = observe(ctx, name, holding_lock=True)
+            after, state = observe(ctx, name)
             results.append(EnvResult(name=name, status=env_status if mine else "nothing to do", state=state,
                                      log=str(where) if where else None,
                                      validation=str(validated) if validated else None))
@@ -341,7 +341,7 @@ class ValidateOutcome(Outcome):
     def report(self) -> view.Report:
         head = f"{self.name}: {self.state.value if self.state else 'not validated'}"
         return view.Report(blocks=[view.Text(text=head + (f", GPU {self.gpu}" if self.gpu else "")), view.Table(
-            columns=[view.Column(key=k, label="") for k in ("outcome", "id", "reason", "log")],
+            columns=view.columns("outcome", "id", "reason", "log"),
             rows=[{"outcome": o.outcome, "id": o.id, "reason": o.reason,
                    "log": o.log if o.log and o.outcome == "failed" else ""} for o in self.outcomes])])
 
@@ -374,14 +374,14 @@ class EnvValidate:
         checks.refusals(ctx, chosen)
         return Plan(steps=tuple(checks.steps(checks.runner(ctx, req.name), chosen)))
 
-    def observe(self, req: ValidateRequest, ctx: Context, held: bool) -> dict:
-        f, state = observe(ctx, req.name, holding_lock=held)
+    def observe(self, req: ValidateRequest, ctx: Context) -> dict:
+        f, state = observe(ctx, req.name)
         return self._basis(f, state, ctx)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ValidateOutcome:
         req = ValidateRequest.model_validate(plan.request)
         status, where, outcomes = checks.run_validation(ctx, req.name, req.gpu, plan.steps, observer)
-        f, state = observe(ctx, req.name, holding_lock=True)
+        f, state = observe(ctx, req.name)
         issues = []
         if state is not EnvState.ready:  # with --gpu too: a CPU partner it ran again may fail
             issues.append(_not_ready(f, state, outcomes))

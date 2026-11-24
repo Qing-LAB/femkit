@@ -110,7 +110,7 @@ class BookRequest(Model):
 class Shelve:
     """Shelve the book as it stands."""
 
-    def observe(self, req: BookRequest, ctx: Context, held: bool) -> dict:
+    def observe(self, req: BookRequest, ctx: Context) -> dict:
         return {"state": SHELF.get(req.book)}
 
     def plan(self, req: BookRequest, ctx: Context) -> Plan:

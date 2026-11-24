@@ -23,7 +23,7 @@ from femkit.jobs.requests import JOB_MACHINES, JOB_PROBE
 
 def _table(rows: list[dict], *keys: str) -> view.Table:
     """Rows under columns with no heading: each cell says what it is."""
-    return view.Table(columns=[view.Column(key=k, label="") for k in keys], rows=rows)
+    return view.Table(columns=view.columns(*keys), rows=rows)
 
 
 def _pairs(pairs) -> view.Table:
@@ -138,7 +138,7 @@ class JobProbe:
             steps = (Step(id="write", describe=describe),)
         return Plan(holds={"record": new.data(), "file": str(file)}, steps=steps, issues=issues)
 
-    def observe(self, req: ProbeRequest, ctx: Context, held: bool) -> dict:
+    def observe(self, req: ProbeRequest, ctx: Context) -> dict:
         """The record file as it is now: what a write replaces."""
         return {"existing_sha256": record.sha256(record.path(_name(req)))}
 

@@ -73,8 +73,6 @@ class EnvInstall:
 | `result` | a `Result` subclass (§ 2.3) |
 | `changes` | `False` (default): one function `(req, ctx) -> result`. `True`: a class with `plan` and `apply` (§ 3) |
 | `subject` | for a changing operation: the lock subjects it holds while applying (core.md § 5), from the request; or `"plan"` when they depend on what the plan observes — the plan names them (`serve start`: a login node listens on a socket unless asked otherwise, [`web.md`](web.md) § 4) |
-| `undoable` | for a changing operation that undo takes back: `True` — the edits of a project, each one transaction ([`projects.md`](projects.md) § 7; today `model set`, `unset`, `rename`, `write`); a surface offers the undo after it |
-| `confirm` | for a changing operation: `True` (default) — a surface shows its plan and asks before applying; `False` only for a change a person can take back at once — an edit of a project recorded for undo ([`projects.md`](projects.md) § 7) — or one to no project data, the page's view file (`project view`, [`projects.md`](projects.md) § 2) — which the page applies as soon as it is committed ([`web.md`](web.md) § 9.1) |
 | docstring | the command's help and the route's description |
 
 The name is unique; the registry refuses a duplicate at start.
@@ -153,9 +151,10 @@ class Plan(Model):
    starts nothing but read-only probes, and lists every step with its command
    line. A state that does not allow the action raises `Refused` here
    (core.md § 7, `require`). An operation whose plan rests on facts declares
-   `observe(req, ctx, held)`, the one place they are read: the runner calls it
-   before `plan` and keeps what it returns as `plan.basis`. `held` says whether
-   this process holds the subjects' locks.
+   `observe(req, ctx)`, the one place they are read: the runner calls it
+   before `plan` and keeps what it returns as `plan.basis`. What it reads under
+   the runner's locks reads as it would under none: a process's own hold is no
+   other's (core.md § 5).
    The plan names every subject it changes or uses — a build that uses an
    environment holds that environment shared.
 2. The surface shows the plan and obtains consent (§ 4.2, [`web.md`](web.md) § 9.1).

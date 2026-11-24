@@ -129,7 +129,7 @@ class WebBuild:
         return Plan(shared=(layout.subject(TOOL), DOCS_SUBJECT),   # the environment it builds with, and the files
                     steps=tuple(steps))                               # `schema docs` generates for it, in use
 
-    def observe(self, req: BuildRequest, ctx: Context, held: bool) -> dict:
+    def observe(self, req: BuildRequest, ctx: Context) -> dict:
         """The declared sources of frontend/ as they are now — what the bundle is built from —
         and the state of the environment it is built with."""
         return {"sources": sources_hash(source_dir())["sha256"], TOOL: observe(ctx, TOOL)[1].value}

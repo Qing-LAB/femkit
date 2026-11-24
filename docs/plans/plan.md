@@ -269,16 +269,12 @@ steps below.
   the old Laplace test data are removed, the `two_material` science test
   carried over.
   From the reviews of B and C: the shipped layout with its object types and
-  every part kind's schema, registered when femkit starts; renaming an entry,
-  and rewriting the addresses a value holds (an axis, a decision's key); what
-  cannot be checked yet said so; the states of `projects.md` § 8; the project
-  commands — `project set`, `unset`, `rename`, `undo`, `redo`, `check`, `new`,
-  `list` — on the door, each holding the project's lock through its runner,
-  with `model.*`, its own lock and its history file retired; each definition
+  every part kind's schema, registered when femkit starts; what cannot be
+  checked yet said so; the states of `projects.md` § 8; the project commands —
+  `project check`, `new` (from the templates), `list`, `graph` — on the door,
+  with `model.*` retired; each definition
   loader building its folder from the one table of definition types, the
-  layout among them; one column helper for a report's tables; the flags that
-  read a process's own lock as free (`mine`, `holding_lock`) gone, now that
-  `locks.is_held` does; the models domain's tests, which tell refusals apart by
+  layout among them; the models domain's tests, which tell refusals apart by
   wording and import another test file, going with the models code.
 - **E. Materials.** The property list, the dispersion models, the material
   format, the global and local libraries, a property's data for a case,
@@ -296,19 +292,21 @@ steps below.
   at load; a range's variable supplied by the step kind; the phasor
   conventions and the passive sign declared once.
 - **F. Detail as text.** Each part's text and the help of every key it may
-  hold; `project write` as one transaction; templates generated from the
-  schemas, the formulation and the property list. Acceptance: every action the
-  graph document offers plans; a written text keeps its comments; the Laplace
-  project's detail written from templates and its example script alone.
+  hold; a commented template for every kind of part and object, generated from
+  the schemas, the formulation and the property list. Acceptance: every
+  template parses and names every key its schema allows; the Laplace project's
+  detail written by hand from the templates and its example script alone
+  passes `project check`.
   F carries: no schema fragment built by hand.
 - **G. The page.** The Project workspace — the overview and the detail views,
   the grouping boxes, the diagram arranging itself with Tidy and its view file,
-  the editor with its help for every part and the geometry script, the palette
-  of templates and the library, the next step in view — Operations and
+  each part's text and the geometry script shown with the help of every key,
+  the palette of templates to copy and the library, the next step in view — Operations and
   Documents, and Runs as far as cases and `study expand` (the rest waits on X,
   M3 and M6); the first page's files removed; the layout library (dagre or
-  ELK) a new dependency, the person's. Acceptance: the Laplace project built in
-  the page from a new project, by mouse and by keyboard; the page still working
+  ELK) a new dependency, the person's. Acceptance: the Laplace project shown in
+  the page — every part, its help, its findings, its templates — by mouse and
+  by keyboard; the page changing no file the person wrote; the page still working
   on a project whose fields and kinds are renamed; the review finding no field,
   kind, operation, address or sentence named in the page's code, no style
   outside its layers and no hand-written type of server data; every element
@@ -358,9 +356,9 @@ steps below.
     nothing uses; the mark not the page's icon.
   - **Open, the person's**: one model for a value a person fills in, as
     `web.md` § 7.2 says, or the fill as its own model.
-- **H. Use.** The keyboard, the undo notification, the project chooser, what an
-  action selects, errors at their text's line, the narrow screen's drawers.
-  Acceptance: the Laplace project built and changed by keyboard alone; every
+- **H. Use.** The keyboard, the project chooser, errors at their text's line,
+  the narrow screen's drawers. Acceptance: the Laplace project read and checked
+  by keyboard alone; every
   workspace usable at the narrowest width the page declares; an independent
   review of the whole page against `conventions.md` § 2.1.
 
@@ -661,11 +659,9 @@ approved as written:
   bare (`models.md` § 3). A material dataset missing its source, convention or
   range is a finding of `project check` while it is written, and refused by
   `study expand` (`materials.md` § 3).
-- How many edits undo reaches back is a setting, `projects.undo` in
-  `config.toml`, 100 when unset (`projects.md` § 7).
-- The editing commands are `project …` — `project check`, `project write`,
-  `project undo`, `project graph` — in place of today's `model …`
-  (`models.md` § 11.1).
+- The project commands are `project …` — `project check`, `project graph`,
+  `project new`, `project list` — in place of today's `model …`
+  (`models.md` § 11.1); the editing ones were withdrawn on 2026-11-24 (below).
 - The framework is layered, each concern in one module — the project door,
   units, materials, geometry — handling files and information one way, with no
   duplicated or hand-made code; data files and state machines drive it; each
@@ -715,9 +711,16 @@ approved as written:
   end and before work that builds on existing code (§ 2;
   `conventions.md` § 1, step 7).
 - C delivers the project framework as femkit's internal interface, its tests
-  calling it directly; the project commands — `project set`, `unset`,
-  `rename`, `undo`, `redo`, `check`, `new`, `list` — come with D, on the
-  shipped layout, and retire `model.*` in one step.
+  calling it directly; the project commands come with D, on the shipped
+  layout, and retire `model.*` in one step.
+- femkit changes no file the person wrote (2026-11-24, replacing the editing
+  commands and `projects.undo` decided on 2026-11-23). The person writes every
+  part of a project in their own editor; femkit gives a commented template for
+  a new project and each kind of part, with the help of every key, checks what
+  was written and says what is wrong and what would be right, and turns it into
+  calculations. It writes only a template the person asks for (`project new`)
+  and its own outputs — cases, runs, results. There are no commands that set,
+  write, rename or undo a part (`projects.md` § 7).
 - Results are written in the vocabulary: each command hands back its rows,
   findings and next steps as data, and one renderer per surface draws them
   (`web.md` § 7). A next step holds its operation and values only; each

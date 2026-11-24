@@ -104,14 +104,6 @@ class Activation(Section):
     )
 
 
-class ProjectChoices(Section):
-    undo: PositiveInt | None = Field(
-        default=None,
-        description="how many edits of a project undo reaches back through",
-        json_schema_extra={**_unset("100"), "doc": "projects.md § 7"},
-    )
-
-
 class UserConfig(Model):
     """`<config>/config.toml` — choices for this machine (config.md § 3)."""
 
@@ -119,7 +111,6 @@ class UserConfig(Model):
     build: BuildChoices = Field(default_factory=BuildChoices, description="how builds are made")
     launch: Launch = Field(default_factory=Launch, description="how processes start")
     activation: Activation = Field(default_factory=Activation, description="how a job's shell gets ready")
-    projects: ProjectChoices = Field(default_factory=ProjectChoices, description="how a project's edits are kept")
 
 
 # ------------------------------------------------------------------ the keys
@@ -214,14 +205,6 @@ def launcher(ctx: Context, needed_by: str) -> list[str]:
                                                               example='["mpirun", "-np", "{ranks}"]')]),),
                   code="setting-unset", subject="launch.mpi")
     return mpi
-
-
-UNDO = 100   # `projects.undo` when unset (config.md § 3)
-
-
-def undo_limit(config: UserConfig) -> int:
-    """How many transactions a project's undo reaches back through (projects.md § 7)."""
-    return UNDO if config.projects.undo is None else config.projects.undo
 
 
 def value_of(config: UserConfig, k: Key) -> Any:

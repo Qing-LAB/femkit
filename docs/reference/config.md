@@ -14,7 +14,6 @@
 | `build` | [BuildChoices](#buildchoices) | see table | how builds are made |
 | `launch` | [Launch](#launch) | see table | how processes start |
 | `activation` | [Activation](#activation) | see table | how a job's shell gets ready |
-| `projects` | [ProjectChoices](#projectchoices) | see table | how a project's edits are kept |
 
 ## Paths
 
@@ -42,9 +41,3 @@
 |---|---|---|---|
 | `preamble` | list of text, optional | — | shell lines a run script runs on this machine before it enters an environment (module load lines, for instance); [] states that none are needed. When unset: `job probe --write` and `job prepare` are refused, naming this key |
 | `command` | `source activate` \| `conda activate` \| `mamba activate`, optional | — | how a shell on this machine enters an environment, after the preamble: `source activate`, the activate script on PATH (a cluster's module puts it there); or `conda activate` / `mamba activate`, the manager's shell function, its hook file sourced first. When unset: `job probe --write` and `job prepare` are refused, naming this key |
-
-## ProjectChoices
-
-| key | type | default | meaning |
-|---|---|---|---|
-| `undo` | integer, optional | — | how many edits of a project undo reaches back through (projects.md § 7). When unset: 100 |

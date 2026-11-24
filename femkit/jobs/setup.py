@@ -55,7 +55,7 @@ class DoctorResult(Result):
     def report(self) -> view.Report:
         return view.Report(blocks=[
             view.Text(text="this machine is ready" if self.ok() else "this machine is not ready"),
-            view.Table(columns=[view.Column(key=k, label="") for k in ("mark", "subject", "state")],
+            view.Table(columns=view.columns("mark", "subject", "state"),
                        rows=[{"mark": "-" if r.ready else "!", "subject": r.subject, "state": r.state}
                              for r in self.rows]),
             *(view.Next(label=f"for {r.subject}", actions=r.next) for r in self.rows if not r.ready and r.next)])
@@ -153,7 +153,7 @@ class BootstrapOutcome(Outcome):
                     if failed else []) + (["doctor reports a problem"] if self.doctor and not self.doctor.ok() else [])
         blocks = [view.Text(text="bootstrap did not finish: " + "; ".join(problems) if problems
                             else "bootstrap complete: every part done and this machine is ready"),
-                  view.Table(columns=[view.Column(key=k, label="") for k in ("part", "status", "detail", "log")],
+                  view.Table(columns=view.columns("part", "status", "detail", "log"),
                              rows=[{"part": r.part, "status": r.status, "detail": r.detail, "log": r.log or ""}
                                    for r in self.rows])]
         if self.doctor is not None:
@@ -260,7 +260,7 @@ class EnvBootstrap:
                            "refused": refused},
                     steps=tuple(steps), issues=issues, asks=config_plan.asks)
 
-    def observe(self, req: BootstrapRequest, ctx: Context, held: bool) -> dict:
+    def observe(self, req: BootstrapRequest, ctx: Context) -> dict:
         """What the plan decided on: the keys config.toml holds, each default environment's
         state, and this machine's record — each part's own apply checks its own besides."""
         return {"present": sorted(settings.load(ctx, fresh=True).present()),

@@ -67,7 +67,6 @@ is not a setting. How Python learns the manager without it is
 
 | key | meaning | when unset |
 |---|---|---|
-| `projects.undo` | how many edits of a project undo reaches back through ([`projects.md`](projects.md) § 7); decided by the person | 100 |
 | `paths.projects` | the projects root: the person's material library and their projects ([`projects.md`](projects.md) § 1); decided by the person (plan § 6) | no project is listed, made or named; each says so, naming this key |
 | `paths.environments` | where engine environment prefixes are created (the control environment's place is fixed, [`envs.md`](envs.md) § 1) — on a cluster, typically project storage rather than a small home quota | `<data>/environments` |
 | `build.cuda_architectures` | GPU architectures the CUDA environments target, e.g. `["80", "90"]` ([`definitions.md`](definitions.md) § 4.5); the default environments never read it | installing an environment with a build compiled for CUDA (both CUDA environments have one) is refused, naming this key |

@@ -79,8 +79,8 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   the model graph, [`models.md`](models.md) § 11.2), `quantity` (a value
   written as a quantity, § 11: `any`, `length`, `coordinate` — a bare number in
   the frame's unit, or a length — or `unit`, a unit text alone), `toml` (a
-  field that takes a value as its TOML text, `whole` — `project set`'s and
-  `config set`'s `value`, `whole`; a surface writes the text from the value a
+  field that takes a value as its TOML text, `whole` — `config set`'s
+  `value`, `whole`; a surface writes the text from the value a
   person gives), `doc` (where the field is defined: a document and its
   section, so a description holds its sentence and nothing else), `context`
   (the page's context a request field takes — `project`, `study` or
@@ -167,8 +167,6 @@ def append_text(path, text) -> None                    # a log's lines added at 
 def touch(path) -> Path                                # made empty if absent; its time now
 def remove(path) -> None                               # a file, or a folder with all it holds; absent is no error
 def make_folder(path) -> Path                          # a folder, with the folders above it; there already is no error
-def move(source, path) -> Path                         # a file renamed in one step, the folders above path made
-def remove_empty_folders(path, stop) -> None           # path and each folder above it removed while empty, up to stop
 def read_text(path) -> str | None                      # a file's text as its bytes hold it; None when no file is there
 def empty_folder(path) -> Path                         # an empty folder, whatever was there
 def copy_tree(source, path) -> Path                    # a folder copied to a place not there yet
@@ -192,9 +190,10 @@ def open_private(path: Path, mode: str) -> IO   # 0600 from its first byte, neve
                                                 # "a" appends, "w" truncates, "x" creates exclusively
 ```
 
-A person's TOML file keeps its comments, its order and its layout through every
-edit a command makes — `config set`, `project set` — read as a document, changed
-key by key, and written whole and atomically. tomlkit renames a key in place
+`config.toml` keeps its comments, its order and its layout through every edit
+`config set` makes — read as a document, changed key by key, and written whole
+and atomically; no command edits a project's files ([`projects.md`](projects.md)
+§ 7). tomlkit renames a key in place
 only through `Container._replace`, held to it by tomlkit's version range in
 `control.txt` and a test.
 

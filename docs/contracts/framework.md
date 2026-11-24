@@ -32,7 +32,7 @@ femkit/
 │                  `env bootstrap`); job requests, preparation, run scripts, runs
 │                  (jobs.md) — records, the probe and setup built, the rest not yet
 ├── projects/      the projects root, a project's tree and the one door to it:
-│                  every path, every read and write, transactions and undo
+│                  every path, every read; what femkit writes into a project
 │                  (projects.md) — the framework built; the shipped layout with R step D
 ├── materials/     the property list, the material format, libraries, importers,
 │                  a property's data for a case (materials.md) — approved, not built yet
@@ -112,7 +112,7 @@ independent review, which reads the source against it; no test reads code
 | shipped definitions and kinds | [`definitions.md`](definitions.md) |
 | configuration | [`config.md`](config.md) |
 | environments, installs, the install script | [`envs.md`](envs.md) |
-| a project's tree, its parts, addresses, the one door, transactions and undo | [`projects.md`](projects.md) — the framework built; the shipped layout with R step D (plan § 3) |
+| a project's tree, its parts, addresses, the one door, what femkit writes into a project | [`projects.md`](projects.md) — the framework built; the shipped layout with R step D (plan § 3) |
 | the property list, materials, libraries, importers | [`materials.md`](materials.md) — approved, not built yet (plan § 3, R) |
 | the geometry script's contract, the pipeline's steps, mesh recipes, the mesh step and the hand-over | [`geometry.md`](geometry.md) — approved, not built yet (plan § 3, R) |
 | calculations: parameters, physics, studies, observables, cases, formulations, environment abilities and proofs, the match report, decisions, customizations, preparation, results and analyses | [`models.md`](models.md) — an earlier design today, frozen until R step D replaces it (models.md, status; plan § 3, M5–M9, R) |

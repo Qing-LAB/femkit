@@ -18,9 +18,8 @@ from femkit.core.issues import Issue
 from femkit.core.schema import field_extras
 from femkit.core.units import Quantity, UnitError, Units
 from femkit.definitions.formulations import FormulationDefinition, KindSpec
-from femkit.models import adds, fields, graph
+from femkit.models import fields, graph
 from femkit.models.address import Address
-from femkit.models.requests import MODEL_SET, MODEL_UNSET
 from femkit.models.schema import (LENGTH, Conventions, Geometry, Kinded, ModelFile, Property, locate, object_type,
                                   quantities)
 
@@ -61,22 +60,16 @@ def findings(m: ModelFile, formulations: dict[str, FormulationDefinition], units
         out.append((rank, Issue(severity="error", code=code, subject=address(*path), label=label, message=message,
                                 next=tuple(n for n in next if n is not None))))
 
-    def choose(path: tuple[str, ...], label: str, schema: dict) -> view.Action | None:
-        """A value to choose from a closed list, left to the person; none for a value to write,
-        which the person writes in its object's text (web.md § 8.3)."""
-        if not (schema.get("enum") or any(o.get("enum") for o in schema.get("anyOf", []))):
-            return None
-        return view.command(MODEL_SET, label=f"set {label}", project=str(project), address=address(*path),
-                            fills=[view.Fill(field="value", label=label, json_schema=schema)])
+    # A finding says what is wrong and what would be right; the person writes the fix in the file —
+    # femkit changes no file the person wrote (plan § 6, 2026-11-24), so no finding offers an edit.
+    def choose(path: tuple[str, ...], label: str, schema: dict) -> None:
+        return None
 
-    def add(kind: str, type_: str | None, name: str | None = None) -> view.Action | None:
-        """The palette's add of an object of ``kind`` and ``type_``, its name given or to fill."""
-        return adds.entry(project, None, f, units, object_type(kind), type_, name).add
+    def add(kind: str, type_: str | None, name: str | None = None) -> None:
+        return None
 
-    def remove(path: tuple[str, ...]) -> view.Action:
-        """What an invalid entry's fix is: taking it out."""
-        return view.command(MODEL_UNSET, label=f"remove {address(*path)}", project=str(project),
-                            address=address(*path))
+    def remove(path: tuple[str, ...]) -> None:
+        return None
 
     if m.formulation is None:
         finding(("formulation",), "The model names no formulation.",
@@ -127,9 +120,7 @@ def findings(m: ModelFile, formulations: dict[str, FormulationDefinition], units
     for name in domains:
         if name not in m.assign:
             here = Address(None, ("regions", name))
-            fix = [p.connect for p in graph.ports(project, m, here, f, units) if p.address == address("assign", name)] \
-                if m.materials else [add("material", prop) for prop in f.properties]   # none yet: make one
-            finding(("regions", name), f"The domain {name} has no material.", *fix)
+            finding(("regions", name), f"The domain {name} has no material.")
     for name, region in m.regions.items():
         if region.kind != "domain" and name not in m.conditions:
             what = "outer boundary" if region.kind == "boundary" else "interface"

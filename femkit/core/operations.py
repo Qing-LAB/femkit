@@ -310,7 +310,7 @@ def run_steps(
 @dataclass(frozen=True)
 class Operation:
     """A declared operation. Surfaces call ``run`` / ``plan`` / ``apply``. A changing operation
-    whose plan rests on facts declares ``observe(req, ctx, held)``: core observes them before the
+    whose plan rests on facts declares ``observe(req, ctx)``: core observes them before the
     plan is made, and again under the subjects' locks before any step runs (api.md § 3)."""
 
     verb: Verb
@@ -319,8 +319,6 @@ class Operation:
     doc: str
     impl: Any  # a function (read-only) or an instance with plan/apply (changing)
     subject: Callable[[Any], list[str]] | Literal["plan"] | None = None  # "plan": the plan names them
-    confirm: bool = True  # a surface shows the plan and asks first; False only for a change taken back at once
-    undoable: bool = False  # recorded for `model undo` (models.md § 11.1)
 
     @property
     def name(self) -> str:
@@ -347,7 +345,7 @@ class Operation:
         """The implementation's plan, with what the declaration knows written in: the
         operation's name, the request, and the subjects it locks."""
         assert self.changes, f"{self.name} is read-only: run it"
-        observed = self.impl.observe(req, ctx, held=False) if hasattr(self.impl, "observe") else None
+        observed = self.impl.observe(req, ctx) if hasattr(self.impl, "observe") else None
         plan = self.impl.plan(req, ctx)
         known = {"operation": self.name, "request": req.model_dump(mode="json")}
         if observed is not None:
@@ -367,7 +365,7 @@ class Operation:
                 stack.enter_context(subject_lock(subject, shared=True))
             if hasattr(self.impl, "observe"):
                 req = self.request.model_validate(plan.request)
-                if self.impl.observe(req, ctx.fresh(), held=True) != plan.basis:  # never a read cached since the plan
+                if self.impl.observe(req, ctx.fresh()) != plan.basis:  # never a read cached since the plan
                     raise PlanStale(f"{', '.join(plan.subjects) or self.name} changed since the plan; plan it again",
                                     (view.command(self.verb, **req.model_dump(mode="json", exclude_defaults=True)),),
                                     code="basis-changed", subject=", ".join(plan.subjects) or self.name)
@@ -381,8 +379,6 @@ def operation(
     result: type[Result],
     changes: bool = False,
     subject: Callable[[Any], list[str]] | Literal["plan"] | None = None,
-    confirm: bool = True,
-    undoable: bool = False,
 ) -> Callable[[Any], Operation]:
     """Declare an operation (api.md § 2): decorate a function, or a class with plan/apply. Its
     name and request model are its `Verb`'s, declared beside the request."""
@@ -403,10 +399,6 @@ def operation(
             if subject is not None:
                 raise TypeError(f"{name}: a read-only operation takes no lock")
             impl = target
-        if not confirm and not changes:
-            raise TypeError(f"{name}: only a changing operation asks for confirmation")
-        if undoable and confirm:
-            raise TypeError(f"{name}: what `model undo` takes back is applied without asking")
-        return Operation(verb, result, changes, doc, impl, subject, confirm, undoable)
+        return Operation(verb, result, changes, doc, impl, subject)
 
     return declare

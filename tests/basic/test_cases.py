@@ -132,14 +132,6 @@ def test_expand_writes_each_case_once(project):
     assert {c.id for c in listed} == set(first.added) and all(c.studies == ["check"] for c in listed)
 
 
-def test_study_copy_keeps_the_text_and_never_overwrites(project):
-    """Fails if a copied study loses its comments, or a copy replaces a study already there."""
-    apply("study.copy", project=str(project), study="check", to="sweep")
-    assert study_file(project, "sweep").read_text() == study_file(project, "check").read_text()
-    with pytest.raises(Refused):
-        apply("study.copy", project=str(project), study="check", to="sweep")
-
-
 def table_model(project: Path, rows: str, convention: str, phasor: str = "exp(-iwt)"):
     model_file(project).write_text(examples()[0])
     table = project / "custom" / "gold.csv"

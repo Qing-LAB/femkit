@@ -99,7 +99,7 @@ export function useAction(handlers: Handlers = {}) {
     }
     setPhase({ is: "planning" });
     settle(await server.plan(operation, request), (a) => {
-      if (!op.confirm || a.plan.steps.length === 0) return void apply(operation, request, a.plan, a.digest);
+      if (a.plan.steps.length === 0) return void apply(operation, request, a.plan, a.digest);
       setPhase({ is: "planned", plan: a.plan, digest: a.digest, request });
     });
   }, [registry, settle, apply]);

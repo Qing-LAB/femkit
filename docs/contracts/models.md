@@ -9,8 +9,8 @@ plan § 3, X; the rest is [`../plans/plan.md`](../plans/plan.md) § 3, M6, M8, M
 **Today** `femkit/models/` holds an earlier design, frozen until R step D
 replaces it whole (plan § 6): one `model.toml` and `studies/<s>/study.toml` per
 project, with the units ([`core.md`](core.md) § 11), the formulation type with
-`electrostatics` and its first benchmark, `model check`, `model set`/`write`/
-`unset`/`rename`/`undo`/`redo`, `model graph`, `study expand`/`copy`/`list`,
+`electrostatics` and its first benchmark, `model check`, `model graph`,
+`study expand`/`list`,
 `case list` and case IDs, `project list` and `project new`, and the mesher
 definition type (`definitions/meshers.py`). Its fields are documented by
 [`../reference/models.md`](../reference/models.md); where its code cites a
@@ -438,8 +438,7 @@ nearest one (§ 8); its results say so.
 
 ### 5.1 Studies
 
-A project holds one or more studies, `studies/<study>.toml`; `study copy`
-starts one from another. A study pairs a component with what is solved on it —
+A project holds one or more studies, `studies/<study>.toml`. A study pairs a component with what is solved on it —
 the physics of each step, a mesh recipe, observable sets
 ([`projects.md`](projects.md) § 3) — and holds everything that is not the
 physics:
@@ -905,19 +904,19 @@ since is out of date. Not built yet (plan § 3, M6, M9).
 
 Every command reaches the project through its one door
 ([`projects.md`](projects.md) § 6); its parts and values are named by address
-(§ 5 there). The `project` names are the person's decision (plan § 6); until
-plan § 3, R step D lands, the edits are today's `model …`.
+(§ 5 there). The `project` names are the person's decision (plan § 6). No
+command changes a file the person wrote (§ 7 there): they write every part in
+their own editor, and these read it, check it, start it from a template, or
+write femkit's own outputs.
 
 | command | does | changes |
 |---|---|---|
-| `project new NAME`, `project list` | a new project, its whole tree; the projects under the root | the new project; nothing |
+| `project new NAME`, `project list` | a new project, its whole tree from the layout and its templates; the projects under the root | the new project; nothing |
 | `project check` | every rule of § 3 and the formulation's; each study's pairing; kinds and coverage ([`geometry.md`](geometry.md) § 7) once a geometry exists | nothing |
 | `project graph [--study S] [--environment E] [--mermaid]` | the project as a graph (§ 11.2), with findings and, with an environment, the worst match line per node | nothing |
-| `project write ADDRESS TEXT`, `project set ADDRESS VALUE`, `project unset ADDRESS`, `project rename ADDRESS NAME` | one transaction ([`projects.md`](projects.md) § 7): a part's text written whole, comments kept; one value set; an entry removed — refused while anything refers to it, listing each place; a part or entry renamed, with every address naming it | the files, and their record for undo |
-| `project undo`, `project redo` | take back the last transaction, or make it again — refused when a file has changed since, by hand | the files |
 | `project view` | remembers where the page draws nodes, when the person asks; no project data ([`projects.md`](projects.md) § 2) | `.femkit/view.json` |
 | `material add NAME [--from ENTRY]`, `material import SOURCE FILE --into library\|project [--as NAME]` | a material from its template or the library; another source's data ([`materials.md`](materials.md) §§ 3, 7) | `materials/` |
-| `study expand`, `study copy` | write a study's cases; start a study from another | `cases/`, `studies/` |
+| `study expand` | write a study's cases | `cases/` |
 | `case list` | every case, its axis values, its match and preparation state per study and environment | nothing |
 | `case match`, `study match` | the match report (§ 6.2) | nothing |
 | `case prepare`, `study prepare` | prepare (§ 9.3); how its steps run is designed with execution (plan § 3, X) | `runs/` |
@@ -925,10 +924,11 @@ plan § 3, R step D lands, the edits are today's `model …`.
 | `run reduce`, `analysis run` | a finished run's results; an analysis (§ 10) | the run's `result.json`; `results/` |
 | `result show`, `result compare` | a run's observables; one comparison (§ 10.1) | nothing |
 
-- **Two tiers of validity.** An edit that would leave a part unloadable — a
-  wrong type, a reference to a part or group that does not exist — is
-  refused. An incomplete project is allowed while it is being built, and shown
-  as findings; it is refused when cases are expanded or prepared.
+- **Two tiers of validity.** A part that does not load — a wrong type, a
+  reference to a part or group that does not exist — is a finding on it, and
+  every other part is still read. An incomplete project is allowed while it is
+  being written, and shown as findings; it is refused when cases are expanded or
+  prepared.
 
 ### 11.2 The project as a graph
 
@@ -955,10 +955,9 @@ never stored, and no surface draws it from a list of its own.
   ([`core.md`](core.md) § 2) — `group:boundary`, `material`, `parameter` —
   and becomes a port of that type; the loader reads the same annotation, so the
   graph and the check cannot disagree. A port accepts only its own type.
-- **Each node opens its part's text** — or a component's script — in the
-  editor, beside the help of every key it may hold
-  ([`web.md`](web.md) § 8.3); a wire drawn or cut is one transaction; a wire
-  whose group's kind cannot be checked before the geometry exists is shown out of
+- **Each node shows its part's text** — or a component's script — beside the
+  help of every key it may hold ([`web.md`](web.md) § 8.3); a wire whose
+  group's kind cannot be checked before the geometry exists is shown out of
   date, never hidden.
 - **The next step.** `project check` orders its findings by the chain, each a
   whole sentence with its subject's name, and the first is the project's next
@@ -979,7 +978,7 @@ only through these operations ([`web.md`](web.md)).
 
 | part | home |
 |---|---|
-| a project's tree, the one door, transactions and undo | `femkit/projects/` ([`projects.md`](projects.md)) |
+| a project's tree, the one door, what femkit writes | `femkit/projects/` ([`projects.md`](projects.md)) |
 | materials, the library, importers, a property's data for a case | `femkit/materials/` ([`materials.md`](materials.md)) |
 | the script's contract, mesh recipes, the mesh step, kinds and coverage, the hand-over | `femkit/geometry/` ([`geometry.md`](geometry.md)); the mesh step's code in `femkit/engines/`, run in the mesh step's environment (plan § 3, X) |
 | physics, study and case schemas; expansion and case IDs; matching and the match report; decisions; customization resolution; preparation, the manifest and its state; the proof record's schema; the graph | `femkit/models/` ([`framework.md`](framework.md) § 1) |
@@ -1007,7 +1006,6 @@ only through these operations ([`web.md`](web.md)).
 | preparing with an open match line | each line | a decision, a customization, another environment |
 | a stale decision | the decision, what it accepted and what is declared now | answering it again |
 | a customization: missing file, changed hash, undeclared point, engine version or interface outside its range, covering nothing, overriding a project's value without `physics = true`, a name outside the rule of § 8.2 | the customization and the reason | the file, the range, the declaration |
-| an edit that would leave a part unloadable; removing what others refer to | the address; the references | the edit that keeps it loadable; `project rename` |
 | a comparison of an `unverified` or `custom-input` observable, or of results that do not solve the same stated problem | the observable; the difference | proving the ability; — |
 | a case's geometry missing a group its contract promises, or one of another dimension | the axis point and the group | a script that keeps its promise at every point |
 | a dispersion model not on the list; a dataset varying with a variable the step does not supply | the model; the dataset | a listed model; a dataset for the formulation |
