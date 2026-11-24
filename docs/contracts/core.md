@@ -32,7 +32,7 @@ module reads no file, probes nothing and starts nothing.
 | `clock` | how femkit writes a moment: UTC, ISO 8601, to the second — in every record, event log and server log line | 6 |
 | `paths` | `inside(path, root)`: the one test that a path resolves within a prefix or tree; `nearest_existing(path)`: where a place not made yet would be made | 3 |
 | `schema` | `Model`, the loader, `DefinitionError`, the placeholder grammar | 2 |
-| `persist` | atomic writes, TOML and JSON reads and writes | 4 |
+| `persist` | every write: atomic files and streams, appends, copies, removal, a folder emptied or replaced whole, an archive unpacked; TOML and JSON reads and writes | 4 |
 | `locks` | `subject_lock`, and the grammar of a subject's name | 5 |
 | `eventlog` | `EventLog`, its file's name, the record kinds, the step outcomes, and its fold | 6 |
 | `states` | `Machine`, `Rule`, `Action` | 7 |
@@ -161,6 +161,18 @@ variables or builds these paths.
 def atomic_write_text(path: Path, text: str) -> Path   # temp file in the same directory, fsync, rename
 def write_json(path: Path, data: Any) -> Path          # atomic; sorted keys, two-space indent, final newline
 def write_toml(path: Path, data: dict) -> Path         # atomic
+def write_stream(path, source, accept=None) -> bool     # a stream written whole, or not at all: in place only
+                                                        # when accept takes the written file (a download's digest)
+def copy_file(source, path) -> Path                    # atomic, as write_stream
+def append_text(path, text) -> None                    # a log's lines added at its end
+def touch(path) -> Path                                # made empty if absent; its time now
+def remove(path) -> None                               # a file, or a folder with all it holds; absent is no error
+def empty_folder(path) -> Path                         # an empty folder, whatever was there
+def copy_tree(source, path) -> Path                    # a folder copied to a place not there yet
+def replace_folder(fresh, path) -> None                # fresh takes path's place whole: old moved aside, fresh
+                                                        # renamed in, old removed — never a half of either
+def unpack_single(archive, path) -> bool               # a gzipped tar's one top folder becomes path, whole
+def plain_value(text) -> Any                           # parse_value's value as plain Python
 def read_toml(path: Path) -> dict
 def read_json(path: Path) -> Any
 def read_document(path, empty="") -> TOMLDocument     # a TOML file to edit, its comments and order kept

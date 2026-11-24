@@ -12,9 +12,10 @@ from pydantic import Field
 from femkit.cli import build
 from femkit.core import text
 from femkit.core import view
-from femkit.core.errors import Refused, UsageError
+from femkit.core.errors import PlanStale, Refused, UsageError
 from femkit.core.eventlog import EventLog, fold
-from femkit.core.operations import Ask, Context, Outcome, Plan, Result, SilentObserver, Step, operation, run_steps
+from femkit.core.operations import (Ask, Context, Outcome, Plan, Result, SilentObserver, Step, operation,
+                                    operations_root, run_steps)
 from femkit.core.schema import Model
 from femkit.registry import operations
 
@@ -93,6 +94,65 @@ class Sign:
     def apply(self, plan: Plan, ctx: Context, observer) -> WriteOutcome:
         WRITTEN.append(plan.request["name"])
         return WriteOutcome(plan=plan, status="done")
+
+
+SHELF: dict = {}
+
+
+class BookRequest(Model):
+    """A book."""
+
+    book: str = Field(default="book", description="the book")
+
+
+@operation(view.Verb("toy.shelve", BookRequest), result=WriteOutcome, changes=True, subject=lambda r: ["toy"])
+class Shelve:
+    """Shelve the book as it stands."""
+
+    def observe(self, req: BookRequest, ctx: Context, held: bool) -> dict:
+        return {"state": SHELF.get(req.book)}
+
+    def plan(self, req: BookRequest, ctx: Context) -> Plan:
+        return Plan(steps=(Step(id="shelve", describe=f"shelve {req.book}"),))
+
+    def apply(self, plan: Plan, ctx: Context, observer) -> WriteOutcome:
+        status, where = run_steps(plan, ctx, observer, lambda step, where: ("done", None))
+        return WriteOutcome(plan=plan, status=status, log=str(where))
+
+
+@operation(view.Verb("toy.logged", BookRequest), result=WriteOutcome, changes=True, subject=lambda r: ["toy-inner"])
+class Logged:
+    """One step that reports its log."""
+
+    def plan(self, req: BookRequest, ctx: Context) -> Plan:
+        return Plan(steps=(Step(id="log", describe="write a log"),))
+
+    def apply(self, plan: Plan, ctx: Context, observer) -> WriteOutcome:
+        def do(step, where):
+            observer.step_log(where / "log.txt")
+            return "done", where / "log.txt"
+        status, where = run_steps(plan, ctx, observer, do)
+        return WriteOutcome(plan=plan, status=status, log=str(where))
+
+
+@operation(view.Verb("toy.nest", BookRequest), result=WriteOutcome, changes=True, subject=lambda r: ["toy-outer"])
+class Nest:
+    """An apply that runs another's, as bootstrap runs each install."""
+
+    def plan(self, req: BookRequest, ctx: Context) -> Plan:
+        return Plan(steps=(Step(id="inner", describe="run the inner apply"), Step(id="after", describe="go on")))
+
+    def apply(self, plan: Plan, ctx: Context, observer) -> WriteOutcome:
+        inner = []
+
+        def do(step, where):
+            if step.id == "inner":
+                inner.append(Logged.apply(Logged.plan(Logged.request(), ctx), ctx, observer))
+            else:
+                observer.step_log(where / "after.log")
+            return "done", None
+        status, where = run_steps(plan, ctx, observer, do)
+        return WriteOutcome(plan=plan, status=status, log=f"{where}\n{inner[0].log}")
 
 
 def run(*args: str, input: str | None = None):
@@ -278,3 +338,28 @@ def test_a_refused_request_names_a_lists_item_as_a_files_problem_does():
     problems do — `names[0]`, one key-path form on every surface (core.md § 2)."""
     with pytest.raises(UsageError, match=r"names\[0\]"):
         operations()["env.install"].request_from({"names": [1]})
+
+
+def test_a_plan_whose_facts_changed_is_refused_before_any_step_and_offered_again():
+    """Fails if a plan applies though the facts it rests on changed since it was made, runs a step
+    first, or refuses without offering the same request planned again (api.md § 3)."""
+    ctx = Context.from_process()
+    SHELF["book"] = "draft"
+    plan = Shelve.plan(Shelve.request(), ctx)
+    SHELF["book"] = "revised"
+    with pytest.raises(PlanStale) as caught:
+        Shelve.apply(plan, ctx)
+    assert [a.call.operation for a in caught.value.next] == ["toy.shelve"]
+    assert not operations_root("toy").exists()                     # no step ran
+    SHELF["book"] = "draft"
+    assert Shelve.apply(plan, ctx).ok()
+
+
+def test_an_apply_inside_another_records_each_step_log_once_and_in_its_own_run():
+    """Fails if an apply run inside another's — bootstrap's installs — records a step's log twice,
+    or the outer run's later step in the inner run's log (core.md § 6)."""
+    ctx = Context.from_process()
+    outer, inner = Nest.apply(Nest.plan(Nest.request(), ctx), ctx).log.split("\n")
+    kinds = lambda where: [(r["kind"], r.get("step")) for r in EventLog.of(Path(where)).events() if r["kind"] == "step-log"]
+    assert kinds(inner) == [("step-log", "log")]
+    assert kinds(outer) == [("step-log", "after")]

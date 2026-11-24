@@ -11,9 +11,7 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import tarfile
-import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -22,7 +20,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 
 from femkit.config import settings
-from femkit.core import clock, paths, process, text
+from femkit.core import clock, paths, persist, process, text
 from femkit.core.eventlog import StepOutcome
 from femkit.core.operations import Context, Step
 from femkit.core.persist import atomic_write_text, write_json
@@ -220,9 +218,7 @@ def _run(t: Target, step: Step, log: Path, *, inside: bool = False) -> str:
 
 
 def _note(log: Path, text: str) -> None:
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with open(log, "a", encoding="utf-8") as fh:
-        fh.write(text + "\n")
+    persist.append_text(log, text + "\n")
 
 
 def step_remove(t: Target, step: Step, log: Path, say: Say) -> str:
@@ -230,7 +226,7 @@ def step_remove(t: Target, step: Step, log: Path, say: Say) -> str:
 
 
 def step_discard_lock(t: Target, step: Step, log: Path, say: Say) -> str:
-    t.lock.unlink(missing_ok=True)
+    persist.remove(t.lock)
     return "done"
 
 
@@ -293,9 +289,7 @@ def _sha256(path: Path) -> str:
 def step_toolchain(t: Target, step: Step, log: Path, say: Say) -> str:
     """Prove the toolchain inside the prefix before any source is fetched (envs.md § 4.1): the
     program measures, `envs/toolchain.py` judges, and each finding is said and logged."""
-    work = layout.toolchain_dir(t.prefix)
-    shutil.rmtree(work, ignore_errors=True)
-    work.mkdir(parents=True)
+    work = persist.empty_folder(layout.toolchain_dir(t.prefix))
     spec = write_json(work / "spec.json", toolchain.spec(t.env.proven_toolchain, t.launcher))
     report, result = toolchain.run(t.manager, t.prefix, "check", str(spec), str(work))
     _note(log, result.stdout + result.stderr)
@@ -318,18 +312,16 @@ def step_fetch(t: Target, step: Step, log: Path, say: Say) -> str:
     if target_file.exists() and _sha256(target_file) == source.sha256:
         _note(log, f"cached: {target_file}")
         return "done"
-    target_file.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=f".{target_file.name}.", dir=target_file.parent)
-    try:
-        with os.fdopen(fd, "wb") as out, urllib.request.urlopen(source.archive, timeout=120) as response:
-            shutil.copyfileobj(response, out, length=1 << 20)
-        got = _sha256(Path(tmp))
-        if got != source.sha256:
-            _note(log, f"{source.archive}: SHA-256 {got}, expected {source.sha256}")
+    got: dict = {}
+
+    def matches(written: Path) -> bool:
+        got["sha256"] = _sha256(written)
+        return got["sha256"] == source.sha256
+
+    with urllib.request.urlopen(source.archive, timeout=120) as response:
+        if not persist.write_stream(target_file, response, accept=matches):
+            _note(log, f"{source.archive}: SHA-256 {got['sha256']}, expected {source.sha256}")
             return "failed"
-        os.replace(tmp, target_file)
-    finally:
-        Path(tmp).unlink(missing_ok=True)
     _note(log, f"downloaded {source.archive} -> {target_file}")
     return "done"
 
@@ -341,16 +333,10 @@ def step_unpack(t: Target, step: Step, log: Path, say: Say) -> str:
         if any(destination.iterdir()):
             _note(log, f"{destination} already holds files")
             return "failed"
-        destination.rmdir()  # an empty placeholder, as a parent's submodule folder
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=destination.parent) as scratch, \
-            tarfile.open(layout.archive_cache(source.sha256), "r:gz") as bundle:
-        bundle.extractall(scratch, filter="data")
-        roots = list(Path(scratch).iterdir())
-        if len(roots) != 1 or not roots[0].is_dir():
-            _note(log, "the archive does not hold exactly one top folder")
-            return "failed"
-        roots[0].rename(destination)
+        persist.remove(destination)  # an empty placeholder, as a parent's submodule folder
+    if not persist.unpack_single(layout.archive_cache(source.sha256), destination):
+        _note(log, "the archive does not hold exactly one top folder")
+        return "failed"
     if source.version_text is not None:
         atomic_write_text(destination / "version.txt", source.version_text + "\n")
     _note(log, f"unpacked {source.id} into {destination}")

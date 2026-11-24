@@ -10,10 +10,10 @@ from femkit.config import settings
 from femkit.config.operations import stating
 from femkit.config.requests import CONFIG_INIT
 from femkit.core import text, view
-from femkit.core.errors import PlanStale, Unstated, UsageError
+from femkit.core.errors import Unstated, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.schema import Model
+from femkit.core.schema import DefinitionError, Model
 from femkit.jobs import probe, record
 from femkit.jobs.record import LOCAL, Record
 from femkit.jobs.requests import ProbeRequest, MachinesRequest
@@ -119,21 +119,22 @@ class JobProbe:
                     changed = record.differences(record.read(file), new)
                     describe += f" — {text.count(len(changed), 'difference')} from the record there"
                     issues += [Issue(severity="info", code="changed", subject=name, message=c) for c in changed]
-                except Exception as exc:  # a file there that does not load is said, and replaced only on consent
+                except DefinitionError as exc:  # a file there that does not load is said, and replaced only on consent
                     describe += " — replacing a file that does not load"
                     issues.append(Issue(severity="warning", code="unreadable", subject=str(file), message=str(exc)))
             else:
                 describe += " — a new record"
             steps = (Step(id="write", describe=describe),)
-        return Plan(basis={"record": new.data(), "file": str(file), "existing_sha256": record.sha256(file)},
-                    steps=steps, issues=issues)
+        return Plan(holds={"record": new.data(), "file": str(file)}, steps=steps, issues=issues)
+
+    def observe(self, req: ProbeRequest, ctx: Context, held: bool) -> dict:
+        """The record file as it is now: what a write replaces."""
+        return {"existing_sha256": record.sha256(record.path(_name(req)))}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ProbeOutcome:
         req = ProbeRequest.model_validate(plan.request)
-        file = Path(plan.basis["file"])
-        if record.sha256(file) != plan.basis["existing_sha256"]:
-            raise PlanStale(f"{file} changed since the plan", (_write(req),))
-        new = Record.model_validate(plan.basis["record"])
+        file = Path(plan.holds["file"])
+        new = Record.model_validate(plan.holds["record"])
 
         def do(step: Step, where):
             record.write(file, new)

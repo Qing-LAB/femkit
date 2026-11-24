@@ -206,7 +206,7 @@ class EnvBootstrap:
     def plan(self, req: BootstrapRequest, ctx: Context) -> Plan:
         init = ConfigInit.request.model_validate(req.model_dump(exclude={"clean"}))
         config_plan = ConfigInit.plan(init, ctx)
-        values = config_plan.basis["values"]
+        values = config_plan.holds["values"]
         planned = settings.as_planned(ctx, values)  # every install is planned against config.toml as it will be
         steps, issues = [], [_as_bootstrap(i) for i in config_plan.issues
                              if i.code != "stated-unset"]  # said below, with what it blocks
@@ -253,13 +253,13 @@ class EnvBootstrap:
                                 next=stating(ENV_BOOTSTRAP, unset)))
         else:
             steps.append(Step(id="record", describe=f"write this machine's record, {text.path(file)} ({why})"))
-        return Plan(basis={"config_plan": config_plan.model_dump(mode="json"), "installs": installs,
+        return Plan(holds={"config_plan": config_plan.model_dump(mode="json"), "installs": installs,
                            "refused": refused},
                     steps=tuple(steps), issues=issues, asks=config_plan.asks)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> BootstrapOutcome:
-        config_plan = Plan.model_validate(plan.basis["config_plan"])
-        rows = [BootstrapRow(part=name, status="refused", detail=why) for name, why in plan.basis["refused"].items()]
+        config_plan = Plan.model_validate(plan.holds["config_plan"])
+        rows = [BootstrapRow(part=name, status="refused", detail=why) for name, why in plan.holds["refused"].items()]
         # The plan's findings come with the outcome, as api.md § 4 says for --yes; a ready environment is a
         # row of its own.
         issues: list[Issue] = [i for i in plan.issues if i.code != "ready"]
@@ -275,7 +275,7 @@ class EnvBootstrap:
             if step.id.startswith("install:"):
                 name = step.id.split(":", 1)[1]
                 try:  # the install plan shown, applied as the config now written reads (PlanStale otherwise)
-                    out = EnvInstall.apply(Plan.model_validate(plan.basis["installs"][name]), again(), observer)
+                    out = EnvInstall.apply(Plan.model_validate(plan.holds["installs"][name]), again(), observer)
                 except Refusal as exc:
                     rows.append(BootstrapRow(part=name, status="refused", detail=str(exc)))
                     issues.append(Issue(severity="error", code="refused", subject=name, message=f"{name}: {exc}",

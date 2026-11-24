@@ -18,8 +18,8 @@ from typing import Any, Callable, Literal, Mapping, Protocol, TypeVar
 
 from pydantic import Field, ValidationError
 
-from femkit.core import clock, dirs, text
-from femkit.core.errors import UsageError
+from femkit.core import clock, dirs, text, view
+from femkit.core.errors import PlanStale, UsageError
 from femkit.core.eventlog import OUTCOMES, EventLog
 from femkit.core.issues import Issue
 from femkit.core.locks import SUBJECT, subject_lock
@@ -84,7 +84,10 @@ class Plan(Model):
     subjects: tuple[str, ...] = Field(default=(), description="the lock subjects apply holds alone: what it changes")
     shared: tuple[str, ...] = Field(default=(), description="those it holds shared: what it uses and does not change "
                                                             "(core.md § 5)")
-    basis: dict = Field(default_factory=dict, description="the observed facts the plan was made from")
+    basis: dict = Field(default_factory=dict, description="the facts the plan rests on, observed before it was made; "
+                                                          "apply refuses when they differ then (api.md § 3)")
+    holds: dict = Field(default_factory=dict, description="what the plan decided that apply uses as decided: values "
+                                                          "measured, a record, other operations' plans")
     steps: tuple[Step, ...] = Field(default=(), description="every step, in order; empty: nothing to do")
     issues: list[Issue] = Field(default_factory=list, description="findings a person should know before consenting")
     asks: tuple[Ask, ...] = Field(default=(), description="request fields to ask for on a terminal; unanswered, "
@@ -164,23 +167,30 @@ class _Recording:
     observer is recorded as one that reports to `run_steps`'s."""
 
     def __init__(self, observer: Observer, now: Callable[[], datetime]) -> None:
-        self._observer, self._now, self._log, self._step = observer, now, None, None
+        self._observer, self._now = observer, now
+        self._runs: list[list] = []      # each run in progress, innermost last: [its event log, its step]
 
     def __getattr__(self, name: str):
         return getattr(self._observer, name)
 
     def operation_start(self, plan: Plan, where: Path) -> None:
-        self._log, self._step = EventLog.of(where, self._now), None
+        self._runs.append([EventLog.of(where, self._now), None])
         self._observer.operation_start(plan, where)
 
     def step_start(self, step: Step, index: int, total: int) -> None:
-        self._step = step.id
+        if self._runs:
+            self._runs[-1][1] = step.id
         self._observer.step_start(step, index, total)
 
     def step_log(self, log: Path) -> None:
-        if self._log is not None and self._step is not None:
-            self._log.append("step-log", step=self._step, log=str(log))
+        if self._runs and self._runs[-1][1] is not None:
+            self._runs[-1][0].append("step-log", step=self._runs[-1][1], log=str(log))
         self._observer.step_log(log)
+
+    def operation_end(self, plan: Plan, status: str) -> None:
+        if self._runs:
+            self._runs.pop()
+        self._observer.operation_end(plan, status)
 
 
 def operations_root(subject: str | None = None) -> Path:
@@ -282,10 +292,11 @@ def run_steps(
 
 @dataclass(frozen=True)
 class Operation:
-    """A declared operation. Surfaces call ``run`` / ``plan`` / ``apply``."""
+    """A declared operation. Surfaces call ``run`` / ``plan`` / ``apply``. A changing operation
+    whose plan rests on facts declares ``observe(req, ctx, held)``: core observes them before the
+    plan is made, and again under the subjects' locks before any step runs (api.md § 3)."""
 
-    name: str
-    request: type[Model]
+    verb: Verb
     result: type[Result]
     changes: bool
     doc: str
@@ -293,6 +304,14 @@ class Operation:
     subject: Callable[[Any], list[str]] | Literal["plan"] | None = None  # "plan": the plan names them
     confirm: bool = True  # a surface shows the plan and asks first; False only for a change taken back at once
     undoable: bool = False  # recorded for `model undo` (models.md § 11.1)
+
+    @property
+    def name(self) -> str:
+        return self.verb.name
+
+    @property
+    def request(self) -> type[Model]:
+        return self.verb.request
 
     def request_from(self, data: dict) -> Model:
         """The request model from its JSON form; one that does not validate is a `UsageError`
@@ -311,21 +330,31 @@ class Operation:
         """The implementation's plan, with what the declaration knows written in: the
         operation's name, the request, and the subjects it locks."""
         assert self.changes, f"{self.name} is read-only: run it"
+        observed = self.impl.observe(req, ctx, held=False) if hasattr(self.impl, "observe") else None
         plan = self.impl.plan(req, ctx)
         known = {"operation": self.name, "request": req.model_dump(mode="json")}
+        if observed is not None:
+            known["basis"] = observed
         if self.subject != "plan":
             known["subjects"] = tuple(self.subject(req)) if self.subject else ()
         return plan.model_copy(update=known)
 
     def apply(self, plan: Plan, ctx: Context, observer: Observer | None = None) -> Outcome:
-        """Hold every subject's lock — alone, or shared — then apply (core.md § 5, api.md § 3)."""
+        """Hold every subject's lock — alone, or shared — refuse a plan whose facts changed since,
+        then apply (core.md § 5, api.md § 3)."""
         assert self.changes, f"{self.name} is read-only: run it"
         with ExitStack() as stack:
             for subject in plan.subjects:
                 stack.enter_context(subject_lock(subject))
             for subject in plan.shared:
                 stack.enter_context(subject_lock(subject, shared=True))
-            return self.impl.apply(plan, ctx, _Recording(observer or SilentObserver(), ctx.now))
+            if hasattr(self.impl, "observe"):
+                req = self.request.model_validate(plan.request)
+                if self.impl.observe(req, ctx, held=True) != plan.basis:
+                    raise PlanStale(f"{', '.join(plan.subjects) or self.name} changed since the plan; plan it again",
+                                    (view.command(self.verb, **req.model_dump(mode="json", exclude_defaults=True)),))
+            recording = observer if isinstance(observer, _Recording) else _Recording(observer or SilentObserver(), ctx.now)
+            return self.impl.apply(plan, ctx, recording)   # an apply inside another's records its steps once
 
 
 def operation(
@@ -360,6 +389,6 @@ def operation(
             raise TypeError(f"{name}: only a changing operation asks for confirmation")
         if undoable and confirm:
             raise TypeError(f"{name}: what `model undo` takes back is applied without asking")
-        return Operation(name, request, result, changes, doc, impl, subject, confirm, undoable)
+        return Operation(verb, result, changes, doc, impl, subject, confirm, undoable)
 
     return declare

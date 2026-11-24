@@ -10,7 +10,7 @@ from pydantic import Field
 from femkit.config import settings
 from femkit.config.probe import place
 from femkit.core import locks, process, text, view
-from femkit.core.errors import PlanStale, Unstated, UsageError
+from femkit.core.errors import Unstated, UsageError
 from femkit.core import eventlog
 from femkit.core.eventlog import EventLog, StepState, fold
 from femkit.core.issues import Issue
@@ -85,20 +85,19 @@ class EnvClean:
 
     def plan(self, req: CleanRequest, ctx: Context) -> Plan:
         f, state = observe(ctx, req.name)
-        basis = {"state": state.value, "prefix": str(f.prefix)}
         if MACHINE.require(state, "clean", req.name).verb is None:
-            return Plan(basis=basis)
+            return Plan()
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         manager = resolve(ctx)
         argv = tuple(manager.remove(f.prefix, catalogue.load_control().channels))
-        return Plan(basis=basis,
-                    steps=(Step(id="remove", describe=f"remove {text.path(f.prefix)}", argv=argv),))
+        return Plan(steps=(Step(id="remove", describe=f"remove {text.path(f.prefix)}", argv=argv),))
+
+    def observe(self, req: CleanRequest, ctx: Context, held: bool) -> dict:
+        f, state = observe(ctx, req.name, holding_lock=held)
+        return {"state": state.value, "prefix": str(f.prefix)}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> CleanOutcome:
         req = CleanRequest.model_validate(plan.request)
-        f, state = observe(ctx, req.name, holding_lock=True)
-        if {"state": state.value, "prefix": str(f.prefix)} != plan.basis:
-            raise PlanStale(f"{req.name} changed since the plan", (view.command(ENV_CLEAN, name=req.name),))
 
         def do(step: Step, where: Path):
             log = where / f"{step.id}.log"
@@ -227,12 +226,17 @@ def _not_ready(f, state: EnvState, outcomes) -> Issue:
                  next=tuple(_next(state, f.name)))
 
 
-def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
+def _install_basis(ctx: Context, name: str, held: bool) -> dict:
+    """What an install of ``name`` rests on: its state, its install fingerprint and its place."""
+    f, state = observe(ctx, name, holding_lock=held)
+    return {"state": state.value, "install_fingerprint": f.install_fingerprint, "prefix": str(f.prefix)}
+
+
+def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
     from femkit.envs.install import plan_steps, target
     f, state = observe(ctx, name)
-    basis = {"state": state.value, "install_fingerprint": f.install_fingerprint, "prefix": str(f.prefix)}
     if MACHINE.require(state, "install --clean" if clean else "install", name).verb is None:
-        return [], basis
+        return []
     locks.require_free(layout.subject(name))              # a program using it — a web server — holds it shared
     env = definition(ctx, name)
     cpu = checks.selected(env, gpu=False)
@@ -240,7 +244,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
                     if cpu else "validate: it has no checks; record that (env validate)")
     checks.refusals(ctx, cpu)
     if state is EnvState.unchecked and not clean:
-        return [validate], basis
+        return [validate]
     t = target(ctx, name, f.install_fingerprint)
     if t.env.proven_toolchain and t.env.proven_toolchain.mpi:
         settings.launcher(ctx, f"{name}'s toolchain check runs MPI on {toolchain.RANKS} ranks")
@@ -255,7 +259,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
     steps = plan_steps(t, remove_first=remove_first, discard_lock=clean)
     if resume:  # the toolchain check proves this machine, which a resume may not be on: it runs again
         steps = [s for s in steps if s.id not in finished or s.id == "toolchain"]
-    return steps + [validate], basis
+    return steps + [validate]
 
 
 @operation(ENV_INSTALL, result=InstallOutcome, changes=True,
@@ -264,19 +268,16 @@ class EnvInstall:
     """Install environments from their definitions (envs.md § 4); resumes an interrupted install."""
 
     def plan(self, req: InstallRequest, ctx: Context) -> Plan:
-        steps, basis = [], {}
-        for name in _requested(req):
-            env_steps, basis[name] = _env_steps(ctx, name, req.clean)
-            steps += [s.model_copy(update={"id": f"{name}/{s.id}", "describe": f"{name}: {s.describe}"})
-                      for s in env_steps]
-        return Plan(basis=basis, steps=tuple(steps))
+        steps = [s.model_copy(update={"id": f"{name}/{s.id}", "describe": f"{name}: {s.describe}"})
+                 for name in _requested(req) for s in _env_steps(ctx, name, req.clean)]
+        return Plan(steps=tuple(steps))
+
+    def observe(self, req: InstallRequest, ctx: Context, held: bool) -> dict:
+        """Each requested environment's install basis: every one re-observed before any is touched."""
+        return {name: _install_basis(ctx, name, held) for name in _requested(req)}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> InstallOutcome:
         from femkit.envs.install import KILLED, run_step, target
-        for name, basis in plan.basis.items():  # every environment re-observed before any is touched
-            f, state = observe(ctx, name, holding_lock=True)
-            if (state.value, f.install_fingerprint, str(f.prefix)) != (basis["state"], basis["install_fingerprint"], basis["prefix"]):
-                raise PlanStale(f"{name} changed since the plan", (view.command(ENV_INSTALL, names=[name]),))
         results, status, issues = [], "done", []
         for name, basis in plan.basis.items():
             if status == "failed":
@@ -355,14 +356,14 @@ class EnvValidate:
         MACHINE.require(state, "validate --gpu" if req.gpu else "validate", req.name)  # envs.md § 3.3
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         checks.refusals(ctx, chosen)
-        return Plan(basis=self._basis(f, state),
-                    steps=tuple(checks.steps(chosen)))
+        return Plan(steps=tuple(checks.steps(chosen)))
+
+    def observe(self, req: ValidateRequest, ctx: Context, held: bool) -> dict:
+        f, state = observe(ctx, req.name, holding_lock=held)
+        return self._basis(f, state)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ValidateOutcome:
         req = ValidateRequest.model_validate(plan.request)
-        f, state = observe(ctx, req.name, holding_lock=True)
-        if self._basis(f, state) != plan.basis:
-            raise PlanStale(f"{req.name} changed since the plan", (view.command(ENV_VALIDATE, name=req.name),))
         status, where, outcomes = checks.run_validation(ctx, req.name, req.gpu, plan.steps, observer)
         f, state = observe(ctx, req.name, holding_lock=True)
         issues = []

@@ -226,6 +226,12 @@ def _outcome(plan: Plan, status: str, where: Path, listen: Listen, token: str | 
 
 # ------------------------------------------------------------------ start and foreground
 
+def _start_basis(req: ServeRequest, ctx: Context, held: bool) -> dict:
+    """Where it would listen, and that server's state: what a start rests on."""
+    listen = _listen(req, ctx)
+    return {"state": MACHINE.observe(facts(listen.name, mine=held)).value, "listen": listen.as_json()}
+
+
 def _start_plan(req: ServeRequest, ctx: Context, detached: bool) -> Plan:
     listen = _listen(req, ctx)
     f = facts(listen.name)
@@ -237,23 +243,23 @@ def _start_plan(req: ServeRequest, ctx: Context, detached: bool) -> Plan:
     steps += [Step(id="listen", describe=f"listen on {listen.describe()}"),
               Step(id="token", describe=f"write the access token to {text.path(protocol.token_file(listen.name))}")]
     if detached:
+        shown = supervisor.argv(sys.executable, web_python(ctx), listen,
+                                {"socket": "<socket>", "lock": "<lock>", "use": "<use>"}, json.dumps(_holds(listen)),
+                                req.log_max_mb * 1024 * 1024, req.log_keep)
         steps += [Step(id="supervise", describe="start the supervisor, detached, which runs the web application",
-                       argv=(sys.executable, "-m", "femkit.server.supervisor", "…")),
+                       argv=tuple(shown)),
                   Step(id="answer", describe="wait until it answers with the token")]
     else:
-        steps += [Step(id="supervise", describe="run the supervisor here, until Ctrl-C or `serve stop`",
-                       argv=("<web>/bin/python", "-m", protocol.CHILD_MODULE, "…"))]
-    return Plan(subjects=(protocol.subject(listen.name),),
-                shared=(_web_subject(),), basis={"state": state.value, "listen": listen.as_json()}, steps=tuple(steps))
+        steps += [Step(id="supervise", describe="run the supervisor here, until Ctrl-C or `serve stop`, which "
+                                                "runs the web application", argv=tuple(supervisor.child_argv(
+                                                    web_python(ctx), listen, "<socket>", "<this process>")))]
+    return Plan(subjects=(protocol.subject(listen.name),), shared=(_web_subject(),), steps=tuple(steps))
 
 
-def _reobserve(plan: Plan) -> tuple[Listen, object]:
+def _started(plan: Plan) -> tuple[Listen, object]:
+    """Where it listens, as the plan rested on it, and its facts read by the start that holds its lock."""
     listen = Listen.from_json(plan.basis["listen"])
-    f = facts(listen.name, mine=True)
-    if MACHINE.observe(f).value != plan.basis["state"]:
-        raise PlanStale("the server's state changed since the plan; plan again",
-                        (view.command(SERVE_STATUS),))
-    return listen, f
+    return listen, facts(listen.name, mine=True)
 
 
 @operation(SERVE_START, result=ServeOutcome, changes=True, subject="plan")
@@ -261,13 +267,15 @@ class ServeStart:
     """Start the web server in the background, supervised; print the address to open."""
 
     def plan(self, req: ServeRequest, ctx: Context) -> Plan:
-        plan = _start_plan(req, ctx, detached=True)
-        return plan
+        return _start_plan(req, ctx, detached=True)
+
+    def observe(self, req: ServeRequest, ctx: Context, held: bool) -> dict:
+        return _start_basis(req, ctx, held)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         req = ServeRequest.model_validate(plan.request)
         # the runner holds the server's lock (subject "plan")
-        listen, f = _reobserve(plan)
+        listen, f = _started(plan)
         held: dict = {}
 
         def do(step: Step, where: Path):
@@ -281,10 +289,9 @@ class ServeStart:
             elif step.id == "supervise":
                 sock, lock_fd = held["socket"], locks.held_fd(protocol.subject(listen.name))
                 use_fd = locks.held_fd(_web_subject())
-                argv = [sys.executable, "-m", "femkit.server.supervisor", "--python", web_python(ctx),
-                        "--listen", json.dumps(listen.as_json()), "--fd", str(sock.fileno()),
-                        "--lock-fd", str(lock_fd), "--use-fd", str(use_fd), "--hold", json.dumps(_holds(listen)),
-                        "--log-max-bytes", str(req.log_max_mb * 1024 * 1024), "--log-keep", str(req.log_keep)]
+                argv = supervisor.argv(sys.executable, web_python(ctx), listen,
+                                       {"socket": sock.fileno(), "lock": lock_fd, "use": use_fd},
+                                       json.dumps(_holds(listen)), req.log_max_mb * 1024 * 1024, req.log_keep)
                 held["supervisor"] = start_detached(argv, keep_fds=(sock.fileno(), lock_fd, use_fd), cwd=dirs.checkout(),
                                                     log=protocol.supervisor_log(listen.name))
                 sock.close()  # the supervisor holds it now
@@ -318,10 +325,13 @@ class ServeForeground:
             raise UsageError("serve foreground runs in a terminal; from here, use serve start")
         return _start_plan(req, ctx, detached=False)
 
+    def observe(self, req: ServeRequest, ctx: Context, held: bool) -> dict:
+        return _start_basis(req, ctx, held)
+
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         req = ServeRequest.model_validate(plan.request)
         # the runner holds the server's lock (subject "plan") for as long as the supervisor runs
-        listen, f = _reobserve(plan)
+        listen, f = _started(plan)
         held: dict = {}
 
         def announce(child: Identity) -> None:
@@ -397,17 +407,18 @@ class ServeRestart:
         require(f, state, "restart")
         _preflight(f.pidfile.listen, ctx)
         _child_locks(f, req.force, SERVE_RESTART)
-        return Plan(basis={"state": state.value, "supervisor": f.pidfile.supervisor.as_json(),
-                           "child": f.pidfile.child.as_json() if f.pidfile.child else None},
-                    steps=(Step(id="signal", describe=f"ask the supervisor, pid {f.pidfile.supervisor.pid}, "
+        return Plan(steps=(Step(id="signal", describe=f"ask the supervisor, pid {f.pidfile.supervisor.pid}, "
                                                       "for a new child (SIGHUP)"),
                            Step(id="answer", describe="wait until the new child answers with the token")))
+
+    def observe(self, req: TargetRequest, ctx: Context, held: bool) -> dict:
+        """The supervisor the pidfile names: the one a restart signals."""
+        f = facts(_target(req).name)
+        return {"supervisor": f.pidfile.supervisor.as_json() if f.pidfile else None}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         req = TargetRequest.model_validate(plan.request)
         f = facts(_target(req).name)
-        if f.pidfile is None or f.pidfile.supervisor.as_json() != plan.basis["supervisor"]:
-            raise PlanStale("the server changed since the plan; plan again", (view.command(SERVE_STATUS),))
         _child_locks(f, req.force, SERVE_RESTART)  # again: the page may have started one since the plan
         listen, token, held = f.pidfile.listen, _read_token(f.name), {}
 
@@ -442,16 +453,16 @@ class ServeStop:
             _child_locks(f, req.force, SERVE_STOP)
             steps = (Step(id="signal", describe=f"stop the supervisor, pid {f.pidfile.supervisor.pid} (SIGTERM)"),
                      Step(id="gone", describe="wait until it has ended and released its lock"))
-        return Plan(basis={"state": state.value,
-                           "supervisor": f.pidfile.supervisor.as_json() if f.pidfile else None},
-                    steps=steps)
+        return Plan(steps=steps)
+
+    def observe(self, req: TargetRequest, ctx: Context, held: bool) -> dict:
+        """The server's state: what a stop does depends on it."""
+        return {"state": MACHINE.observe(facts(_target(req).name)).value}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         req = TargetRequest.model_validate(plan.request)
         name = _target(req).name
         f = facts(name)
-        if MACHINE.observe(f).value != plan.basis["state"]:
-            raise PlanStale("the server's state changed since the plan; plan again", (view.command(SERVE_STATUS),))
         listen = f.pidfile.listen if f.pidfile else Listen.named(name)
         if plan.basis["state"] == ServerState.running.value:
             _child_locks(f, req.force, SERVE_STOP)  # again: the page may have started one since the plan

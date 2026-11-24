@@ -129,14 +129,17 @@ class Context:
 class Step(Model):
     id: str                                # stable within the plan, e.g. "build:netgen"
     describe: str                          # one line for a person
-    argv: tuple[str, ...] | None = None    # the command it will run, when it runs one
+    argv: tuple[str, ...] | None = None    # the command it runs, when it runs one: apply runs this command,
+                                           # a descriptor known only then shown as `<its name>`
 
 class Plan(Model):
     operation: str
     request: dict                          # the request, as JSON
     subjects: tuple[str, ...]              # the lock subjects apply holds alone: what it changes
     shared: tuple[str, ...] = ()           # those it holds shared: what it uses and does not change
-    basis: dict                            # the observed facts the plan was made from
+    basis: dict                            # the facts the plan rests on, observed before it was made
+    holds: dict = {}                       # what it decided that apply uses as decided: values measured,
+                                           # a record, other operations' plans
     steps: tuple[Step, ...]                # empty: nothing to do
     issues: list[Issue] = []
     asks: tuple[Ask, ...] = ()             # request fields to ask for on a terminal (§ 3.1)
@@ -147,13 +150,20 @@ class Plan(Model):
 1. `plan(req, ctx)` observes state and reads definitions. It writes nothing,
    starts nothing but read-only probes, and lists every step with its command
    line. A state that does not allow the action raises `Refused` here
-   (core.md § 7, `require`).
+   (core.md § 7, `require`). An operation whose plan rests on facts declares
+   `observe(req, ctx, held)`, the one place they are read: the runner calls it
+   before `plan` and keeps what it returns as `plan.basis`. `held` says whether
+   this process holds the subjects' locks.
+   The plan names every subject it changes or uses — a build that uses an
+   environment holds that environment shared.
 2. The surface shows the plan and obtains consent (§ 4.2, [`web.md`](web.md) § 9.1).
 3. The runner takes the subjects' locks — `subjects` alone, `shared` shared
-   (core.md § 5) — then calls `apply(plan, ctx,
-   observer)`. `apply` first observes again and raises `PlanStale` if the
-   facts differ from `plan.basis`; then it runs the steps, writing the event
-   log (core.md § 6) and reporting each step to the observer. The first step
+   (core.md § 5) — observes again and refuses with `PlanStale`, offering the
+   same request planned again, when the facts differ from `plan.basis`; no step
+   has run. Then it calls `apply(plan, ctx, observer)`, which runs the steps,
+   writing the event log (core.md § 6) and reporting each step to the observer.
+   An apply inside another's (`env bootstrap`'s installs) shares its recording:
+   each step is recorded once. The first step
    that does not finish stops the run — unless the steps do not depend on one
    another (`env bootstrap`'s installs, envs.md § 6.2): then every step runs,
    and the run fails if any did.

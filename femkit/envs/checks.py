@@ -18,6 +18,7 @@ from pathlib import Path
 from femkit.config import settings
 from femkit.core import clock, paths, process, text
 from femkit.core.operations import Context, Plan, Step, run_steps
+from femkit.core import persist
 from femkit.core.persist import write_json
 from femkit.core.schema import render
 from femkit.definitions.models import Check, EnvironmentDefinition, Expectation
@@ -153,7 +154,7 @@ def run_check(r: Runner, check: Check, work: Path) -> CheckOutcome:
         return failed(str(exc))
     if test_dir is not None:  # its outputs are dated by the file system holding them: start by that clock
         marker = test_dir / START_MARKER
-        marker.touch()
+        persist.touch(marker)
         started = marker.stat().st_mtime
     variables = _variables(r, check)
     if check.kind == "pytest":  # the upstream tests alone: no plugin installed in the prefix loads by itself

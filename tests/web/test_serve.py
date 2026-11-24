@@ -20,6 +20,7 @@ from femkit.core import clock, locks
 from femkit.core.eventlog import EventLog
 from femkit.core.errors import Busy, Refused
 from femkit.core.operations import Context, OperationAddress, operations_root
+from femkit.core.view import Verb
 from femkit.core.process import GRACE, Identity, end, identify
 from femkit.server import health, protocol
 from femkit.server.protocol import Listen, LogRoll, Pidfile
@@ -377,7 +378,7 @@ def fake_operation(runs: int, step_log: bool = False):
                 run_steps(plan.model_copy(update={"subjects": (f"demo-{i}",)}), ctx, observer, do)
             return Outcome(plan=plan, status="done")
 
-    return Operation("demo.multi", Req, Outcome, True, "a test operation", Impl()), release
+    return Operation(Verb("demo.multi", Req), Outcome, True, "a test operation", Impl()), release
 
 
 def test_an_apply_over_several_runs_reports_each_and_ends():

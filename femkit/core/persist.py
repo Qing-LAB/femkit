@@ -5,11 +5,13 @@ from __future__ import annotations
 import copy
 import json
 import os
+import shutil
 import stat
+import tarfile
 import tempfile
 import tomllib
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, Callable
 
 import tomlkit
 
@@ -19,26 +21,122 @@ PRIVATE_FILE = 0o600
 PRIVATE_DIR = 0o700
 
 
-def atomic_write_text(path: Path, text: str, *, private: bool = False) -> Path:
-    """Write ``text`` so a reader sees the old file or the new one, never a part;
-    ``private``: readable by this account alone, from its first byte."""
+def _umask() -> int:
+    """This process's umask, read without changing it: setting it to read it would, for that
+    moment, give another thread's new file or folder every permission."""
+    for line in Path("/proc/self/status").read_text().splitlines():
+        if line.startswith("Umask:"):
+            return int(line.split()[1], 8)
+    raise RuntimeError("/proc/self/status names no umask")
+
+
+def _atomic(path: Path, fill: Callable[[IO], object], *, binary: bool = False, private: bool = False,
+            accept: Callable[[Path], bool] | None = None) -> bool:
+    """``fill`` writes a file beside ``path``, which takes its place only when ``accept`` takes it:
+    a reader sees the old file or the new one, never a part. False, nothing changed, when refused."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)  # 0600 as made
     try:
         if not private:
-            umask = os.umask(0)
-            os.umask(umask)
-            os.chmod(tmp, 0o666 & ~umask)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
+            os.chmod(tmp, 0o666 & ~_umask())
+        with os.fdopen(fd, "wb") if binary else os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fill(fh)
             fh.flush()
             os.fsync(fh.fileno())
+        if accept is not None and not accept(Path(tmp)):
+            Path(tmp).unlink(missing_ok=True)
+            return False
         os.replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+    return True
+
+
+def atomic_write_text(path: Path, text: str, *, private: bool = False) -> Path:
+    """Write ``text`` so a reader sees the old file or the new one, never a part;
+    ``private``: readable by this account alone, from its first byte."""
+    _atomic(path, lambda fh: fh.write(text), private=private)
+    return Path(path)
+
+
+def write_stream(path: Path, source: IO[bytes], accept: Callable[[Path], bool] | None = None) -> bool:
+    """``source`` read to its end into ``path``, whole or not at all: it takes ``path``'s place only
+    when ``accept`` takes the written file — a download whose digest matches; False otherwise."""
+    return _atomic(path, lambda fh: shutil.copyfileobj(source, fh, length=1 << 20), binary=True, accept=accept)
+
+
+def copy_file(source: Path, path: Path) -> Path:
+    """A copy of ``source`` at ``path``, written as `write_stream` writes."""
+    with open(source, "rb") as fh:
+        write_stream(path, fh)
+    return Path(path)
+
+
+def append_text(path: Path, text: str) -> None:
+    """``text`` added at the end of ``path`` — a log's lines — its folders made; what was there stays."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def touch(path: Path) -> Path:
+    """``path`` made empty if it is not there, its modification time now either way."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
     return path
+
+
+def remove(path: Path) -> None:
+    """``path`` gone — a file, or a folder with everything in it; nothing there is no error."""
+    path = Path(path)
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def empty_folder(path: Path) -> Path:
+    """``path`` as an empty folder, whatever was there before."""
+    remove(path)
+    Path(path).mkdir(parents=True)
+    return Path(path)
+
+
+def copy_tree(source: Path, path: Path) -> Path:
+    """A copy of the folder ``source`` at ``path``, which is not there yet."""
+    shutil.copytree(source, path)
+    return Path(path)
+
+
+def replace_folder(fresh: Path, path: Path) -> None:
+    """``fresh`` takes ``path``'s place whole: the old folder moved aside, the fresh one renamed in,
+    the old one removed — a reader finds the old folder or the new, never a part of either, and the
+    place is empty only between two renames."""
+    path = Path(path)
+    aside = path.with_name(f".{path.name}.old")
+    remove(aside)
+    if path.exists():
+        os.rename(path, aside)
+    os.rename(fresh, path)
+    remove(aside)
+
+
+def unpack_single(archive: Path, path: Path) -> bool:
+    """A gzipped tar's one top folder becomes ``path``, which is not there yet: unpacked beside it
+    and renamed in, whole. False, nothing made, when the archive holds anything but one folder."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=path.parent) as scratch, tarfile.open(archive, "r:gz") as bundle:
+        bundle.extractall(scratch, filter="data")
+        roots = list(Path(scratch).iterdir())
+        if len(roots) != 1 or not roots[0].is_dir():
+            return False
+        roots[0].rename(path)
+    return True
 
 
 def write_json(path: Path, data: Any, *, private: bool = False) -> Path:

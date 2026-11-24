@@ -2444,7 +2444,12 @@
         },
         "basis": {
           "additionalProperties": true,
-          "description": "the observed facts the plan was made from",
+          "description": "the facts the plan rests on, observed before it was made; apply refuses when they differ then (api.md \u00a7 3)",
+          "type": "object"
+        },
+        "holds": {
+          "additionalProperties": true,
+          "description": "what the plan decided that apply uses as decided: values measured, a record, other operations' plans",
           "type": "object"
         },
         "issues": {
@@ -2495,6 +2500,7 @@
         "subjects",
         "shared",
         "basis",
+        "holds",
         "steps",
         "issues",
         "asks"

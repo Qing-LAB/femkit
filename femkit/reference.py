@@ -21,7 +21,6 @@ from femkit.config.settings import UserConfig
 from femkit.core import dirs, text, view
 from femkit.definitions.requests import CheckRequest, DocsRequest
 from femkit.core.issues import Issue
-from femkit.core.errors import PlanStale
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import atomic_write_text
 from femkit.core.schema import (DefinitionError, Model, allowed, alternatives, classes, described, field_extras,
@@ -317,12 +316,14 @@ class SchemaDocs:
     def plan(self, req: DocsRequest, ctx: Context) -> Plan:
         stale = _stale()
         steps = tuple(Step(id=name, describe=f"write {text.path(dirs.checkout() / name)}") for name in sorted(stale))
-        return Plan(basis={"stale": sorted(stale)}, steps=steps)
+        return Plan(steps=steps)
+
+    def observe(self, req: DocsRequest, ctx: Context, held: bool) -> dict:
+        """The pages that differ from what the models render now: what the plan writes."""
+        return {"stale": sorted(_stale())}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> DocsOutcome:
         pages = _stale()
-        if sorted(pages) != plan.basis["stale"]:
-            raise PlanStale("the reference pages changed since the plan; plan again", (view.command(SCHEMA_DOCS),))
         written: list[str] = []
 
         def do(step: Step, where):

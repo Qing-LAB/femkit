@@ -28,7 +28,19 @@ from femkit.server import protocol
 from femkit.server.protocol import Listen, LogRoll, Pidfile, event_line
 
 
-def child_argv(python: str, listen: Listen, fd: int, parent: int) -> list[str]:
+MODULE = "femkit.server.supervisor"   # started as `python -m femkit.server.supervisor`
+
+
+def argv(python: str, web_python: str, listen: Listen, fds: dict, hold: str, log_max_bytes: int,
+         log_keep: int) -> list[str]:
+    """The supervisor's command, as `serve start` runs it and its plan shows it: ``fds`` the
+    descriptors it inherits — the listening socket, the server's lock, the web environment's use."""
+    return [python, "-m", MODULE, "--python", web_python, "--listen", json.dumps(listen.as_json()),
+            "--fd", str(fds["socket"]), "--lock-fd", str(fds["lock"]), "--use-fd", str(fds["use"]),
+            "--hold", hold, "--log-max-bytes", str(log_max_bytes), "--log-keep", str(log_keep)]
+
+
+def child_argv(python: str, listen: Listen, fd: int | str, parent: int | str) -> list[str]:
     """The web application's command, on the web environment's ``python``: it serves on the
     inherited socket ``fd`` and ends when ``parent`` does (web.md § 4)."""
     return [python, "-m", protocol.CHILD_MODULE, "--fd", str(fd), "--parent", str(parent),
@@ -137,7 +149,7 @@ def supervise(listen: Listen, fd: int, python: str, *, log_max_bytes: int, log_k
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m femkit.server.supervisor")
+    parser = argparse.ArgumentParser(prog=f"python -m {MODULE}")
     parser.add_argument("--listen", required=True, help="where it listens, as JSON")
     parser.add_argument("--fd", type=int, required=True, help="the listening socket, inherited")
     parser.add_argument("--python", required=True, help="the web environment's Python, which runs the child")

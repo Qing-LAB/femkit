@@ -10,7 +10,7 @@ from pydantic import Field
 
 from femkit.config import probe, settings
 from femkit.core import dirs, paths, text, view
-from femkit.core.errors import PlanStale, UsageError
+from femkit.core.errors import UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Ask, Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import inline_text, plain_value
@@ -121,12 +121,14 @@ class ConfigSet:
         settings.with_values({req.key: new})  # an invalid new value is refused before anything is asked
         steps = () if old == new else (
             Step(id=f"set:{req.key}", describe=f"set {req.key}: {text.show(old)} -> {text.show(new)}"),)
-        return Plan(basis={"old": old}, steps=steps)
+        return Plan(steps=steps)
+
+    def observe(self, req: SetRequest, ctx: Context, held: bool) -> dict:
+        """The key's value in config.toml now: what the plan changes from."""
+        return {"old": settings.load(ctx, fresh=True).present().get(req.key)}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> SetOutcome:
         req = SetRequest.model_validate(plan.request)
-        if settings.load(ctx, fresh=True).present().get(req.key) != plan.basis["old"]:
-            raise PlanStale(f"{req.key} changed since the plan", (view.command(CONFIG_SET, key=req.key, value=req.value),))
 
         def do(step: Step, where):
             settings.write(settings.with_values({req.key: _value(req.value)}))
@@ -276,14 +278,15 @@ class ConfigInit:
                                         f"{where_environments_go(dirs.environments_dir())}",
                                 next=(view.command(CONFIG_INIT, note="to choose",
                                                    fills=[view.Fill(field="environments", label=ENVIRONMENTS, example="PATH")]),)))
-        return Plan(basis={"present": sorted(present), "values": values},
-                    steps=steps, issues=issues, asks=_asks(ctx, given, present))
+        return Plan(holds={"values": values}, steps=steps, issues=issues, asks=_asks(ctx, given, present))
+
+    def observe(self, req, ctx: Context, held: bool) -> dict:
+        """The keys config.toml holds now: what the plan adds to."""
+        return {"present": sorted(settings.load(ctx, fresh=True).present())}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> InitOutcome:
-        present = settings.load(ctx, fresh=True).present()
-        if sorted(present) != plan.basis["present"]:
-            raise PlanStale("config.toml changed since the plan", (view.command(CONFIG_INIT),))
-        values = plan.basis["values"]
+        present = settings.load(ctx, fresh=True).present()   # what it keeps, as it is now
+        values = plan.holds["values"]
 
         def do(step: Step, where):
             dotted = step.id.removeprefix("add:")

@@ -9,15 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import shutil
 from pathlib import Path
 
 from pydantic import Field
 
 from femkit.core import dirs, text, view
-from femkit.core.errors import PlanStale, Refused
+from femkit.core.errors import Refused
 from femkit.core.operations import Context, Outcome, Plan, Step, operation, run_steps
+from femkit.core import persist
 from femkit.core.persist import atomic_write_text, write_json
 from femkit.core.process import run
 from femkit.envs import layout
@@ -70,9 +69,8 @@ def bundle_hashes(static: Path) -> dict[str, str]:
 def npm_environment(base: dict[str, str]) -> dict[str, str]:
     """npm's cache and configuration in femkit's cache; a proxy the person set still passes."""
     root = work_root()
-    root.mkdir(parents=True, exist_ok=True)
     for name in ("npmrc", "npmrc-global"):
-        (root / name).touch()
+        persist.touch(root / name)
     return {**confined(base), **{k: base[k] for k in PROXIES if k in base},
             "npm_config_cache": str(root / "npm-cache"), "npm_config_userconfig": str(root / "npmrc"),
             "npm_config_globalconfig": str(root / "npmrc-global"), "npm_config_update_notifier": "false",
@@ -125,11 +123,13 @@ class WebBuild:
                        argv=tuple(m.in_prefix(prefix, ["npm", "run", "build"]))),
                   Step(id="ship", describe=f"write the bundle, build.json and its licenses into "
                                            f"{text.path(static_dir())}")]
-        return Plan(basis={"sources": sources_hash(source_dir())["sha256"]}, steps=tuple(steps))
+        return Plan(shared=(layout.subject(TOOL),), steps=tuple(steps))   # the environment it builds with, in use
+
+    def observe(self, req: BuildRequest, ctx: Context, held: bool) -> dict:
+        """The declared sources of frontend/ as they are now: what the bundle is built from."""
+        return {"sources": sources_hash(source_dir())["sha256"]}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> BuildOutcome:
-        if sources_hash(source_dir())["sha256"] != plan.basis["sources"]:
-            raise PlanStale("frontend/ changed since the plan; plan again", (view.command(WEB_BUILD),))
         m, work = resolve(ctx), work_root() / "work"
         env = npm_environment(m.environment)
         written: list[str] = []
@@ -137,18 +137,16 @@ class WebBuild:
         def do(step: Step, where: Path):
             log = where / f"{step.id}.log"
             if step.id == "copy":
-                if work.exists():
-                    shutil.rmtree(work)
+                persist.remove(work)
                 for rel in declared_sources(source_dir()):
-                    (work / rel).parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(source_dir() / rel, work / rel)
+                    persist.copy_file(source_dir() / rel, work / rel)
                 return "done", None
             if step.id == "ship":
                 return _ship(work, m, ctx, written), None
             observer.step_log(log)
             result = run(list(step.argv), env=env, cwd=work, log=log)
             if step.id == "relock" and result.ok:
-                shutil.copy2(work / "package-lock.json", source_dir() / "package-lock.json")
+                persist.copy_file(work / "package-lock.json", source_dir() / "package-lock.json")
                 written.append(str(source_dir() / "package-lock.json"))
             return ("done" if result.ok else "failed"), log
 
@@ -162,13 +160,10 @@ def _ship(work: Path, m, ctx: Context, written: list[str]) -> str:
     versions = {tool: run(m.in_prefix(prefix, [tool, "--version"]), env=confined(m.environment), timeout=60)
                 .stdout.strip().splitlines()[-1] for tool in ("node", "npm")}
     static, fresh = static_dir(), static_dir().with_name("static.new")
-    if fresh.exists():
-        shutil.rmtree(fresh)
-    shutil.copytree(work / "dist", fresh)
+    persist.remove(fresh)
+    persist.copy_tree(work / "dist", fresh)
     atomic_write_text(fresh / "THIRD-PARTY-LICENSES.txt", licenses(work))
-    if static.exists():
-        shutil.rmtree(static)
-    os.replace(fresh, static)
+    persist.replace_folder(fresh, static)
     write_json(static / "build.json", {"sources": sources_hash(source_dir()), "node": versions["node"],
                                        "npm": versions["npm"], "bundle": bundle_hashes(static)})
     written += [str(p) for p in sorted(static.rglob("*")) if p.is_file()]
