@@ -221,8 +221,6 @@ operation-specific.
   line parses a command by it, and an `Action` ([`web.md`](web.md) § 7.2) is
   written as the command a person types by it — so a refusal's or a finding's
   next step, wherever it is made, is the command this adapter would accept.
-  Built and uncommitted, as `core/commandline.py`; settled in plan § 3, R
-  step B.
 
 ### 4.2 Options every command has
 

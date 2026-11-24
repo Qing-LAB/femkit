@@ -6,7 +6,7 @@ from __future__ import annotations
 from femkit.core.view import Verb
 
 from femkit.core.commandline import ARGUMENT
-from femkit.core.schema import Model
+from femkit.core.schema import Model, matching
 from femkit.models.schema import NAME, STUDY
 from pathlib import Path
 from pydantic import Field
@@ -30,7 +30,7 @@ class StudyRequest(Model):
 class CopyRequest(StudyRequest):
     """A study to start another from."""
 
-    to: str = Field(pattern=f"^{STUDY.pattern}$", description="the new study's name")
+    to: str = matching(STUDY, description="the new study's name")
 
 
 class SetRequest(ProjectRequest):
@@ -71,7 +71,7 @@ class ProjectsRequest(Model):
 class NewProjectRequest(Model):
     """A new project, under the projects folder (web.md § 8.6)."""
 
-    name: str = Field(description="its folder's name", pattern=f"^{NAME.pattern}$", json_schema_extra=ARGUMENT)
+    name: str = matching(NAME, description="its folder's name", json_schema_extra=ARGUMENT)
 
 
 class WriteRequest(ProjectRequest):

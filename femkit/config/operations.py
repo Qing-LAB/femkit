@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-import tomlkit
 from pydantic import Field
 
 from femkit.config import probe, settings
@@ -14,7 +13,7 @@ from femkit.core import dirs, paths, text, view
 from femkit.core.errors import PlanStale, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Ask, Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.persist import parse_value
+from femkit.core.persist import inline_text, plain_value
 from femkit.core.schema import Model
 from femkit.definitions import catalogue
 from femkit.config.requests import OPTION_KEYS, PathRequest, SetRequest, ShowRequest, option_name
@@ -105,7 +104,7 @@ def _value(raw: str) -> Any:
     """The value its TOML text gives — `8`, `"text"`, `["80", "90"]`, `[]` — as the file writes it;
     a bare word is refused, never guessed to be text (web.md § 7.3)."""
     try:
-        return parse_value(raw).unwrap()
+        return plain_value(raw)
     except ValueError as exc:
         raise UsageError(str(exc)) from None
 
@@ -219,7 +218,7 @@ def _issues(given: dict[str, Any], present: dict[str, Any], adding: dict[str, An
               for k, v in present.items()]
     issues += [Issue(severity="warning", code="value-ignored", subject=k,
                      message=f"{k} is already {text.show(present[k])}; the value given is ignored",
-                     next=(view.command(CONFIG_SET, key=k, value=tomlkit.item(given[k]).as_string()),))
+                     next=(view.command(CONFIG_SET, key=k, value=inline_text(given[k])),))
                for k in given if k in present and given[k] != present[k]]
     for dotted in settings.STATED:
         if dotted not in present and dotted not in adding:

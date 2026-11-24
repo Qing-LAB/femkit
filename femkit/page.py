@@ -11,7 +11,7 @@ from pydantic import Field
 
 from femkit.core.operations import Operation
 from femkit.core.schema import DefinitionError, Model, classes, items_of, load_toml
-from femkit.definitions.catalogue import data_root
+from femkit.definitions import catalogue
 from femkit.models.schema import OBJECTS
 
 Context = Literal["project", "study", "environment"]
@@ -66,7 +66,8 @@ class Page(Model):
 
 
 def path() -> Path:
-    return data_root() / "web" / "page.toml"
+    """`web/page.toml`, among the shipped definitions."""
+    return catalogue.data_root() / "web" / "page.toml"
 
 
 def load(ops: Mapping[str, Operation]) -> Page:

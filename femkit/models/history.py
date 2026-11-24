@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import Field
 
 from femkit.core.persist import read_json, write_json
-from femkit.core.schema import Model, validate
+from femkit.core.schema import Model, matching, validate
 from femkit.models.schema import STUDY
 
 HISTORY = 100  # the edits `model undo` reaches back through; to be the setting `projects.undo` (config.md § 3)
@@ -17,8 +17,8 @@ FILE = Path(".femkit") / "history" / "history.json"
 
 
 class Change(Model):
-    study: str | None = Field(description="the file: a study's, by its name; none: the model's — never a path, so "
-                                          "a record cannot name a file outside its project", pattern=f"^{STUDY.pattern}$")
+    study: str | None = matching(STUDY, description="the file: a study's, by its name; none: the model's — never a "
+                                                    "path, so a record cannot name a file outside its project")
     before: str | None = Field(description="its text before the edit; none: it did not exist")
     after: str | None = Field(description="its text after the edit; none: it was removed")
 

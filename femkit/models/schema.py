@@ -1,6 +1,6 @@
 """`model.toml` and `study.toml` (models.md § 3, § 5).
 
-Loading checks the first tier of validity (models.md § 11.2): types, unknown keys, every
+Loading checks the first tier of validity (models.md § 11.1): types, unknown keys, every
 quantity read by the unit grammar (core.md § 11) and every reference naming an object that
 exists. An incomplete model loads; what it lacks, and what the formulation does not allow,
 are `model check`'s findings.
@@ -22,7 +22,8 @@ from typing import Annotated, Any, ClassVar, Iterator, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 from pydantic.fields import FieldInfo
 
-from femkit.core.schema import Model, classes, closed, field_extras, field_named, references, refuse, values_of
+from femkit.core.schema import (SHA256, Model, classes, closed, field_extras, field_named, matching, references, refuse,
+                                values_of)
 from femkit.core.units import Quantity, UnitError, Units
 from femkit.jobs.request import Resources
 
@@ -122,7 +123,7 @@ class Imported(Model):
     dimension: ClassVar[int | None] = None  # the dimension it is drawn in; none: its parts'
     kind: Literal["import"] = SHAPE_KIND
     file: str = Field(description="its path under the project's `custom/`")
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$", description="its SHA-256")
+    sha256: str = matching(SHA256, description="its SHA-256")
 
 
 Shape = Annotated[Union[Rectangle, Disk, Polygon, Box, Sphere, Cylinder, Extrusion, Combined, Imported],
@@ -199,7 +200,7 @@ class Property(Model):
     value: str | None = as_quantity("a constant, with its unit where it has one", default=None)
     table: str | None = Field(default=None, description="a table under `custom/`: the variable, then the value's "
                                                         "real and imaginary parts")
-    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$", description="the table's SHA-256")
+    sha256: str | None = matching(SHA256, default=None, description="the table's SHA-256")
     variable: Variable | None = Field(default=None, description="the table's independent variable")
     interpolation: Literal["linear"] | None = Field(default=None, description="between the table's rows")
     convention: Literal["real", "exp(-iwt)", "exp(+iwt)"] | None = Field(

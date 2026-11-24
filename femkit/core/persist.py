@@ -136,14 +136,23 @@ def write_document(path: Path, doc: tomlkit.TOMLDocument) -> Path:
 
 def parse_value(text: str) -> Any:
     """A TOML inline value as a person types it — `"1 nm"`, `2`, `[0, 0]`, `{ kind = "x" }` —
-    or ValueError."""
+    as the item a document holds, its formatting kept; or ValueError."""
+    return _one_value(text)["value"]
+
+
+def plain_value(text: str) -> Any:
+    """`parse_value`'s value as plain Python: a number, text, a list, a dict; or ValueError."""
+    return _one_value(text).unwrap()["value"]
+
+
+def _one_value(text: str) -> tomlkit.TOMLDocument:
     try:
         doc = tomlkit.parse(f"value = {text}")
     except tomlkit.exceptions.TOMLKitError as exc:
         raise ValueError(f"{text!r} is not a TOML value: {exc}") from None
     if list(doc) != ["value"]:
         raise ValueError(f"{text!r} is not one TOML value")
-    return doc["value"]
+    return doc
 
 
 def _parent(doc: Any, key: Key, create: bool) -> Any:

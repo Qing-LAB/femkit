@@ -172,13 +172,15 @@ def test_the_graph_holds_every_object_and_every_reference_the_loader_checks(proj
 def test_a_finding_sits_on_the_node_it_names_and_the_palette_comes_from_the_formulation(project):
     """Fails if `model check`'s finding is not shown on its node, the palette lists anything but
     the object types it offers with the formulation's kinds, or an add's text starts from other
-    than its template — its type held, every key it may hold written, its sentence beside it —
-    or the palette offers geometry, which is made outside femkit (web.md § 8.3, ADR 0010)."""
+    than its template — its type held, every key it may hold written — or the palette offers
+    geometry, which is made outside femkit (web.md § 8.3, ADR 0010)."""
     text = model_file(project).read_text()
     model_file(project).write_text(text.replace('sides = { kind = "insulating" }\n', ""))
     g = graph(project)
     sides = next(n for n in g.nodes if n.address == "model:regions.sides")
-    assert sides.findings and all(a.call.request["address"] == "model:conditions.sides" for a in sides.findings[0].next)
+    finding = sides.findings[0]
+    assert finding.code == "model-incomplete" and finding.next
+    assert all(a.call.request["address"] == "model:conditions.sides" for a in finding.next)
     conditions = {e.type: e for e in g.palette if e.kind == "condition"}
     assert set(conditions) == {"potential", "insulating", "surface_charge", "normal_flux", "interface"}
     assert conditions["surface_charge"].help.doc.section == "3-conditions-on-an-outer-boundary"

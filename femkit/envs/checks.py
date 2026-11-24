@@ -17,22 +17,22 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-import femkit.engines
 from femkit.config import settings
 from femkit.core import paths, process, text
 from femkit.core.operations import Context, Plan, Step, run_steps
 from femkit.core.persist import write_json
 from femkit.core.schema import render
 from femkit.definitions.models import GENERIC_READERS, Check, EnvironmentDefinition, Expectation
-from femkit.engines import Output, cuda, reader, summary
+from femkit.engines import Output, reader, summary, toolchain
 from femkit.envs import layout, manager
 from femkit.envs.manager import Manager, resolve
 from femkit.envs.records import CheckOutcome, ChecksRecord
 from femkit.envs.requests import ENV_VALIDATE, ValidateRequest
 
-# The shared code that runs and judges checks: a change to it re-validates (envs.md § 2). The toolchain's
-# program checks nothing, so it is not here: changing it must not mark every environment unchecked.
-JUDGING = tuple(Path(f).resolve() for f in (__file__, femkit.engines.__file__, summary.__file__, cuda.__file__))
+# The shared code that runs and judges checks: this file and every module directly in `femkit/engines/`
+# but the toolchain's program, which checks nothing (envs.md § 2). A change to one re-validates.
+JUDGING = (Path(__file__).resolve(), *sorted(p.resolve() for p in Path(toolchain.__file__).parent.glob("*.py")
+                                         if p.name != Path(toolchain.__file__).name))
 JUNIT = "junit.xml"
 START_MARKER = ".femkit-check-start"
 

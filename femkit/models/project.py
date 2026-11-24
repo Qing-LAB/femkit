@@ -35,7 +35,7 @@ NEW_FILE = "schema = 1\n"
 
 
 def load_model(project: Path, ctx: Context) -> ModelFile:
-    """`model.toml`, its numbers read exactly; refused whole when it does not load (models.md § 11.2).
+    """`model.toml`, its numbers read exactly; refused whole when it does not load (models.md § 11.1).
     A folder with none holds the empty model, which `model check` and the graph read like any
     other (web.md § 8.4)."""
     path = model_file(project)

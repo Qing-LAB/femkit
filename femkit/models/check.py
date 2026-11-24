@@ -1,4 +1,4 @@
-"""`model check`: the second tier of validity (models.md § 3, § 11.2, § 13).
+"""`model check`: the second tier of validity (models.md § 3, § 11.1, § 13).
 
 A model that loads may still be incomplete, or ask what its formulation does not allow. Each
 finding is a whole sentence naming its subject, in the chain's order, the first being the

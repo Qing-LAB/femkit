@@ -10,7 +10,6 @@ import json
 
 import enum
 import html
-import typing
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +24,8 @@ from femkit.core.issues import Issue
 from femkit.core.errors import PlanStale
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import atomic_write_text
-from femkit.core.schema import (DefinitionError, Model, alternatives, classes, described, field_extras, items_of,
-                                keys_of, optional, values_of)
+from femkit.core.schema import (DefinitionError, Model, allowed, alternatives, classes, described, field_extras,
+                                items_of, keys_of, optional, values_of)
 from femkit.core.units import UnitTable, Units
 from femkit.definitions import catalogue
 from femkit.definitions.formulations import FormulationDefinition
@@ -75,7 +74,7 @@ class SchemaCheckResult(Result):
             ("units", f"units.toml, {text.count(self.units, 'symbol')}"),
             ("formulations", text.show(self.formulations)),
             ("meshers", text.show(self.meshers)),
-            ("page", "web/page.toml"),
+            ("page", str(page.path().relative_to(catalogue.data_root()))),
         ]))
 
 
@@ -85,19 +84,14 @@ def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
     try:
         cat = catalogue.load(ctx, engines=registered())
     except catalogue.CatalogueError as exc:
-        issues = [
-            Issue(severity="error", code="definition-invalid", subject=err.file,
-                  message=f"{err.file}: {path or '<file>'}: {reason}")
-            for err in exc.errors for path, reason in err.problems
-        ]
-        return SchemaCheckResult(issues=issues)
-    issues = _benchmark_issues(cat, ctx) + _mesher_issues(cat)
+        return SchemaCheckResult(issues=[i for err in exc.errors for i in _issues(err)])
+    errors = _mesher_errors(cat)
     from femkit import registry               # here: the registry imports this module
     try:
         page.load(registry.operations())
     except DefinitionError as exc:
-        issues += [Issue(severity="error", code="definition-invalid", subject=exc.file,
-                         message=f"{exc.file}: {where or '<file>'}: {reason}") for where, reason in exc.problems]
+        errors.append(exc)
+    issues = _benchmark_issues(cat, ctx) + [i for err in errors for i in _issues(err)]
     if issues:
         return SchemaCheckResult(issues=issues)
     return SchemaCheckResult(environments=list(cat.environments), managers=list(cat.managers),
@@ -105,12 +99,21 @@ def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
                        formulations=list(cat.formulations), meshers=list(cat.meshers))
 
 
-def _mesher_issues(cat) -> list[Issue]:
-    """A mesher may build only the model's shape kinds: the shapes' own kinds are the one list."""
-    return [Issue(severity="error", code="definition-invalid", subject=f"meshers/{name}.toml",
-                  message=f"meshers/{name}.toml: builds: {kind!r} is no shape kind of the model; "
-                          f"the kinds are {', '.join(SHAPE_KINDS)}")
-            for name, mesher in cat.meshers.items() for kind in mesher.builds if kind not in SHAPE_KINDS]
+def _issues(err: DefinitionError) -> list[Issue]:
+    """A file that does not load, as findings: one per problem, with its file and key path."""
+    return [Issue(severity="error", code="definition-invalid", subject=err.file, message=line) for line in err.lines()]
+
+
+def _mesher_errors(cat) -> list[DefinitionError]:
+    """A mesher may build only the model's shape kinds: the shapes' own kinds are the one list
+    (definitions.md § 2.3). Checked here, as the definitions may not import `models`."""
+    errors = []
+    for name, mesher in cat.meshers.items():
+        problems = [(f"builds[{i}]", f"{kind!r} is no shape kind of the model; the kinds are {', '.join(SHAPE_KINDS)}")
+                    for i, kind in enumerate(mesher.builds) if kind not in SHAPE_KINDS]
+        if problems:
+            errors.append(DefinitionError(catalogue.data_root() / "meshers" / f"{name}.toml", problems))
+    return errors
 
 
 def _benchmark_issues(cat, ctx: Context) -> list[Issue]:
@@ -158,8 +161,8 @@ def _type_name(annotation: Any) -> str:
 
 
 def _one_type(annotation: Any) -> str:
-    if typing.get_origin(annotation) is typing.Literal:          # its values, text or not
-        return " \\| ".join(f"`{a}`" for a in typing.get_args(annotation))
+    if values := allowed(annotation):                            # a Literal's values, text or not
+        return " \\| ".join(f"`{a}`" for a in values)
     if (item := items_of(annotation)) is not None:
         return f"list of {_type_name(item)}"
     if (value := values_of(annotation)) is not None:

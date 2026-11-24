@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apply, lines, NeedToken, OperationInfo, planOperation, Refused, runOperation } from "./api";
+import { actionLine, apply, lines, NeedToken, OperationInfo, planOperation, Refused, runOperation } from "./api";
 import { Form, requestFrom, Values } from "./Form";
 import { Progress } from "./Progress";
 import { Findings, Value } from "./Value";
@@ -154,7 +154,7 @@ export function OperationView({ op, onNeedToken }: { op: OperationInfo; onNeedTo
         <div className="card result not-ok">
           <h2>Refused <span className="badge failed">{phase.kind2}</span></h2>
           <p>{phase.message}</p>
-          {phase.next.length > 0 && <pre className="next">{phase.next.map((a) => a.command).join("\n")}</pre>}
+          {phase.next.length > 0 && <pre className="next">{phase.next.map(actionLine).join("\n")}</pre>}
         </div>
       )}
     </section>

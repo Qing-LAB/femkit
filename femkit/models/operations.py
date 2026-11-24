@@ -11,7 +11,7 @@ from femkit.core import text, view
 from femkit.core.errors import PlanStale, Refusal, Refused, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.persist import atomic_write_text, write_document, write_json
+from femkit.core.persist import atomic_write_text, inline_text, write_document, write_json
 from femkit.core.schema import Model, field_extras
 from femkit.config import settings
 from femkit.definitions import catalogue
@@ -36,7 +36,7 @@ class CheckResult(Result):
 @operation(MODEL_CHECK, result=CheckResult)
 def model_check(req: ProjectRequest, ctx: Context) -> CheckResult:
     """Every rule of the model and its formulation but region coverage, which needs the
-    geometry built; changes nothing (models.md § 3, § 11.2)."""
+    geometry built; changes nothing (models.md § 3, § 11.1)."""
     project = _project(req)
     model = load_model(project, ctx)
     issues: list[Issue] = check.findings(model, catalogue.formulations(ctx), catalogue.units(ctx), project)
@@ -200,7 +200,7 @@ class EditOutcome(Outcome):
 
 
 def _findings_after(project: "edit.Project", ctx: Context) -> list[Issue]:
-    """What `model check` would find once the edit is made: shown, never refused (§ 11.2)."""
+    """What `model check` would find once the edit is made: shown, never refused (models.md § 11.1)."""
     model, _ = project.load()
     return [i.model_copy(update={"severity": "info"})
             for i in check.findings(model, catalogue.formulations(ctx), catalogue.units(ctx), project.root)]
@@ -412,7 +412,7 @@ def model_graph(req: GraphRequest, ctx: Context) -> GraphResult:
     choice = check.formulation_choice(formulations)
     return GraphResult(
         project=str(project), study=req.study, formulation=model.formulation,
-        choices=[view.Field(label="formulation", value=f'"{model.formulation}"' if model.formulation else None,
+        choices=[view.Field(label="formulation", value=inline_text(model.formulation) if model.formulation else None,
                             json_schema=choice, help=view.Help.of(formulation.description,
                                                                   field_extras(formulation).get("doc")),
                             set=view.command(MODEL_SET, label="choose the formulation", project=str(project),

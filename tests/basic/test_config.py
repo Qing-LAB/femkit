@@ -43,11 +43,14 @@ def test_an_invalid_value_is_refused_before_anything_is_written():
 
 
 def test_a_value_is_toml_text_and_a_bare_word_is_refused():
-    """Fails if config set guesses that a bare word is text, or reads TOML text otherwise than
-    the file would (config.md § 3, web.md § 7.3)."""
+    """Fails if config set guesses that a bare word is text, reads TOML text otherwise than
+    the file would, or fails on a value of the wrong type instead of refusing it — here `true`
+    for a number (config.md § 3, web.md § 7.3)."""
     ctx = Context.from_process()
     with pytest.raises(UsageError, match="not a TOML value"):
         ConfigSet.plan(ConfigSet.request(key="web.projects", value="/data/projects"), ctx)
+    with pytest.raises(UsageError, match="build.jobs"):
+        ConfigSet.plan(ConfigSet.request(key="build.jobs", value="true"), ctx)
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="web.projects", value='"/data/projects"'), ctx), ctx)
     assert str(settings.load(Context.from_process()).config.web.projects) == "/data/projects"
 

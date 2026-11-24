@@ -29,10 +29,10 @@ Two parts: a flask application built from the same registry as the command
 line ([`api.md`](api.md) § 6), and a page that runs in the browser. Both live
 in the `web` environment ([`envs.md`](envs.md) § 1): the server runs on its
 Python, and the page is built with its Node.js; the control environment holds
-neither. The routes and `serve` are built in token mode, and the first page's
-operation, progress and documents views;
-TLS, sign-in, `--no-auth`, uploads, the other views and the page's framework
-(§§ 6–12) are not built yet (plan § 3, M7), and these rules hold when they
+neither. The routes and `serve` are built in token mode, with the first page's
+operation, progress and documents views, and the page's framework in part
+(§ 6 says which parts); TLS, sign-in, `--no-auth`, uploads and the rest of
+§§ 6–12 are not built yet (plan § 3, R and M7), and these rules hold when they
 are. A basic test checks that every registered operation can be expressed this
 way (its request and result models produce a JSON schema). The reasons for the
 page's form are [ADR 0009](../decisions/0009-web-front-end.md).
@@ -571,8 +571,11 @@ The page owns presentation: layout, elements and interaction.
 ## 7. The vocabulary — one data structure
 
 Pydantic models in `femkit/core/view.py`. Every document the page renders, and
-every answer of a route (§ 1), is built from them; each is built in one place,
-so a refusal's JSON, for one, exists once. The plan answer — a plan, its digest
+every answer of a route (§ 1) but two, is built from them; each is built in one
+place, so a refusal's JSON, for one, exists once. The two: `GET /api/page`
+answers with the declaration's own model, `Page` in `femkit/page.py` (§ 8.1),
+and the event stream with the event log's lines as they are written
+([`core.md`](core.md) § 6). The plan answer — a plan, its digest
 and its text — is built beside the plan it carries, in `core/operations.py`,
 which the vocabulary sits below.
 

@@ -72,7 +72,7 @@ declares them ([`definitions.md`](definitions.md) § 6). No command sets
 | fingerprint | covers | when it changes |
 |---|---|---|
 | **install** | the environment's packages, sources and builds; the Python minor and channels (`control.txt`, `channels.txt`); `build.cuda_architectures` when a build has `cuda_architectures = true`; the manager kind | the environment is `outdated` and must be rebuilt |
-| **check** | the environment's checks and agreements, its thread and fixed variables, the files of its engine package, and the shared code that runs and judges checks (`femkit/envs/checks.py`, and `femkit/engines/__init__.py`, `summary.py` and `cuda.py`; not the toolchain's program, which checks nothing) | its check results no longer count; it is `unchecked` until validated |
+| **check** | the environment's checks and agreements, its thread and fixed variables, the files of its engine package, and the shared code that runs and judges checks (`femkit/envs/checks.py`, and every module directly in `femkit/engines/` — a new one included — but the toolchain's program, which checks nothing) | its check results no longer count; it is `unchecked` until validated |
 
 `build.jobs` and anything else that changes how fast, not what, is outside both.
 

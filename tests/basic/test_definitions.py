@@ -318,7 +318,20 @@ def test_schema_check_refuses_a_mesher_that_builds_a_shape_the_model_has_not(tmp
     gmsh.write_text(gmsh.read_text().replace('builds = ["rectangle",', 'builds = ["torus", "rectangle",', 1))
     monkeypatch.setattr(catalogue, "data_root", lambda: data)
     result = schema_check.run(schema_check.request(), Context.from_process())
-    assert [i.subject for i in result.issues if "'torus'" in i.message] == ["meshers/gmsh.toml"]
+    assert [i.subject for i in result.issues if "'torus'" in i.message] == [str(gmsh)]
+
+
+def test_schema_check_refuses_a_page_declaration_that_names_what_is_not_served(tmp_path, monkeypatch):
+    """Fails if a page declaration whose workspace shows an operation that does not exist
+    passes `schema check` (definitions.md § 2.3, web.md § 8.1)."""
+    data = tmp_path / "data"
+    shutil.copytree(data_root(), data)
+    page = data / "web" / "page.toml"
+    page.write_text(page.read_text().replace('document = "model.graph"', 'document = "model.nothing"', 1))
+    monkeypatch.setattr(catalogue, "data_root", lambda: data)
+    result = schema_check.run(schema_check.request(), Context.from_process())
+    assert [i.subject for i in result.issues] == [str(page)]
+    assert "workspaces.0.document" in result.issues[0].message
 
 @pytest.mark.parametrize("change, at", [
     ({"provided_by": "comsol"}, "provided_by"),                 # no such environment
@@ -326,7 +339,7 @@ def test_schema_check_refuses_a_mesher_that_builds_a_shape_the_model_has_not(tmp
 ])
 def test_a_mesher_that_misstates_itself_does_not_load(change, at):
     """Fails if a mesher names an environment that does not exist, or builds `import` with no
-    format (geometry.md § 8, definitions.md § 1)."""
+    format (definitions.md § 2.2)."""
     import tomllib
     from femkit.core.schema import DefinitionError, validate
     from femkit.definitions.catalogue import data_root

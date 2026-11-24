@@ -12,7 +12,7 @@ and the boundary between declared data and engine code
 | A **shipped definition** says what femkit supports: environments, the tools it drives, the checks that prove an install. It is reviewed source, never per-user or per-machine | 1 |
 | Generic code reads declared fields and registered IDs; it never tests an engine, manager or scheduler **name** ([`conventions.md`](../process/conventions.md) § 2) | 1 |
 | Every field's type, default and description is defined **once**, on a schema model; the reference page is generated from it | 2 |
-| Unknown keys, wrong types and dangling references fail **at load**, before any plan or process | 2.2 |
+| Unknown keys, wrong types and dangling references fail **at load**, before any plan or process; a mesher's shape kinds, which the model defines, fail `schema check` | 2.2, 2.3 |
 | The control environment is two plain lists, **`channels.txt`** and **`control.txt`**, read by the install script, the package manager and Python alike | 3 |
 | An engine environment declares packages, sources, builds and checks; nothing about a machine | 4, 5 |
 | How to drive a package manager or a scheduler is a **kind** file; adding a scheduler, or a manager of the conda family, is data plus, at most, a reader | 6 |
@@ -101,7 +101,12 @@ file, the key path and the reason. It fails when:
 - a reference names nothing: a build's source, a check's build or source, a
   reader or engine ID no adapter registered, an agreement group with one member;
 - an ID repeats within its file, or a placeholder is not one its field
-  accepts (§ 4.3).
+  accepts (§ 4.3);
+- a mesher builds `import` and names no format it imports.
+
+One rule is not checked at load: the shape kinds a mesher builds are the
+model's, and the model sits above the definitions, so `schema check` refuses
+a kind the model has not (§ 2.3).
 
 Loading reads only definition files. It probes nothing, starts no process and
 writes nothing; importing a schema module loads nothing.

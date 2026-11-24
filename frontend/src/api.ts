@@ -7,6 +7,12 @@ const KEY = "femkit-token";
 
 export class NeedToken extends Error {}
 
+/** A next step as a command line writes it: its command, and its note after it (core/view.py's
+ * `Action`). */
+export function actionLine(a: Action): string {
+  return a.command + (a.note ? `   # ${a.note}` : "");
+}
+
 export class Refused extends Error {
   constructor(public kind: string, message: string, public next: Action[]) {
     super(message);

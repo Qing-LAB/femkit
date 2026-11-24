@@ -59,6 +59,7 @@ def classes(annotation), keys_of(annotation), values_of(annotation), items_of(an
 def optional(annotation) -> bool                        # whether it allows None, through Annotated and unions
 def described(field) -> str                             # its description, and its `doc` reference after it
 def field_named(cls, key) -> tuple[str, FieldInfo] | None   # the field a file writes as `key`, alias or name
+def matching(pattern, **field), whole(pattern) -> str   # a text field its pattern holds whole; the pattern tied to both ends
 def references(instance) -> Iterator[tuple[location, type, name]]   # every name its `ref` fields hold
 
 class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[key_path, reason]]
@@ -87,6 +88,10 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   file may leave out while it is being written, which `project check` asks for
   and `study expand` requires — what a material's dataset rests on,
   [`materials.md`](materials.md) § 3).
+- **A pattern holds the whole value.** A text field with a pattern — a name,
+  a digest, an ID — is made with `matching`, and a form's pattern with
+  `whole`: pydantic and JSON Schema search inside a value, so a name's pattern
+  left open would take `../outside`, a path out of its folder.
 - **One reading of an annotation.** Every walk of a schema — the command
   line's spelling, the object types, the graph, the fragments — reads a
   field's annotation through `alternatives` and the functions beside it, and
@@ -262,7 +267,7 @@ becomes visible only through its commit write (§ 4), never through the log.
 A state machine says what state a subject is in and what may be done in each
 state. Built: each machine declared in Python, beside its facts function —
 rules as functions of the facts, actions as `Action`s of `core/view.py`
-([`web.md`](web.md) § 7.2; uncommitted, plan § 3, R step B). Decided by the
+([`web.md`](web.md) § 7.2). Decided by the
 person, not built yet (plan § 3, R step C): the machine itself is data.
 
 ```text

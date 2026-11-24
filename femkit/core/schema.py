@@ -14,15 +14,20 @@ import types
 import typing
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Iterable, Iterator, TypeVar
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, TypeVar
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.fields import FieldInfo
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
 from femkit.core.errors import Refusal
 
+if TYPE_CHECKING:
+    from femkit.core.view import Action
+
 M = TypeVar("M", bound="Model")
+
+SHA256 = re.compile(r"[0-9a-f]{64}")   # a SHA-256 digest, as its hex text
 
 
 class Model(BaseModel):
@@ -35,11 +40,14 @@ class Model(BaseModel):
 class DefinitionError(Refusal):
     """A declared file that does not load: every problem, each with its key path."""
 
-    def __init__(self, file: Path | str, problems: Iterable[tuple[str, str]], next: tuple[str, ...] = ()):
+    def __init__(self, file: Path | str, problems: Iterable[tuple[str, str]], next: Iterable[Action] = ()):
         self.file = str(file)
         self.problems = list(problems)
-        lines = [f"{self.file}: {path or '<file>'}: {reason}" for path, reason in self.problems]
-        super().__init__("\n".join(lines), next)
+        super().__init__("\n".join(self.lines()), next)
+
+    def lines(self) -> list[str]:
+        """Each problem on its own line, with its file and key path."""
+        return [f"{self.file}: {path or '<file>'}: {reason}" for path, reason in self.problems]
 
     def summary(self) -> str:
         """Every problem on one line, each at its key path: for a row or a listing that names the file apart."""
@@ -170,10 +178,26 @@ def items_of(annotation: Any) -> Any:
     return (typing.get_args(lists[0]) or (str,))[0] if lists else None
 
 
+def allowed(annotation: Any) -> list[Any]:
+    """Every value a `Literal` among its alternatives allows, text or not."""
+    return [v for a in alternatives(annotation) if typing.get_origin(a) is typing.Literal for v in typing.get_args(a)]
+
+
 def closed(annotation: Any) -> list[str]:
     """The text values a `Literal` among its alternatives allows."""
-    return [v for a in alternatives(annotation) if typing.get_origin(a) is typing.Literal
-            for v in typing.get_args(a) if isinstance(v, str)]
+    return [v for v in allowed(annotation) if isinstance(v, str)]
+
+
+def whole(pattern: re.Pattern[str] | str) -> str:
+    """``pattern`` tied to the whole value, as a schema's pattern must be: pydantic and JSON
+    Schema search inside a value, so a name's pattern left open would take `../outside`."""
+    return f"^(?:{pattern.pattern if isinstance(pattern, re.Pattern) else pattern})$"
+
+
+def matching(pattern: re.Pattern[str] | str, **field: Any) -> Any:
+    """A text field whose whole value matches ``pattern`` — a name, a digest, an ID — with
+    pydantic's other ``Field`` arguments."""
+    return Field(pattern=whole(pattern), **field)
 
 
 def field_named(cls: type[BaseModel], key: str) -> tuple[str, FieldInfo] | None:

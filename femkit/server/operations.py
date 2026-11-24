@@ -28,11 +28,10 @@ from femkit.definitions import catalogue
 from femkit.server import health, protocol, supervisor
 from femkit.server.protocol import LOOPBACK, Listen, event_line
 from femkit.server.state import MACHINE, ServerState, facts, require
-from femkit.core.view import Verb
-from femkit.server.requests import SERVE_RESTART, SERVE_STOP, ServeRequest, StatusRequest, TargetRequest
 from femkit.config.requests import CONFIG_SHOW
 from femkit.envs.requests import ENV_INSTALL
-from femkit.server.requests import SERVE_FOREGROUND, SERVE_RESTART, SERVE_START, SERVE_STATUS, SERVE_STOP
+from femkit.server.requests import (SERVE_FOREGROUND, SERVE_RESTART, SERVE_START, SERVE_STATUS, SERVE_STOP,
+                                    ServeRequest, StatusRequest, TargetRequest)
 
 ANSWER_WAIT = 30.0     # seconds a start or a restart waits for the child to answer
 STOP_WAIT = protocol.STOP_GRACE + 5.0
@@ -40,8 +39,9 @@ STOP_WAIT = protocol.STOP_GRACE + 5.0
 
 # ------------------------------------------------------------------ requests
 
-def _target_name(req: TargetRequest | StatusRequest) -> str:
-    return protocol.target_name(req.socket, req.port)
+def _target(req: TargetRequest | StatusRequest) -> Listen:
+    """The server a request names: on the socket, or on its port."""
+    return Listen.unix() if req.socket else Listen(port=req.port)
 
 
 def _holds(listen: Listen) -> tuple[str, list[dict]]:
@@ -55,7 +55,7 @@ def _listen(req: ServeRequest, ctx: Context) -> Listen:
     """A Unix socket when asked, or on a cluster's login node unless TCP is asked (web.md § 4)."""
     login = place(catalogue.schedulers(ctx), ctx.env).where == "login node"
     if req.socket or (login and not req.tcp):
-        return Listen(socket=str(protocol.socket_path()))
+        return Listen.unix()
     return Listen(port=req.port)
 
 
@@ -177,8 +177,7 @@ def _end_stale(f) -> list[str]:
     if f.pidfile is not None and f.pidfile.child is not None and f.pidfile.child.alive():
         end(f.pidfile.child, grace=protocol.STOP_GRACE)
         said.append(f"ended the child still running, pid {f.pidfile.child.pid}")
-    listen = f.pidfile.listen if f.pidfile else (Listen(socket=str(protocol.socket_path()))
-                                                 if f.name == protocol.SOCKET_NAME else Listen(port=int(f.name)))
+    listen = f.pidfile.listen if f.pidfile else Listen.named(f.name)
     supervisor.remove_files(listen)
     return said
 
@@ -364,7 +363,7 @@ class ServeForeground:
 
 # ------------------------------------------------------------------ restart and stop
 
-def _child_locks(f, force: bool, verb: Verb) -> None:
+def _child_locks(f, force: bool, verb: view.Verb) -> None:
     """Refused while the child holds an operation's lock, unless forced, naming each."""
     child = f.pidfile.child if f.pidfile else None
     if child is None or force:
@@ -392,7 +391,7 @@ class ServeRestart:
     change to the application's code takes effect."""
 
     def plan(self, req: TargetRequest, ctx: Context) -> Plan:
-        name = _target_name(req)
+        name = _target(req).name
         f = facts(name)
         state = MACHINE.observe(f)
         require(f, state, "restart")
@@ -406,7 +405,7 @@ class ServeRestart:
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         req = TargetRequest.model_validate(plan.request)
-        f = facts(_target_name(req))
+        f = facts(_target(req).name)
         if f.pidfile is None or f.pidfile.supervisor.as_json() != plan.basis["supervisor"]:
             raise PlanStale("the server changed since the plan; plan again", (view.command(SERVE_STATUS),))
         _child_locks(f, req.force, SERVE_RESTART)  # again: the page may have started one since the plan
@@ -431,7 +430,7 @@ class ServeStop:
     socket go with them."""
 
     def plan(self, req: TargetRequest, ctx: Context) -> Plan:
-        name = _target_name(req)
+        name = _target(req).name
         f = facts(name)
         state = MACHINE.observe(f)
         require(f, state, "stop")
@@ -449,12 +448,11 @@ class ServeStop:
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         req = TargetRequest.model_validate(plan.request)
-        name = _target_name(req)
+        name = _target(req).name
         f = facts(name)
         if MACHINE.observe(f).value != plan.basis["state"]:
             raise PlanStale("the server's state changed since the plan; plan again", (view.command(SERVE_STATUS),))
-        listen = f.pidfile.listen if f.pidfile else (Listen(socket=str(protocol.socket_path()))
-                                                     if name == protocol.SOCKET_NAME else Listen(port=int(name)))
+        listen = f.pidfile.listen if f.pidfile else Listen.named(name)
         if plan.basis["state"] == ServerState.running.value:
             _child_locks(f, req.force, SERVE_STOP)  # again: the page may have started one since the plan
 
@@ -545,7 +543,7 @@ def serve_status(req: StatusRequest, ctx: Context) -> StatusResult:
     """Every server this account runs here, each with two answers kept apart: is it up, and
     does it answer as itself. The address with its token only for one named server."""
     if req.port is not None or req.socket:
-        name = _target_name(req)
+        name = _target(req).name
         row = _row(name)
         token = _read_token(name) if row.answers else None
         p = protocol.read_pidfile(protocol.pidfile(name))

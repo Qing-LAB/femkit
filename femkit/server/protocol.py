@@ -31,11 +31,6 @@ def target(name: str) -> dict:
     return {"socket": True} if name == SOCKET_NAME else {"port": int(name)}
 
 
-def target_name(socket: bool, port: int) -> str:
-    """The name of the server a request names."""
-    return SOCKET_NAME if socket else str(port)
-
-
 def subject(name: str) -> str:
     """The server's lock subject (core.md § 5): host-keyed, as its runtime folder is."""
     return f"server-{dirs.host()}-{name}"
@@ -75,6 +70,16 @@ class Listen:
 
     port: int | None = None
     socket: str | None = None
+
+    @classmethod
+    def unix(cls) -> "Listen":
+        """On femkit's Unix socket."""
+        return cls(socket=str(socket_path()))
+
+    @classmethod
+    def named(cls, name: str) -> "Listen":
+        """The server called ``name``, as `name` writes it: on the socket, or on that port."""
+        return cls.unix() if name == SOCKET_NAME else cls(port=int(name))
 
     @property
     def name(self) -> str:

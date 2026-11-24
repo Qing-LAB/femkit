@@ -13,7 +13,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, Field, FiniteFloat, PositiveInt, ValidationInfo, field_validator, model_validator
 
-from femkit.core.schema import Model, check_placeholders, placeholders, refuse
+from femkit.core.schema import SHA256, Model, check_placeholders, matching, placeholders, refuse
 
 # ------------------------------------------------- channels.txt and control.txt
 
@@ -55,11 +55,10 @@ class ControlDefinition(Model):
 
 # ---------------------------------------------------------- engine environment
 
-_HEX40 = re.compile(r"^[0-9a-f]{40}$")
-_HEX64 = re.compile(r"^[0-9a-f]{64}$")
-_ID = re.compile(r"^[a-z][a-z0-9-]*$")
+_COMMIT = re.compile(r"[0-9a-f]{40}")
+_ID = re.compile(r"[a-z][a-z0-9-]*")
 
-Id = Annotated[str, Field(pattern=_ID.pattern)]
+Id = Annotated[str, matching(_ID)]
 
 
 def _relative_path(text: str) -> str:
@@ -125,8 +124,8 @@ class Toolchain(Model):
 class Source(Model):
     id: Id = Field(description="the source's ID, referenced by builds as `{source:<id>}`")
     archive: str = Field(description="URL of the archive of exactly `commit`")
-    sha256: str = Field(pattern=_HEX64.pattern, description="SHA-256 of the archive")
-    commit: str = Field(pattern=_HEX40.pattern, description="the upstream commit the archive holds")
+    sha256: str = matching(SHA256, description="SHA-256 of the archive")
+    commit: str = matching(_COMMIT, description="the upstream commit the archive holds")
     release: str = Field(description="the upstream release name of that commit")
     into: RelativePath = Field(description="where the archive is unpacked, under the prefix's source tree")
     version_text: str | None = Field(

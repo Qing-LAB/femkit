@@ -13,7 +13,7 @@ from pydantic import Field
 
 from femkit.core import view
 from femkit.core.persist import inline_text
-from femkit.core.schema import Model
+from femkit.core.schema import Model, whole
 from femkit.core.units import Units
 from femkit.definitions.formulations import FormulationDefinition
 from femkit.models import fields, templates
@@ -61,7 +61,7 @@ def entry(project: Path, study: str | None, f: FormulationDefinition | None, uni
     fills = [] if name is not None else [view.Fill(
         field="address", hole=str(Address(None, (hole,))).split(":", 1)[1],      # the step as the address writes it
         label=f"the {what}" if accepts else "its name", accepts=accepts,
-        json_schema={"type": "string", "pattern": f"^{NAME.pattern}$"})]
+        json_schema={"type": "string", "pattern": whole(NAME)})]
     held = {o.typed: type_} if o.typed and type_ else {}
     fills.append(view.Fill(field="text", label=f"the {(type_ or o.kind).replace('_', ' ')}",
                            template=templates.text(schema["properties"][type_] if per_type else schema, held)))
