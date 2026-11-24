@@ -222,7 +222,7 @@ class Check(Model):
     """One bounded calculation and the numbers it must produce (definitions.md § 5)."""
 
     id: Id = Field(description="the check's ID")
-    kind: Literal["command", "ctest", "pytest"] = Field(description="how it runs (definitions.md § 5.1)")
+    kind: Literal["command", "ctest", "pytest"] = Field(description="how it runs", json_schema_extra={"doc": "definitions.md § 5.1"})
     run: list[str] | None = Field(default=None, description="command: the program and its arguments",
                                   json_schema_extra={"placeholders": sorted(CHECK_PLACEHOLDERS)})
     build: Id | None = Field(default=None, description="ctest: the build whose test tree holds the test")
@@ -572,7 +572,7 @@ class ManagerKind(Model):
     version_pattern: str = Field(description="regular expression whose first group is the version in that output")
     root: JsonQuery = Field(description="where the manager's root (base) prefix is")
     platform: JsonQuery | None = Field(
-        default=None, description="the platform an environment built by this manager is for, e.g. linux-64 (jobs.md § 9.1)"
+        default=None, description="the platform an environment built by this manager is for, e.g. linux-64", json_schema_extra={"doc": "jobs.md § 9.1"}
     )
     run: ManagerArgv = Field(description="runs the command that follows inside {prefix}")
     activate: Activation = Field(description="how a shell enters a prefix: the day-to-day entry line, the run script")

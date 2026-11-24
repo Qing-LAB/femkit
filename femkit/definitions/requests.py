@@ -1,0 +1,23 @@
+"""The requests of the operations over the shipped definitions, `schema check` and `schema docs`
+(definitions.md § 2.3): declared beside the definitions they check, so a refusal about them
+names its next step without reaching above this domain (web.md § 7.2)."""
+
+from __future__ import annotations
+
+from femkit.core.view import Verb
+
+from femkit.core.schema import Model
+
+
+class CheckRequest(Model):
+    """No inputs."""
+
+
+class DocsRequest(Model):
+    """No inputs."""
+
+
+# ------------------------------------------------------------------ the operations these requests are for
+
+SCHEMA_CHECK = Verb("schema.check", CheckRequest)
+SCHEMA_DOCS = Verb("schema.docs", DocsRequest)

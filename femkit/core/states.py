@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Generic, Mapping, TypeVar
+from typing import Any, Callable, Generic, Mapping, TypeVar
 
+from femkit.core import view
 from femkit.core.errors import Refused
 
 F = TypeVar("F")
@@ -27,14 +28,24 @@ class Rule(Generic[F, S]):
     when: Callable[[F], bool] | None = None
 
 
+def _nothing(name: str) -> dict[str, Any]:
+    return {}
+
+
 @dataclass(frozen=True)
 class Action:
-    describe: str
-    command: str  # the command a person types, shown as a "next" line; `{name}` is what the machine describes;
-    #               empty for an allowed action that has nothing to do
+    """What a state allows: the verb that does it, and its request's values for the subject the
+    machine describes. No verb: allowed, with nothing to do."""
 
-    def typed(self, name: str) -> str:
-        return self.command.replace("{name}", name)
+    describe: str
+    verb: view.Verb | None = None
+    values: Callable[[str], dict[str, Any]] = _nothing
+
+    def next(self, name: str) -> view.Action | None:
+        """The next step it is for ``name``, as every surface shows one."""
+        if self.verb is None:
+            return None
+        return view.command(self.verb, label=self.describe, **self.values(name))
 
 
 @dataclass(frozen=True)
@@ -68,13 +79,15 @@ class Machine(Generic[F, S]):
     def allowed(self, state: S) -> Mapping[str, Action]:
         return self.actions[state]
 
-    def next_commands(self, state: S, name: str) -> tuple[str, ...]:
-        """The commands the state allows, each once, in table order."""
-        return tuple(dict.fromkeys(a.typed(name) for a in self.actions[state].values() if a.command))
+    def next(self, state: S, name: str) -> tuple[view.Action, ...]:
+        """What the state allows ``name``, each step once, in table order."""
+        steps = (a.next(name) for a in self.actions[state].values())
+        return tuple({s.command: s for s in steps if s is not None}.values())
 
-    def require(self, state: S, action: str, name: str) -> Action:
+    def require(self, state: S, action: str, name: str, label: str | None = None) -> Action:
+        """The action, or refused with what the state allows ``name``; ``label`` is how the
+        refusal names it, where its name is not that."""
         allowed = self.actions[state]
         if action not in allowed:
-            raise Refused(f"{name} is {state.value}: `{action}` is not allowed",
-                          self.next_commands(state, name))
+            raise Refused(f"{label or name} is {state.value}: `{action}` is not allowed", self.next(state, name))
         return allowed[action]

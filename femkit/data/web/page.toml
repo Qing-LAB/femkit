@@ -1,0 +1,106 @@
+# The web page's own structure (web.md § 8.1): what the page shows and in what order, the
+# context it works in, the icon of each kind of object, the keys it answers. The page draws all
+# of it from here and keeps no list of its own; `schema check` loads it.
+schema = 1
+
+[app]
+name = "femkit"
+tagline = "Finite-element results you can inspect and reproduce, from physical intent to the fields, on a workstation or a cluster."
+mark = "mark.svg"
+
+[[workspaces]]
+key = "model"
+title = "Model"
+icon = "workflow"
+tagline = "The physics as a graph: shapes become regions, regions take materials and conditions."
+help = "Add from the palette, wire a port to what it names, and follow the next step until the model is complete."
+document = "model.graph"
+context = ["project", "study"]
+empty = "Open a project to build its model — choose one, or make a new one."
+
+[[workspaces]]
+key = "runs"
+title = "Runs"
+icon = "list-checks"
+tagline = "A study's cases, and what becomes of them."
+help = "Expand a study to write its cases; each case is one point of its axes."
+document = "case.list"
+context = ["project", "study"]
+empty = "Open a project and choose a study to see its cases."
+
+[[workspaces]]
+key = "operations"
+title = "Operations"
+icon = "terminal"
+tagline = "Every operation femkit has, as a form."
+help = "What the command line does, the page does here: each operation planned, then applied."
+context = []
+empty = "Choose an operation."
+
+[[context]]
+key = "project"
+label = "project"
+help = "The folder that holds a model and its studies."
+choices = "project.list"
+rows = "projects"
+value_key = "path"
+label_key = "name"
+depends = []
+
+[[context]]
+key = "study"
+label = "study"
+help = "A study varies the model's parameters and numerics; its cases are what runs."
+choices = "study.list"
+rows = "studies"
+depends = ["project"]
+
+[[context]]
+key = "environment"
+label = "environment"
+help = "An engine environment; with one chosen, each node shows how it would run there."
+choices = "env.list"
+rows = "rows"
+value_key = "name"
+depends = []
+
+[kinds]
+parameter = "variable"
+frame = "ruler"
+geometry = "shapes"
+conventions = "scale"
+shape = "square"
+region = "map"
+material = "layers"
+condition = "shield"
+source = "zap"
+radiation = "radio"
+numerics = "sigma"
+axis = "sliders-horizontal"
+observable = "gauge"
+binding = "plug"
+
+[[shortcuts]]
+key = "Mod+Z"
+command = "undo"
+help = "Take back the last edit."
+
+[[shortcuts]]
+key = "Mod+Shift+Z"
+command = "redo"
+help = "Make the last undone edit again."
+
+[[shortcuts]]
+key = "Delete"
+command = "remove"
+help = "Remove what is selected, once its plan is seen."
+
+[[shortcuts]]
+key = "Enter"
+command = "commit"
+help = "Commit the form being edited."
+
+[[shortcuts]]
+key = "Escape"
+command = "cancel"
+help = "Put the form back, or close what is open."

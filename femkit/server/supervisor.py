@@ -1,4 +1,4 @@
-"""The supervisor: runs the web application as its child, and outlives it (api.md § 5.4).
+"""The supervisor: runs the web application as its child, and outlives it (web.md § 4).
 
 `python -m femkit.server.supervisor` when `serve start` detaches it; called in
 place by `serve foreground`. It imports only the standard library and the
@@ -31,7 +31,7 @@ from femkit.server.protocol import Listen, LogRoll, Pidfile, event_line
 
 def child_argv(python: str, listen: Listen, fd: int, parent: int) -> list[str]:
     """The web application's command, on the web environment's ``python``: it serves on the
-    inherited socket ``fd`` and ends when ``parent`` does (api.md § 5.4)."""
+    inherited socket ``fd`` and ends when ``parent`` does (web.md § 4)."""
     return [python, "-m", protocol.CHILD_MODULE, "--fd", str(fd), "--parent", str(parent),
             "--listen", json.dumps(listen.as_json())]
 

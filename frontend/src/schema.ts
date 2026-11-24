@@ -1,5 +1,5 @@
 // Reading a request model's JSON schema, as pydantic writes it: the page knows no operation,
-// only the schema (api.md § 5.2).
+// only the schema (web.md § 2).
 import type { JsonSchema } from "./api";
 
 export function resolve(schema: JsonSchema, root: JsonSchema): JsonSchema {

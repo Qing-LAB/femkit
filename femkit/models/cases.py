@@ -17,8 +17,11 @@ from femkit.core.errors import Refused, UsageError
 from femkit.core.paths import inside
 from femkit.core.units import Quantity, UnitError, Units
 from femkit.definitions.formulations import FormulationDefinition
+from femkit.core import view
 from femkit.models import check
+from femkit.models.requests import ProjectRequest
 from femkit.models.schema import Axis, ModelFile, Numerics, StudyFile, quantities
+from femkit.models.requests import CASE_LIST, MODEL_CHECK
 
 SCHEMA = 1
 
@@ -205,11 +208,11 @@ def points(study: StudyFile) -> list[dict[str, Any]]:
 def expand(m: ModelFile, study: StudyFile, formulations: dict[str, FormulationDefinition], units: Units,
            project: Path) -> list[Case]:
     """Every case the study produces; refused while `model check` has a finding."""
-    found = check.findings(m, formulations, units)
+    found = check.findings(m, formulations, units, project)
     if found:
         raise Refused(f"the model has {len(found)} finding(s); a case is expanded only from a complete model: "
-                      + "; ".join(f"{i.subject} {i.message}" for i in found[:3]),
-                      ("python -m femkit model check",))
+                      + " ".join(i.message for i in found[:3]),
+                      (view.command(MODEL_CHECK, project=str(project)),))
     out: dict[str, Case] = {}
     for point in points(study):  # two spellings of one point are one case
         data = resolve(m, study.numerics, point, units, project)
@@ -235,5 +238,5 @@ def named(project: Path, prefix: str) -> str:
     matches = [cid for cid in written_cases(project) if cid.startswith(prefix)]
     if len(matches) != 1:
         raise UsageError(f"{prefix!r} names {'no case' if not matches else f'{len(matches)} cases'}: give more of "
-                         "its ID", ("python -m femkit case list",))
+                         "its ID", (view.command(CASE_LIST, project=str(project)),))
     return matches[0]

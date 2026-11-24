@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { events, lines, tail } from "./api";
 
-// An operation's steps as they run, from its event log (api.md § 5.1, core.md § 6), and the
+// An operation's steps as they run, from its event log (web.md § 1, core.md § 6), and the
 // running step's last lines.
 
 interface StepState { id: string; describe: string; outcome?: string }

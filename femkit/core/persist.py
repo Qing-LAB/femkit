@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import stat
@@ -167,8 +168,85 @@ def document_has(doc: Any, key: Key) -> bool:
 
 
 def document_set(doc: Any, key: Key, value: Any) -> None:
-    """``key`` set to ``value``, every table on the way made when absent."""
-    _parent(doc, key, create=True)[key[-1]] = value
+    """``key`` set to ``value``, every table on the way made when absent. A table set over a
+    table already there is changed in place, key by key — a key the value leaves out removed —
+    so its form, its order and its comments stay (models.md § 11.1)."""
+    parent = _parent(doc, key, create=True)
+    held = parent.get(key[-1]) if hasattr(parent, "get") else None
+    if isinstance(value, dict) and isinstance(held, (tomlkit.items.Table, tomlkit.items.InlineTable)):
+        _merge(held, value)
+    else:
+        parent[key[-1]] = value
+
+
+def _merge(table: Any, value: dict) -> None:
+    for gone in [k for k in table if k not in value]:
+        del table[gone]
+    for k, v in value.items():
+        if isinstance(v, dict) and isinstance(table.get(k), (tomlkit.items.Table, tomlkit.items.InlineTable)):
+            _merge(table[k], v)
+        elif k not in table or table[k] != v:
+            table[k] = v
+
+
+def document_text(doc: Any, key: Key) -> str:
+    """The entry at ``key`` as a person edits it: a table as a TOML document of its own — its
+    keys, its comments, its tables headed relative to it — a value as its TOML inline text."""
+    item = _parent(doc, key, create=False)[key[-1]]
+    if isinstance(item, tomlkit.items.InlineTable):          # one line, no comments: each key on its own
+        return "".join(f"{tomlkit.key(k).as_string()} = {_inline(v).as_string()}\n" for k, v in item.unwrap().items())
+    if not isinstance(item, tomlkit.items.Table):
+        return item.as_string().strip()
+    own = tomlkit.document()
+    for k, v in item.value.body:
+        v = copy.deepcopy(v)
+        if k is None:
+            own.add(v)
+        else:
+            _headers_from_keys(v)
+            own.add(k, v)
+    return tomlkit.dumps(own).strip() + "\n"
+
+
+def _inline(value: Any) -> Any:
+    """A plain value as an inline TOML item: a table inline, a list's tables inline in it."""
+    if isinstance(value, dict):
+        table = tomlkit.inline_table()
+        table.update({k: _inline(v) for k, v in value.items()})
+        return table
+    if isinstance(value, list):
+        array = tomlkit.array()
+        array.extend(_inline(v) for v in value)
+        return array
+    return tomlkit.item(value)
+
+
+def document_write(doc: Any, key: Key, text: str) -> None:
+    """The entry at ``key`` made what ``text`` writes — a table's text as `document_text` gives
+    it, or a value's inline text — every comment of the text kept, and the comment on the
+    entry's own line kept when the text brings none; or ValueError."""
+    try:
+        written = tomlkit.parse(text)
+    except tomlkit.exceptions.TOMLKitError:
+        written = None
+    parent = _parent(doc, key, create=True)
+    held = parent.get(key[-1]) if hasattr(parent, "get") else None
+    if written is None:
+        value = parse_value(text.strip())
+    else:
+        value = tomlkit.table()
+        for k, v in written.body:
+            if k is None:
+                value.add(v)
+            else:
+                _headers_from_keys(v)
+                value.add(k, v)
+        last = written.body[-1][1] if written.body else None
+        if not isinstance(last, tomlkit.items.Whitespace) or last.as_string().count("\n") < 2:
+            value.add(tomlkit.nl())                     # a blank line before the next table's header
+    if held is not None and not value.trivia.comment and held.trivia.comment:
+        value.trivia.comment, value.trivia.comment_ws = held.trivia.comment, held.trivia.comment_ws
+    parent[key[-1]] = value
 
 
 def document_unset(doc: Any, key: Key) -> None:

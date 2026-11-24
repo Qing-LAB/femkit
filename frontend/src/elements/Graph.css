@@ -1,0 +1,32 @@
+.graph { position: relative; width: 100%; height: 100%; background: var(--bg); }
+.graph .react-flow__renderer { background: transparent; }
+.graph__ground { color: var(--line-strong); }
+.graph__node { --tone: var(--rank-0); position: relative; width: var(--node-width); padding: var(--space-2) var(--space-3) var(--space-3);
+  border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
+  border-top: 3px solid var(--tone); transition: box-shadow var(--motion), border-color var(--motion); }
+.graph__node--rank-1 { --tone: var(--rank-1); }
+.graph__node--rank-2 { --tone: var(--rank-2); }
+.graph__node--rank-3 { --tone: var(--rank-3); }
+.graph__node--rank-4 { --tone: var(--rank-4); }
+.graph__node--chosen { box-shadow: 0 0 0 2px var(--tone), var(--shadow-lg); }
+.graph__node--wrong { border-color: var(--bad-soft); }
+.graph__kind { display: flex; align-items: center; gap: var(--space-1); color: var(--tone); font-size: var(--text-2xs);
+  font-weight: var(--weight-strong); text-transform: uppercase; letter-spacing: var(--tracking-caps); }
+.graph__label { margin-top: 2px; font-size: var(--text-md); font-weight: var(--weight-strong); color: var(--text); overflow-wrap: anywhere; }
+.graph__findings { margin-top: var(--space-1); display: inline-flex; padding: 0 var(--space-2); border-radius: var(--radius-pill);
+  background: var(--bad-soft); color: var(--bad); font-size: var(--text-2xs); font-weight: var(--weight-medium); }
+.graph .graph__in, .graph .graph__port { width: 10px; height: 10px; border: 2px solid var(--surface); background: var(--tone); }
+.graph .graph__in { background: var(--line-strong); }
+.graph__wire .react-flow__edge-path { stroke: var(--line-strong); stroke-width: 1.6; }
+.graph__wire--text .react-flow__edge-path { stroke-dasharray: 5 4; }
+.graph__wire.selected .react-flow__edge-path { stroke: var(--accent); }
+.graph .react-flow__edge-textbg { fill: var(--bg); }
+.graph .react-flow__edge-text { fill: var(--text-muted); font-size: var(--text-2xs); }
+.graph__controls { box-shadow: var(--shadow); border-radius: var(--radius-sm); overflow: hidden; }
+.graph__controls button { background: var(--surface); border-bottom-color: var(--line); fill: var(--text-muted); }
+.graph__map { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.graph__map-node--rank-0 { fill: var(--rank-0); }
+.graph__map-node--rank-1 { fill: var(--rank-1); }
+.graph__map-node--rank-2 { fill: var(--rank-2); }
+.graph__map-node--rank-3 { fill: var(--rank-3); }
+.graph__map-node--rank-4 { fill: var(--rank-4); }

@@ -1,4 +1,4 @@
-"""Every request checked, every response marked (api.md § 5.5), before any handler runs.
+"""Every request checked, every response marked (web.md § 5), before any handler runs.
 
 Token mode only: sign-in, TLS and `--no-auth` are not built yet (plan § 3, M7).
 """

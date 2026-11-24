@@ -109,7 +109,7 @@ def test_a_held_lock_reads_busy_and_refuses_every_action():
 def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manager):
     """Fails if a program holding an environment's lock shared — as a running web server holds
     `web`'s — makes it read busy, or lets install, clean or validate run under it instead of
-    refusing with what ends that use (envs.md § 3.2, api.md § 5.4)."""
+    refusing with what ends that use (envs.md § 3.2, web.md § 4)."""
     from tests.basic.test_core import hold
     from femkit.core.errors import Busy
     from femkit.envs.operations import EnvInstall, EnvValidate
@@ -117,7 +117,7 @@ def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manag
     try:
         with pytest.raises(Busy) as caught:                 # absent: an install has steps
             EnvInstall.plan(EnvInstall.request(names=[NAME]), ctx())
-        assert caught.value.next == ("end it",)
+        assert [n.command for n in caught.value.next] == ["end it"]
         installed(outcomes=[passed("cpu"), passed("gpu")])
         assert state() is EnvState.ready
         for op, request in ((EnvClean, EnvClean.request(name=NAME)), (EnvValidate, EnvValidate.request(name=NAME))):
@@ -143,7 +143,7 @@ def test_install_never_discards_a_failing_build_on_its_own():
     and install --clean (envs.md § 3.3)."""
     with pytest.raises(Refused) as caught:
         MACHINE.require(EnvState.failing, "install", NAME)
-    offered = set(caught.value.next)
+    offered = {n.command for n in caught.value.next}
     assert {"python -m femkit env validate ngsolve", "python -m femkit env install ngsolve --clean"} <= offered
     assert "python -m femkit env install ngsolve" not in offered
 
@@ -185,4 +185,4 @@ def test_doctor_reads_the_control_environment_by_the_install_scripts_rules():
     records.mkdir(parents=True)  # a current stamp, in a folder that is no environment
     (records / "control.sha256").write_text(control_digest())
     row = next(r for r in doctor.run(doctor.request(), ctx()).rows if r.subject == "control environment")
-    assert row.state == "broken" and row.next == ["bash scripts/install-env.sh bootstrap"]
+    assert row.state == "broken" and [n.command for n in row.next] == ["bash scripts/install-env.sh bootstrap"]

@@ -52,12 +52,12 @@ def test_an_mpi_environment_is_refused_while_launch_mpi_is_unset_and_told_how_to
     (envs.md § 4.1)."""
     with pytest.raises(Refusal) as refused:
         EnvInstall.plan(EnvInstall.request(names=["elmer"]), ctx())
-    argv = shlex.split(refused.value.next[0], comments=True)
-    prog = shlex.split(text.PROG)
-    assert argv[:len(prog) + 2] == [*prog, "config", "set"]
-    key, value = argv[len(prog) + 2:]
+    (step,) = refused.value.next
+    (fill,) = step.fills
+    assert step.call.operation == "config.set" and fill.field == "value" and fill.toml
     c = ctx()
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), c), c)
+    request = ConfigSet.request(**step.call.request, value=fill.example)  # the value it offers
+    ConfigSet.apply(ConfigSet.plan(request, c), c)
     assert EnvInstall.plan(EnvInstall.request(names=["elmer"]), ctx()).steps
 
 

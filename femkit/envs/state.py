@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 from femkit.config import settings
-from femkit.core import locks, text
+from femkit.core import locks, view
 from femkit.core.errors import UsageError
 from femkit.core.operations import Context
 from femkit.core.states import Action, Machine, Rule
@@ -21,6 +21,8 @@ from femkit.engines import package_dir, registered
 from femkit.envs import checks, fingerprints, layout
 from femkit.envs.manager import resolve
 from femkit.envs.records import ChecksRecord, Manifest, read
+from femkit.envs.requests import CleanRequest, InstallRequest, ListRequest, ValidateRequest
+from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_VALIDATE
 
 
 class EnvState(str, Enum):
@@ -77,20 +79,24 @@ class EnvFacts:
         return "passed" if all(o.outcome == "passed" for o in device) else "failed"
 
 
-INSTALL = f"{text.PROG} env install {{name}}"
-CLEAN_INSTALL = f"{text.PROG} env install {{name}} --clean"
-VALIDATE = f"{text.PROG} env validate {{name}}"
-VALIDATE_GPU = f"{text.PROG} env validate {{name}} --gpu"
-CLEAN = f"{text.PROG} env clean {{name}}"
+def _names(name: str) -> dict:
+    return {"names": [name]}
 
-_install = Action("install", INSTALL)
-_resume = Action("resume the install", INSTALL)
-_replace = Action("remove, install", INSTALL)
-_rebuild = Action("remove, install, discarding the saved lock", CLEAN_INSTALL)
-_validate = Action("validate", VALIDATE)
-_validate_gpu = Action("validate the GPU checks", VALIDATE_GPU)
-_remove = Action("remove", CLEAN)
-_nothing = Action("nothing to do", "")
+
+def _named(name: str) -> dict:
+    return {"name": name}
+
+
+_install = Action("install", ENV_INSTALL, _names)
+_resume = Action("resume the install", ENV_INSTALL, _names)
+_replace = Action("remove, install", ENV_INSTALL, _names)
+_rebuild = Action("remove, install, discarding the saved lock", ENV_INSTALL,
+                  lambda name: {"names": [name], "clean": True})
+_validate = Action("validate", ENV_VALIDATE, _named)
+_validate_gpu = Action("validate the GPU checks", ENV_VALIDATE,
+                       lambda name: {"name": name, "gpu": True})
+_remove = Action("remove", ENV_CLEAN, _named)
+_nothing = Action("nothing to do")
 
 MACHINE: Machine[EnvFacts, EnvState] = Machine(
     "environment",
@@ -125,7 +131,7 @@ def definition(ctx: Context, name: str) -> EnvironmentDefinition:
     envs = catalogue.load(ctx, engines=registered()).environments
     if name not in envs:
         raise UsageError(f"no environment {name!r}; environments: {', '.join(sorted(envs))}",
-                         (text.typed("env", "list"),))
+                         (view.command(ENV_LIST),))
     return envs[name]
 
 

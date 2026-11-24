@@ -1,4 +1,4 @@
-"""What the supervisor, its child and the `serve` verbs agree on (api.md § 5.4).
+"""What the supervisor, its child and the `serve` verbs agree on (web.md § 4).
 
 The supervisor imports this module, so it imports only the standard library and
 the core's file and process building blocks: a change that breaks the web
@@ -14,12 +14,14 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from femkit.core import dirs
+from femkit.core import dirs, view
 from femkit.core.persist import open_private, write_json
 from femkit.core.process import Identity
+from femkit.server.requests import TargetRequest
+from femkit.server.requests import SERVE_STOP
 
 SOCKET_NAME = "sock"          # <name> of a server on a Unix socket; a TCP server's is its port
-LOOPBACK = "127.0.0.1"        # printed and bound as this, never `localhost` (api.md § 5.5)
+LOOPBACK = "127.0.0.1"        # printed and bound as this, never `localhost` (web.md § 5)
 SOCKET_PATH_MAX = 107         # bytes a Unix socket's path may hold, its terminating NUL aside
 FLAP_WINDOW = 30.0            # two deaths by a signal within this many seconds: the supervisor gives up
 STOP_GRACE = 5.0              # seconds between SIGTERM and SIGKILL
@@ -73,10 +75,10 @@ class Listen:
     def describe(self) -> str:
         return self.socket if self.socket else f"{LOOPBACK}:{self.port}"
 
-    def holds(self) -> tuple[str, tuple[str, ...]]:
-        """What its locks' files say holds them, and the command that ends the hold (core.md § 5)."""
-        stop = ["python", "-m", "femkit", "serve", "stop", *(["--socket"] if self.socket else ["--port", str(self.port)])]
-        return f"the web server on {self.describe()}", (" ".join(stop),)
+    def holds(self) -> tuple[str, tuple[view.Action, ...]]:
+        """What its locks' files say holds them, and what ends the hold (core.md § 5)."""
+        target = {"socket": True} if self.socket else {"port": self.port}
+        return f"the web server on {self.describe()}", (view.command(SERVE_STOP, **target),)
 
     def as_json(self) -> dict:
         return {"socket": self.socket} if self.socket else {"port": self.port}

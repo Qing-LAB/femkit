@@ -6,6 +6,8 @@ domains (framework.md § 1).
 
 from __future__ import annotations
 
+import json
+
 import enum
 import html
 import types
@@ -18,12 +20,13 @@ from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from femkit.config.settings import UserConfig
-from femkit.core import dirs, text
+from femkit.core import dirs, text, view
+from femkit.definitions.requests import CheckRequest, DocsRequest
 from femkit.core.issues import Issue
 from femkit.core.errors import PlanStale
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import atomic_write_text
-from femkit.core.schema import Model, field_extras
+from femkit.core.schema import Model, described, field_extras
 from femkit.core.units import UnitTable, Units
 from femkit.definitions import catalogue
 from femkit.definitions.formulations import FormulationDefinition
@@ -32,6 +35,7 @@ from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, 
 from femkit.jobs.record import Record
 from femkit.models.schema import ModelFile, StudyFile
 from femkit.engines import registered
+from femkit.definitions.requests import SCHEMA_CHECK, SCHEMA_DOCS
 
 # page name -> (title, the files it describes, models)
 PAGES: dict[str, tuple[str, str, list[type[Model]]]] = {
@@ -51,11 +55,7 @@ def reference_dir() -> Path:
 
 # ----------------------------------------------------------------- schema check
 
-class CheckRequest(Model):
-    """No inputs."""
-
-
-class CheckResult(Result):
+class SchemaCheckResult(Result):
     environments: list[str] = Field(default_factory=list, description="engine environments that loaded")
     managers: list[str] = Field(default_factory=list, description="manager kinds that loaded")
     schedulers: list[str] = Field(default_factory=list, description="scheduler kinds that loaded")
@@ -77,8 +77,8 @@ class CheckResult(Result):
         ]))
 
 
-@operation("schema.check", request=CheckRequest, result=CheckResult)
-def schema_check(req: CheckRequest, ctx: Context) -> CheckResult:
+@operation(SCHEMA_CHECK, result=SchemaCheckResult)
+def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
     """Load every shipped definition and report every problem, each with its file and key path."""
     try:
         cat = catalogue.load(ctx, engines=registered())
@@ -88,11 +88,11 @@ def schema_check(req: CheckRequest, ctx: Context) -> CheckResult:
                   message=f"{err.file}: {path or '<file>'}: {reason}")
             for err in exc.errors for path, reason in err.problems
         ]
-        return CheckResult(issues=issues)
+        return SchemaCheckResult(issues=issues)
     issues = _benchmark_issues(cat, ctx)
     if issues:
-        return CheckResult(issues=issues)
-    return CheckResult(environments=list(cat.environments), managers=list(cat.managers),
+        return SchemaCheckResult(issues=issues)
+    return SchemaCheckResult(environments=list(cat.environments), managers=list(cat.managers),
                        schedulers=list(cat.schedulers), units=len(Units(cat.units).symbols()),
                        formulations=list(cat.formulations), meshers=list(cat.meshers))
 
@@ -122,8 +122,8 @@ def _benchmark_issues(cat, ctx: Context) -> list[Issue]:
                 continue
             if model.formulation != fid:
                 problem(f"its model names the formulation {model.formulation!r}")
-            for finding in model_check.findings(model, cat.formulations, units):
-                problem(f"{finding.subject} {finding.message}")
+            for finding in model_check.findings(model, cat.formulations, units, where):
+                problem(finding.message)
             for observable, value in b.reference.items():
                 spec = study.observables.get(observable)
                 if spec is None:
@@ -195,7 +195,7 @@ def render_model(model: type[Model], seen: set) -> list[str]:
     lines += ["| key | type | default | meaning |", "|---|---|---|---|"]
     nested: list[type[Model]] = []
     for name, field in model.model_fields.items():
-        meaning = _cell(field.description or "")
+        meaning = _cell(described(field))
         extra = field_extras(field)
         if "unset" in extra:
             meaning += f". When unset: {_cell(extra['unset'])}"
@@ -234,49 +234,102 @@ def render_page(name: str) -> str:
 
 # ------------------------------------------------------------------ schema docs
 
-class DocsRequest(Model):
-    """No inputs."""
-
-
 class DocsOutcome(Outcome):
     written: list[str] = Field(default_factory=list, description="pages written")
 
     def text(self) -> str:
         if not self.written:
-            return "docs/reference/ is up to date"
+            return "docs/reference/ and the page's schemas are up to date"
         return "\n".join([f"wrote {text.count(len(self.written), 'page')}"]
                          + [f"  {p}" for p in self.written])
 
 
+def schemas_file() -> Path:
+    """The page's schemas, from which `web build` writes its types (web.md § 8.7)."""
+    return dirs.checkout() / "frontend" / "src" / "generated" / "schemas.json"
+
+
+def page_schemas() -> str:
+    """Every model the page reads — the vocabulary of core/view.py and core/operations.py, every
+    registered operation's result, the page declaration — as one JSON schema, in the form the
+    server writes them."""
+    from pydantic.json_schema import models_json_schema
+    from femkit import registry
+    from femkit.core import operations as surface
+    from femkit.server import page
+    vocabulary = [m for module in (view, surface) for m in vars(module).values()
+                  if isinstance(m, type) and issubclass(m, Model) and m.__module__ == module.__name__]
+    results = {op.result for op in registry.operations().values()}
+    models = sorted({*vocabulary, *results, page.Page}, key=lambda m: (m.__module__, m.__qualname__))
+    names = [m.__name__ for m in models]
+    if len(set(names)) != len(names):     # the page names a type by its model's name: one each
+        raise ValueError(f"two models the page reads share a name: {sorted({n for n in names if names.count(n) > 1})}")
+    _, schema = models_json_schema([(m, "serialization") for m in models], title="femkit")
+
+    def untitled(node):
+        """Only a definition keeps its title: a titled property would become a type of its own.
+        The keys of `properties` and `$defs` are names, never the keyword: a field named `title`
+        stays."""
+        if isinstance(node, list):
+            return [untitled(v) for v in node]
+        if not isinstance(node, dict):
+            return node
+        return {k: {name: untitled(s) for name, s in v.items()} if k in ("properties", "$defs") else untitled(v)
+                for k, v in node.items() if k != "title"}
+
+    defs = {name: {**untitled(d), "title": d.get("title", name)} for name, d in schema["$defs"].items()}
+    return json.dumps({"title": "femkit", "$defs": defs}, indent=2, sort_keys=True) + "\n"
+
+
+def icons_file() -> Path:
+    """The icons the page declaration names, as one module the page imports (web.md § 8.7)."""
+    return dirs.checkout() / "frontend" / "src" / "generated" / "icons.ts"
+
+
+def page_icons() -> str:
+    """Every icon the page declaration names — a workspace's, a kind's — imported from the icon
+    set by its component's name, and keyed by the name the declaration uses."""
+    from femkit.server import page
+    p = page.load()
+    names = sorted({w.icon for w in p.workspaces} | set(p.kinds.values()))
+    component = {n: "".join(part.capitalize() for part in n.split("-")) + "Icon" for n in names}  # never a global's name
+    lines = ["// generated by `python -m femkit schema docs` from femkit/data/web/page.toml -- do not edit",
+             "import { " + ", ".join(sorted(set(component.values()))) + " } from \"lucide-react\";", "",
+             "export const icons = {"] + [f"  {json.dumps(n)}: {component[n]}," for n in names] + ["} as const;", ""]
+    return "\n".join(lines)
+
+
 def _stale() -> dict[str, str]:
-    """page file name -> its text, for every page that differs from what the models render."""
+    """file, from the checkout -> its text, for every reference page and the page's schemas
+    that differ from what the models render."""
     out = {}
-    for name in PAGES:
-        path, text = reference_dir() / f"{name}.md", render_page(name)
+    wanted = {reference_dir() / f"{name}.md": render_page(name) for name in PAGES}
+    wanted[schemas_file()] = page_schemas()
+    wanted[icons_file()] = page_icons()
+    for path, text in wanted.items():
         if not path.exists() or path.read_text(encoding="utf-8") != text:
-            out[path.name] = text
+            out[str(path.relative_to(dirs.checkout()))] = text
     return out
 
 
-@operation("schema.docs", request=DocsRequest, result=DocsOutcome, changes=True,
+@operation(SCHEMA_DOCS, result=DocsOutcome, changes=True,
            subject=lambda req: ["reference-docs"])
 class SchemaDocs:
-    """Render docs/reference/ from the schema models; pages already up to date are left alone."""
+    """Render docs/reference/, and the page's schemas, from the schema models; files already up to date are left alone."""
 
     def plan(self, req: DocsRequest, ctx: Context) -> Plan:
         stale = _stale()
-        steps = tuple(Step(id=name, describe=f"write {text.path(reference_dir() / name)}") for name in sorted(stale))
-        return Plan(operation="schema.docs", request=req.model_dump(mode="json"),
-                    basis={"stale": sorted(stale)}, steps=steps)
+        steps = tuple(Step(id=name, describe=f"write {text.path(dirs.checkout() / name)}") for name in sorted(stale))
+        return Plan(basis={"stale": sorted(stale)}, steps=steps)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> DocsOutcome:
         pages = _stale()
         if sorted(pages) != plan.basis["stale"]:
-            raise PlanStale("the reference pages changed since the plan; plan again", (text.typed("schema", "docs"),))
+            raise PlanStale("the reference pages changed since the plan; plan again", (view.command(SCHEMA_DOCS),))
         written: list[str] = []
 
         def do(step: Step, where):
-            path = atomic_write_text(reference_dir() / step.id, pages[step.id])
+            path = atomic_write_text(dirs.checkout() / step.id, pages[step.id])
             written.append(str(path))
             return "done", None
 

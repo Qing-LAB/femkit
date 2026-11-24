@@ -98,7 +98,7 @@ class Queue(Model):
 
 
 class EnvSnapshot(Model):
-    state: str = Field(description="its state when the probe ran (envs.md § 3.2)")
+    state: str = Field(description="its state when the probe ran", json_schema_extra={"doc": "envs.md § 3.2"})
     gpu: str | None = Field(default=None, description="its GPU qualification, when ready or failing")
     install_fingerprint: str | None = Field(default=None, description="from its manifest")
     solver_version: str | None = Field(default=None, description="from its manifest")

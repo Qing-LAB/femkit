@@ -9,7 +9,7 @@ import pytest
 from femkit import registry
 from femkit.core.errors import PlanStale, Refused, UsageError
 from femkit.core.operations import Context
-from femkit.models.project import load_model, model_file, study_file
+from femkit.models.project import load_model, load_study, model_file, study_file
 
 from tests.basic.test_models import examples
 
@@ -53,7 +53,7 @@ LAPLACE = [
 
 
 def test_the_laplace_model_is_built_from_an_empty_folder_by_model_set_alone(tmp_path):
-    """Fails if `model set` cannot build the contract's Laplace model from nothing, one edit at
+    """Fails if `model set` cannot build the Laplace model from nothing, one edit at
     a time with every state loadable, its findings ending at none — the plan's acceptance for
     the graph's edits (plan § 3, M5)."""
     seen = []
@@ -168,46 +168,52 @@ def test_the_graph_holds_every_object_and_every_reference_the_loader_checks(proj
     assert ("model:conditions.right", "model:parameters.bias", "parameter") in edges      # an expression's use
 
 
+
 def test_a_finding_sits_on_the_node_it_names_and_the_palette_comes_from_the_formulation(project):
-    """Fails if `model check`'s finding is not shown on its node, or the palette lists anything
-    but the formulation's kinds and the schema's shapes, each with its sentence (models.md § 11.2)."""
+    """Fails if `model check`'s finding is not shown on its node, the palette lists anything but
+    the object types it offers with the formulation's kinds, or an add's text starts from other
+    than its template — its type held, every key it may hold written, its sentence beside it —
+    or the palette offers geometry, which is made outside femkit (web.md § 8.3, ADR 0010)."""
     text = model_file(project).read_text()
     model_file(project).write_text(text.replace('sides = { kind = "insulating" }\n', ""))
     g = graph(project)
     sides = next(n for n in g.nodes if n.address == "model:regions.sides")
     assert sides.findings and "no condition" in sides.findings[0].message
-    conditions = {p.kind: p for p in g.palette if p.group == "conditions"}
+    conditions = {e.type: e for e in g.palette if e.kind == "condition"}
     assert set(conditions) == {"potential", "insulating", "surface_charge", "normal_flux", "interface"}
-    assert conditions["surface_charge"].section == "3-conditions-on-an-outer-boundary"
-    assert "sigma" in conditions["surface_charge"].parameters["value"]
-    from femkit.definitions.meshers import ShapeKind
-    import typing
-    assert {p.kind for p in g.palette if p.group == "geometry"} == set(typing.get_args(ShapeKind))
+    assert conditions["surface_charge"].help.doc.section == "3-conditions-on-an-outer-boundary"
+    template = next(f for f in conditions["surface_charge"].add.fills if f.field == "text").template
+    assert 'kind = "surface_charge"' in template.splitlines()
+    assert any(line.startswith('# value = "… C/m^2"') and "required" in line for line in template.splitlines())
+    assert not any(e.kind == "shape" for e in g.palette)
 
 
-def test_positions_are_saved_for_known_nodes_only(project):
-    """Fails if a position is lost, or one is saved for a node that does not exist (§ 11.2)."""
-    op = registry.operations()["model.layout"]
-    req = op.request_from({"project": str(project), "positions": {"model:regions.left": [10, 20]}})
-    op.apply(op.plan(req, ctx()), ctx())
-    assert next(n for n in graph(project).nodes if n.address == "model:regions.left").position == [10, 20]
-    with pytest.raises(UsageError, match="no node"):
-        op.plan(op.request_from({"project": str(project), "positions": {"model:regions.nowhere": [0, 0]}}), ctx())
+def perform(action, **given):
+    """Run an action as a surface does: each value given — a hole's by its name, a whole
+    field's by the field — then plan and apply it (web.md § 9.1)."""
+    request = dict(action.call.request)
+    for f in action.fills:
+        key = f.hole.strip('"<>') if f.hole else f.field
+        request[f.field] = request[f.field].replace(f.hole, given[key]) if f.hole else given[key]
+    op = registry.operations()[action.call.operation]
+    req = op.request_from(request)
+    return op.apply(op.plan(req, ctx()), ctx()) if op.changes else op.run(req, ctx())
 
 
-def test_every_field_the_graph_shows_set_back_as_written_changes_nothing(project):
-    """Fails if a field the page shows, set back unchanged at its address, is refused or changes
-    the file — a number shown as text, or a parameter at an address `model set` cannot take
-    would make the inspector's every Set fail or rewrite the person's value (models.md § 11.2)."""
-    text = model_file(project).read_text().replace('size = [1, 1]', 'size = [0.5, 1]')
+def test_every_text_the_graph_shows_written_back_changes_nothing_it_holds(project):
+    """Fails if a node's text, written back by its own action as the editor shows it, is refused,
+    changes what the files hold, or loses a comment the person wrote (web.md § 8.3)."""
+    text = model_file(project).read_text().replace('convention = "real"', 'convention = "real"   # never complex')
+    text = text.replace('bias = "1 V"', 'bias = "1 V"   # the plate voltage')
     model_file(project).write_text(text)
     nodes = graph(project, study="check").nodes
-    shown = {f.address: f.text for n in nodes for f in n.fields}
-    assert shown["model:parameters.bias"] == '"1 V"' and shown["model:geometry.shapes.square.size"] == "[0.5, 1]"
-    before = {p: p.read_text() for p in (model_file(project), study_file(project, "check"))}
-    for address, written in shown.items():
-        edit("set", project, address, written)
-    assert {p: p.read_text() for p in before} == before
+    before = (load_model(project, ctx()), load_study(project, "check", ctx(), load_model(project, ctx())))
+    for n in nodes:
+        perform(n.write, text=n.text)
+    model = load_model(project, ctx())
+    assert (model, load_study(project, "check", ctx(), model)) == before
+    assert "# never complex" in model_file(project).read_text()
+    assert "# the plate voltage" in model_file(project).read_text()             # a value's own line's comment
 
 
 def test_every_reference_a_wire_is_drawn_into_is_under_a_port_of_its_node(project):
@@ -227,6 +233,7 @@ def test_every_reference_a_wire_is_drawn_into_is_under_a_port_of_its_node(projec
     assert (domain["shapes"].many, domain["shapes"].names) == (True, ["square"])
     assert (domain["material"].address, domain["material"].accepts) == ("model:assign.domain", ["material"])
     assert {p.name for p in by["model:regions.left"].ports} == {"faces_of"}    # a boundary's own rules only
+    assert {k.label for k in by["model:regions.left"].keys} == {"kind", "plane", "box", "faces_of", "rest"}
 
 
 def test_a_wire_drawn_through_a_port_writes_what_the_loader_reads(project):
@@ -251,17 +258,205 @@ def test_a_parameter_used_twice_in_one_value_is_one_wire(project):
     assert len(wires) == 1
 
 
+
 def test_the_graph_names_what_a_surface_needs_and_no_surface_list(project):
     """Fails if the order, the names an add needs, or the choices a surface offers are not in
-    the graph document — a surface would have to keep a list of its own (api.md § 5.2)."""
+    the graph document — a surface would have to keep a list of its own (web.md § 8)."""
     g = graph(project)
     ranks = {n.kind: n.rank for n in g.nodes}
     assert ranks["parameter"] < ranks["shape"] < ranks["region"] < ranks["material"] == ranks["condition"]
-    assert {n.address for n in g.nodes if n.renamable} >= {"model:regions.left", "model:parameters.bias"}
-    assert not next(n for n in g.nodes if n.address == "model:conditions.left").renamable
-    potential = next(p for p in g.palette if p.group == "conditions" and p.kind == "potential")
-    assert potential.names == {"<region>": ["region:boundary"]}
-    assert all(p.needs for p in g.palette if p.group == "study")                 # no study chosen
-    assert all(not p.needs for p in graph(project, study="check").palette)
+    assert {n.address for n in g.nodes if n.rename} >= {"model:regions.left", "model:parameters.bias"}
+    assert next(n for n in g.nodes if n.address == "model:conditions.left").rename is None
+    potential = next(e for e in g.palette if e.kind == "condition" and e.type == "potential")
+    assert next(f for f in potential.add.fills if f.field == "address").accepts == ["region:boundary"]
+    assert all(e.needs for e in g.palette if e.kind == "observable")             # no study chosen
+    assert all(not e.needs for e in graph(project, study="check").palette)
     (choice,) = g.choices
-    assert (choice.address, choice.value, "electrostatics" in choice.options) == ("model:formulation", "electrostatics", True)
+    assert choice.set.call.request["address"] == "model:formulation" and choice.value == '"electrostatics"'
+    assert "electrostatics" in choice.json_schema["enum"]
+
+
+
+def test_every_key_and_port_carries_its_sentence_and_the_formulations_their_section(project):
+    """Fails if a key or a port the help shows has no sentence, or a key the formulation declares
+    — a condition's parameter, a material's property — carries the schema's words instead of the
+    formulation's and no section to link to (models.md § 11.2, web.md § 8.3)."""
+    from femkit.definitions import catalogue
+    f = catalogue.formulations(ctx())["electrostatics"]
+    nodes = {n.address: n for n in graph(project, study="check").nodes}
+    assert all(x.help for n in nodes.values() for x in [*n.keys, *n.ports])
+    value = next(x for x in nodes["model:conditions.right"].keys if x.label == "value")
+    spec = f.conditions["potential"]
+    assert value.help.sentence == spec.parameters["value"].description and value.help.doc.section == spec.section
+    assert value.required and value.json_schema["unit"] == "V"
+    eps = next(x for x in nodes["model:materials.vacuum"].keys if x.label == "relative_permittivity")
+    assert eps.help.sentence == f.properties["relative_permittivity"].description
+    assert eps.help.doc.anchor == f.properties["relative_permittivity"].section
+
+
+#: What a person answers where a fix leaves a choice: the dimension, its meaning, the frame's unit.
+ANSWERS = {"model:geometry.dimension": "2", "model:geometry.meaning": '"per unit depth"', "model:frame.unit": '"m"'}
+
+
+def written(template: str, **values: str) -> str:
+    """A template as a person fills it: each key given uncommented with its value; every other
+    line as the template wrote it."""
+    out = []
+    for line in template.splitlines():
+        key = line[2:].split(" = ", 1)[0] if line.startswith("# ") and " = " in line else None
+        out.append(f"{key} = {values.pop(key)}" if key in values else line)
+    assert not values, f"the template has no line for {sorted(values)}"
+    return "\n".join(out) + "\n"
+
+
+def test_the_laplace_model_is_built_from_an_empty_folder_with_what_the_graph_document_offers(tmp_path):
+    """Fails if the page could not build the Laplace model from an empty folder by the
+    graph document's actions alone — its choice, the findings' fixes, its palette's templates, a
+    port's connect, a node's text — and what a person writes: the names, each choice a fix
+    leaves, each template filled, the geometry's text (plan § 3, M7 item 3)."""
+    def page():
+        return graph(tmp_path)
+
+    def add(kind: str, type_: str, **given: str) -> None:
+        entry = next(e for e in page().palette if (e.kind, e.type) == (kind, type_))
+        names = {f.hole.strip('"<>'): given.pop(f.hole.strip('"<>')) for f in entry.add.fills if f.hole}
+        template = next(f for f in entry.add.fills if f.field == "text").template
+        text = given.pop("text") if "text" in given else written(template, **given)
+        perform(entry.add, text=text, **names)
+
+    def fix() -> None:
+        for issue in [*page().issues, *(i for n in page().nodes for i in n.findings)]:
+            step = next((n for n in issue.next if n.call), None)
+            if step is not None and issue.subject in ANSWERS:
+                perform(step, value=ANSWERS[issue.subject])
+
+    (choice,) = page().choices
+    perform(choice.set, value='"electrostatics"')
+    fix(); fix()                                          # the dimension, then its meaning
+    add("parameter", None, name="bias", text='"1 V"')
+    geometry = next(n for n in page().nodes if n.kind == "geometry")
+    perform(geometry.write, text=geometry.text + '\n[shapes.square]\nkind = "rectangle"\ncorner = [0, 0]\nsize = [1, 1]\n')
+    fix()                                                 # bare coordinates: the frame's unit
+    add("region", "domain", name="domain", shapes='["square"]')
+    add("region", "boundary", name="left", plane="{ point = [0, 0], normal = [-1, 0] }")
+    add("region", "boundary", name="right", plane="{ point = [1, 0], normal = [1, 0] }")
+    add("region", "boundary", name="sides", rest="true")
+    add("material", "relative_permittivity", material="vacuum", value='"1"', convention='"real"',
+        source='"definition of vacuum"', range='"all"')
+    domain = next(n for n in page().nodes if n.address == "model:regions.domain")
+    perform(next(p for p in domain.ports if "material" in p.accepts).connect, name="vacuum")   # the wire
+    add("condition", "potential", region="left", value='"0 V"')
+    add("condition", "potential", region="right", value='"bias"')
+    add("condition", "insulating", region="sides")
+    assert findings(tmp_path) == 0
+    example = tmp_path / "example"
+    example.mkdir()
+    model_file(example).write_text(examples()[0])
+    assert load_model(tmp_path, ctx()) == load_model(example, ctx())
+
+
+def test_a_table_set_over_a_table_keeps_the_files_form_and_comments(project):
+    """Fails if setting a node's whole value — as the page commits a node's form, in one edit —
+    rewrites its table into another form or loses its comments (models.md § 11.1)."""
+    text = model_file(project).read_text().replace('convention = "real"', 'convention = "real"   # never complex here')
+    model_file(project).write_text(text)
+    edit("set", project, "model:materials.vacuum.relative_permittivity",
+         '{ value = "2", convention = "real", source = "definition of vacuum", range = "all" }')
+    after = model_file(project).read_text()
+    assert after == text.replace('value = "1"\nconvention', 'value = "2"\nconvention')
+    edit("set", project, "model:regions.left", '{ kind = "boundary", plane = { point = [0, 0], normal = [-1, 0] } }')
+    assert model_file(project).read_text() == after                    # the same value: nothing changes
+
+
+def test_an_edit_is_taken_back_and_made_again_and_never_over_a_hand_edit(project):
+    """Fails if `model undo` does not restore each file an edit changed to its text before it,
+    `model redo` does not make it again, a new edit leaves an undone one redoable, or either
+    acts over a file changed by hand since (models.md § 11.1)."""
+    def turn(verb: str):
+        op = registry.operations()[f"model.{verb}"]
+        return op.apply(op.plan(op.request_from({"project": str(project)}), ctx()), ctx())
+    first = model_file(project).read_text()
+    edit("rename", project, "model:parameters.bias", "voltage")
+    renamed = model_file(project).read_text()
+    turn("undo")
+    assert model_file(project).read_text() == first
+    turn("redo")
+    assert model_file(project).read_text() == renamed
+    turn("undo")
+    edit("set", project, "model:parameters.bias", '"2 V"')            # a new edit: the undone one is gone
+    assert not turn("redo").plan.steps
+    turn("undo")
+    assert model_file(project).read_text() == first and not turn("undo").plan.steps   # nothing older stands
+    turn("redo")
+    model_file(project).write_text(model_file(project).read_text() + "\n# by hand\n")
+    with pytest.raises(Refused, match="changed since"):
+        turn("undo")
+
+
+def test_projects_are_listed_under_the_projects_folder_and_made_there(tmp_path):
+    """Fails if a project is listed or made anywhere but under web.projects, the list does not
+    name what sets the folder while it is unset, or a project is made over one already there
+    (web.md § 8.6)."""
+    from femkit.config.operations import ConfigSet
+    from femkit.core.errors import Refused
+    def run(operation: str, **request):
+        op = registry.operations()[operation]
+        req = op.request_from(request)
+        return op.apply(op.plan(req, ctx()), ctx()) if op.changes else op.run(req, ctx())
+    unset = run("project.list")
+    assert unset.root is None and unset.issues[0].next[0].call.request == {"key": "web.projects"}
+    with pytest.raises(Refused, match="unset"):
+        run("project.new", name="first")
+    root = tmp_path / "projects"
+    root.mkdir()
+    c = ctx()
+    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="web.projects", value=f'"{root}"'), c), c)
+    run("project.new", name="first")
+    assert (root / "first").is_dir()
+    edit("set", root / "first", "study:check:numerics.geometry_order", "1")
+    assert [(p.name, p.studies) for p in run("project.list").projects] == [("first", ["check"])]
+    assert run("study.list", project=str(root / "first")).studies == ["check"]
+    with pytest.raises(Refused, match="there already"):
+        run("project.new", name="first")
+    with pytest.raises(UsageError):
+        run("project.new", name="../outside")
+
+
+def test_a_text_is_written_as_one_edit_keeping_its_comments_or_not_at_all(project):
+    """Fails if `model write` writes a text that would leave a file unloadable, loses a comment
+    the text carries, or is more than one step to take back (models.md § 11.1)."""
+    def run(operation: str, **request):
+        op = registry.operations()[operation]
+        return op.apply(op.plan(op.request_from(request), ctx()), ctx())
+    before = model_file(project).read_text()
+    with pytest.raises(UsageError, match="unloadable"):
+        run("model.write", project=str(project), address="model:conditions.left", text='kind = 3\n')
+    assert model_file(project).read_text() == before
+    text = '# held at ground\nkind = "potential"\nvalue = "0 V"   # the left plate\n'
+    run("model.write", project=str(project), address="model:conditions.left", text=text)
+    node = next(n for n in graph(project).nodes if n.address == "model:conditions.left")
+    assert node.text == text
+    run("model.undo", project=str(project))
+    assert model_file(project).read_text() == before
+
+
+def test_a_finding_offers_a_value_only_from_a_closed_list_and_sits_in_its_object(tmp_path):
+    """Fails if a finding's fix asks a value to write — a quantity, a name — which belongs in its
+    object's text, rather than one to choose from a closed list; or a finding about a part of an
+    object sits on no node (web.md § 8.3, § 7.4)."""
+    edit("set", tmp_path, "model:formulation", '"electrostatics"')
+    edit("set", tmp_path, "model:geometry.dimension", "2")
+    edit("set", tmp_path, "model:geometry.meaning", '"per unit depth"')
+    edit("set", tmp_path, "model:regions.left", '{ kind = "boundary", rest = true }')
+    edit("set", tmp_path, "model:conditions.left", '{ kind = "potential" }')
+    g = graph(tmp_path)
+    nodes = {n.address: n for n in g.nodes}
+    assert any("no shape" in i.message for i in nodes["model:geometry"].findings)
+    (missing,) = [i for i in nodes["model:conditions.left"].findings if "states no value" in i.message]
+    assert not missing.next                                         # written in the condition's text
+    for issue in [*g.issues, *(i for n in g.nodes for i in n.findings)]:
+        for step in issue.next:
+            for fill in step.fills:
+                if fill.field == "value" and not fill.hole:
+                    options = [fill.json_schema, *fill.json_schema.get("anyOf", [])]
+                    assert any(o.get("enum") for o in options), (issue.message, fill)

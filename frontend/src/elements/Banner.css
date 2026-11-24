@@ -1,0 +1,14 @@
+.banner { display: flex; align-items: center; gap: var(--space-4); height: var(--bar-height); padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line); background: var(--banner), var(--surface); }
+.banner__brand { display: flex; align-items: center; gap: var(--space-2); text-decoration: none; color: var(--text); flex: none; }
+.banner__mark { border-radius: 8px; box-shadow: var(--shadow-sm); }
+.banner__name { font-size: var(--text-lg); font-weight: var(--weight-bold); letter-spacing: -0.01em;
+  background: linear-gradient(90deg, var(--brand-from), var(--brand-to)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.banner__workspace { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--line); background: var(--banner), var(--surface); }
+.banner__workspace-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--radius);
+  background: var(--accent-soft); color: var(--accent); flex: none; }
+.banner__workspace-words { min-width: 0; flex: 1; }
+.banner__workspace-title { margin: 0; font-size: var(--text-xl); font-weight: var(--weight-bold); letter-spacing: -0.01em; }
+.banner__workspace-tagline { margin: 0; font-size: var(--text-sm); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner__workspace-aside { display: flex; align-items: center; gap: var(--space-2); flex: none; }

@@ -1,4 +1,4 @@
-"""The document viewer's server side (api.md § 5.1, § 5.2): only the repository's documents,
+"""The document viewer's server side (web.md § 1, § 2): only the repository's documents,
 by a list made without following a link; each heading's anchor by GitHub's rule."""
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def checkout(tmp_path, monkeypatch) -> Path:
 
 def test_the_viewer_lists_only_the_repositorys_documents(checkout):
     """Fails if a local file at the root, a file reached through a symbolic link, or anything
-    but Markdown and images is listed (api.md § 5.2)."""
+    but Markdown and images is listed (web.md § 2)."""
     assert docs.listing() == ["README.md", "docs/README.md", "docs/logo.svg", "docs/sub/a.md"]
 
 
@@ -51,14 +51,14 @@ def test_the_viewer_lists_only_the_repositorys_documents(checkout):
                                   "docs/sub/../../femkit/secret.py"])
 def test_no_spelling_of_a_path_reaches_beyond_the_documents(checkout, client, path):
     """Fails if any path not on the viewer's list — another file, a link out, a climb up, an
-    absolute path — is served (api.md § 5.2)."""
+    absolute path — is served (web.md § 2)."""
     response = client.get(f"/api/docs/{path}", headers=AUTH)
     assert response.status_code in (404, 405) and b"token = 1" not in response.get_data()  # refused, its content never sent
 
 
 def test_a_document_comes_as_text_with_its_anchors_and_an_image_as_data(checkout, client):
     """Fails if a document is served as anything but its text with its headings, an image as
-    anything but data, or either without the token (api.md § 5.1, § 5.5)."""
+    anything but data, or either without the token (web.md § 1, § 5)."""
     assert client.get("/api/docs/docs/sub/a.md", headers={"Host": "127.0.0.1:8000"}).status_code == 401
     doc = client.get("/api/docs/docs/sub/a.md", headers=AUTH).get_json()
     assert doc["text"] == "# A\n" and doc["headings"] == [{"level": 1, "text": "A", "anchor": "a"}]
@@ -68,7 +68,7 @@ def test_a_document_comes_as_text_with_its_anchors_and_an_image_as_data(checkout
 
 def test_a_headings_anchor_is_githubs():
     """Fails if an anchor differs from GitHub's — a link written in a document, a section a
-    formulation names, and the viewer's address would then disagree (api.md § 5.2)."""
+    formulation names, and the viewer's address would then disagree (web.md § 2)."""
     text = ("# 5.4 Serving — `serve`\n## Terms and symbols\n```toml\n# not a heading\n```\n"
             "## Terms and symbols\n### What's `n`, really?\n")
     assert [h.anchor for h in headings(text)] == ["54-serving--serve", "terms-and-symbols", "terms-and-symbols-1",

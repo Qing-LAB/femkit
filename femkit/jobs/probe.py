@@ -19,7 +19,7 @@ from typing import Any
 
 from femkit.config import probe as config_probe
 from femkit.config import settings
-from femkit.core import dirs, process
+from femkit.core import dirs, process, view
 from femkit.core.errors import Refusal, UsageError
 from femkit.core.operations import Context
 from femkit.definitions import catalogue
@@ -29,6 +29,8 @@ from femkit.envs.manager import confined, resolve
 from femkit.envs.state import INSTALLED, observe
 from femkit import schedulers
 from femkit.jobs.record import Record, settings_now
+from femkit.jobs.requests import ProbeRequest
+from femkit.jobs.requests import JOB_PROBE
 
 HOST_GPU_QUERY = ("nvidia-smi", "--query-gpu=name,compute_cap,memory.total", "--format=csv,noheader,nounits")
 DECLARABLE = re.compile(r"scheduler\.(commands|probe)\.([a-z_]+)")
@@ -64,7 +66,8 @@ def scheduler_kind(ctx: Context, named: str | None, declared: dict[str, str]) ->
         raise UsageError("--set declares a scheduler command; name its kind with --scheduler")
     name, why = config_probe.detect_scheduler(kinds)
     if name is None:
-        raise Refusal(why, ("job probe --scheduler KIND",))
+        raise Refusal(why, (view.command(JOB_PROBE,
+                                         fills=[view.Fill(field="scheduler", label="the scheduler's kind", example="KIND")]),))
     return name, kinds[name], why
 
 

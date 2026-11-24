@@ -1,4 +1,4 @@
-"""The server state machine (api.md § 5.4), observed from its lock, its pidfile and the
+"""The server state machine (web.md § 4), observed from its lock, its pidfile and the
 processes the pidfile names. Observing starts no process and sends nothing."""
 
 from __future__ import annotations
@@ -6,11 +6,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from femkit.core import dirs, locks, text
+from femkit.core import dirs, locks, view
 from femkit.core.errors import Busy, Refused
 from femkit.core.states import Action, Machine, Rule
 from femkit.server import protocol
 from femkit.server.protocol import Pidfile
+from femkit.server.requests import ServeRequest, StatusRequest, TargetRequest
+from femkit.server.requests import SERVE_RESTART, SERVE_START, SERVE_STATUS, SERVE_STOP
 
 
 class ServerState(str, Enum):
@@ -42,19 +44,14 @@ def facts(name: str, *, mine: bool = False) -> ServerFacts:
                        pidfile_exists=path.exists(), pidfile=protocol.read_pidfile(path))
 
 
-def option(name: str) -> str:
-    """How a command names this server: `--port 8000`, or `--socket`."""
-    return "--socket" if name == protocol.SOCKET_NAME else f"--port {name}"
+def target(name: str) -> dict:
+    """How a request names this server: its port, or its socket."""
+    return {"socket": True} if name == protocol.SOCKET_NAME else {"port": int(name)}
 
 
-START = f"{text.PROG} serve start {{name}}"
-STOP = f"{text.PROG} serve stop {{name}}"
-RESTART = f"{text.PROG} serve restart {{name}}"
-STATUS = f"{text.PROG} serve status {{name}}"
-
-_start = Action("start", START)
-_stop = Action("stop", STOP)
-_restart = Action("restart", RESTART)
+_start = Action("start", SERVE_START, target)
+_stop = Action("stop", SERVE_STOP, target)
+_restart = Action("restart", SERVE_RESTART, target)
 
 MACHINE: Machine[ServerFacts, ServerState] = Machine(
     name="server",
@@ -72,10 +69,11 @@ MACHINE: Machine[ServerFacts, ServerState] = Machine(
     ),
     actions={
         ServerState.elsewhere: {},
-        ServerState.stopped: {"start": _start, "stop": Action("nothing to do", "")},
-        ServerState.stale: {"start": Action("remove the stale files, start", START),
-                            "stop": Action("remove the stale files", STOP)},
-        ServerState.running: {"stop": _stop, "restart": _restart, "status": Action("look", STATUS)},
+        ServerState.stopped: {"start": _start, "stop": Action("nothing to do")},
+        ServerState.stale: {"start": Action("remove the stale files, start", SERVE_START, target),
+                            "stop": Action("remove the stale files", SERVE_STOP, target)},
+        ServerState.running: {"stop": _stop, "restart": _restart,
+                              "status": Action("look", SERVE_STATUS, target)},
         ServerState.starting: {},
     },
 )
@@ -86,11 +84,16 @@ def observe(name: str) -> tuple[ServerFacts, ServerState]:
     return f, MACHINE.observe(f)
 
 
+def label(name: str) -> str:
+    """How a sentence names this server: `the server on port 8000`, or on the socket."""
+    return "the server on the socket" if name == protocol.SOCKET_NAME else f"the server on port {name}"
+
+
 def require(f: ServerFacts, state: ServerState, action: str) -> None:
-    """Refused, with the commands the state allows; `elsewhere` and `starting` name why."""
+    """Refused, with what the state allows; `elsewhere` and `starting` name why."""
     if state is ServerState.elsewhere and action not in MACHINE.allowed(state):
-        raise Refused(f"the server {option(f.name)} runs on {f.pidfile.host}, not here: act on it there")
+        raise Refused(f"{label(f.name)} runs on {f.pidfile.host}, not here: act on it there")
     if state is ServerState.starting and action not in MACHINE.allowed(state):
-        raise Busy(f"the server {option(f.name)} is being started or stopped by another command; "
-                   f"look again in a moment", (STATUS.replace("{name}", option(f.name)),))
-    MACHINE.require(state, action, option(f.name))
+        raise Busy(f"{label(f.name)} is being started or stopped by another command; look again in a moment",
+                   (view.command(SERVE_STATUS, **target(f.name)),))
+    MACHINE.require(state, action, f.name, label(f.name))

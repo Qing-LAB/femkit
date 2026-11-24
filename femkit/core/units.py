@@ -290,10 +290,23 @@ class Units:
 
     def __init__(self, table: UnitTable):
         self._symbols = _build(table)[0]    # the table validated itself when it loaded
+        self._canonical = {((name, 1),): symbol for name, symbol in table.dimensions.items()}
+        self._of: dict[Dimension, list[str]] = {}
+
+    def canonical(self, dimension: Dimension) -> str | None:
+        """The canonical unit of a base dimension, as the table writes it: `m` for a length."""
+        return self._canonical.get(dimension)
 
     def symbols(self) -> list[str]:
         """Every symbol read, prefixed ones included."""
         return sorted(self._symbols)
+
+    def of(self, dimension: Dimension) -> list[str]:
+        """Every symbol of ``dimension``, prefixed ones included: what a quantity of it may be
+        written in."""
+        if dimension not in self._of:  # the table never changes: each dimension is read once
+            self._of[dimension] = sorted(s for s in self._symbols if self.parse(s).dimension == dimension)
+        return list(self._of[dimension])
 
     def parse(self, text: str, names: Mapping[str, Quantity] = {}) -> Quantity:
         """A quantity, a unit or an expression of the names given, exactly."""

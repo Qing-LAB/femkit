@@ -10,21 +10,18 @@ import tomlkit
 from pydantic import Field, create_model
 
 from femkit.config import probe, settings
-from femkit.core import dirs, paths, text
+from femkit.core import dirs, paths, text, view
 from femkit.core.errors import PlanStale, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Ask, Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.schema import Model
 from femkit.definitions import catalogue
+from femkit.config.requests import OPTION_KEYS, InitRequest, PathRequest, SetRequest, ShowRequest, option_name
+from femkit.config.requests import CONFIG_INIT, CONFIG_PATH, CONFIG_SET, CONFIG_SHOW
 
-ARGUMENT = {"cli": "argument"}
 
 
 # ------------------------------------------------------------------ config path
-
-class PathRequest(Model):
-    """No inputs."""
-
 
 class DirectoryRow(Model):
     name: str = Field(description="config, data, cache or state")
@@ -45,7 +42,7 @@ class PathResult(Result):
         return "\n".join(lines)
 
 
-@operation("config.path", request=PathRequest, result=PathResult)
+@operation(CONFIG_PATH, result=PathResult)
 def config_path(req: PathRequest, ctx: Context) -> PathResult:
     """Print the four femkit directories, what chose each, and what is in them."""
     rows = []
@@ -61,10 +58,6 @@ def config_path(req: PathRequest, ctx: Context) -> PathResult:
 
 
 # ------------------------------------------------------------------ config show
-
-class ShowRequest(Model):
-    """No inputs."""
-
 
 class ShowRow(Model):
     key: str = Field(description="the dotted key")
@@ -84,7 +77,7 @@ class ShowResult(Result):
         return "\n".join(lines)
 
 
-@operation("config.show", request=ShowRequest, result=ShowResult)
+@operation(CONFIG_SHOW, result=ShowResult)
 def config_show(req: ShowRequest, ctx: Context) -> ShowResult:
     """Print every configuration key with its value and where it came from, or what its absence means."""
     loaded = settings.load(ctx)
@@ -97,13 +90,6 @@ def config_show(req: ShowRequest, ctx: Context) -> ShowResult:
 
 
 # ------------------------------------------------------------------ config set
-
-class SetRequest(Model):
-    """One key and its new value."""
-
-    key: str = Field(description="a dotted key, e.g. build.jobs", json_schema_extra=ARGUMENT)
-    value: str = Field(description='a TOML value (8, ["80", "90"], []) or plain text', json_schema_extra=ARGUMENT)
-
 
 class SetOutcome(Outcome):
     file: str = Field(default="", description="the file written")
@@ -123,7 +109,7 @@ def parse_value(raw: str) -> Any:
         return raw
 
 
-@operation("config.set", request=SetRequest, result=SetOutcome, changes=True,
+@operation(CONFIG_SET, result=SetOutcome, changes=True,
            subject=lambda req: ["config"])
 class ConfigSet:
     """Validate and write one configuration key, keeping the file's comments and layout."""
@@ -135,12 +121,12 @@ class ConfigSet:
         settings.with_values({req.key: new})  # an invalid new value is refused before anything is asked
         steps = () if old == new else (
             Step(id=f"set:{req.key}", describe=f"set {req.key}: {text.show(old)} -> {text.show(new)}"),)
-        return Plan(operation="config.set", request=req.model_dump(mode="json"), basis={"old": old}, steps=steps)
+        return Plan(basis={"old": old}, steps=steps)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> SetOutcome:
         req = SetRequest.model_validate(plan.request)
         if settings.load(ctx, fresh=True).present().get(req.key) != plan.basis["old"]:
-            raise PlanStale(f"{req.key} changed since the plan", (text.typed("config", "set", req.key, req.value),))
+            raise PlanStale(f"{req.key} changed since the plan", (view.command(CONFIG_SET, key=req.key, value=req.value),))
 
         def do(step: Step, where):
             settings.write(settings.with_values({req.key: parse_value(req.value)}))
@@ -152,36 +138,24 @@ class ConfigSet:
 
 # ------------------------------------------------------------------ config init
 
-PREAMBLE = "activation.preamble"
-COMMAND = "activation.command"
+PREAMBLE, COMMAND = settings.PREAMBLE, settings.COMMAND
 
 
-def stating(verb: tuple[str, ...], dotted: list[str]) -> tuple[str, ...]:
-    """The commands that state each of these keys of settings.STATED, as ``verb`` takes them."""
-    out: list[str] = []
+def stating(verb: view.Verb, dotted: list[str]) -> tuple[view.Action, ...]:
+    """What states each of these keys of settings.STATED, as ``operation`` takes them."""
+    out: list[view.Action] = []
     if PREAMBLE in dotted:
-        out += [text.typed(*verb, "--preamble", "LINE") + "   # once per line",
-                text.typed(*verb, "--no-preamble") + "   # none is needed here"]
+        preamble = settings.key(PREAMBLE)
+        out += [view.command(verb, note="once per line",
+                             fills=[view.Fill(field="preamble", label=preamble.dotted, example="LINE",
+                                                          help=view.Help(sentence=preamble.description))]),
+                view.command(verb, no_preamble=True, note="none is needed here")]
     if COMMAND in dotted:
-        out += [text.typed(*verb, "--activation", "source activate") + "   # or 'conda activate', 'mamba activate'"]
+        command = settings.key(COMMAND)
+        out += [view.command(verb, note="or 'conda activate', 'mamba activate'",
+                             fills=[view.Fill(field=option_name(command), label=command.dotted, example="source activate",
+                                                                    help=view.Help(sentence=command.description))])]
     return tuple(out)
-
-def _option_name(k: settings.Key) -> str:
-    return "activation" if k.dotted == COMMAND else k.name
-
-
-_OPTION_KEYS = {_option_name(k): k for k in settings.keys()}
-assert len(_OPTION_KEYS) == len(settings.keys()), "config key names must be unique across sections"
-
-InitRequest = create_model(
-    "InitRequest",
-    __base__=Model,
-    __doc__="Values for keys the file lacks; a key not given is proposed where something measured suggests a value.",
-    **{name: (k.annotation, Field(default=None, description=f"{k.dotted}: {k.description}"))
-       for name, k in _OPTION_KEYS.items()},
-    no_preamble=(bool, Field(default=False, description="activation.preamble = []: this machine needs none")),
-)
-
 
 class InitRow(Model):
     key: str = Field(description="the dotted key")
@@ -203,7 +177,7 @@ class InitOutcome(Outcome):
 
 
 def _given(req) -> dict[str, Any]:
-    given = {k.dotted: settings.plain(getattr(req, name)) for name, k in _OPTION_KEYS.items()
+    given = {k.dotted: settings.plain(getattr(req, name)) for name, k in OPTION_KEYS.items()
              if getattr(req, name) is not None}
     if req.no_preamble:
         if PREAMBLE in given:
@@ -244,13 +218,13 @@ def _issues(given: dict[str, Any], present: dict[str, Any], adding: dict[str, An
               for k, v in present.items()]
     issues += [Issue(severity="warning", code="value-ignored", subject=k,
                      message=f"{k} is already {text.show(present[k])}; the value given is ignored",
-                     next=(text.typed("config", "set", k, tomlkit.item(given[k]).as_string()),))
+                     next=(view.command(CONFIG_SET, key=k, value=tomlkit.item(given[k]).as_string()),))
                for k in given if k in present and given[k] != present[k]]
     for dotted in settings.STATED:
         if dotted not in present and dotted not in adding:
             issues.append(Issue(severity="warning", code="stated-unset", subject=dotted,
                                 message=f"{dotted} is unset; state it before preparing jobs on this machine",
-                                next=stating(("config", "init"), [dotted])))
+                                next=stating(CONFIG_INIT, [dotted])))
     return issues
 
 
@@ -272,7 +246,7 @@ def _asks(ctx: Context, given: dict[str, Any], present: dict[str, Any]) -> tuple
                                  "a batch job starts a fresh shell: a `module load` that puts the manager on PATH "
                                  "belongs here; if nothing is needed, give --no-preamble instead")))
     if COMMAND not in present and COMMAND not in given:
-        asks.append(Ask(key=_option_name(settings.key(COMMAND)),
+        asks.append(Ask(key=option_name(settings.key(COMMAND)),
                         question="How does a shell here enter an environment, after those lines? "
                                  "source activate, conda activate or mamba activate (empty: it stays unset)",
                         context=("source activate: the activate script on PATH -- what a cluster's "
@@ -282,7 +256,7 @@ def _asks(ctx: Context, given: dict[str, Any], present: dict[str, Any]) -> tuple
     return tuple(asks)
 
 
-@operation("config.init", request=InitRequest, result=InitOutcome, changes=True,
+@operation(CONFIG_INIT, result=InitOutcome, changes=True,
            subject=lambda req: ["config"])
 class ConfigInit:
     """Write config.toml from its template, adding only keys it lacks; never replaces a value."""
@@ -300,15 +274,15 @@ class ConfigInit:
             issues.append(Issue(severity="info", code="default", subject=ENVIRONMENTS,
                                 message=f"{ENVIRONMENTS} unset: environments go to the default, "
                                         f"{where_environments_go(dirs.environments_dir())}",
-                                next=(text.typed("config", "init", "--environments", "PATH") + "   # to choose",)))
-        return Plan(operation="config.init", request=req.model_dump(mode="json"),
-                    basis={"present": sorted(present), "values": values},
+                                next=(view.command(CONFIG_INIT, note="to choose",
+                                                   fills=[view.Fill(field="environments", label=ENVIRONMENTS, example="PATH")]),)))
+        return Plan(basis={"present": sorted(present), "values": values},
                     steps=steps, issues=issues, asks=_asks(ctx, given, present))
 
     def apply(self, plan: Plan, ctx: Context, observer) -> InitOutcome:
         present = settings.load(ctx, fresh=True).present()
         if sorted(present) != plan.basis["present"]:
-            raise PlanStale("config.toml changed since the plan", (text.typed("config", "init"),))
+            raise PlanStale("config.toml changed since the plan", (view.command(CONFIG_INIT),))
         values = plan.basis["values"]
 
         def do(step: Step, where):

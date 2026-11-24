@@ -2,13 +2,14 @@ import { useState } from "react";
 import { apply, lines, NeedToken, planOperation, Refused } from "./api";
 import { Findings } from "./Value";
 
-// One change through plan and apply (api.md § 5.2): the plan is shown, then applied with the
+// One change through plan and apply (web.md § 2): the plan is shown, then applied with the
 // digest of the plan shown; the findings it leaves are shown, never refused.
 
 export interface Change { operation: string; request: Record<string, unknown>; title: string }
 
-export function PlanApply({ change, onDone, onCancel }: {
+export function PlanApply({ change, onDone, onCancel, onStarted }: {
   change: Change; onDone: () => void; onCancel: () => void;
+  onStarted?: (address: string, steps: { id: string; describe: string }[]) => void;   // each run, as it starts
 }) {
   const [state, setState] = useState<{ kind: string; plan?: any; digest?: string; message?: string; next?: string[];
                                        outcome?: any }>({ kind: "idle" });
@@ -27,6 +28,7 @@ export function PlanApply({ change, onDone, onCancel }: {
     setState((s) => ({ ...s, kind: "applying" }));
     try {
       for await (const line of lines(await apply(change.operation, change.request, state.digest!))) {
+        if (line.operation) onStarted?.(line.operation, state.plan?.steps ?? []);
         if (line.refused || line.defect) {
           return setState({ kind: "refused", message: line.message, next: line.next ?? [] });
         }

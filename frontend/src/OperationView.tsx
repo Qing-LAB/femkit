@@ -4,7 +4,7 @@ import { Form, requestFrom, Values } from "./Form";
 import { Progress } from "./Progress";
 import { Findings, Value } from "./Value";
 
-// One operation as a form, its plan, its outcome (api.md § 5.2): a read-only one is run; a
+// One operation as a form, its plan, its outcome (web.md § 2): a read-only one is run; a
 // changing one is planned, shown, and applied with the digest of the plan shown.
 
 type Phase =

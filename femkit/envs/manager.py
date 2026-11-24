@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from femkit.core import dirs, process
+from femkit.core import dirs, process, view
 from femkit.core.errors import Refusal
 from femkit.core.operations import Context
 from femkit.core.schema import render
@@ -139,7 +139,7 @@ def resolve(ctx: Context) -> Manager:
         or next(iter(activated), None)
     if not named:
         raise Refusal("no package manager is named: run femkit in the activated control environment, "
-                      "or through scripts/install-env.sh", ("bash scripts/install-env.sh list",))
+                      "or through scripts/install-env.sh", (view.shell("bash scripts/install-env.sh list"),))
     path = Path(named)
     if path.name not in kinds:
         raise Refusal(f"{path} is a manager femkit has no kind file for (it has: {', '.join(sorted(kinds))})")

@@ -18,7 +18,8 @@ from pydantic import Field
 from femkit.config import settings
 from femkit.config.operations import ConfigInit, stating, where_environments_go
 from femkit.config.probe import place
-from femkit.core import dirs, text
+from femkit.config.requests import CONFIG_INIT, InitRequest
+from femkit.core import dirs, text, view
 from femkit.core.errors import Refusal
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
@@ -32,19 +33,19 @@ from femkit.envs.state import MACHINE, EnvState, observe
 from femkit.jobs import record
 from femkit.jobs.operations import JobProbe
 from femkit.jobs.record import LOCAL
+from femkit.envs.requests import LogRequest
+from femkit.jobs.requests import BootstrapRequest, DoctorRequest, MachinesRequest, ProbeRequest
+from femkit.envs.requests import ENV_LOG
+from femkit.jobs.requests import DOCTOR, ENV_BOOTSTRAP, JOB_PROBE
 
 
 # ------------------------------------------------------------------ doctor
-
-class DoctorRequest(Model):
-    """No inputs."""
-
 
 class DoctorRow(Model):
     subject: str = Field(description="what is checked")
     state: str = Field(description="its state")
     ready: bool = Field(description="whether it is ready")
-    next: list[str] = Field(default_factory=list, description="the commands that make it ready")
+    next: list[view.Action] = Field(default_factory=list, description="what makes it ready")
 
 
 class DoctorResult(Result):
@@ -78,7 +79,7 @@ def _control_row() -> DoctorRow:
     else:
         state = "current"
     return DoctorRow(subject="control environment", state=state, ready=state == "current",
-                     next=[] if state == "current" else ["bash scripts/install-env.sh bootstrap"])
+                     next=[] if state == "current" else [view.shell("bash scripts/install-env.sh bootstrap")])
 
 
 def _config_row(loaded: settings.Loaded) -> DoctorRow:
@@ -87,7 +88,7 @@ def _config_row(loaded: settings.Loaded) -> DoctorRow:
         subject="config.toml",
         state=("found" if loaded.file else "absent") + "".join(
             f", {d} {'unset' if d in unset else 'stated'}" for d in settings.STATED),
-        ready=loaded.file is not None and not unset, next=list(stating(("config", "init"), unset)))
+        ready=loaded.file is not None and not unset, next=list(stating(CONFIG_INIT, unset)))
 
 
 def _record_row(config: settings.UserConfig) -> DoctorRow:
@@ -95,15 +96,15 @@ def _record_row(config: settings.UserConfig) -> DoctorRow:
     writes it is refused while a key a person states is unset, so that comes first."""
     status, detail = record.status(record.path(LOCAL), config)
     state = f"{status}: {detail}" if detail else status
-    first = list(stating(("config", "init"), settings.unstated(config)))
+    first = list(stating(CONFIG_INIT, settings.unstated(config)))
     return DoctorRow(subject="this machine's record", state=state, ready=state == "current",
-                     next=[] if state == "current" else [*first, text.typed("job", "probe", "--write")])
+                     next=[] if state == "current" else [*first, view.command(JOB_PROBE, write=True)])
 
 
 ENGINES = "engine environments"  # the one row for them all while none can be observed
 
 
-@operation("doctor", request=DoctorRequest, result=DoctorResult)
+@operation(DOCTOR, result=DoctorResult)
 def doctor(req: DoctorRequest, ctx: Context) -> DoctorResult:
     """Whether this machine is ready: control environment, configuration, this machine's record, every engine environment."""
     rows = [_control_row()]
@@ -126,17 +127,11 @@ def doctor(req: DoctorRequest, ctx: Context) -> DoctorResult:
         on_request = not env.default and state is EnvState.absent  # never installed: not this machine's lack
         rows.append(DoctorRow(subject=name, state=state.value + (", installed on request" if on_request else ""),
                               ready=state is EnvState.ready or on_request,
-                              next=[] if state is EnvState.ready or on_request else list(MACHINE.next_commands(state, name))))
+                              next=[] if state is EnvState.ready or on_request else list(MACHINE.next(state, name))))
     return DoctorResult(rows=rows)
 
 
 # ------------------------------------------------------------------ env bootstrap
-
-class BootstrapRequest(ConfigInit.request):
-    """config init's values, and whether to rebuild every environment."""
-
-    clean: bool = Field(default=False, description="remove and rebuild every default environment")
-
 
 class BootstrapRow(Model):
     part: str = Field(description="config.toml, an environment, or this machine's record")
@@ -148,7 +143,7 @@ class BootstrapRow(Model):
 class BootstrapOutcome(Outcome):
     rows: list[BootstrapRow] = Field(default_factory=list, description="each part, in order")
     doctor: DoctorResult | None = Field(default=None, description="doctor, run last")
-    entry: list[str] = Field(default_factory=list, description="the lines that enter femkit day to day here")
+    entry: list[view.Action] = Field(default_factory=list, description="the lines that enter femkit day to day here")
 
     def ok(self) -> bool:
         return super().ok() and self.doctor is not None and self.doctor.ok()
@@ -171,9 +166,11 @@ class BootstrapOutcome(Outcome):
 def _as_bootstrap(issue: Issue) -> Issue:
     """A config init finding as bootstrap says it: bootstrap takes config init's options, so
     the `config init …` it names is `env bootstrap …`."""
-    init, boot = text.typed("config", "init"), text.typed("env", "bootstrap")
-    return issue.model_copy(update={"next": tuple(boot + n[len(init):] if n.startswith(init + " ") else n
-                                                  for n in issue.next)})
+    def as_bootstrap(step: view.Action) -> view.Action:
+        if step.call is None or step.call.operation != "config.init":
+            return step
+        return view.command(ENV_BOOTSTRAP, note=step.note, fills=step.fills, **step.call.request)
+    return issue.model_copy(update={"next": tuple(as_bootstrap(n) for n in issue.next)})
 
 
 def _login_node(ctx: Context) -> list[Issue]:
@@ -185,10 +182,10 @@ def _login_node(ctx: Context) -> list[Issue]:
     return [Issue(severity="warning", code="login-node", subject=here.scheduler,
                   message=f"this {here.scheduler} machine runs no job here, so this is most likely a login node, "
                           "whose limits kill large builds; run bootstrap inside an interactive allocation",
-                  next=(f"{here.kind.interactive}   # then, inside it: bash scripts/install-env.sh bootstrap",))]
+                  next=(view.shell(here.kind.interactive, note="then, inside it: bash scripts/install-env.sh bootstrap"),))]
 
 
-def entry_lines(ctx: Context, config: settings.UserConfig) -> list[str]:
+def entry_lines(ctx: Context, config: settings.UserConfig) -> list[view.Action]:
     """This machine's day-to-day entry (envs.md § 6.2): the preamble, the activation the person
     stated for the real control prefix, the checkout, and the first command."""
     try:
@@ -196,12 +193,14 @@ def entry_lines(ctx: Context, config: settings.UserConfig) -> list[str]:
     except Refusal:
         return []
     command = config.activation.command
-    enter = m.activation(dirs.control_prefix(), command) if command else [
-        f"# activation.command is unset: {stating(('config', 'init'), ['activation.command'])[0]}"]
-    return [*(config.activation.preamble or []), *enter, f"cd {shlex.quote(str(dirs.checkout()))}", text.typed("doctor")]
+    enter = [view.shell(line) for line in m.activation(dirs.control_prefix(), command)] if command else [
+        a.model_copy(update={"note": f"activation.command is unset; {a.note}"})
+        for a in stating(CONFIG_INIT, [settings.COMMAND])]
+    return [*(view.shell(line) for line in config.activation.preamble or []), *enter,
+            view.shell(f"cd {shlex.quote(str(dirs.checkout()))}"), view.command(DOCTOR)]
 
 
-@operation("env.bootstrap", request=BootstrapRequest, result=BootstrapOutcome, changes=True,
+@operation(ENV_BOOTSTRAP, result=BootstrapOutcome, changes=True,
            subject=lambda req: ["bootstrap"])
 class EnvBootstrap:
     """Set up this machine: config init, every default environment installed (a failed one does not stop the next), this machine's record, then doctor."""
@@ -248,16 +247,15 @@ class EnvBootstrap:
         if not why:
             issues.append(Issue(severity="info", code="record-kept", subject=str(file),
                                 message=f"this machine's record is kept: {file}",
-                                next=(text.typed("job", "probe", "--write") + "   # to measure it again",)))
+                                next=(view.command(JOB_PROBE, write=True, note="to measure it again"),)))
         elif unset := settings.unstated(will_be):
             issues.append(Issue(severity="warning", code="no-record", subject=", ".join(unset),
                                 message=f"{' and '.join(unset)} {'stays' if len(unset) == 1 else 'stay'} unset, so this "
                                         "machine's record is not written and no job can be prepared for it",
-                                next=stating(("env", "bootstrap"), unset)))
+                                next=stating(ENV_BOOTSTRAP, unset)))
         else:
             steps.append(Step(id="record", describe=f"write this machine's record, {text.path(file)} ({why})"))
-        return Plan(operation="env.bootstrap", request=req.model_dump(mode="json"),
-                    basis={"config_plan": config_plan.model_dump(mode="json"), "installs": installs,
+        return Plan(basis={"config_plan": config_plan.model_dump(mode="json"), "installs": installs,
                            "refused": refused},
                     steps=tuple(steps), issues=issues, asks=config_plan.asks)
 
@@ -293,7 +291,7 @@ class EnvBootstrap:
                 issues.extend(out.issues)
                 if env.status == "failed":
                     issues.append(Issue(severity="error", code="failed", subject=name, message=f"{name}: a step failed",
-                                        next=(text.typed("env", "log", name),)))
+                                        next=(view.command(ENV_LOG, name=name),)))
                 return status, Path(env.log) if env.log else None
             c = again()  # the record: after the installs, so its environments are what is here now
             try:

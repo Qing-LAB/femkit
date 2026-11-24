@@ -4,7 +4,7 @@ import "katex/dist/katex.min.css";
 import { docImage, docsList, DocText, docText, hasToken, NeedToken, Refused } from "./api";
 import { docHash, renderer, RenderEnv } from "./markdown";
 
-// The document viewer (api.md § 5.2): the repository's documents as a tree of folders, each
+// The document viewer (web.md § 2): the repository's documents as a tree of folders, each
 // rendered as GitHub does, links followed within the viewer, nothing able to reach beyond them.
 
 interface Folder { name: string; path: string; folders: Map<string, Folder>; files: string[] }
@@ -79,7 +79,7 @@ async function decorate(root: HTMLElement, dark: boolean): Promise<void> {
         .replace(/&quot;/g, '"').replace(/&amp;/g, "&");
       const { svg } = await mermaid.render(`diagram-${Date.now()}-${n}`, code);
       const parsed = new DOMParser().parseFromString(svg, "text/html");  // tolerant of any markup in labels
-      // Its styles through the page's object model, never as inline style text (api.md § 5.5).
+      // Its styles through the page's object model, never as inline style text (web.md § 5).
       const css = [...parsed.querySelectorAll("style")].map((s) => { const t = s.textContent ?? ""; s.remove(); return t; });
       const sheet = new CSSStyleSheet();
       sheet.replaceSync(css.join("\n"));

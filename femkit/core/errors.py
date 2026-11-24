@@ -5,13 +5,22 @@ Any exception that is not a ``Refusal`` is a defect or an unavailable system.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Iterable
+
+if TYPE_CHECKING:  # core/view.py sits above this module: its type is named, never imported
+    from femkit.core.view import Action
+
 
 class Refusal(Exception):
-    """Refused before acting. ``next`` lists commands a person may run instead."""
+    """Refused before acting. ``next`` holds what a person may do instead, each an `Action`
+    (core/view.py) the surface renders: a command, or a button."""
 
-    def __init__(self, message: str, next: tuple[str, ...] = ()):
+    def __init__(self, message: str, next: Iterable[Action] = ()):
         super().__init__(message)
         self.next = tuple(next)
+        from femkit.core.view import Action  # held at the door: a next step is never bare text
+        if not all(isinstance(n, Action) for n in self.next):
+            raise TypeError(f"a refusal's next steps are Actions, not {[type(n).__name__ for n in self.next]}")
 
 
 class Refused(Refusal):

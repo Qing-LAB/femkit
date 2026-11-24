@@ -1,4 +1,4 @@
-"""Does the server at an address answer, as itself? (api.md § 5.5, the health route.)
+"""Does the server at an address answer, as itself? (web.md § 5, the health route.)
 
 The client sends a fresh nonce and checks the HMAC the server answers with, keyed
 by the server's token: an answer from another program on the address is told

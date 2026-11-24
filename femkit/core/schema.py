@@ -8,8 +8,10 @@ values and its description are defined; the loader turns any failure into one
 
 from __future__ import annotations
 
+import json
 import re
 import tomllib
+import types
 import typing
 from decimal import Decimal
 from pathlib import Path
@@ -25,9 +27,10 @@ M = TypeVar("M", bound="Model")
 
 
 class Model(BaseModel):
-    """Unknown keys are refused; a loaded value never changes."""
+    """Unknown keys are refused; a loaded value never changes. What it writes holds every field,
+    so its serialization schema marks every field present, defaults too."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_serialization_defaults_required=True)
 
 
 class DefinitionError(Refusal):
@@ -122,6 +125,54 @@ def render(text: str, values: dict[str, str]) -> str:
     return PLACEHOLDER.sub(one, text)
 
 
+# ---------------------------------------------------------------- annotations
+#
+# The one reading of a field's annotation: what it may hold, the model classes among that, a
+# table's values, the closed values of a `Literal`. Every walk of a schema goes through these.
+
+def alternatives(annotation: Any) -> list[Any]:
+    """What an annotation may hold, through `Annotated`, `Optional` and unions; never `None`."""
+    if typing.get_origin(annotation) is typing.Annotated:
+        return alternatives(typing.get_args(annotation)[0])
+    if typing.get_origin(annotation) in (typing.Union, types.UnionType):
+        return [a for arg in typing.get_args(annotation) for a in alternatives(arg)]
+    return [] if annotation is type(None) else [annotation]
+
+
+def classes(annotation: Any) -> list[type[BaseModel]]:
+    """The model classes an annotation may hold."""
+    return [a for a in alternatives(annotation) if isinstance(a, type) and issubclass(a, BaseModel)]
+
+
+def values_of(annotation: Any) -> Any:
+    """A table's values' annotation; None when it holds no table."""
+    tables = [a for a in alternatives(annotation) if typing.get_origin(a) is dict]
+    return typing.get_args(tables[0])[1] if tables else None
+
+
+def items_of(annotation: Any) -> Any:
+    """A list's items' annotation; None when it holds no list."""
+    lists = [a for a in alternatives(annotation) if typing.get_origin(a) in (list, tuple)]
+    return (typing.get_args(lists[0]) or (str,))[0] if lists else None
+
+
+def closed(annotation: Any) -> list[str]:
+    """The text values a `Literal` among its alternatives allows."""
+    return [v for a in alternatives(annotation) if typing.get_origin(a) is typing.Literal
+            for v in typing.get_args(a) if isinstance(v, str)]
+
+
+def field_named(cls: type[BaseModel], key: str) -> tuple[str, FieldInfo] | None:
+    """The field a file writes as ``key``: by its alias, else its name."""
+    return next(((n, f) for n, f in cls.model_fields.items() if (f.alias or n) == key), None)
+
+
+def json_text(value: Any) -> Any:
+    """A value a command line gives as JSON text, read; any other as it is. For a request field
+    that takes a table: `Annotated[dict[...], BeforeValidator(json_text)]`."""
+    return json.loads(value) if isinstance(value, str) else value
+
+
 # ---------------------------------------------------------------- field annotations
 
 def field_extras(field: FieldInfo) -> dict:
@@ -143,6 +194,13 @@ def field_extras(field: FieldInfo) -> dict:
     if isinstance(field.json_schema_extra, dict):
         found.update(field.json_schema_extra)
     return found
+
+
+def described(field: FieldInfo) -> str:
+    """A field's sentence as a text says it: its description, and where it is defined after it
+    (its `doc` annotation, core.md § 2)."""
+    doc = field_extras(field).get("doc")
+    return (field.description or "") + (f" ({doc})" if doc else "")
 
 
 def references(instance: BaseModel, at: tuple = ()) -> Iterator[tuple[tuple, str, str, str]]:

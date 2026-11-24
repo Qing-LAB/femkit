@@ -14,15 +14,13 @@ from femkit.core.schema import DefinitionError
 from femkit.definitions import catalogue
 from femkit.models.project import load_model, load_study, model_file, study_file
 
-CONTRACT = Path(__file__).resolve().parents[2] / "docs" / "contracts" / "models.md"
+LAPLACE = Path(__file__).resolve().parent / "data" / "laplace"
 
 
 def examples() -> tuple[str, str]:
-    """The Laplace check's model and study, as models.md writes them."""
-    blocks = re.findall(r"```toml\n(.*?)```", CONTRACT.read_text(), re.S)
-    model = next(b for b in blocks if 'formulation = "electrostatics"' in b and "[regions]" in b)
-    study = next(b for b in blocks if "[numerics]" in b)
-    return model, study
+    """The Laplace check's model and study in today's one-file shape, until the project layout
+    replaces it (plan § 3, R steps C and D)."""
+    return (LAPLACE / "model.toml").read_text(), (LAPLACE / "study.toml").read_text()
 
 
 @pytest.fixture
@@ -52,8 +50,8 @@ def refused_at(project: Path, *, study: bool = False) -> list[str]:
     return [path for path, _ in caught.value.problems]
 
 
-def test_the_contracts_laplace_model_and_study_load(project):
-    """Fails if the schema and models.md's own example disagree on a key (models.md § 3, § 5)."""
+def test_the_laplace_model_and_study_load(project):
+    """Fails if the schema and the Laplace example disagree on a key."""
     m = load_model(project, ctx())
     s = load_study(project, "check", ctx(), m)
     assert sorted(m.regions) == ["domain", "left", "right", "sides"] and list(s.observables) == ["midpoint"]
@@ -126,8 +124,8 @@ def check(project: Path) -> list[str]:
     return [i.subject for i in op.run(op.request_from({"project": str(project)}), Context.from_process()).issues]
 
 
-def test_the_contracts_laplace_model_has_no_findings(project):
-    """Fails if `model check` finds fault with models.md's own complete example."""
+def test_the_laplace_model_has_no_findings(project):
+    """Fails if `model check` finds fault with the complete Laplace example."""
     assert check(project) == []
 
 

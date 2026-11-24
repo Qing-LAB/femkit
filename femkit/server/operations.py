@@ -1,4 +1,4 @@
-"""`serve start`, `foreground`, `status`, `restart`, `stop` (api.md § 5.4)."""
+"""`serve start`, `foreground`, `status`, `restart`, `stop` (web.md § 4)."""
 
 from __future__ import annotations
 
@@ -18,7 +18,9 @@ from pydantic import Field, model_validator
 
 from femkit.config import settings
 from femkit.config.probe import place
-from femkit.core import dirs, locks, text
+from femkit.config.requests import ShowRequest
+from femkit.core import dirs, locks, text, view
+from femkit.envs.requests import InstallRequest
 from femkit.core.errors import PlanStale, Refused, UsageError
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import open_private, private_dir
@@ -27,7 +29,11 @@ from femkit.core.schema import Model
 from femkit.definitions import catalogue
 from femkit.server import health, protocol, supervisor
 from femkit.server.protocol import LOOPBACK, Listen, event_line
-from femkit.server.state import MACHINE, ServerState, facts, option, require
+from femkit.server.state import MACHINE, ServerState, facts, require, target
+from femkit.server.requests import SERVE_RESTART, SERVE_STOP, ServeRequest, StatusRequest, TargetRequest
+from femkit.config.requests import CONFIG_SHOW
+from femkit.envs.requests import ENV_INSTALL
+from femkit.server.requests import SERVE_FOREGROUND, SERVE_RESTART, SERVE_START, SERVE_STATUS, SERVE_STOP
 
 ANSWER_WAIT = 30.0     # seconds a start or a restart waits for the child to answer
 STOP_WAIT = protocol.STOP_GRACE + 5.0
@@ -35,45 +41,12 @@ STOP_WAIT = protocol.STOP_GRACE + 5.0
 
 # ------------------------------------------------------------------ requests
 
-class ServeRequest(Model):
-    """Where the server listens, and how its log is kept."""
-
-    port: int = Field(8000, ge=1, le=65535, description="the TCP port on 127.0.0.1")
-    socket: bool = Field(False, description="listen on a Unix socket only this account can open — the default "
-                                            "on a cluster's login node")
-    tcp: bool = Field(False, description="listen on TCP, even on a cluster's login node")
-    log_max_mb: int = Field(20, ge=1, description="past this size the log is compressed and a new one begun")
-    log_keep: int = Field(5, ge=0, description="how many compressed logs are kept")
-
-    @model_validator(mode="after")
-    def _one_way(self) -> "ServeRequest":
-        if self.socket and self.tcp:
-            raise ValueError("--socket and --tcp exclude each other")
-        return self
-
-
-class TargetRequest(Model):
-    """Which server."""
-
-    port: int = Field(8000, ge=1, le=65535, description="the server on this TCP port")
-    socket: bool = Field(False, description="the server on the Unix socket")
-    force: bool = Field(False, description="even while the server's child holds an operation's lock "
-                                           "(an install started from the page), which then stops with it")
-
-
-class StatusRequest(Model):
-    """Every server of this account, or the one named."""
-
-    port: int | None = Field(None, ge=1, le=65535, description="only the server on this TCP port")
-    socket: bool = Field(False, description="only the server on the Unix socket")
-
-
 def _target_name(req: TargetRequest | StatusRequest) -> str:
     return protocol.SOCKET_NAME if req.socket else str(req.port)
 
 
 def _listen(req: ServeRequest, ctx: Context) -> Listen:
-    """A Unix socket when asked, or on a cluster's login node unless TCP is asked (api.md § 5.4)."""
+    """A Unix socket when asked, or on a cluster's login node unless TCP is asked (web.md § 4)."""
     login = place(catalogue.schedulers(ctx), ctx.env).where == "login node"
     if req.socket or (login and not req.tcp):
         return Listen(socket=str(protocol.socket_path()))
@@ -86,35 +59,35 @@ WEB = "web"  # the environment the server runs in (envs.md § 1)
 
 
 def _web_subject() -> str:
-    """The web environment's lock subject: a running server holds it shared (api.md § 5.4)."""
+    """The web environment's lock subject: a running server holds it shared (web.md § 4)."""
     from femkit.envs import layout
     return layout.subject(WEB)
 
 
 def web_python(ctx: Context) -> str:
     """The web environment's Python, which runs the server's child; refused until that
-    environment is `ready` (api.md § 5.4)."""
+    environment is `ready` (web.md § 4)."""
     from femkit.envs import layout
     from femkit.envs.state import EnvState, observe
     state = observe(ctx, WEB)[1]
     if state is not EnvState.ready:
         raise Refused(f"the {WEB} environment, which runs the server, is {state.value}",
-                      (text.typed("env", "install", WEB),))
+                      (view.command(ENV_INSTALL, names=[WEB]),))
     return str(layout.prefix(ctx, WEB) / "bin" / "python")
 
 
 def _preflight(listen: Listen, ctx: Context) -> None:
-    """Everything `start` refuses, refused before it detaches (api.md § 5.4)."""
+    """Everything `start` refuses, refused before it detaches (web.md § 4)."""
     web_python(ctx)
     private_dir(dirs.runtime_dir())
     if listen.socket and len(listen.socket.encode()) > protocol.SOCKET_PATH_MAX:
         raise UsageError(f"the socket's path is longer than a Unix socket's {protocol.SOCKET_PATH_MAX} bytes: "
-                         f"{listen.socket}", ("export FEMKIT_RUNTIME_DIR=/a/shorter/path",))
+                         f"{listen.socket}", (view.shell("export FEMKIT_RUNTIME_DIR=/a/shorter/path"),))
     try:
         settings.load(ctx, fresh=True)
     except Exception as exc:  # what a fresh child would meet reading it
         raise Refused(f"config.toml does not load, so the server could not start: {exc}",
-                      (text.typed("config", "check"),)) from None
+                      (view.command(CONFIG_SHOW),)) from None
 
 
 def _clear_left_socket(path: Path) -> None:
@@ -132,7 +105,7 @@ def _clear_left_socket(path: Path) -> None:
         return
     finally:
         probe.close()
-    raise Refused(f"{path} is held by another program", (text.typed("serve", "status"),))
+    raise Refused(f"{path} is held by another program", (view.command(SERVE_STATUS),))
 
 
 def _bind(listen: Listen) -> socket.socket:
@@ -158,8 +131,9 @@ def _bind(listen: Listen) -> socket.socket:
             sock.close()
             if exc.errno == errno.EADDRINUSE:
                 raise Refused(f"{listen.describe()} is held by another program",
-                              (f"ss -ltnp 'sport = :{listen.port}'   # which one",
-                               text.typed("serve", "start", "--port", "PORT") + "   # another port")) from None
+                              (view.shell(f"ss -ltnp 'sport = :{listen.port}'", note="which one"),
+                               view.command(SERVE_START, note="another port",
+                                            fills=[view.Fill(field="port", label="another port")]))) from None
             raise
     sock.listen(128)
     sock.set_inheritable(True)
@@ -264,7 +238,7 @@ def _start_plan(name: str, req: ServeRequest, ctx: Context, detached: bool) -> P
     else:
         steps += [Step(id="supervise", describe="run the supervisor here, until Ctrl-C or `serve stop`",
                        argv=("<web>/bin/python", "-m", protocol.CHILD_MODULE, "…"))]
-    return Plan(operation=name, request=req.model_dump(mode="json"), subjects=(protocol.subject(listen.name),),
+    return Plan(subjects=(protocol.subject(listen.name),),
                 shared=(_web_subject(),), basis={"state": state.value, "listen": listen.as_json()}, steps=tuple(steps))
 
 
@@ -273,11 +247,11 @@ def _reobserve(plan: Plan) -> tuple[Listen, object]:
     f = facts(listen.name, mine=True)
     if MACHINE.observe(f).value != plan.basis["state"]:
         raise PlanStale("the server's state changed since the plan; plan again",
-                        (text.typed("serve", "status"),))
+                        (view.command(SERVE_STATUS),))
     return listen, f
 
 
-@operation("serve.start", request=ServeRequest, result=ServeOutcome, changes=True, subject="plan")
+@operation(SERVE_START, result=ServeOutcome, changes=True, subject="plan")
 class ServeStart:
     """Start the web server in the background, supervised; print the address to open."""
 
@@ -329,7 +303,7 @@ class ServeStart:
         return _outcome(plan, status, where, listen, held.get("token") if status == "done" else None)
 
 
-@operation("serve.foreground", request=ServeRequest, result=ServeOutcome, changes=True, subject="plan")
+@operation(SERVE_FOREGROUND, result=ServeOutcome, changes=True, subject="plan")
 class ServeForeground:
     """Run the web server in this terminal, supervised; Ctrl-C stops it. `serve status`,
     `restart` and `stop` act on it from another terminal."""
@@ -393,19 +367,20 @@ def _child_locks(f, force: bool, verb: str) -> None:
     held = sorted(s for s, pid in locks.holders().items() if pid == child.pid and s != own)
     if held:
         raise Refused(f"the server's child holds {', '.join(held)}: an operation started from the page runs, "
-                      f"and would stop with it", (text.typed("serve", verb, *option(f.name).split(), "--force"),))
+                      f"and would stop with it",
+                      (view.command({"restart": SERVE_RESTART, "stop": SERVE_STOP}[verb], force=True, **target(f.name)),))
 
 
 def _signal(f, sig: int) -> Identity:
     """Signal the supervisor the pidfile names, only when it is that process."""
     who = f.pidfile.supervisor
     if not who.alive():
-        raise PlanStale("the supervisor ended since the plan; plan again", (text.typed("serve", "status"),))
+        raise PlanStale("the supervisor ended since the plan; plan again", (view.command(SERVE_STATUS),))
     os.kill(who.pid, sig)
     return who
 
 
-@operation("serve.restart", request=TargetRequest, result=ServeOutcome, changes=True)
+@operation(SERVE_RESTART, result=ServeOutcome, changes=True)
 class ServeRestart:
     """Replace the server's child with a fresh one, keeping its address and token: how a
     change to the application's code takes effect."""
@@ -417,8 +392,7 @@ class ServeRestart:
         require(f, state, "restart")
         _preflight(f.pidfile.listen, ctx)
         _child_locks(f, req.force, "restart")
-        return Plan(operation="serve.restart", request=req.model_dump(mode="json"),
-                    basis={"state": state.value, "supervisor": f.pidfile.supervisor.as_json(),
+        return Plan(basis={"state": state.value, "supervisor": f.pidfile.supervisor.as_json(),
                            "child": f.pidfile.child.as_json() if f.pidfile.child else None},
                     steps=(Step(id="signal", describe=f"ask the supervisor, pid {f.pidfile.supervisor.pid}, "
                                                       "for a new child (SIGHUP)"),
@@ -428,7 +402,7 @@ class ServeRestart:
         req = TargetRequest.model_validate(plan.request)
         f = facts(_target_name(req))
         if f.pidfile is None or f.pidfile.supervisor.as_json() != plan.basis["supervisor"]:
-            raise PlanStale("the server changed since the plan; plan again", (text.typed("serve", "status"),))
+            raise PlanStale("the server changed since the plan; plan again", (view.command(SERVE_STATUS),))
         _child_locks(f, req.force, "restart")  # again: the page may have started one since the plan
         listen, token, held = f.pidfile.listen, _read_token(f.name), {}
 
@@ -445,7 +419,7 @@ class ServeRestart:
         return _outcome(plan, status, where, listen, token if status == "done" else None)
 
 
-@operation("serve.stop", request=TargetRequest, result=ServeOutcome, changes=True)
+@operation(SERVE_STOP, result=ServeOutcome, changes=True)
 class ServeStop:
     """Stop the server: its child, then its supervisor; the pidfile, the token and the
     socket go with them."""
@@ -463,8 +437,7 @@ class ServeStop:
             _child_locks(f, req.force, "stop")
             steps = (Step(id="signal", describe=f"stop the supervisor, pid {f.pidfile.supervisor.pid} (SIGTERM)"),
                      Step(id="gone", describe="wait until it has ended and released its lock"))
-        return Plan(operation="serve.stop", request=req.model_dump(mode="json"),
-                    basis={"state": state.value,
+        return Plan(basis={"state": state.value,
                            "supervisor": f.pidfile.supervisor.as_json() if f.pidfile else None},
                     steps=steps)
 
@@ -473,7 +446,7 @@ class ServeStop:
         name = _target_name(req)
         f = facts(name)
         if MACHINE.observe(f).value != plan.basis["state"]:
-            raise PlanStale("the server's state changed since the plan; plan again", (text.typed("serve", "status"),))
+            raise PlanStale("the server's state changed since the plan; plan again", (view.command(SERVE_STATUS),))
         listen = f.pidfile.listen if f.pidfile else (Listen(socket=str(protocol.socket_path()))
                                                      if name == protocol.SOCKET_NAME else Listen(port=int(name)))
         if plan.basis["state"] == ServerState.running.value:
@@ -506,7 +479,7 @@ class ServeStop:
 class ServerRow(Model):
     name: str = Field(description="the port, or `sock`")
     host: str = Field(description="the host its pidfile was written on")
-    state: str = Field(description="stopped | stale | running | starting | elsewhere (api.md § 5.4)")
+    state: str = Field(description="stopped | stale | running | starting | elsewhere", json_schema_extra={"doc": "web.md § 4"})
     listen: str | None = Field(default=None, description="where it listens")
     supervisor: int | None = Field(default=None, description="the supervisor's process ID")
     child: int | None = Field(default=None, description="the child's process ID")
@@ -561,7 +534,7 @@ def _row(name: str) -> ServerRow:
     return row
 
 
-@operation("serve.status", request=StatusRequest, result=StatusResult)
+@operation(SERVE_STATUS, result=StatusResult)
 def serve_status(req: StatusRequest, ctx: Context) -> StatusResult:
     """Every server this account runs here, each with two answers kept apart: is it up, and
     does it answer as itself. The address with its token only for one named server."""

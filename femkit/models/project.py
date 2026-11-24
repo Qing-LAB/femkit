@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import tomllib
+
 from pathlib import Path
 
 from femkit.core.operations import Context
-from femkit.core.schema import load_toml
+from femkit.core.schema import load_toml, validate
 from femkit.definitions import catalogue
 from femkit.models.schema import ModelFile, StudyFile
 
@@ -23,9 +25,18 @@ def studies(project: Path) -> list[str]:
     return sorted(p.parent.name for p in root.glob("*/study.toml")) if root.is_dir() else []
 
 
+#: A model or a study before anything is set: what the first edit writes into (models.md § 11.1).
+NEW_FILE = "schema = 1\n"
+
+
 def load_model(project: Path, ctx: Context) -> ModelFile:
-    """`model.toml`, its numbers read exactly; refused whole when it does not load (models.md § 11.2)."""
-    return load_toml(model_file(project), ModelFile, {"units": catalogue.units(ctx)}, exact=True)
+    """`model.toml`, its numbers read exactly; refused whole when it does not load (models.md § 11.2).
+    A folder with none holds the empty model, which `model check` and the graph read like any
+    other (web.md § 8.4)."""
+    path = model_file(project)
+    if not path.exists():
+        return validate(ModelFile, tomllib.loads(NEW_FILE), path, {"units": catalogue.units(ctx)})
+    return load_toml(path, ModelFile, {"units": catalogue.units(ctx)}, exact=True)
 
 
 def load_study(project: Path, study: str, ctx: Context, model: ModelFile) -> StudyFile:

@@ -8,15 +8,17 @@ from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.operations import stating
-from femkit.core import text
+from femkit.config.requests import CONFIG_INIT, InitRequest
+from femkit.core import text, view
 from femkit.core.errors import PlanStale, Refusal, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.schema import Model
 from femkit.jobs import probe, record
 from femkit.jobs.record import LOCAL, Record
+from femkit.jobs.requests import ProbeRequest, MachinesRequest
+from femkit.jobs.requests import JOB_MACHINES, JOB_PROBE
 
-ARGUMENT = {"cli": "argument"}
 
 
 def _lines(r: Record) -> list[str]:
@@ -67,21 +69,10 @@ def _lines(r: Record) -> list[str]:
 
 # ------------------------------------------------------------------ job probe
 
-class ProbeRequest(Model):
-    """What to measure, and where to write it."""
-
-    write: bool = Field(default=False, description="write the record (jobs.md § 9.2)")
-    name: str | None = Field(default=None, description="write machines/NAME.toml, the record another machine "
-                                                        "prepares this one by; without it, machines/local.toml")
-    set: list[str] = Field(default_factory=list, description="KEY=VALUE: declare where a scheduler command is, "
-                                                             "e.g. scheduler.commands.submit=PATH")
-    scheduler: str | None = Field(default=None, description="name the scheduler kind instead of detecting it")
-
-
 class ProbeOutcome(Outcome):
     record: dict = Field(default_factory=dict, description="the record, as measured")
     file: str | None = Field(default=None, description="the file written; none when not written")
-    write_command: str = Field(default="", description="the command that writes what was shown")
+    write: view.Action | None = Field(default=None, description="what writes the record shown")
 
     def text(self) -> str:
         r = record.Record.model_validate(self.record)
@@ -89,7 +80,7 @@ class ProbeOutcome(Outcome):
             if self.status == "done" else "writing the record failed"
         lines = [head] + ["  " + line for line in _lines(r)] + text.findings(self.issues)
         if not self.file and self.status == "done":
-            lines += text.next_block("to write it", [self.write_command])
+            lines += text.next_block("to write it", [self.write] if self.write else [])
         return "\n".join(lines)
 
 
@@ -99,7 +90,7 @@ def _name(req: ProbeRequest) -> str:
     return req.name or LOCAL
 
 
-@operation("job.probe", request=ProbeRequest, result=ProbeOutcome, changes=True,
+@operation(JOB_PROBE, result=ProbeOutcome, changes=True,
            subject=lambda req: [f"machine-{req.name or LOCAL}"])
 class JobProbe:
     """Measure this machine — scheduler, queues, node groups, environments — into its record; writes only with --write."""
@@ -110,12 +101,13 @@ class JobProbe:
         declared = probe.declarations(req.set)
         if req.write and (unset := settings.unstated(settings.load(ctx).config)):
             raise Refusal(f"{' and '.join(unset)} {'is' if len(unset) == 1 else 'are'} unset, and every job "
-                          "prepared for this record needs it (config.md § 3.1)", stating(("config", "init"), unset))
+                          "prepared for this record needs it (config.md § 3.1)", stating(CONFIG_INIT, unset))
         new = probe.measure(ctx, req.scheduler, declared)
         if req.write and isinstance(new.scheduler.commands.get("submit"), record.Unknown):
             raise Refusal(f"the {new.scheduler.kind} submit command was not found",
-                          (text.typed("job", "probe", "--write", "--scheduler", new.scheduler.kind,
-                                      "--set", "scheduler.commands.submit=PATH"),))
+                          (view.command(JOB_PROBE, write=True, scheduler=new.scheduler.kind,
+                                        fills=[view.Fill(field="set", label="scheduler.commands.submit",
+                                                                example="scheduler.commands.submit=PATH")]),))
         issues = [Issue(severity="info", code="note", subject=name, message=n) for n in new.notes]
         issues += [Issue(severity="info", code="not-measured", subject=where, message=f"{where}: {why}")
                    for where, why in record.unknowns(new)]
@@ -133,15 +125,14 @@ class JobProbe:
             else:
                 describe += " — a new record"
             steps = (Step(id="write", describe=describe),)
-        return Plan(operation="job.probe", request=req.model_dump(mode="json"),
-                    basis={"record": new.data(), "file": str(file), "existing_sha256": record.sha256(file)},
+        return Plan(basis={"record": new.data(), "file": str(file), "existing_sha256": record.sha256(file)},
                     steps=steps, issues=issues)
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ProbeOutcome:
         req = ProbeRequest.model_validate(plan.request)
         file = Path(plan.basis["file"])
         if record.sha256(file) != plan.basis["existing_sha256"]:
-            raise PlanStale(f"{file} changed since the plan", (_write_command(req),))
+            raise PlanStale(f"{file} changed since the plan", (_write(req),))
         new = Record.model_validate(plan.basis["record"])
 
         def do(step: Step, where):
@@ -151,26 +142,15 @@ class JobProbe:
         status, log = run_steps(plan, ctx, observer, do)
         return ProbeOutcome(plan=plan, status=status, log=str(log) if plan.steps else None,
                             record=plan.basis["record"], file=str(file) if plan.steps and status == "done" else None,
-                            write_command=_write_command(req), issues=plan.issues)
+                            write=_write(req), issues=plan.issues)
 
 
-def _write_command(req: ProbeRequest) -> str:
-    args = ["job", "probe", "--write"] + (["--name", req.name] if req.name else [])
-    for pair in req.set:
-        args += ["--set", pair]
-    if req.scheduler:
-        args += ["--scheduler", req.scheduler]
-    return text.typed(*args)
+def _write(req: ProbeRequest) -> view.Action:
+    """The probe that writes what ``req`` showed: the same request, writing."""
+    return view.command(JOB_PROBE, **{**req.model_dump(exclude_defaults=True), "write": True})
 
 
 # ------------------------------------------------------------------ job machines
-
-class MachinesRequest(Model):
-    """One record by name, or every record."""
-
-    name: str | None = Field(default=None, description="the record to show; without it, every record",
-                             json_schema_extra=ARGUMENT)
-
 
 class MachineRow(Model):
     name: str = Field(description="the record's name; `local` is this machine")
@@ -198,7 +178,7 @@ class MachinesResult(Result):
         return "\n".join(lines + text.findings(self.issues))
 
 
-@operation("job.machines", request=MachinesRequest, result=MachinesResult)
+@operation(JOB_MACHINES, result=MachinesResult)
 def job_machines(req: MachinesRequest, ctx: Context) -> MachinesResult:
     """Every machine record — or one, with the source of each fact; a record that does not load is listed and marked."""
     config = settings.load(ctx).config
@@ -207,7 +187,7 @@ def job_machines(req: MachinesRequest, ctx: Context) -> MachinesResult:
         found = [f for f in found if f[0] == req.name]
         if not found:
             raise UsageError(f"no machine record {req.name!r} in {record.machines_dir()}",
-                             (text.typed("job", "machines"),))
+                             (view.command(JOB_MACHINES),))
     rows, issues = [], []
     local = next((r for n, _, r, _ in found if n == LOCAL and r is not None), None)
     for name, file, r, problem in found:
@@ -220,7 +200,8 @@ def job_machines(req: MachinesRequest, ctx: Context) -> MachinesResult:
         drift = record.stale(r, config) if mine else []
         if drift:
             issues.append(Issue(severity="warning", code="stale", subject=name, message="; ".join(drift),
-                                next=(text.typed(*(["job", "probe", "--write"] + ([] if name == LOCAL else ["--name", name]))),)))
+                                next=(view.command(JOB_PROBE, write=True,
+                                                   **({} if name == LOCAL else {"name": name})),)))
         groups = sum(len(p.node_groups) for p in r.partitions.values()) if isinstance(r.partitions, dict) else 0
         queues = len(r.queues) if isinstance(r.queues, list) else 0
         rows.append(MachineRow(name=name, path=str(file), status="stale" if drift else "ok",

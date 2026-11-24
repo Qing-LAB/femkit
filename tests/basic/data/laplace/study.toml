@@ -1,0 +1,26 @@
+schema = 1
+display = ["m", "V", "V/m"]
+
+[numerics]
+element = { family = "lagrange", degree = 1 }
+geometry_order = 1
+mesh = { unit = "m", size = "0.05 m", regions = { left = "0.01 m" } }
+solver = { kind = "direct" }            # or { kind = "iterative", tolerance = "1e-10" }
+
+[axes."numerics.mesh.size"]             # keyed by the case path it varies
+class = "numerical convergence"         # | "geometry convergence" | "physical sweep"
+values = ["0.1 m", "0.05 m", "0.025 m"]
+
+[observables.midpoint]
+quantity = "potential"
+support = { point = [0.5, 0.5] }
+reduction = "value"
+unit = "V"
+
+[environments.elmer]
+mesher = "gmsh"
+resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G" }   # jobs.md § 2
+
+[environments.ngsolve]
+mesher = "netgen"
+resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G" }

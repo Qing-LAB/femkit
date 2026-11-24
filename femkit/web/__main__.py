@@ -1,4 +1,4 @@
-"""`python -m femkit.web`: the supervisor's child (api.md § 5.4). Started only by the
+"""`python -m femkit.web`: the supervisor's child (web.md § 4). Started only by the
 supervisor, never by a person: it serves on the socket the supervisor opened, reads its
 token from the token file, and ends when its supervisor does."""
 

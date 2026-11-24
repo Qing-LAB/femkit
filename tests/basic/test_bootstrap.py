@@ -84,7 +84,7 @@ def test_bootstrap_installs_every_default_environment_past_a_failure_then_record
     assert installs.done == [*DEFAULT, "record"]
     assert {r.part: r.status for r in outcome.rows}[DEFAULT[0]] == "failed" and not outcome.ok()
     assert {i.code for i in plan.issues if i.code != "ready"} <= {i.code for i in outcome.issues}
-    assert shlex.join(["source", "activate", str(dirs.control_prefix())]) in outcome.entry
+    assert shlex.join(["source", "activate", str(dirs.control_prefix())]) in [e.command for e in outcome.entry]
 
 
 def test_bootstrap_plans_each_install_against_the_configuration_it_will_write(manager, monkeypatch):
@@ -117,7 +117,7 @@ def test_bootstrap_warns_on_a_login_node_and_only_there(in_job, monkeypatch):
         monkeypatch.setenv(slurm.job_variables["id"], "1")  # set by hand: sbatch is on PATH, so a SLURM machine
     monkeypatch.setattr(setup, "EnvInstall", StandIns(failing=set()))
     plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), ctx())
-    warned = [i.next[0].split()[0] for i in plan.issues if i.code == "login-node"]
+    warned = [i.next[0].command for i in plan.issues if i.code == "login-node"]
     assert warned == ([] if in_job else [slurm.interactive])
 
 
@@ -125,9 +125,8 @@ def test_bootstrap_names_its_own_command_for_config_init_s_options():
     """Fails if bootstrap's plan sends the person to `config init` for a value bootstrap itself
     takes, such as where environments go (envs.md § 6.2)."""
     plan = setup.EnvBootstrap.plan(setup.EnvBootstrap.request.model_validate({**GIVEN, **STATED}), ctx())
-    boot, init = shlex.split(text.typed("env", "bootstrap")), shlex.split(text.typed("config", "init"))
-    named = [shlex.split(n, comments=True) for i in plan.issues for n in i.next]
-    assert any(argv[:len(boot)] == boot for argv in named) and not any(argv[:len(init)] == init for argv in named)
+    named = [n.call.operation for i in plan.issues for n in i.next if n.call]
+    assert "env.bootstrap" in named and "config.init" not in named
 
 
 def test_init_asks_for_what_nothing_reveals_and_never_writes_a_default():
@@ -151,15 +150,16 @@ def test_doctor_names_the_probe_while_this_machine_has_no_record_and_states_the_
     """Fails if doctor counts a machine ready that has no record of itself, or names a probe
     that would be refused: `job probe --write` needs the preamble and the activation command
     stated first (envs.md § 6.1)."""
-    probe = text.typed("job", "probe", "--write")
+    probe = "python -m femkit job probe --write"
     unset = _row("this machine's record")
-    assert not unset.ready and unset.next == [*_row("config.toml").next, probe]  # state both, then probe
+    assert not unset.ready and unset.next == [*_row("config.toml").next, unset.next[-1]]  # state both, then probe
+    assert unset.next[-1].command == probe
     c = ctx()
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.preamble", value="[]"), c), c)
-    assert _row("this machine's record").next[-2:] == ["python -m femkit config init --activation 'source activate'   "
-                                                       "# or 'conda activate', 'mamba activate'", probe]
+    assert [str(n) for n in _row("this machine's record").next[-2:]] == [
+        "python -m femkit config init --activation 'source activate'   # or 'conda activate', 'mamba activate'", probe]
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.command", value="source activate"), c), c)
-    assert _row("this machine's record").next == [probe]
+    assert [n.command for n in _row("this machine's record").next] == [probe]
 
 
 @pytest.mark.parametrize("breaks", ["config.toml does not load", "no package manager is named"])
@@ -200,7 +200,7 @@ def test_a_step_ended_by_sigkill_is_killed_and_names_the_interactive_allocation(
                        install_fingerprint="f", launcher=["mpirun", "-np", "{ranks}"])
     assert install.run_step(t, Step(id=step, describe="", argv=("x",)), tmp_path / "logs")[0] == install.KILLED
     issue = operations._killed(ctx(), "ngsolve", [step])  # sbatch is on PATH: a SLURM login node
-    assert issue.next[0].split()[0] == load_schedulers()["slurm"].interactive
+    assert issue.next[0].command == load_schedulers()["slurm"].interactive
 
 
 @pytest.mark.parametrize("log_line, expected", [
@@ -235,7 +235,8 @@ def test_a_step_killed_inside_an_allocation_is_not_sent_to_another(monkeypatch):
     from femkit.definitions.catalogue import load_schedulers
     from femkit.envs import operations
     monkeypatch.setenv(load_schedulers()["slurm"].job_variables["id"], "1")  # sbatch is on PATH: inside a SLURM job
-    assert operations._killed(ctx(), "ngsolve", ["compile:ngsolve"]).next == (text.typed("env", "install", "ngsolve"),)
+    assert [n.command for n in operations._killed(ctx(), "ngsolve", ["compile:ngsolve"]).next] == [
+        "python -m femkit env install ngsolve"]
 
 
 class NothingToInstall(StandIns):

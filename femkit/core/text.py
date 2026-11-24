@@ -7,27 +7,15 @@ command line adds the `[group verb]` tag.
 
 from __future__ import annotations
 
-import shlex
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+from femkit.core.commandline import word
 from femkit.core.issues import Issue
-from femkit.core.schema import PLACEHOLDER
+from femkit.core.view import Action
 
 PAD = "    "
-
-#: How a person runs femkit: in the activated control environment, from the
-#: repository folder (envs.md § 7). Every printed command starts with it.
-PROG = "python -m femkit"
 MARK = {"error": "x", "warning": "!", "info": "-"}
-
-
-def word(value: Any) -> str:
-    """One word of a command line, quoted for the shell only when it needs it; a
-    placeholder (`{ranks}`) is part of the template, written as it is typed."""
-    shown = str(value)
-    bare = PLACEHOLDER.sub(lambda m: "x" if m.group(1).isidentifier() and m.group(2) is None else m.group(0), shown)
-    return shown if shlex.quote(bare) == bare else shlex.quote(shown)
 
 
 def show(value: Any) -> str:
@@ -54,11 +42,6 @@ def count(n: int, noun: str) -> str:
     return f"{n} {noun}{'' if n == 1 else 's'}"
 
 
-def typed(*args: str) -> str:
-    """A femkit command as a person types it, quoted for the shell: `python -m femkit ARGS`."""
-    return f"{PROG} {shlex.join(args)}"
-
-
 def table(rows: Iterable[Sequence[str]], indent: str = "  ") -> list[str]:
     """Rows of cells, each column as wide as its widest cell; the last column is free."""
     rows = [list(map(str, r)) for r in rows]
@@ -72,20 +55,20 @@ def table(rows: Iterable[Sequence[str]], indent: str = "  ") -> list[str]:
     return out
 
 
-def commands(lines: Iterable[str]) -> list[str]:
-    """Commands a person can paste: one a line, indented, prose after `#`."""
-    return [PAD + line for line in lines]
+def commands(steps: Iterable[Action]) -> list[str]:
+    """Next steps as commands a person can paste: one a line, indented, a note after `#`."""
+    return [PAD + str(step) for step in steps]
 
 
-def next_block(sentence: str, lines: Sequence[str]) -> list[str]:
+def next_block(sentence: str, steps: Sequence[Action]) -> list[str]:
     """`next -- <sentence>:` and the commands under it; nothing when there are none."""
-    if not lines:
+    if not steps:
         return []
-    return [f"next -- {sentence}:"] + commands(lines)
+    return [f"next -- {sentence}:"] + commands(steps)
 
 
 def findings(issues: Iterable[Issue]) -> list[str]:
-    """Each finding on its line, indented and marked by severity, its commands under it."""
+    """Each finding on its line, indented and marked by severity, its next steps under it."""
     out = []
     for issue in issues:
         out.append(f"  {MARK[issue.severity]} {issue.message}")

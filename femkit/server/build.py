@@ -1,4 +1,4 @@
-"""`web build`: the web page's bundle, built with the Node.js of the `web` environment (api.md § 5.3).
+"""`web build`: the web page's bundle, built with the Node.js of the `web` environment (web.md § 3).
 
 npm runs inside that environment through the manager, in a work folder under femkit's
 cache, with its cache and configuration there too: nothing reaches the person's home or
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from femkit.core import dirs, text
+from femkit.core import dirs, text, view
 from femkit.core.errors import PlanStale, Refused
 from femkit.core.operations import Context, Outcome, Plan, Step, operation, run_steps
 from femkit.core.persist import atomic_write_text, write_json
@@ -23,7 +23,11 @@ from femkit.core.process import run
 from femkit.core.schema import Model
 from femkit.envs import layout
 from femkit.envs.manager import confined, resolve
+from femkit.envs.requests import InstallRequest
 from femkit.envs.state import EnvState, observe
+from femkit.server.requests import BuildRequest
+from femkit.envs.requests import ENV_INSTALL
+from femkit.server.requests import WEB_BUILD
 
 TOOL = "web"                       # the environment that builds and serves the page (definitions.md § 4.7)
 PROXIES = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy")
@@ -91,13 +95,6 @@ def licenses(work: Path) -> str:
     return "\n".join(parts) + "\n"
 
 
-class BuildRequest(Model):
-    """How to build the page."""
-
-    relock: bool = Field(False, description="solve frontend/package-lock.json again from package.json first, "
-                                            "and write it into the checkout")
-
-
 class BuildOutcome(Outcome):
     written: list[str] = Field(default_factory=list, description="what was written into the checkout")
 
@@ -108,7 +105,7 @@ class BuildOutcome(Outcome):
                           f"{text.path(static_dir())}"] + text.findings(self.issues))
 
 
-@operation("web.build", request=BuildRequest, result=BuildOutcome, changes=True, subject=lambda req: ["web-build"])
+@operation(WEB_BUILD, result=BuildOutcome, changes=True, subject=lambda req: ["web-build"])
 class WebBuild:
     """Build the web page's bundle from frontend/ with the web environment's Node.js, into
     femkit/web/static/ with its build.json and third-party licenses."""
@@ -117,7 +114,7 @@ class WebBuild:
         state = observe(ctx, TOOL)[1]
         if state is not EnvState.ready:
             raise Refused(f"the {TOOL} tool environment, which builds the page, is {state.value}",
-                          (text.typed("env", "install", TOOL),))
+                          (view.command(ENV_INSTALL, names=[TOOL]),))
         m, prefix, work = resolve(ctx), layout.prefix(ctx, TOOL), work_root() / "work"
         steps = [Step(id="copy", describe=f"copy the declared sources of frontend/ to {text.path(work)}")]
         if req.relock:
@@ -130,12 +127,11 @@ class WebBuild:
                        argv=tuple(m.in_prefix(prefix, ["npm", "run", "build"]))),
                   Step(id="ship", describe=f"write the bundle, build.json and its licenses into "
                                            f"{text.path(static_dir())}")]
-        return Plan(operation="web.build", request=req.model_dump(mode="json"),
-                    basis={"sources": sources_hash(source_dir())["sha256"]}, steps=tuple(steps))
+        return Plan(basis={"sources": sources_hash(source_dir())["sha256"]}, steps=tuple(steps))
 
     def apply(self, plan: Plan, ctx: Context, observer) -> BuildOutcome:
         if sources_hash(source_dir())["sha256"] != plan.basis["sources"]:
-            raise PlanStale("frontend/ changed since the plan; plan again", (text.typed("web", "build"),))
+            raise PlanStale("frontend/ changed since the plan; plan again", (view.command(WEB_BUILD),))
         m, work = resolve(ctx), work_root() / "work"
         env = npm_environment(m.environment)
         written: list[str] = []

@@ -1,0 +1,13 @@
+.drawer { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--surface); }
+.drawer--start { border-right: 1px solid var(--line); }
+.drawer--end { border-left: 1px solid var(--line); }
+.drawer__close { display: none; }
+@container workspace (max-width: 960px) {
+  .drawer { position: absolute; top: 0; bottom: 0; z-index: 30; width: var(--drawer-width); box-shadow: var(--shadow-lg);
+    transition: transform var(--motion); }
+  .drawer--start { left: 0; transform: translateX(-105%); }
+  .drawer--end { right: 0; transform: translateX(105%); }
+  .drawer--open { transform: none; }
+  .drawer__close { display: block; align-self: flex-end; margin: var(--space-2); border: none; background: none; color: var(--text-muted);
+    font-size: var(--text-xl); cursor: pointer; }
+}

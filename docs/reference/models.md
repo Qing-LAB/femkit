@@ -47,7 +47,7 @@ An axis-aligned rectangle (2-D).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `rectangle` | required |  |
+| `kind` | `rectangle` | required | what shape it is |
 | `corner` | list of integer or Decimal or text | required | its lower corner. A bare number in the frame's unit, or a length |
 | `size` | list of integer or Decimal or text | required | its width and height. A bare number in the frame's unit, or a length |
 
@@ -57,7 +57,7 @@ A disk (2-D).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `disk` | required |  |
+| `kind` | `disk` | required | what shape it is |
 | `center` | list of integer or Decimal or text | required | its center. A bare number in the frame's unit, or a length |
 | `radius` | integer or Decimal or text | required | its radius. A bare number in the frame's unit, or a length |
 
@@ -67,7 +67,7 @@ A polygon (2-D), its vertices in order.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `polygon` | required |  |
+| `kind` | `polygon` | required | what shape it is |
 | `points` | list of list of integer or Decimal or text | required | its vertices. A bare number in the frame's unit, or a length |
 
 ## Box
@@ -76,7 +76,7 @@ An axis-aligned box (3-D).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `box` | required |  |
+| `kind` | `box` | required | what shape it is |
 | `corner` | list of integer or Decimal or text | required | its lower corner. A bare number in the frame's unit, or a length |
 | `size` | list of integer or Decimal or text | required | its extent along each axis. A bare number in the frame's unit, or a length |
 
@@ -86,7 +86,7 @@ A sphere (3-D).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `sphere` | required |  |
+| `kind` | `sphere` | required | what shape it is |
 | `center` | list of integer or Decimal or text | required | its center. A bare number in the frame's unit, or a length |
 | `radius` | integer or Decimal or text | required | its radius. A bare number in the frame's unit, or a length |
 
@@ -96,7 +96,7 @@ A cylinder (3-D): the center of one end, its axis (length and direction), its ra
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `cylinder` | required |  |
+| `kind` | `cylinder` | required | what shape it is |
 | `base` | list of integer or Decimal or text | required | the center of one end. A bare number in the frame's unit, or a length |
 | `axis` | list of integer or Decimal or text | required | from that end to the other. A bare number in the frame's unit, or a length |
 | `radius` | integer or Decimal or text | required | its radius. A bare number in the frame's unit, or a length |
@@ -107,7 +107,7 @@ A planar polygon swept along a vector (3-D).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `extrusion` | required |  |
+| `kind` | `extrusion` | required | what shape it is |
 | `profile` | list of list of integer or Decimal or text | required | the polygon's vertices, in one plane. A bare number in the frame's unit, or a length |
 | `along` | list of integer or Decimal or text | required | the sweep. A bare number in the frame's unit, or a length |
 
@@ -117,7 +117,7 @@ The union, difference (the first less the others) or intersection of named shape
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `union` \| `difference` \| `intersection` | required |  |
+| `kind` | `union` \| `difference` \| `intersection` | required | what shape it is |
 | `of` | list of text | required | the shapes, by name. Refers by name to shape |
 
 ## Imported
@@ -126,7 +126,7 @@ A CAD file the person supplies, under `custom/`, with its SHA-256.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `import` | required |  |
+| `kind` | `import` | required | what shape it is |
 | `file` | text | required | its path under the project's `custom/` |
 | `sha256` | text | required | its SHA-256 |
 
@@ -136,13 +136,13 @@ A named domain, outer boundary or interface, selected by exactly one rule (model
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `domain` \| `boundary` \| `interface` | required |  |
-| `shapes` | list of text, optional | — | a domain: the named shapes. Refers by name to shape |
-| `plane` | [Plane](#plane), optional | — | a boundary: the outer faces on this plane |
-| `box` | [Window](#window), optional | — | a boundary: the outer faces inside this box |
-| `faces_of` | text, optional | — | a boundary: the outer faces of this shape. Refers by name to shape |
-| `rest` | `True`, optional | — | a boundary: the outer faces no other region selects |
-| `between` | list of text, optional | — | an interface: the two domains it lies between. Refers by name to region:domain |
+| `kind` | `domain` \| `boundary` \| `interface` | required | a domain, an outer boundary or an interface |
+| `shapes` | list of text, optional | — | the named shapes. Refers by name to shape |
+| `plane` | [Plane](#plane), optional | — | the outer faces on this plane |
+| `box` | [Window](#window), optional | — | the outer faces inside this box |
+| `faces_of` | text, optional | — | the outer faces of this shape. Refers by name to shape |
+| `rest` | `True`, optional | — | the outer faces no other region selects |
+| `between` | list of text, optional | — | the two domains it lies between. Refers by name to region:domain |
 
 ## Plane
 

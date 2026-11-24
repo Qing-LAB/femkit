@@ -14,6 +14,7 @@
 | `build` | [BuildChoices](#buildchoices) | see table | how builds are made |
 | `launch` | [Launch](#launch) | see table | how processes start |
 | `activation` | [Activation](#activation) | see table | how a job's shell gets ready |
+| `web` | [Web](#web) | see table | the web page's places |
 
 ## Paths
 
@@ -40,3 +41,9 @@
 |---|---|---|---|
 | `preamble` | list of text, optional | — | shell lines a run script runs on this machine before it enters an environment (module load lines, for instance); [] states that none are needed. When unset: `job probe --write` and `job prepare` are refused, naming this key |
 | `command` | `source activate` \| `conda activate` \| `mamba activate`, optional | — | how a shell on this machine enters an environment, after the preamble: `source activate`, the activate script on PATH (a cluster's module puts it there); or `conda activate` / `mamba activate`, the manager's shell function, its hook file sourced first. When unset: `job probe --write` and `job prepare` are refused, naming this key |
+
+## Web
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `projects` | path, optional | — | the folder whose projects the page lists, and where a new one is made (web.md § 8.6). When unset: the page lists no projects; a project is named by its folder |

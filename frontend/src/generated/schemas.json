@@ -1,0 +1,3500 @@
+{
+  "$defs": {
+    "Action": {
+      "additionalProperties": false,
+      "description": "Something a person may do: an operation with its request, or a shell line that is no\noperation \u2014 a shell's activation, a scheduler's interactive command.",
+      "properties": {
+        "call": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Call"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation it runs; none for a shell line"
+        },
+        "command": {
+          "description": "the command a person types, written once from the call or the shell line",
+          "type": "string"
+        },
+        "fills": {
+          "description": "each value still to fill, in the order asked",
+          "items": {
+            "$ref": "#/$defs/Fill"
+          },
+          "type": "array"
+        },
+        "help": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Help"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what it does"
+        },
+        "label": {
+          "description": "what a person reads on it",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a remark a command line writes after it"
+        }
+      },
+      "required": [
+        "label",
+        "command",
+        "note",
+        "call",
+        "fills",
+        "help"
+      ],
+      "title": "Action",
+      "type": "object"
+    },
+    "App": {
+      "additionalProperties": false,
+      "properties": {
+        "mark": {
+          "description": "its mark, a file the page ships",
+          "type": "string"
+        },
+        "name": {
+          "description": "what the page is called",
+          "type": "string"
+        },
+        "tagline": {
+          "description": "what femkit is, in one sentence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "tagline",
+        "mark"
+      ],
+      "title": "App",
+      "type": "object"
+    },
+    "Ask": {
+      "additionalProperties": false,
+      "description": "A question a surface asks the person on a terminal before consent (api.md \u00a7 3.1).",
+      "properties": {
+        "context": {
+          "default": [],
+          "description": "what the person should see beside it",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "key": {
+          "description": "the request field the answer fills",
+          "type": "string"
+        },
+        "question": {
+          "description": "the question, one line",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "question",
+        "context"
+      ],
+      "title": "Ask",
+      "type": "object"
+    },
+    "BootstrapOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "doctor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DoctorResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "doctor, run last"
+        },
+        "entry": {
+          "description": "the lines that enter femkit day to day here",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "rows": {
+          "description": "each part, in order",
+          "items": {
+            "$ref": "#/$defs/BootstrapRow"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "rows",
+        "doctor",
+        "entry"
+      ],
+      "title": "BootstrapOutcome",
+      "type": "object"
+    },
+    "BootstrapRow": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": "",
+          "description": "its state afterwards, its file, or why it did not finish",
+          "type": "string"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its operation directory"
+        },
+        "part": {
+          "description": "config.toml, an environment, or this machine's record",
+          "type": "string"
+        },
+        "status": {
+          "description": "done, failed, killed, refused, or left alone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "part",
+        "status",
+        "detail",
+        "log"
+      ],
+      "title": "BootstrapRow",
+      "type": "object"
+    },
+    "BuildOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "written": {
+          "description": "what was written into the checkout",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "written"
+      ],
+      "title": "BuildOutcome",
+      "type": "object"
+    },
+    "Call": {
+      "additionalProperties": false,
+      "description": "An operation and its request \u2014 the values a fill leaves out are asked for.",
+      "properties": {
+        "operation": {
+          "description": "the operation's name, `model.set`",
+          "type": "string"
+        },
+        "request": {
+          "additionalProperties": true,
+          "description": "the request's values, as JSON",
+          "type": "object"
+        }
+      },
+      "required": [
+        "operation",
+        "request"
+      ],
+      "title": "Call",
+      "type": "object"
+    },
+    "CaseListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/CaseRow"
+          },
+          "type": "array"
+        },
+        "expand": {
+          "description": "what writes each study's cases",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "cases",
+        "expand"
+      ],
+      "title": "CaseListResult",
+      "type": "object"
+    },
+    "CaseRow": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the case's ID",
+          "type": "string"
+        },
+        "point": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "its axis values, as a study writes them",
+          "type": "object"
+        },
+        "studies": {
+          "description": "the studies that produce it",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "studies",
+        "point"
+      ],
+      "title": "CaseRow",
+      "type": "object"
+    },
+    "CheckOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the check's ID",
+          "type": "string"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its log file"
+        },
+        "outcome": {
+          "description": "whether it met everything it expects",
+          "enum": [
+            "passed",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "quantities": {
+          "additionalProperties": true,
+          "description": "what its reader produced",
+          "type": "object"
+        },
+        "reason": {
+          "default": "",
+          "description": "why it did not pass",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "outcome",
+        "quantities",
+        "reason",
+        "log"
+      ],
+      "title": "CheckOutcome",
+      "type": "object"
+    },
+    "CheckResult": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "the project checked",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "project"
+      ],
+      "title": "CheckResult",
+      "type": "object"
+    },
+    "CleanOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "name": {
+          "default": "",
+          "description": "the environment",
+          "type": "string"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "name"
+      ],
+      "title": "CleanOutcome",
+      "type": "object"
+    },
+    "Column": {
+      "additionalProperties": false,
+      "properties": {
+        "help": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Help"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what it holds"
+        },
+        "key": {
+          "description": "the rows' key it shows",
+          "type": "string"
+        },
+        "label": {
+          "description": "its heading",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "help"
+      ],
+      "title": "Column",
+      "type": "object"
+    },
+    "ContextPart": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "description": "the read-only operation that lists its choices",
+          "type": "string"
+        },
+        "depends": {
+          "description": "what must be chosen first",
+          "items": {
+            "enum": [
+              "project",
+              "study",
+              "environment"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "help": {
+          "description": "what it is",
+          "type": "string"
+        },
+        "key": {
+          "enum": [
+            "project",
+            "study",
+            "environment"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "description": "what a person reads beside it",
+          "type": "string"
+        },
+        "label_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "each row's key a person reads; none: the value"
+        },
+        "rows": {
+          "description": "the field of that operation's result holding the choices",
+          "type": "string"
+        },
+        "value_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "each row's key holding the choice; none: the row is it"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "help",
+        "choices",
+        "rows",
+        "value_key",
+        "label_key",
+        "depends"
+      ],
+      "title": "ContextPart",
+      "type": "object"
+    },
+    "CopyOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "written": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the new study.toml"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "written"
+      ],
+      "title": "CopyOutcome",
+      "type": "object"
+    },
+    "DefectAnswer": {
+      "additionalProperties": false,
+      "description": "An error femkit did not expect: its kind and the operation's log, never a stack trace.",
+      "properties": {
+        "defect": {
+          "description": "the kind of error",
+          "type": "string"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation's log, where one was written"
+        },
+        "message": {
+          "default": "an error femkit did not expect; the server's log has the detail",
+          "description": "what a person reads",
+          "type": "string"
+        }
+      },
+      "required": [
+        "defect",
+        "message",
+        "log"
+      ],
+      "title": "DefectAnswer",
+      "type": "object"
+    },
+    "DirectoryRow": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "description": "every file under the config directory; the top-level entries of the others",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "config, data, cache or state",
+          "type": "string"
+        },
+        "path": {
+          "description": "the directory",
+          "type": "string"
+        },
+        "rule": {
+          "description": "what chose it: a FEMKIT_* variable, an XDG variable, or the default",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "rule",
+        "entries"
+      ],
+      "title": "DirectoryRow",
+      "type": "object"
+    },
+    "DocRef": {
+      "additionalProperties": false,
+      "description": "Where something is defined: a document of the repository, a section of it, and that\nsection's link anchor.",
+      "properties": {
+        "anchor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the section's heading's link anchor, read from the document; none when it has no such heading"
+        },
+        "document": {
+          "description": "the document's path from the repository's root, `docs/contracts/models.md`",
+          "type": "string"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its section as the reference writes it, `11.1`; none for the whole document"
+        }
+      },
+      "required": [
+        "document",
+        "section",
+        "anchor"
+      ],
+      "title": "DocRef",
+      "type": "object"
+    },
+    "DocsOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "written": {
+          "description": "pages written",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "written"
+      ],
+      "title": "DocsOutcome",
+      "type": "object"
+    },
+    "DoctorResult": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "rows": {
+          "description": "every subject of envs.md \u00a7 6.1",
+          "items": {
+            "$ref": "#/$defs/DoctorRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "rows"
+      ],
+      "title": "DoctorResult",
+      "type": "object"
+    },
+    "DoctorRow": {
+      "additionalProperties": false,
+      "properties": {
+        "next": {
+          "description": "what makes it ready",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "ready": {
+          "description": "whether it is ready",
+          "type": "boolean"
+        },
+        "state": {
+          "description": "its state",
+          "type": "string"
+        },
+        "subject": {
+          "description": "what is checked",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject",
+        "state",
+        "ready",
+        "next"
+      ],
+      "title": "DoctorRow",
+      "type": "object"
+    },
+    "Document": {
+      "additionalProperties": false,
+      "properties": {
+        "headings": {
+          "items": {
+            "$ref": "#/$defs/Heading"
+          },
+          "type": "array"
+        },
+        "path": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "text",
+        "headings"
+      ],
+      "title": "Document",
+      "type": "object"
+    },
+    "Documents": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "description": "every document the viewer shows",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "title": "Documents",
+      "type": "object"
+    },
+    "EditOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "written": {
+          "description": "the files the edit changed",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "written"
+      ],
+      "title": "EditOutcome",
+      "type": "object"
+    },
+    "Ended": {
+      "additionalProperties": false,
+      "description": "The last line of an apply's answer, or the answer of an apply that ended before starting.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok",
+        "outcome"
+      ],
+      "title": "Ended",
+      "type": "object"
+    },
+    "Entry": {
+      "additionalProperties": false,
+      "description": "One thing that may be added: of which object type and type, what it is, and the action\nthat adds it.",
+      "properties": {
+        "add": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the action that adds it: its name to fill, its text starting as its template; none until what it needs is chosen"
+        },
+        "help": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Help"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what it is"
+        },
+        "kind": {
+          "description": "the object type it adds",
+          "doc": "models.md \u00a7 11.2",
+          "type": "string"
+        },
+        "needs": {
+          "anyOf": [
+            {
+              "const": "study",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the context that must be chosen first"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its type within that: `boundary`, `potential`; none for an object type with no types"
+        }
+      },
+      "required": [
+        "kind",
+        "type",
+        "help",
+        "add",
+        "needs"
+      ],
+      "title": "Entry",
+      "type": "object"
+    },
+    "EnvResult": {
+      "additionalProperties": false,
+      "properties": {
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its install's operation directory"
+        },
+        "name": {
+          "description": "the environment",
+          "type": "string"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnvState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its state afterwards; none when not reached"
+        },
+        "status": {
+          "description": "done, failed, nothing to do, or not reached",
+          "type": "string"
+        },
+        "validation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its validate's operation directory, when one ran"
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "state",
+        "log",
+        "validation"
+      ],
+      "title": "EnvResult",
+      "type": "object"
+    },
+    "EnvRow": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "description": "part of `env install --all`",
+          "type": "boolean"
+        },
+        "description": {
+          "description": "what it holds",
+          "type": "string"
+        },
+        "gpu": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "GPU qualification; absent unless ready or failing"
+        },
+        "name": {
+          "description": "the environment",
+          "type": "string"
+        },
+        "prefix": {
+          "description": "where it lives",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/EnvState",
+          "description": "its observed state",
+          "doc": "envs.md \u00a7 3.2"
+        }
+      },
+      "required": [
+        "name",
+        "state",
+        "gpu",
+        "description",
+        "default",
+        "prefix"
+      ],
+      "title": "EnvRow",
+      "type": "object"
+    },
+    "EnvState": {
+      "enum": [
+        "busy",
+        "absent",
+        "incomplete",
+        "outdated",
+        "unchecked",
+        "failing",
+        "ready"
+      ],
+      "title": "EnvState",
+      "type": "string"
+    },
+    "ExpandOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "added": {
+          "description": "cases written",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "kept": {
+          "description": "cases already there",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "orphaned": {
+          "description": "preparations of cases the study no longer produces",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "added",
+        "kept",
+        "orphaned"
+      ],
+      "title": "ExpandOutcome",
+      "type": "object"
+    },
+    "Field": {
+      "additionalProperties": false,
+      "description": "One value as a person sees it, and the action that writes it.",
+      "properties": {
+        "help": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Help"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its sentence"
+        },
+        "json_schema": {
+          "additionalProperties": true,
+          "description": "the JSON schema fragment of what it may hold",
+          "type": "object"
+        },
+        "label": {
+          "description": "what it is called",
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "description": "whether what holds it must state it",
+          "type": "boolean"
+        },
+        "set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the action that writes it; its value is the fill"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its value as its file writes it, in TOML; none when unset"
+        }
+      },
+      "required": [
+        "label",
+        "required",
+        "value",
+        "json_schema",
+        "help",
+        "set"
+      ],
+      "title": "Field",
+      "type": "object"
+    },
+    "Fill": {
+      "additionalProperties": false,
+      "description": "A value an action still needs, asked of the person before it runs: a request field's\nwhole value, or a hole in its text \u2014 the `<name>` of `model:regions.<name>`.",
+      "properties": {
+        "accepts": {
+          "description": "the node kinds whose names may fill it, as `kind` or `kind:type`",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "example": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a value that would do, as a command line writes it"
+        },
+        "field": {
+          "description": "the request field it fills",
+          "type": "string"
+        },
+        "help": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Help"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its sentence"
+        },
+        "hole": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the text in the field's value it replaces; none: the whole value"
+        },
+        "json_schema": {
+          "additionalProperties": true,
+          "description": "the JSON schema fragment of what it may hold",
+          "type": "object"
+        },
+        "label": {
+          "description": "what the value is",
+          "type": "string"
+        },
+        "template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for an object's text, the text it starts from: its template, every key it may hold written or commented"
+        },
+        "toml": {
+          "anyOf": [
+            {
+              "const": "whole",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the request takes the value as its TOML text, which the surface writes from what the person gives"
+        }
+      },
+      "required": [
+        "field",
+        "hole",
+        "toml",
+        "label",
+        "help",
+        "json_schema",
+        "accepts",
+        "example",
+        "template"
+      ],
+      "title": "Fill",
+      "type": "object"
+    },
+    "GraphEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "description": "where the reference is written",
+          "type": "string"
+        },
+        "cut": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what cuts it; none for a name used in a text"
+        },
+        "held": {
+          "description": "how: a table's key or a value \u2014 `model unset` of the address cuts it; a list's item \u2014 the list set without it; a name used inside a value's text, cut only by editing that value",
+          "enum": [
+            "key",
+            "value",
+            "item",
+            "text"
+          ],
+          "type": "string"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the source node's port it leaves by; none: from the node itself \u2014 a key naming it, a name in a text"
+        },
+        "source": {
+          "description": "the node that refers",
+          "type": "string"
+        },
+        "target": {
+          "description": "the node referred to",
+          "type": "string"
+        },
+        "type": {
+          "description": "the reference's type: shape, region:boundary, material, parameter, \u2026",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "port",
+        "type",
+        "address",
+        "held",
+        "cut"
+      ],
+      "title": "GraphEdge",
+      "type": "object"
+    },
+    "GraphNode": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "description": "the object's address",
+          "doc": "models.md \u00a7 11.1",
+          "type": "string"
+        },
+        "findings": {
+          "description": "`model check`'s findings that name it",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "help": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Help"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what it is"
+        },
+        "keys": {
+          "description": "every key it may hold, the help beside its text; required first",
+          "items": {
+            "$ref": "#/$defs/Field"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "description": "its object type, from the table of object types",
+          "doc": "models.md \u00a7 11.2",
+          "type": "string"
+        },
+        "label": {
+          "description": "its name, as a person reads it",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the name another object refers to it by"
+        },
+        "ports": {
+          "description": "its fields that name another object",
+          "items": {
+            "$ref": "#/$defs/GraphPort"
+          },
+          "type": "array"
+        },
+        "rank": {
+          "description": "its place in the chain's order: what it is made from comes first",
+          "doc": "models.md \u00a7 11.2",
+          "type": "integer"
+        },
+        "remove": {
+          "$ref": "#/$defs/Action",
+          "description": "what removes it"
+        },
+        "rename": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what renames it, the new name to fill; none: its key is no name (a condition is its region's)"
+        },
+        "text": {
+          "description": "its text as its file holds it, comments kept: its table as a TOML document of its own, or a value's inline text",
+          "doc": "web.md \u00a7 8.3",
+          "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its type within that: a region's, a condition's"
+        },
+        "write": {
+          "$ref": "#/$defs/Action",
+          "description": "what writes its text, the text to fill"
+        }
+      },
+      "required": [
+        "address",
+        "kind",
+        "type",
+        "label",
+        "name",
+        "rank",
+        "help",
+        "text",
+        "keys",
+        "ports",
+        "findings",
+        "write",
+        "remove",
+        "rename"
+      ],
+      "title": "GraphNode",
+      "type": "object"
+    },
+    "GraphPort": {
+      "additionalProperties": false,
+      "properties": {
+        "accepts": {
+          "description": "the node kinds it takes, as `kind` or `kind:type`: `material`, `region:boundary`; a port accepts only these (models.md \u00a7 11.2)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "address": {
+          "description": "where a wire drawn from it is written, by `model set`",
+          "type": "string"
+        },
+        "connect": {
+          "$ref": "#/$defs/Action",
+          "description": "what a wire drawn from it does: the name it takes to fill"
+        },
+        "help": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Help"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its sentence, from the schema"
+        },
+        "many": {
+          "description": "a list: a wire adds a name to it; else a wire sets it",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "the field that names another object, from the node",
+          "type": "string"
+        },
+        "names": {
+          "description": "the names it holds now",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "address",
+        "accepts",
+        "many",
+        "names",
+        "help",
+        "connect"
+      ],
+      "title": "GraphPort",
+      "type": "object"
+    },
+    "GraphResult": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "description": "the model's fields that take one of a list",
+          "items": {
+            "$ref": "#/$defs/Field"
+          },
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/GraphEdge"
+          },
+          "type": "array"
+        },
+        "formulation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the model's formulation"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "mermaid": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the graph as Mermaid text, when asked"
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Issue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the model's next step: the first finding, in the chain's order"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/GraphNode"
+          },
+          "type": "array"
+        },
+        "palette": {
+          "description": "what may be added, in the chain's order",
+          "items": {
+            "$ref": "#/$defs/Entry"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "the project",
+          "type": "string"
+        },
+        "redo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what makes the last undone edit again"
+        },
+        "studies": {
+          "description": "the project's studies",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "study": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the study shown"
+        },
+        "undo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what takes back the last edit"
+        }
+      },
+      "required": [
+        "issues",
+        "project",
+        "study",
+        "formulation",
+        "choices",
+        "studies",
+        "nodes",
+        "edges",
+        "palette",
+        "next",
+        "undo",
+        "redo",
+        "mermaid"
+      ],
+      "title": "GraphResult",
+      "type": "object"
+    },
+    "Heading": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor": {
+          "description": "its link anchor, by GitHub's rule",
+          "type": "string"
+        },
+        "level": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "level",
+        "text",
+        "anchor"
+      ],
+      "title": "Heading",
+      "type": "object"
+    },
+    "Help": {
+      "additionalProperties": false,
+      "description": "What a person reads beside something they may not understand.",
+      "properties": {
+        "doc": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DocRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "where it is defined"
+        },
+        "sentence": {
+          "description": "one plain sentence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sentence",
+        "doc"
+      ],
+      "title": "Help",
+      "type": "object"
+    },
+    "Image": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "description": "its bytes, in base64",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "type": {
+          "description": "its media type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "type",
+        "data"
+      ],
+      "title": "Image",
+      "type": "object"
+    },
+    "InitOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "default": "",
+          "description": "the file written",
+          "type": "string"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "rows": {
+          "description": "every key, in the model's order",
+          "items": {
+            "$ref": "#/$defs/InitRow"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "file",
+        "rows"
+      ],
+      "title": "InitOutcome",
+      "type": "object"
+    },
+    "InitRow": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "the dotted key",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "description": "for an unset key, what its absence means",
+          "type": "string"
+        },
+        "status": {
+          "description": "added, kept or unset",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "description": "the value added or kept"
+        }
+      },
+      "required": [
+        "key",
+        "status",
+        "value",
+        "note"
+      ],
+      "title": "InitRow",
+      "type": "object"
+    },
+    "InstallOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "environments": {
+          "description": "each environment, in order",
+          "items": {
+            "$ref": "#/$defs/EnvResult"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "environments"
+      ],
+      "title": "InstallOutcome",
+      "type": "object"
+    },
+    "Issue": {
+      "additionalProperties": false,
+      "description": "One finding: what it is about, what is wrong, and what a person may do next.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "message": {
+          "type": "string"
+        },
+        "next": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ],
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "code",
+        "subject",
+        "label",
+        "message",
+        "next"
+      ],
+      "title": "Issue",
+      "type": "object"
+    },
+    "Lines": {
+      "additionalProperties": false,
+      "properties": {
+        "lines": {
+          "description": "a step's log's last lines",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "lines"
+      ],
+      "title": "Lines",
+      "type": "object"
+    },
+    "ListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "rows": {
+          "description": "every engine environment",
+          "items": {
+            "$ref": "#/$defs/EnvRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "rows"
+      ],
+      "title": "ListResult",
+      "type": "object"
+    },
+    "LogResult": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the last operation's directory; none if never run"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "done, failed, or none when it did not end"
+        },
+        "steps": {
+          "description": "its steps, in order",
+          "items": {
+            "$ref": "#/$defs/StepRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "operation",
+        "outcome",
+        "steps"
+      ],
+      "title": "LogResult",
+      "type": "object"
+    },
+    "MachineRow": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": "",
+          "description": "when and where it was measured, or why it does not load",
+          "type": "string"
+        },
+        "name": {
+          "description": "the record's name; `local` is this machine",
+          "type": "string"
+        },
+        "path": {
+          "description": "its file",
+          "type": "string"
+        },
+        "status": {
+          "description": "ok, stale, or does not load",
+          "type": "string"
+        },
+        "summary": {
+          "default": "",
+          "description": "scheduler, node groups and queues",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "status",
+        "detail",
+        "summary"
+      ],
+      "title": "MachineRow",
+      "type": "object"
+    },
+    "MachinesResult": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "record": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the one record asked for"
+        },
+        "rows": {
+          "description": "every record listed",
+          "items": {
+            "$ref": "#/$defs/MachineRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "rows",
+        "record"
+      ],
+      "title": "MachinesResult",
+      "type": "object"
+    },
+    "NewProjectOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the new project's folder"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "path"
+      ],
+      "title": "NewProjectOutcome",
+      "type": "object"
+    },
+    "OperationInfo": {
+      "additionalProperties": false,
+      "description": "One operation as `GET /api/operations` lists it.",
+      "properties": {
+        "changes": {
+          "description": "whether it is planned and applied",
+          "type": "boolean"
+        },
+        "confirm": {
+          "description": "whether a surface shows its plan and asks first",
+          "type": "boolean"
+        },
+        "description": {
+          "description": "its help",
+          "type": "string"
+        },
+        "name": {
+          "description": "`group.verb`",
+          "type": "string"
+        },
+        "request": {
+          "additionalProperties": true,
+          "description": "its request's JSON schema",
+          "type": "object"
+        },
+        "result": {
+          "additionalProperties": true,
+          "description": "its result's JSON schema",
+          "type": "object"
+        },
+        "undoable": {
+          "description": "whether `model undo` takes it back",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "changes",
+        "confirm",
+        "undoable",
+        "request",
+        "result"
+      ],
+      "title": "OperationInfo",
+      "type": "object"
+    },
+    "Outcome": {
+      "additionalProperties": false,
+      "description": "The result of ``apply``.",
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log"
+      ],
+      "title": "Outcome",
+      "type": "object"
+    },
+    "Page": {
+      "additionalProperties": false,
+      "description": "`femkit/data/web/page.toml`.",
+      "properties": {
+        "app": {
+          "$ref": "#/$defs/App"
+        },
+        "context": {
+          "items": {
+            "$ref": "#/$defs/ContextPart"
+          },
+          "type": "array"
+        },
+        "kinds": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "each object type's icon (models.md \u00a7 11.2)",
+          "type": "object"
+        },
+        "schema": {
+          "const": 1,
+          "description": "this file's shape; raised when it changes",
+          "type": "integer"
+        },
+        "shortcuts": {
+          "items": {
+            "$ref": "#/$defs/Shortcut"
+          },
+          "type": "array"
+        },
+        "workspaces": {
+          "items": {
+            "$ref": "#/$defs/Workspace"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema",
+        "app",
+        "workspaces",
+        "context",
+        "kinds",
+        "shortcuts"
+      ],
+      "title": "Page",
+      "type": "object"
+    },
+    "PathResult": {
+      "additionalProperties": false,
+      "properties": {
+        "directories": {
+          "description": "the four directories, in the order config, data, cache, state",
+          "items": {
+            "$ref": "#/$defs/DirectoryRow"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "directories"
+      ],
+      "title": "PathResult",
+      "type": "object"
+    },
+    "Plan": {
+      "additionalProperties": false,
+      "properties": {
+        "asks": {
+          "default": [],
+          "description": "request fields to ask for on a terminal; unanswered, the plan stands as it is",
+          "items": {
+            "$ref": "#/$defs/Ask"
+          },
+          "type": "array"
+        },
+        "basis": {
+          "additionalProperties": true,
+          "description": "the observed facts the plan was made from",
+          "type": "object"
+        },
+        "issues": {
+          "description": "findings a person should know before consenting",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "operation": {
+          "default": "",
+          "description": "the operation's name; `Operation.plan` writes it",
+          "type": "string"
+        },
+        "request": {
+          "additionalProperties": true,
+          "description": "the request, as JSON; `Operation.plan` writes it",
+          "type": "object"
+        },
+        "shared": {
+          "default": [],
+          "description": "those it holds shared: what it uses and does not change (core.md \u00a7 5)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "steps": {
+          "default": [],
+          "description": "every step, in order; empty: nothing to do",
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "type": "array"
+        },
+        "subjects": {
+          "default": [],
+          "description": "the lock subjects apply holds alone: what it changes",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "operation",
+        "request",
+        "subjects",
+        "shared",
+        "basis",
+        "steps",
+        "issues",
+        "asks"
+      ],
+      "title": "Plan",
+      "type": "object"
+    },
+    "PlanAnswer": {
+      "additionalProperties": false,
+      "description": "A changing operation's plan, and the digest its apply must carry.",
+      "properties": {
+        "digest": {
+          "type": "string"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan"
+        },
+        "text": {
+          "description": "the plan as a person reads it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan",
+        "digest",
+        "text"
+      ],
+      "title": "PlanAnswer",
+      "type": "object"
+    },
+    "PlanResult": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the steps `install` would run now, with their commands"
+        }
+      },
+      "required": [
+        "issues",
+        "plan"
+      ],
+      "title": "PlanResult",
+      "type": "object"
+    },
+    "ProbeOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the file written; none when not written"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "record": {
+          "additionalProperties": true,
+          "description": "the record, as measured",
+          "type": "object"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "write": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what writes the record shown"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "record",
+        "file",
+        "write"
+      ],
+      "title": "ProbeOutcome",
+      "type": "object"
+    },
+    "ProjectList": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/ProjectRow"
+          },
+          "type": "array"
+        },
+        "root": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the projects folder, web.projects; none while it is unset"
+        }
+      },
+      "required": [
+        "issues",
+        "root",
+        "projects"
+      ],
+      "title": "ProjectList",
+      "type": "object"
+    },
+    "ProjectRow": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "its folder's name",
+          "type": "string"
+        },
+        "path": {
+          "description": "its folder",
+          "type": "string"
+        },
+        "studies": {
+          "description": "its studies",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "studies"
+      ],
+      "title": "ProjectRow",
+      "type": "object"
+    },
+    "Proof": {
+      "additionalProperties": false,
+      "properties": {
+        "proof": {
+          "description": "the server's token's HMAC of the nonce given",
+          "type": "string"
+        }
+      },
+      "required": [
+        "proof"
+      ],
+      "title": "Proof",
+      "type": "object"
+    },
+    "RefusalAnswer": {
+      "additionalProperties": false,
+      "description": "A refusal, as `--json` prints it and a route answers it: its kind, why, and what a person\nmay do instead.",
+      "properties": {
+        "message": {
+          "description": "why",
+          "type": "string"
+        },
+        "next": {
+          "description": "what a person may do instead",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "refused": {
+          "description": "the kind of refusal, `Refused`, `PlanStale`, \u2026",
+          "type": "string"
+        }
+      },
+      "required": [
+        "refused",
+        "message",
+        "next"
+      ],
+      "title": "RefusalAnswer",
+      "type": "object"
+    },
+    "Result": {
+      "additionalProperties": false,
+      "description": "Every operation's result (api.md \u00a7 2.3).",
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues"
+      ],
+      "title": "Result",
+      "type": "object"
+    },
+    "RunAnswer": {
+      "additionalProperties": false,
+      "description": "A read-only operation's answer.",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "result": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "required": [
+        "ok",
+        "result"
+      ],
+      "title": "RunAnswer",
+      "type": "object"
+    },
+    "SchemaCheckResult": {
+      "additionalProperties": false,
+      "properties": {
+        "environments": {
+          "description": "engine environments that loaded",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "formulations": {
+          "description": "formulations that loaded",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "managers": {
+          "description": "manager kinds that loaded",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "meshers": {
+          "description": "meshers that loaded",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "schedulers": {
+          "description": "scheduler kinds that loaded",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "units": {
+          "default": 0,
+          "description": "unit symbols the unit table reads, prefixed ones included",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "issues",
+        "environments",
+        "managers",
+        "schedulers",
+        "units",
+        "formulations",
+        "meshers"
+      ],
+      "title": "SchemaCheckResult",
+      "type": "object"
+    },
+    "ServeOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the address to open, with its token"
+        },
+        "forwarding": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a socket: the line to run on your own machine"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "listen": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "where it listens"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "server_log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the server's log"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "listen",
+        "address",
+        "forwarding",
+        "server_log"
+      ],
+      "title": "ServeOutcome",
+      "type": "object"
+    },
+    "ServerRow": {
+      "additionalProperties": false,
+      "properties": {
+        "answers": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "whether it answers as itself; unknown unless running"
+        },
+        "child": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the child's process ID"
+        },
+        "foreground": {
+          "default": false,
+          "description": "run by `serve foreground` in a terminal",
+          "type": "boolean"
+        },
+        "host": {
+          "description": "the host its pidfile was written on",
+          "type": "string"
+        },
+        "listen": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "where it listens"
+        },
+        "log": {
+          "description": "the server's log",
+          "type": "string"
+        },
+        "name": {
+          "description": "the port, or `sock`",
+          "type": "string"
+        },
+        "said": {
+          "default": "",
+          "description": "what the health route said",
+          "type": "string"
+        },
+        "state": {
+          "description": "stopped | stale | running | starting | elsewhere",
+          "doc": "web.md \u00a7 4",
+          "type": "string"
+        },
+        "supervisor": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the supervisor's process ID"
+        }
+      },
+      "required": [
+        "name",
+        "host",
+        "state",
+        "listen",
+        "supervisor",
+        "child",
+        "foreground",
+        "answers",
+        "said",
+        "log"
+      ],
+      "title": "ServerRow",
+      "type": "object"
+    },
+    "SetOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "default": "",
+          "description": "the file written",
+          "type": "string"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "file"
+      ],
+      "title": "SetOutcome",
+      "type": "object"
+    },
+    "Shortcut": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "description": "the page's command it runs",
+          "enum": [
+            "undo",
+            "redo",
+            "remove",
+            "commit",
+            "cancel"
+          ],
+          "type": "string"
+        },
+        "help": {
+          "description": "what it does",
+          "type": "string"
+        },
+        "key": {
+          "description": "the key, `Mod` the platform's command key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "command",
+        "help"
+      ],
+      "title": "Shortcut",
+      "type": "object"
+    },
+    "ShowResult": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "the file that answered; none when absent"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "rows": {
+          "description": "every key, in the model's order",
+          "items": {
+            "$ref": "#/$defs/ShowRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "file",
+        "rows"
+      ],
+      "title": "ShowResult",
+      "type": "object"
+    },
+    "ShowRow": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "description": "the dotted key",
+          "type": "string"
+        },
+        "source": {
+          "description": "`config.toml`, or `unset`",
+          "type": "string"
+        },
+        "unset": {
+          "description": "what the key's absence means",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "description": "its value; none when unset"
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "source",
+        "unset"
+      ],
+      "title": "ShowRow",
+      "type": "object"
+    },
+    "Started": {
+      "additionalProperties": false,
+      "description": "A line of an apply's answer: a run started, at this operation directory.",
+      "properties": {
+        "operation": {
+          "description": "`<subject>/<time>`: what the events and tail routes take",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "title": "Started",
+      "type": "object"
+    },
+    "StatusResult": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for one named, running server: the address with its token"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "servers": {
+          "items": {
+            "$ref": "#/$defs/ServerRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "servers",
+        "address"
+      ],
+      "title": "StatusResult",
+      "type": "object"
+    },
+    "Step": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the command it will run, when it runs one"
+        },
+        "describe": {
+          "description": "one line for a person",
+          "type": "string"
+        },
+        "id": {
+          "description": "stable within the plan; what the event log records",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "describe",
+        "argv"
+      ],
+      "title": "Step",
+      "type": "object"
+    },
+    "StepRow": {
+      "additionalProperties": false,
+      "properties": {
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its log file"
+        },
+        "outcome": {
+          "description": "done, failed, killed, or running when it never ended",
+          "type": "string"
+        },
+        "step": {
+          "description": "the step's ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "outcome",
+        "log"
+      ],
+      "title": "StepRow",
+      "type": "object"
+    },
+    "StudyList": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "studies": {
+          "description": "the project's studies",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "studies"
+      ],
+      "title": "StudyList",
+      "type": "object"
+    },
+    "Table": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/Column"
+          },
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "columns",
+        "rows"
+      ],
+      "title": "Table",
+      "type": "object"
+    },
+    "ValidateOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "gpu": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its GPU qualification afterwards"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "name": {
+          "default": "",
+          "description": "the environment",
+          "type": "string"
+        },
+        "outcomes": {
+          "description": "every recorded check outcome",
+          "items": {
+            "$ref": "#/$defs/CheckOutcome"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnvState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its state afterwards"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "name",
+        "state",
+        "gpu",
+        "outcomes"
+      ],
+      "title": "ValidateOutcome",
+      "type": "object"
+    },
+    "Workspace": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "description": "the context it needs",
+          "items": {
+            "enum": [
+              "project",
+              "study",
+              "environment"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "document": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the read-only operation whose answer it shows; none: the registry itself"
+        },
+        "empty": {
+          "description": "what it says before there is anything to show",
+          "type": "string"
+        },
+        "help": {
+          "description": "how it is used",
+          "type": "string"
+        },
+        "icon": {
+          "description": "its icon, by the icon set's name",
+          "type": "string"
+        },
+        "key": {
+          "description": "how the address names it",
+          "type": "string"
+        },
+        "tagline": {
+          "description": "what it is, in one sentence",
+          "type": "string"
+        },
+        "title": {
+          "description": "what a person reads on it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "title",
+        "icon",
+        "tagline",
+        "help",
+        "document",
+        "context",
+        "empty"
+      ],
+      "title": "Workspace",
+      "type": "object"
+    }
+  },
+  "title": "femkit"
+}

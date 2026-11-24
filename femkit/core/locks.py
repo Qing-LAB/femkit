@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from femkit.core import dirs
+from femkit.core import dirs, view
 from femkit.core.errors import Busy
 
 
@@ -56,10 +56,11 @@ def require_free(subject: str) -> None:
 _held: dict[str, int] = {}  # subject -> the descriptor this process holds its lock on
 
 
-def _label(fd: int, by: str | None = None, next: tuple[str, ...] = ()) -> None:
+def _label(fd: int, by: str | None = None, next: tuple[view.Action, ...] = ()) -> None:
     """This process's line in the lock's file: a holder alone rewrites it, a shared holder (its
     descriptor opened to append) adds its line."""
-    line = json.dumps({"pid": os.getpid(), "by": by or " ".join(sys.argv), "next": list(next)}) + "\n"
+    line = json.dumps({"pid": os.getpid(), "by": by or " ".join(sys.argv),
+                       "next": [n.model_dump(mode="json") for n in next]}) + "\n"
     if not fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_APPEND:
         os.ftruncate(fd, 0)
     os.pwrite(fd, line.encode(), 0)                       # with O_APPEND, at the end
@@ -94,8 +95,9 @@ def _busy(subject: str, fd: int) -> Busy:
                 said[raw] = {"by": raw.strip(), "next": []}
     live = [(k, v) for k, v in said.items() if not isinstance(k, int) or _alive(k)]
     who = "; ".join(f"{v.get('by')} (pid {k})" if isinstance(k, int) else str(v["by"]) for k, v in live)
-    next_ = tuple(dict.fromkeys(str(c) for _, v in live for c in v.get("next") or []))
-    return Busy(f"{subject} is in use by {who or 'another process'}", next_)
+    steps = [view.Action.model_validate(c) if isinstance(c, dict) else view.shell(str(c))
+             for _, v in live for c in v.get("next") or []]
+    return Busy(f"{subject} is in use by {who or 'another process'}", {s.command: s for s in steps}.values())
 
 
 @contextmanager
@@ -125,7 +127,7 @@ def held_fd(subject: str) -> int:
     return _held[subject]
 
 
-def adopt(fd: int, by: str | None = None, next: tuple[str, ...] = ()) -> None:
+def adopt(fd: int, by: str | None = None, next: tuple[view.Action, ...] = ()) -> None:
     """Take over a lock handed to this process, or name a hold anew: its file now names this
     process as ``by``, with the commands that end its hold."""
     _label(fd, by, next)

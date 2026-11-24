@@ -1,4 +1,4 @@
-"""The HTTP server the child runs (api.md § 5.4): on the socket its supervisor opened, with
+"""The HTTP server the child runs (web.md § 4): on the socket its supervisor opened, with
 a bounded pool of threads and a time limit for reading a request, so a slow or silent
 client can neither stall nor exhaust it. No debugger or reloader is ever served."""
 
@@ -22,9 +22,9 @@ READ_TIMEOUT = 15.0   # seconds a connection may take to send a request, and sta
 
 class _Handler(WSGIRequestHandler):
     """One line per request on stdout, which the supervisor writes to the log: method, path
-    without its query, status, time — never a header, a token or a body (api.md § 5.4)."""
+    without its query, status, time — never a header, a token or a body (web.md § 4)."""
 
-    server_version = "femkit"  # no version string reaches a response (api.md § 5.5)
+    server_version = "femkit"  # no version string reaches a response (web.md § 5)
     sys_version = ""
 
     def version_string(self) -> str:

@@ -1,0 +1,11 @@
+.help { position: relative; display: inline-flex; vertical-align: middle; }
+.help__mark { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: var(--radius-pill);
+  border: 1px solid var(--line-strong); color: var(--text-faint); font-size: 10px; font-weight: var(--weight-bold);
+  text-decoration: none; cursor: help; background: var(--surface); }
+.help__mark:hover, .help__mark:focus-visible { color: var(--accent); border-color: var(--accent); outline: none; box-shadow: var(--focus); }
+.help__tip { position: absolute; z-index: 40; left: 50%; bottom: calc(100% + var(--space-2)); transform: translateX(-50%);
+  width: max-content; max-width: 300px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
+  background: var(--text); color: var(--bg); font-size: var(--text-xs); line-height: var(--leading); font-weight: var(--weight-normal);
+  box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transition: opacity var(--motion); text-transform: none; letter-spacing: normal; }
+.help__tip--open { opacity: 1; }
+.help__where { opacity: 0.7; }

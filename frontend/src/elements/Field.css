@@ -1,0 +1,36 @@
+.field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.field__label { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--text-muted); }
+.field__optional { font-size: var(--text-2xs); color: var(--text-faint); font-weight: var(--weight-normal); }
+.field__input, .field__unit {
+  height: 34px; padding: 0 var(--space-3); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); font: inherit; font-size: var(--text-sm); min-width: 0;
+  transition: border-color var(--motion), box-shadow var(--motion);
+}
+textarea.field__input { height: auto; padding: var(--space-2) var(--space-3); resize: vertical; }
+.field__input:focus, .field__unit:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
+.field__input--mono { font-family: var(--mono); font-size: var(--text-xs); }
+.field__fixed { display: inline-flex; align-items: center; height: 28px; padding: 0 var(--space-2); border-radius: var(--radius-sm);
+  background: var(--surface-sunken); color: var(--text-muted); font-family: var(--mono); font-size: var(--text-xs); width: max-content; }
+.field__quantity { display: flex; gap: var(--space-1); }
+.field__quantity .field__input { flex: 1; }
+.field__unit { width: 84px; padding: 0 var(--space-2); }
+.field__hint { font-size: var(--text-2xs); color: var(--text-faint); }
+.field__error { font-size: var(--text-xs); color: var(--bad); }
+.field--wrong .field__input { border-color: var(--bad); }
+.field__list { display: flex; flex-direction: column; gap: var(--space-1); }
+.field__list--row { flex-direction: row; }
+.field__list--row .field__item { flex: 1; }
+.field__item { display: flex; align-items: flex-end; gap: var(--space-1); min-width: 0; }
+.field__item .field__label { display: none; }
+.field__item > .field { flex: 1; }
+.field__remove, .field__add { border: none; background: none; color: var(--text-muted); cursor: pointer; font: inherit; font-size: var(--text-xs); }
+.field__add { align-self: flex-start; padding: var(--space-1) 0; color: var(--accent); }
+.field__record { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-sunken); }
+.field__switch { position: relative; display: inline-flex; width: 36px; height: 20px; }
+.field__switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.field__track { width: 100%; border-radius: var(--radius-pill); background: var(--line-strong); transition: background var(--motion); }
+.field__track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: var(--radius-pill);
+  background: var(--surface); box-shadow: var(--shadow-sm); transition: transform var(--motion); }
+.field__switch input:checked + .field__track { background: var(--accent); }
+.field__switch input:checked + .field__track::after { transform: translateX(16px); }
+.field__switch input:focus-visible + .field__track { box-shadow: var(--focus); }

@@ -7,76 +7,42 @@ operation.
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import sys
 import threading
 import time
 import traceback
-import types
-import typing
 from pathlib import Path
 from typing import Any
 
 import click
 from pydantic.fields import FieldInfo
 
-from femkit.core import process, text
+from femkit.core import commandline, process, text, view
 from femkit.core.errors import ConsentDeclined, Refusal, UsageError
 from femkit.core.operations import Ask, Context, Operation, Plan, Result, Step
+from femkit.core.schema import described
 from femkit.registry import operations
 
 
 # ------------------------------------------------------------ fields to params
 
-def _unwrap(annotation: Any) -> tuple[Any, bool]:
-    """(the element type without None or Annotated, whether it is a list)."""
-    origin = typing.get_origin(annotation)
-    if origin in (typing.Union, types.UnionType):
-        args = [a for a in typing.get_args(annotation) if a is not type(None)]
-        annotation = args[0] if len(args) == 1 else annotation
-        origin = typing.get_origin(annotation)
-    if origin is typing.Annotated:
-        return _unwrap(typing.get_args(annotation)[0])
-    if origin in (list, tuple):
-        inner, _ = _unwrap(typing.get_args(annotation)[0]) if typing.get_args(annotation) else (str, False)
-        return inner, True
-    return annotation, False
-
-
 def _param(name: str, field: FieldInfo) -> click.Parameter:
-    annotation, is_list = _unwrap(field.annotation)
-    extra = field.json_schema_extra if isinstance(field.json_schema_extra, dict) else {}
-    required = field.is_required()
-    help_text = field.description or ""
-    flag = "--" + name.replace("_", "-")
-    if extra.get("cli") == "argument":
-        return click.Argument([name], nargs=-1 if is_list else 1, required=required)
-    if annotation is bool:
-        return click.Option([flag, name], is_flag=True, default=False, help=help_text)
-    kind = {int: click.INT, float: click.FLOAT}.get(annotation, click.STRING)
-    return click.Option([flag, name], type=kind, multiple=is_list, required=required, default=None, help=help_text)
+    s = commandline.spelling(name, field)
+    help_text = described(field)
+    if s.kind == "argument":
+        return click.Argument([name], nargs=-1 if s.many else 1, required=field.is_required())
+    if s.kind == "flag":
+        return click.Option([s.flag, name], is_flag=True, default=False, help=help_text)
+    kind = {int: click.INT, float: click.FLOAT}.get(s.element, click.STRING)
+    return click.Option([s.flag, name], type=kind, multiple=s.many, required=field.is_required(), default=None,
+                        help=help_text)
 
 
 def _again(op: Operation, req: Any) -> str:
     """The command that asked for ``req``, as a person types it (api.md § 4.4)."""
-    args = op.name.split(".")
-    for name, field in op.request.model_fields.items():
-        value = getattr(req, name)
-        extra = field.json_schema_extra if isinstance(field.json_schema_extra, dict) else {}
-        flag = "--" + name.replace("_", "-")
-        values = [str(v) for v in value] if isinstance(value, (list, tuple)) else [str(value)]
-        if value is None or value is False or value == field.default:
-            continue
-        if extra.get("cli") == "argument":
-            args += values
-        elif value is True:
-            args.append(flag)
-        else:
-            for v in values:
-                args += [flag, v]
-    return text.typed(*args)
+    return commandline.typed(commandline.words(op.name, op.request, req.model_dump(mode="json")))
 
 
 def _request(op: Operation, values: dict) -> Any:
@@ -251,7 +217,7 @@ def _answer(op: Operation, ask: Ask, req: Any) -> Any:
     """Ask one question on the terminal (api.md § 3.1); an empty answer is no answer. An answer
     is checked as it is given: one holding characters that are not text — an arrow or erase key
     the terminal passed through — or one the request refuses is said, visibly, and asked again."""
-    _, is_list = _unwrap(op.request.model_fields[ask.key].annotation)
+    is_list = commandline.spelling(ask.key, op.request.model_fields[ask.key]).many
     click.echo("", err=True)
     for line in ask.context:
         click.echo(f"  {line}", err=True)
@@ -289,7 +255,8 @@ def _consent(plan: Plan, yes: bool, tag: str, again: str) -> None:
         click.echo(_tagged(tag, plan.text(brief=True)), err=True)
         return
     if not _can_ask():
-        raise ConsentDeclined("there is no terminal to ask on", (f"{again} --dry-run", f"{again} --yes"))
+        raise ConsentDeclined("there is no terminal to ask on",
+                              (view.shell(f"{again} --dry-run"), view.shell(f"{again} --yes")))
     click.echo(_tagged(tag, plan.text()), err=True)
     if not click.confirm("Proceed?", default=False, err=True):
         raise ConsentDeclined("declined; nothing was changed")
@@ -319,7 +286,7 @@ def _execute(op: Operation, values: dict) -> int:
         return 0 if outcome.ok() else 1
     except Refusal as exc:
         if as_json:
-            click.echo(json.dumps({"refused": type(exc).__name__, "message": str(exc), "next": list(exc.next)}, indent=2))
+            click.echo(view.RefusalAnswer.of(exc).model_dump_json(indent=2))
         else:
             lines = [f"refused: {exc}"] + text.next_block("instead", exc.next)
             click.echo(_tagged(tag, "\n".join(lines)), err=True)
@@ -360,4 +327,4 @@ def build(ops: dict[str, Operation] | None = None) -> click.Group:
 
 
 def main() -> None:
-    build()(prog_name="python -m femkit")  # the form every printed command uses (api.md § 4.4)
+    build()(prog_name=commandline.PROG)  # the form every printed command uses (api.md § 4.4)

@@ -9,6 +9,10 @@ from enum import Enum
 
 import pytest
 
+from femkit.core import view
+from pydantic import Field
+from femkit.core.schema import Model
+
 from femkit.core import process
 from femkit.core.errors import Busy, Refused
 from femkit.core.eventlog import EventLog, fold
@@ -42,12 +46,21 @@ def test_a_state_table_that_could_fall_through_or_strand_a_state_is_rejected():
 def test_a_disallowed_action_is_refused_with_the_allowed_commands():
     """Fails if a refusal does not carry the commands the state allows, read from the
     same table (core.md § 7: one source of "next")."""
+    class Switch(Model):
+        lamp: str = Field(json_schema_extra={"cli": "argument"})
+        dim: bool = False
+
     m = Machine("light", Light, (Rule("lit", Light.on, lambda f: f), Rule("dark", Light.off)),
-                {Light.on: {"off": Action("switch off", "light off")}, Light.off: {}})
+                {Light.on: {"off": Action("switch off", view.Verb("light.off", Switch), lambda name: {"lamp": name}),
+                            "dim": Action("dim", view.Verb("light.off", Switch), lambda name: {"lamp": name, "dim": True}),
+                            "nothing": Action("nothing to do")},
+                 Light.off: {}})
     assert m.observe(True) is Light.on and m.observe(False) is Light.off
     with pytest.raises(Refused) as caught:
-        m.require(Light.on, "on", "the light")
-    assert caught.value.next == ("light off",)
+        m.require(Light.on, "on", "hall")
+    assert [n.command for n in caught.value.next] == ["python -m femkit light off hall",
+                                                      "python -m femkit light off hall --dim"]
+    assert caught.value.next[1].call.request == {"lamp": "hall", "dim": True}
 
 
 def test_a_second_holder_of_a_subject_is_refused_not_queued():
@@ -63,9 +76,9 @@ def test_a_second_holder_of_a_subject_is_refused_not_queued():
 
 HOLDER = """
 import sys
-from femkit.core import locks
+from femkit.core import locks, view
 with locks.subject_lock(sys.argv[1], shared=sys.argv[2] == "shared"):
-    locks.adopt(locks.held_fd(sys.argv[1]), "a user of " + sys.argv[1], ("end it",))
+    locks.adopt(locks.held_fd(sys.argv[1]), "a user of " + sys.argv[1], (view.shell("end it"),))
     print("held", flush=True)
     sys.stdin.read()
 """
@@ -95,7 +108,7 @@ def test_users_share_a_lock_and_a_change_is_refused_naming_each_and_what_ends_it
         with pytest.raises(Busy) as caught:
             with subject_lock("env-x"):
                 pass
-        assert str(caught.value).count("a user of env-x") == 2 and caught.value.next == ("end it",)
+        assert str(caught.value).count("a user of env-x") == 2 and [n.command for n in caught.value.next] == ["end it"]
         assert "long gone" not in str(caught.value)            # a holder that ended is not named
         with pytest.raises(Busy):
             require_free("env-x")

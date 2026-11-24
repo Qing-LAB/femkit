@@ -10,13 +10,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from femkit.core import view
 from femkit.core.dirs import CONTROL
+from femkit.definitions.requests import CheckRequest
 from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.core.units import UnitTable, Units
 from femkit.definitions.formulations import FormulationDefinition
 from femkit.definitions.meshers import MesherDefinition
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
+from femkit.definitions.requests import SCHEMA_CHECK
 
 
 def data_root() -> Path:
@@ -43,7 +46,7 @@ class CatalogueError(DefinitionError):
             data_root(),
             [(f"{Path(e.file).relative_to(data_root()) if Path(e.file).is_relative_to(data_root()) else e.file}"
               f":{path}", reason) for e in errors for path, reason in e.problems],
-            ("python -m femkit schema check",),
+            (view.command(SCHEMA_CHECK),),
         )
 
 

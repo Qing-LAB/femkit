@@ -14,7 +14,7 @@ from femkit.core.schema import Model
 class Manifest(Model):
     """`<prefix>/.femkit/manifest.json` — written last by an install: its commit point."""
 
-    install_fingerprint: str = Field(description="the install fingerprint it was built for (envs.md § 2)")
+    install_fingerprint: str = Field(description="the install fingerprint it was built for", json_schema_extra={"doc": "envs.md § 2"})
     lock_sha256: str = Field(description="SHA-256 of the exact package list it was created from")
     manager_kind: str = Field(description="the manager kind that made it")
     manager_version: str = Field(description="that manager's version")
@@ -33,7 +33,7 @@ class CheckOutcome(Model):
 class ChecksRecord(Model):
     """`<prefix>/.femkit/checks.json` — written by each validate."""
 
-    check_fingerprint: str = Field(description="the check fingerprint the outcomes are for (envs.md § 2)")
+    check_fingerprint: str = Field(description="the check fingerprint the outcomes are for", json_schema_extra={"doc": "envs.md § 2"})
     outcomes: list[CheckOutcome] = Field(description="every check's outcome")
     time: str = Field(description="when it was written, UTC")
 

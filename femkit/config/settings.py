@@ -16,7 +16,7 @@ import tomlkit
 from pydantic import AfterValidator, ConfigDict, Field, PositiveInt
 from typing import Annotated
 
-from femkit.core import dirs, paths, text
+from femkit.core import dirs, paths, text, view
 from femkit.core.errors import Refusal, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import document_set, read_document, write_document
@@ -97,6 +97,15 @@ class Activation(Section):
     )
 
 
+class Web(Section):
+    projects: AbsolutePath | None = Field(
+        default=None,
+        strict=False,  # TOML has no path type: the text becomes a path
+        description="the folder whose projects the page lists, and where a new one is made",
+        json_schema_extra={**_unset("the page lists no projects; a project is named by its folder"), "doc": "web.md § 8.6"},
+    )
+
+
 class UserConfig(Model):
     """`<config>/config.toml` — choices for this machine (config.md § 3)."""
 
@@ -104,6 +113,7 @@ class UserConfig(Model):
     build: BuildChoices = Field(default_factory=BuildChoices, description="how builds are made")
     launch: Launch = Field(default_factory=Launch, description="how processes start")
     activation: Activation = Field(default_factory=Activation, description="how a job's shell gets ready")
+    web: Web = Field(default_factory=Web, description="the web page's places")
 
 
 # ------------------------------------------------------------------ the keys
@@ -139,7 +149,9 @@ def key(dotted: str) -> Key:
 
 
 #: What nothing on a machine reveals: a person states it, and it is never proposed (config.md § 3.1).
-STATED = ("activation.preamble", "activation.command")
+PREAMBLE = "activation.preamble"
+COMMAND = "activation.command"
+STATED = (PREAMBLE, COMMAND)
 
 
 def unstated(config: UserConfig) -> list[str]:
@@ -189,9 +201,11 @@ def launcher(ctx: Context, needed_by: str) -> list[str]:
     """launch.mpi, or a refusal saying what needs it and how to set it (config.md § 3.1)."""
     mpi = load(ctx).config.launch.mpi
     if mpi is None:
+        from femkit.config.requests import CONFIG_SET  # the requests are built from this module's keys
         raise Refusal(f"{needed_by}, and launch.mpi is unset",
-                      (text.typed("config", "set", "launch.mpi", '["mpirun", "-np", "{ranks}"]')
-                       + "   # this machine's launcher",))
+                      (view.command(CONFIG_SET, key="launch.mpi", note="this machine's launcher",
+                                    fills=[view.Fill(field="value", label="launch.mpi",
+                                                              example='["mpirun", "-np", "{ranks}"]')]),))
     return mpi
 
 

@@ -209,7 +209,7 @@ def test_validate_gpu_is_refused_where_no_gpu_check_is_declared(declared):
     for when in ("before its first validate", "once validated"):
         with pytest.raises(UsageError) as caught:
             validate(gpu=True)
-        assert caught.value.next == (f"python -m femkit env validate {NAME}-cuda --gpu",), when
+        assert [n.command for n in caught.value.next] == [f"python -m femkit env validate {NAME}-cuda --gpu"], when
         validate()
 
 

@@ -1,4 +1,4 @@
-"""What the document viewer may show (api.md § 5.2): the repository's own Markdown files, and
+"""What the document viewer may show (web.md § 2): the repository's own Markdown files, and
 the images they show — a list made by walking those folders without following a link. A path
 is served only when it is on that list, so no spelling of a path reaches anything else."""
 

@@ -11,6 +11,7 @@ from pydantic import Field
 
 from femkit.cli import build
 from femkit.core import text
+from femkit.core import view
 from femkit.core.errors import Refused
 from femkit.core.eventlog import EventLog, fold
 from femkit.core.operations import Ask, Context, Outcome, Plan, Result, SilentObserver, Step, operation, run_steps
@@ -40,7 +41,7 @@ class EchoResult(Result):
         return self.said
 
 
-@operation("toy.echo", request=EchoRequest, result=EchoResult)
+@operation(view.Verb("toy.echo", EchoRequest), result=EchoResult)
 def echo(req: EchoRequest, ctx: Context) -> EchoResult:
     """Repeat the words."""
     said = " ".join(req.words)
@@ -60,13 +61,13 @@ class WriteOutcome(Outcome):
         return "written"
 
 
-@operation("toy.write", request=WriteRequest, result=WriteOutcome, changes=True, subject=lambda r: ["toy"])
+@operation(view.Verb("toy.write", WriteRequest), result=WriteOutcome, changes=True, subject=lambda r: ["toy"])
 class Write:
     """Write the word down."""
 
     def plan(self, req: WriteRequest, ctx: Context) -> Plan:
         if req.refuse:
-            raise Refused("the toy is busy", ("femkit toy write --later",))
+            raise Refused("the toy is busy", (view.command(view.Verb("toy.write", WriteRequest), word="later"),))
         steps = () if req.noop else (Step(id="w", describe=f"write {req.word}"),)
         return Plan(operation="toy.write", request=req.model_dump(), steps=steps)
 
@@ -81,7 +82,7 @@ class SignRequest(Model):
     name: str | None = Field(default=None, pattern=r"^[A-Z]", description="who signs, capitalized; asked on a terminal when not given")
 
 
-@operation("toy.sign", request=SignRequest, result=WriteOutcome, changes=True, subject=lambda r: ["toy"])
+@operation(view.Verb("toy.sign", SignRequest), result=WriteOutcome, changes=True, subject=lambda r: ["toy"])
 class Sign:
     """Sign the book, asking who signs."""
 
@@ -129,7 +130,9 @@ def test_a_refusal_exits_2_with_its_next_commands():
     """Fails if a refusal is reported as a failure or loses its next commands (api.md § 4.3)."""
     out = run("toy", "write", "a", "--refuse", "--yes", "--json")
     assert out.exit_code == 2
-    assert json.loads(out.stdout)["next"] == ["femkit toy write --later"]
+    (later,) = json.loads(out.stdout)["next"]
+    assert later["command"] == "python -m femkit toy write later"
+    assert later["call"] == {"operation": "toy.write", "request": {"word": "later"}}
     assert WRITTEN == []
 
 
@@ -150,7 +153,7 @@ def test_a_changing_operation_must_have_plan_and_apply():
     """Fails if a changing operation could be declared without the plan the person consents to
     (api.md § 2.2)."""
     with pytest.raises(TypeError):
-        @operation("toy.bad", request=WriteRequest, result=WriteOutcome, changes=True)
+        @operation(view.Verb("toy.bad", WriteRequest), result=WriteOutcome, changes=True)
         class Bad:
             """Plans, then has no way to apply."""
 
@@ -195,8 +198,8 @@ def test_a_refusal_offers_the_command_as_typed_so_it_can_be_pasted():
     """Fails if the commands a refusal offers lose the person's arguments, so pasting
     them is a usage error (api.md § 4.4)."""
     out = run("toy", "write", "two words", "--json")  # no terminal, no --yes
-    assert json.loads(out.stdout)["next"] == ["python -m femkit toy write 'two words' --dry-run",
-                                              "python -m femkit toy write 'two words' --yes"]
+    assert [n["command"] for n in json.loads(out.stdout)["next"]] == ["python -m femkit toy write 'two words' --dry-run",
+                                                                     "python -m femkit toy write 'two words' --yes"]
 
 
 def test_a_plans_question_is_asked_on_a_terminal_and_never_under_yes(monkeypatch):
@@ -253,3 +256,26 @@ def test_a_running_steps_live_line_shows_its_log_and_is_erased_before_anything_e
             assert shown in err and err.index(shown) < err.index("\r\x1b[K", err.index(shown) + 1) < err.index("verdict")
         else:
             assert "\x1b" not in err and "verdict: passed" in err
+
+
+def test_every_pattern_a_request_or_a_model_file_takes_is_anchored():
+    """Fails if a pattern a request or a model file is checked by matches anywhere in a value —
+    pydantic searches, so an unanchored name pattern takes `../outside`, a path out of its
+    folder, because it holds a name (api.md § 2)."""
+    from femkit.registry import operations
+    from femkit.models.schema import ModelFile, StudyFile
+
+    def patterns(node):
+        if isinstance(node, dict):
+            if isinstance(node.get("pattern"), str):
+                yield node["pattern"]
+            for v in node.values():
+                yield from patterns(v)
+        elif isinstance(node, list):
+            for v in node:
+                yield from patterns(v)
+
+    schemas = [op.request.model_json_schema() for op in operations().values()]
+    schemas += [ModelFile.model_json_schema(), StudyFile.model_json_schema()]
+    loose = sorted({p for s in schemas for p in patterns(s) if not (p.startswith("^") and p.endswith("$"))})
+    assert not loose, loose

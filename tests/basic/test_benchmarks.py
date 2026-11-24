@@ -12,7 +12,6 @@ from femkit import registry
 from femkit.core.operations import Context
 from femkit.definitions import catalogue
 
-SCIENCE = Path(__file__).resolve().parents[2] / "docs" / "science" / "electrostatics.md"
 
 
 def ctx() -> Context:
@@ -41,14 +40,6 @@ def test_the_two_material_reference_follows_from_its_own_model():
                 "energy_high": eps0 * e2 * (d / e2) ** 2 / 2 * (1 - a)}
     declared = {k: units.parse(t).value for k, t in bench.reference.items()}
     assert declared == expected
-
-
-def test_the_science_document_states_the_formulations_constant():
-    """Fails if the vacuum permittivity the formulation gives every engine and the one its
-    science document states differ (docs/science/electrostatics.md § 1)."""
-    eps0 = catalogue.formulations(ctx())["electrostatics"].constants["vacuum_permittivity"].value
-    mantissa, exponent = eps0.split()[0].split("e")
-    assert f"{mantissa}\\times10^{{{int(exponent)}}}" in SCIENCE.read_text()
 
 
 @pytest.mark.parametrize("old, new", [

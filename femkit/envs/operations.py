@@ -8,7 +8,8 @@ from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.probe import place
-from femkit.core import locks, process, text
+from femkit.config.requests import SetRequest
+from femkit.core import locks, process, text, view
 from femkit.core.errors import PlanStale, Refusal, UsageError
 from femkit.core.eventlog import EventLog, fold
 from femkit.core.issues import Issue
@@ -20,27 +21,25 @@ from femkit.envs import checks, layout, toolchain
 from femkit.envs.manager import resolve
 from femkit.envs.records import CheckOutcome
 from femkit.envs.state import INSTALLED, MACHINE, EnvState, definition, facts, observe
+from femkit.envs.requests import ListRequest, CleanRequest, LogRequest, InstallRequest, PlanRequest, ValidateRequest
+from femkit.config.requests import CONFIG_SET
+from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_LOG, ENV_PLAN, ENV_VALIDATE
 
-ARGUMENT = {"cli": "argument"}
 
 
 def _names(ctx: Context) -> list[str]:
     return sorted(catalogue.load(ctx, engines=registered()).environments)
 
 
-def _next(state: EnvState, name: str) -> list[str]:
-    return list(MACHINE.next_commands(state, name))
+def _next(state: EnvState, name: str) -> list[view.Action]:
+    return list(MACHINE.next(state, name))
 
 
 # ------------------------------------------------------------------ env list
 
-class ListRequest(Model):
-    """No inputs."""
-
-
 class EnvRow(Model):
     name: str = Field(description="the environment")
-    state: EnvState = Field(description="its observed state (envs.md § 3.2)")
+    state: EnvState = Field(description="its observed state", json_schema_extra={"doc": "envs.md § 3.2"})
     gpu: str | None = Field(description="GPU qualification; absent unless ready or failing")
     description: str = Field(description="what it holds")
     default: bool = Field(description="part of `env install --all`")
@@ -55,7 +54,7 @@ class ListResult(Result):
             (r.name, r.state.value, f"gpu {r.gpu}" if r.gpu else "", f"# {r.description}") for r in self.rows))
 
 
-@operation("env.list", request=ListRequest, result=ListResult)
+@operation(ENV_LIST, result=ListResult)
 def env_list(req: ListRequest, ctx: Context) -> ListResult:
     """Every engine environment with its state and GPU qualification."""
     defs = catalogue.load(ctx, engines=registered()).environments
@@ -70,12 +69,6 @@ def env_list(req: ListRequest, ctx: Context) -> ListResult:
 
 # ------------------------------------------------------------------ env clean
 
-class CleanRequest(Model):
-    """One environment to remove."""
-
-    name: str = Field(description="the environment", json_schema_extra=ARGUMENT)
-
-
 class CleanOutcome(Outcome):
     name: str = Field(default="", description="the environment")
 
@@ -85,7 +78,7 @@ class CleanOutcome(Outcome):
         return f"{self.name} removed; its lock is kept" if self.status == "done" else f"removing {self.name} failed"
 
 
-@operation("env.clean", request=CleanRequest, result=CleanOutcome, changes=True,
+@operation(ENV_CLEAN, result=CleanOutcome, changes=True,
            subject=lambda req: [layout.subject(req.name)])
 class EnvClean:
     """Remove an environment's prefix, with its manifest and checks; keep its lock."""
@@ -93,19 +86,19 @@ class EnvClean:
     def plan(self, req: CleanRequest, ctx: Context) -> Plan:
         f, state = observe(ctx, req.name)
         basis = {"state": state.value, "prefix": str(f.prefix)}
-        if not MACHINE.require(state, "clean", req.name).command:
-            return Plan(operation="env.clean", request=req.model_dump(), basis=basis)
+        if MACHINE.require(state, "clean", req.name).verb is None:
+            return Plan(basis=basis)
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         manager = resolve(ctx)
         argv = tuple(manager.remove(f.prefix, catalogue.load_control().channels))
-        return Plan(operation="env.clean", request=req.model_dump(), basis=basis,
+        return Plan(basis=basis,
                     steps=(Step(id="remove", describe=f"remove {text.path(f.prefix)}", argv=argv),))
 
     def apply(self, plan: Plan, ctx: Context, observer) -> CleanOutcome:
         req = CleanRequest.model_validate(plan.request)
         f, state = observe(ctx, req.name, holding_lock=True)
         if {"state": state.value, "prefix": str(f.prefix)} != plan.basis:
-            raise PlanStale(f"{req.name} changed since the plan", (text.typed("env", "clean", req.name),))
+            raise PlanStale(f"{req.name} changed since the plan", (view.command(ENV_CLEAN, name=req.name),))
 
         def do(step: Step, where: Path):
             log = where / f"{step.id}.log"
@@ -116,12 +109,6 @@ class EnvClean:
 
 
 # ------------------------------------------------------------------ env log
-
-class LogRequest(Model):
-    """One environment."""
-
-    name: str = Field(description="the environment", json_schema_extra=ARGUMENT)
-
 
 class StepRow(Model):
     step: str = Field(description="the step's ID")
@@ -141,7 +128,7 @@ class LogResult(Result):
         return "\n".join(lines + text.table((s.outcome, s.step, s.log or "") for s in self.steps))
 
 
-@operation("env.log", request=LogRequest, result=LogResult)
+@operation(ENV_LOG, result=LogResult)
 def env_log(req: LogRequest, ctx: Context) -> LogResult:
     """The last operation on an environment: its steps, how each ended, and their logs."""
     definition(ctx, req.name)  # an unknown name is refused, naming the environments
@@ -196,16 +183,8 @@ def _requested(req) -> list[str]:
             raise Refusal("give environment names or --all, not both")
         return default_environments()
     if not req.names:
-        raise Refusal("name an environment, or --all", (text.typed("env", "list"),))
+        raise Refusal("name an environment, or --all", (view.command(ENV_LIST),))
     return list(dict.fromkeys(req.names))
-
-
-class InstallRequest(Model):
-    """Environments to install; an environment already ready is left alone unless --clean."""
-
-    names: list[str] = Field(default_factory=list, description="environments", json_schema_extra=ARGUMENT)
-    all: bool = Field(default=False, description="every environment whose definition has default = true")
-    clean: bool = Field(default=False, description="remove and rebuild, discarding the saved lock")
 
 
 class EnvResult(Model):
@@ -227,7 +206,7 @@ class InstallOutcome(Outcome):
                             for e in self.environments)
         lines += text.findings(self.issues)
         failed = [e for e in self.environments if e.status == "failed"]
-        lines += text.next_block("read what failed", [text.typed("env", "log", e.name) for e in failed])
+        lines += text.next_block("read what failed", [view.command(ENV_LOG, name=e.name) for e in failed])
         return "\n".join(lines)
 
 
@@ -240,13 +219,13 @@ def _failures(outcomes, ids) -> str:
 def _killed(ctx: Context, name: str, steps: list[str]) -> Issue:
     """A step ended by SIGKILL, with what to do about where it ran (envs.md § 6.2)."""
     here = place(catalogue.schedulers(ctx), ctx.env)
-    again = text.typed("env", "install", name)
+    again = view.command(ENV_INSTALL, names=[name])
     advice, next_ = "free memory, or lower build.jobs", (again,)
     if here.where == "scheduler job":
         advice = "ask the allocation for more memory, or lower build.jobs"
     elif here.where == "login node" and here.kind.interactive:
         advice = "run the install inside an interactive allocation, not on a login node"
-        next_ = (f"{here.kind.interactive}   # then, inside it: {again}",)
+        next_ = (view.shell(here.kind.interactive, note=f"then, inside it: {again.command}"),)
     elif here.where == "login node":
         advice = "run the install inside a job, not on a login node"
     return Issue(severity="error", code="killed", subject=name,
@@ -265,7 +244,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
     from femkit.envs.install import plan_steps, target
     f, state = observe(ctx, name)
     basis = {"state": state.value, "install_fingerprint": f.install_fingerprint, "prefix": str(f.prefix)}
-    if not MACHINE.require(state, "install --clean" if clean else "install", name).command:
+    if MACHINE.require(state, "install --clean" if clean else "install", name).verb is None:
         return [], basis
     locks.require_free(layout.subject(name))              # a program using it — a web server — holds it shared
     env = definition(ctx, name)
@@ -283,7 +262,8 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
     cuda_builds = [b.id for b in t.env.builds if b.cuda_architectures]
     if cuda_builds and not settings.load(ctx).config.build.cuda_architectures:
         raise Refusal(f"{name} builds {', '.join(cuda_builds)} with CUDA, and build.cuda_architectures is unset",
-                      (text.typed("config", "set", "build.cuda_architectures", '["80"]') + "   # the GPUs' architectures",))
+                      (view.command(CONFIG_SET, key="build.cuda_architectures",
+                                    fills=[view.Fill(field="value", label="the GPUs' architectures", example='["80"]')]),))
     fingerprint, finished = last_operation(name)
     resume = state is EnvState.incomplete and not clean and fingerprint == f.install_fingerprint
     remove_first = f.prefix_kind != "absent" and not resume
@@ -293,7 +273,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> tuple[list[Step], dict]:
     return steps + [validate], basis
 
 
-@operation("env.install", request=InstallRequest, result=InstallOutcome, changes=True,
+@operation(ENV_INSTALL, result=InstallOutcome, changes=True,
            subject=lambda req: [layout.subject(n) for n in _requested(req)])
 class EnvInstall:
     """Install environments from their definitions (envs.md § 4); resumes an interrupted install."""
@@ -304,14 +284,14 @@ class EnvInstall:
             env_steps, basis[name] = _env_steps(ctx, name, req.clean)
             steps += [s.model_copy(update={"id": f"{name}/{s.id}", "describe": f"{name}: {s.describe}"})
                       for s in env_steps]
-        return Plan(operation="env.install", request=req.model_dump(), basis=basis, steps=tuple(steps))
+        return Plan(basis=basis, steps=tuple(steps))
 
     def apply(self, plan: Plan, ctx: Context, observer) -> InstallOutcome:
         from femkit.envs.install import KILLED, run_step, target
         for name, basis in plan.basis.items():  # every environment re-observed before any is touched
             f, state = observe(ctx, name, holding_lock=True)
             if (state.value, f.install_fingerprint, str(f.prefix)) != (basis["state"], basis["install_fingerprint"], basis["prefix"]):
-                raise PlanStale(f"{name} changed since the plan", (text.typed("env", "install", name),))
+                raise PlanStale(f"{name} changed since the plan", (view.command(ENV_INSTALL, names=[name]),))
         results, status, issues = [], "done", []
         for name, basis in plan.basis.items():
             if status == "failed":
@@ -350,14 +330,6 @@ class EnvInstall:
         return InstallOutcome(plan=plan, status=status, environments=results, issues=issues)
 
 
-class PlanRequest(Model):
-    """Environments whose install is shown."""
-
-    names: list[str] = Field(default_factory=list, description="environments", json_schema_extra=ARGUMENT)
-    all: bool = Field(default=False, description="every environment whose definition has default = true")
-    clean: bool = Field(default=False, description="as `install --clean` would")
-
-
 class PlanResult(Result):
     plan: Plan = Field(description="the steps `install` would run now, with their commands")
 
@@ -365,21 +337,13 @@ class PlanResult(Result):
         return self.plan.text()
 
 
-@operation("env.plan", request=PlanRequest, result=PlanResult)
+@operation(ENV_PLAN, result=PlanResult)
 def env_plan(req: PlanRequest, ctx: Context) -> PlanResult:
     """The steps `env install` would run now, with their exact commands, without running them."""
     return PlanResult(plan=EnvInstall.plan(InstallRequest(**req.model_dump()), ctx))
 
 
 # ------------------------------------------------------------------ env validate
-
-class ValidateRequest(Model):
-    """One environment to validate."""
-
-    name: str = Field(description="the environment", json_schema_extra=ARGUMENT)
-    gpu: bool = Field(default=False, description="run the GPU checks and the checks they agree with, "
-                      "instead of the CPU checks")
-
 
 class ValidateOutcome(Outcome):
     name: str = Field(default="", description="the environment")
@@ -396,7 +360,7 @@ class ValidateOutcome(Outcome):
         return "\n".join(lines)
 
 
-@operation("env.validate", request=ValidateRequest, result=ValidateOutcome, changes=True,
+@operation(ENV_VALIDATE, result=ValidateOutcome, changes=True,
            subject=lambda req: [layout.subject(req.name)])
 class EnvValidate:
     """Run an environment's checks and record whether it is ready (envs.md § 5)."""
@@ -414,19 +378,19 @@ class EnvValidate:
             cuda = req.name + catalogue.CUDA_SUFFIX
             if cuda in catalogue.load(ctx, engines=registered()).environments:  # definitions.md § 4.5
                 raise UsageError(f"{req.name} is built without CUDA; its CUDA build is {cuda}",
-                                 (text.typed("env", "validate", cuda, "--gpu"),))
-            raise UsageError(f"{req.name} declares no GPU check", (text.typed("env", "validate", req.name),))
+                                 (view.command(ENV_VALIDATE, name=cuda, gpu=True),))
+            raise UsageError(f"{req.name} declares no GPU check", (view.command(ENV_VALIDATE, name=req.name),))
         MACHINE.require(state, "validate --gpu" if req.gpu else "validate", req.name)  # envs.md § 3.3
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         checks.refusals(ctx, env, chosen)
-        return Plan(operation="env.validate", request=req.model_dump(), basis=self._basis(f, state),
+        return Plan(basis=self._basis(f, state),
                     steps=tuple(checks.steps(chosen)))
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ValidateOutcome:
         req = ValidateRequest.model_validate(plan.request)
         f, state = observe(ctx, req.name, holding_lock=True)
         if self._basis(f, state) != plan.basis:
-            raise PlanStale(f"{req.name} changed since the plan", (text.typed("env", "validate", req.name),))
+            raise PlanStale(f"{req.name} changed since the plan", (view.command(ENV_VALIDATE, name=req.name),))
         status, where, outcomes = checks.run_validation(ctx, req.name, req.gpu, plan.steps, observer)
         f, state = observe(ctx, req.name, holding_lock=True)
         issues = []

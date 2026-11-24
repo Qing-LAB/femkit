@@ -22,6 +22,7 @@ from femkit.core.errors import UsageError
 from femkit.core.eventlog import EventLog
 from femkit.core.issues import Issue
 from femkit.core.locks import subject_lock
+from femkit.core.view import Verb
 from femkit.core.schema import Model
 
 T = TypeVar("T")
@@ -76,8 +77,8 @@ class Ask(Model):
 
 
 class Plan(Model):
-    operation: str = Field(description="the operation's name")
-    request: dict = Field(description="the request, as JSON")
+    operation: str = Field(default="", description="the operation's name; `Operation.plan` writes it")
+    request: dict = Field(default_factory=dict, description="the request, as JSON; `Operation.plan` writes it")
     subjects: tuple[str, ...] = Field(default=(), description="the lock subjects apply holds alone: what it changes")
     shared: tuple[str, ...] = Field(default=(), description="those it holds shared: what it uses and does not change "
                                                             "(core.md § 5)")
@@ -101,6 +102,14 @@ class Plan(Model):
     def digest(self) -> str:
         canonical = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+class PlanAnswer(Model):
+    """A changing operation's plan, and the digest its apply must carry."""
+
+    plan: Plan
+    digest: str
+    text: str = Field(description="the plan as a person reads it")
 
 
 class Outcome(Result):
@@ -242,6 +251,8 @@ class Operation:
     doc: str
     impl: Any  # a function (read-only) or an instance with plan/apply (changing)
     subject: Callable[[Any], list[str]] | Literal["plan"] | None = None  # "plan": the plan names them
+    confirm: bool = True  # a surface shows the plan and asks first; False only for a change taken back at once
+    undoable: bool = False  # recorded for `model undo` (models.md § 11.1)
 
     def request_from(self, data: dict) -> Model:
         """The request model from its JSON form; one that does not validate is a `UsageError`
@@ -258,12 +269,14 @@ class Operation:
         return self.impl(req, ctx)
 
     def plan(self, req: Model, ctx: Context) -> Plan:
+        """The implementation's plan, with what the declaration knows written in: the
+        operation's name, the request, and the subjects it locks."""
         assert self.changes, f"{self.name} is read-only: run it"
         plan = self.impl.plan(req, ctx)
-        if self.subject == "plan":
-            return plan
-        subjects = tuple(self.subject(req)) if self.subject else ()
-        return plan.model_copy(update={"subjects": subjects})
+        known = {"operation": self.name, "request": req.model_dump(mode="json")}
+        if self.subject != "plan":
+            known["subjects"] = tuple(self.subject(req)) if self.subject else ()
+        return plan.model_copy(update=known)
 
     def apply(self, plan: Plan, ctx: Context, observer: Observer | None = None) -> Outcome:
         """Hold every subject's lock — alone, or shared — then apply (core.md § 5, api.md § 3)."""
@@ -277,14 +290,17 @@ class Operation:
 
 
 def operation(
-    name: str,
+    verb: Verb,
     *,
-    request: type[Model],
     result: type[Result],
     changes: bool = False,
     subject: Callable[[Any], list[str]] | Literal["plan"] | None = None,
+    confirm: bool = True,
+    undoable: bool = False,
 ) -> Callable[[Any], Operation]:
-    """Declare an operation (api.md § 2): decorate a function, or a class with plan/apply."""
+    """Declare an operation (api.md § 2): decorate a function, or a class with plan/apply. Its
+    name and request model are its `Verb`'s, declared beside the request."""
+    name, request = verb.name, verb.request
 
     def declare(target: Any) -> Operation:
         doc = " ".join((target.__doc__ or "").split())
@@ -294,10 +310,15 @@ def operation(
             if not isinstance(target, type) or not all(hasattr(target, m) for m in ("plan", "apply")):
                 raise TypeError(f"{name}: a changing operation is a class with plan and apply")
             impl = target()
+            impl.verb = verb                # its request model, for reading a plan's request back
         else:
             if subject is not None:
                 raise TypeError(f"{name}: a read-only operation takes no lock")
             impl = target
-        return Operation(name, request, result, changes, doc, impl, subject)
+        if not confirm and not changes:
+            raise TypeError(f"{name}: only a changing operation asks for confirmation")
+        if undoable and confirm:
+            raise TypeError(f"{name}: what `model undo` takes back is applied without asking")
+        return Operation(name, request, result, changes, doc, impl, subject, confirm, undoable)
 
     return declare

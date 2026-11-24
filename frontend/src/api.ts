@@ -1,4 +1,4 @@
-// Every request the page makes (api.md § 5.1, § 5.5): the token from the address's fragment,
+// Every request the page makes (web.md § 1, § 5): the token from the address's fragment,
 // kept in this tab's session storage, sent as Bearer; never a cookie.
 
 const KEY = "femkit-token";

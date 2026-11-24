@@ -1,4 +1,4 @@
-"""A Markdown document's headings and their link anchors, by GitHub's rule (api.md § 5.2).
+"""A Markdown document's headings and their link anchors, by GitHub's rule (web.md § 2).
 
 One function, read by the formulation's section check (models.md § 4) and the document
 viewer, so a section named in data and its address in the viewer always agree.

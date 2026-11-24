@@ -7,75 +7,91 @@ are `model check`'s findings.
 
 A reference field carries `ref` (core.md § 2); a value written as a quantity carries
 `quantity`: `any` (a quantity, or an expression of the parameters), `length`, `coordinate`
-(a bare number in the frame's unit, or a length), or `unit` (a unit text alone).
+(a bare number in the frame's unit, or a length), or `unit` (a unit text alone). A field that
+belongs to one type of its object carries `for` — a region's selection rule, the kind it selects;
+a field a file may leave out but `model check` asks for carries `stated`.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Annotated, Any, Iterator, Literal, Union
+from typing import Annotated, Any, ClassVar, Iterator, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
+from pydantic.fields import FieldInfo
 
-from femkit.core.schema import Model, field_extras, references, refuse
+from femkit.core.schema import Model, classes, closed, field_extras, field_named, references, refuse, values_of
 from femkit.core.units import Quantity, UnitError, Units
 from femkit.jobs.request import Resources
 
 NAME = re.compile(r"[a-z][a-z0-9_]*")
 LENGTH = (("length", 1),)
 
+#: The `quantity` annotations of a fixed dimension, and that dimension: the one table the loader,
+#: the forms' units and the reference pages read.
+DIMENSIONS = {"length": LENGTH, "coordinate": LENGTH}
+
 Number = Union[int, Decimal]
 Coordinate = Union[int, Decimal, str]  # a bare number, in the frame's unit; or a length, or an expression
 
 
-def as_quantity(description: str, kind: str = "any", **kw: Any) -> Any:
-    return Field(description=description, json_schema_extra={"quantity": kind}, **kw)
+def as_quantity(description: str, kind: str = "any", *, extra: dict | None = None, **kw: Any) -> Any:
+    return Field(description=description, json_schema_extra={"quantity": kind, **(extra or {})}, **kw)
 
 
-def as_reference(description: str, target: str | dict, **kw: Any) -> Any:
-    return Field(description=description, json_schema_extra={"ref": target}, **kw)
+def as_reference(description: str, target: str | dict, *, extra: dict | None = None, **kw: Any) -> Any:
+    return Field(description=description, json_schema_extra={"ref": target, **(extra or {})}, **kw)
 
 
 # ------------------------------------------------------------------ geometry
 
+SHAPE_KIND = Field(description="what shape it is")
+
 class Rectangle(Model):
     """An axis-aligned rectangle (2-D)."""
-    kind: Literal["rectangle"]
+    dimension: ClassVar[int | None] = 2  # the dimension it is drawn in; none: 2-D
+    kind: Literal["rectangle"] = SHAPE_KIND
     corner: list[Coordinate] = as_quantity("its lower corner", "coordinate", min_length=2, max_length=2)
     size: list[Coordinate] = as_quantity("its width and height", "coordinate", min_length=2, max_length=2)
 
 
 class Disk(Model):
     """A disk (2-D)."""
-    kind: Literal["disk"]
+    dimension: ClassVar[int | None] = 2  # the dimension it is drawn in; none: 2-D
+    kind: Literal["disk"] = SHAPE_KIND
     center: list[Coordinate] = as_quantity("its center", "coordinate", min_length=2, max_length=2)
     radius: Coordinate = as_quantity("its radius", "coordinate")
 
 
 class Polygon(Model):
     """A polygon (2-D), its vertices in order."""
-    kind: Literal["polygon"]
+    dimension: ClassVar[int | None] = 2  # the dimension it is drawn in; none: 2-D
+    kind: Literal["polygon"] = SHAPE_KIND
     points: list[list[Coordinate]] = as_quantity("its vertices", "coordinate", min_length=3)
 
 
 class Box(Model):
     """An axis-aligned box (3-D)."""
-    kind: Literal["box"]
+    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in; none: 3-D
+    kind: Literal["box"] = SHAPE_KIND
     corner: list[Coordinate] = as_quantity("its lower corner", "coordinate", min_length=3, max_length=3)
     size: list[Coordinate] = as_quantity("its extent along each axis", "coordinate", min_length=3, max_length=3)
 
 
 class Sphere(Model):
     """A sphere (3-D)."""
-    kind: Literal["sphere"]
+    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in; none: 3-D
+    kind: Literal["sphere"] = SHAPE_KIND
     center: list[Coordinate] = as_quantity("its center", "coordinate", min_length=3, max_length=3)
     radius: Coordinate = as_quantity("its radius", "coordinate")
 
 
 class Cylinder(Model):
     """A cylinder (3-D): the center of one end, its axis (length and direction), its radius."""
-    kind: Literal["cylinder"]
+    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in; none: 3-D
+    kind: Literal["cylinder"] = SHAPE_KIND
     base: list[Coordinate] = as_quantity("the center of one end", "coordinate", min_length=3, max_length=3)
     axis: list[Coordinate] = as_quantity("from that end to the other", "coordinate", min_length=3, max_length=3)
     radius: Coordinate = as_quantity("its radius", "coordinate")
@@ -83,22 +99,25 @@ class Cylinder(Model):
 
 class Extrusion(Model):
     """A planar polygon swept along a vector (3-D)."""
-    kind: Literal["extrusion"]
+    dimension: ClassVar[int | None] = 3  # the dimension it is drawn in; none: 3-D
+    kind: Literal["extrusion"] = SHAPE_KIND
     profile: list[list[Coordinate]] = as_quantity("the polygon's vertices, in one plane", "coordinate", min_length=3)
     along: list[Coordinate] = as_quantity("the sweep", "coordinate", min_length=3, max_length=3)
 
 
 class Combined(Model):
     """The union, difference (the first less the others) or intersection of named shapes."""
-    kind: Literal["union", "difference", "intersection"]
+    dimension: ClassVar[int | None] = None  # the dimension it is drawn in; none: its parts'
+    kind: Literal["union", "difference", "intersection"] = SHAPE_KIND
     of: list[str] = as_reference("the shapes, by name", "shape", min_length=2)
 
 
 class Imported(Model):
     """A CAD file the person supplies, under `custom/`, with its SHA-256."""
-    kind: Literal["import"]
+    dimension: ClassVar[int | None] = None  # the dimension it is drawn in; none: its parts'
+    kind: Literal["import"] = SHAPE_KIND
     file: str = Field(description="its path under the project's `custom/`")
-    sha256: str = Field(pattern=r"[0-9a-f]{64}", description="its SHA-256")
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$", description="its SHA-256")
 
 
 Shape = Annotated[Union[Rectangle, Disk, Polygon, Box, Sphere, Cylinder, Extrusion, Combined, Imported],
@@ -130,20 +149,21 @@ class Window(Model):
     size: list[Coordinate] = as_quantity("its extent", "coordinate", min_length=2, max_length=3)
 
 
-RULES = {"shapes": "domain", "plane": "boundary", "box": "boundary", "faces_of": "boundary", "rest": "boundary",
-         "between": "interface"}
-
-
 class Region(Model):
     """A named domain, outer boundary or interface, selected by exactly one rule (models.md § 3)."""
-    kind: Literal["domain", "boundary", "interface"]
-    shapes: list[str] | None = as_reference("a domain: the named shapes", "shape", default=None, min_length=1)
-    plane: Plane | None = Field(default=None, description="a boundary: the outer faces on this plane")
-    box: Window | None = Field(default=None, description="a boundary: the outer faces inside this box")
-    faces_of: str | None = as_reference("a boundary: the outer faces of this shape", "shape", default=None)
-    rest: Literal[True] | None = Field(default=None, description="a boundary: the outer faces no other region selects")
-    between: list[str] | None = as_reference("an interface: the two domains it lies between", "region:domain",
-                                    default=None, min_length=2, max_length=2)
+    kind: Literal["domain", "boundary", "interface"] = Field(description="a domain, an outer boundary or an interface")
+    shapes: list[str] | None = as_reference("the named shapes", "shape", default=None, min_length=1,
+                                            extra={"for": "domain"})
+    plane: Plane | None = Field(default=None, description="the outer faces on this plane",
+                                json_schema_extra={"for": "boundary"})
+    box: Window | None = Field(default=None, description="the outer faces inside this box",
+                               json_schema_extra={"for": "boundary"})
+    faces_of: str | None = as_reference("the outer faces of this shape", "shape", default=None,
+                                        extra={"for": "boundary"})
+    rest: Literal[True] | None = Field(default=None, description="the outer faces no other region selects",
+                                       json_schema_extra={"for": "boundary"})
+    between: list[str] | None = as_reference("the two domains it lies between", "region:domain",
+                                             default=None, min_length=2, max_length=2, extra={"for": "interface"})
 
     @model_validator(mode="after")
     def _one_rule(self) -> "Region":
@@ -163,19 +183,24 @@ class Variable(Model):
     unit: str = as_quantity("the unit its column is in", "unit")
 
 
+#: Each selection rule and the region kind it selects: the `for` of Region's fields.
+RULES = {(f.alias or n): field_extras(f)["for"] for n, f in Region.model_fields.items() if "for" in field_extras(f)}
+
+
 class Property(Model):
     """One material property: a constant or a table, with what it rests on (models.md § 3)."""
     value: str | None = as_quantity("a constant, with its unit where it has one", default=None)
     table: str | None = Field(default=None, description="a table under `custom/`: the variable, then the value's "
                                                         "real and imaginary parts")
-    sha256: str | None = Field(default=None, pattern=r"[0-9a-f]{64}", description="the table's SHA-256")
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$", description="the table's SHA-256")
     variable: Variable | None = Field(default=None, description="the table's independent variable")
     interpolation: Literal["linear"] | None = Field(default=None, description="between the table's rows")
     convention: Literal["real", "exp(-iwt)", "exp(+iwt)"] | None = Field(
-        default=None, description="the complex-value convention of the source data")
-    source: str | None = Field(default=None, description="where the data comes from")
+        default=None, description="the complex-value convention of the source data", json_schema_extra={"stated": True})
+    source: str | None = Field(default=None, description="where the data comes from", json_schema_extra={"stated": True})
     range: Literal["all"] | list[str] | None = Field(default=None, description="where it is valid: `all`, or "
-                                                     "`[from, to]` in its variable", json_schema_extra={"quantity": "any"})
+                                                     "`[from, to]` in its variable",
+                                                     json_schema_extra={"quantity": "any", "stated": True})
 
     @model_validator(mode="after")
     def _one_form(self) -> "Property":
@@ -217,7 +242,7 @@ class Radiation(Model):
 class ModelFile(Model):
     """`model.toml`: the physics, and nothing about an engine (models.md § 3)."""
     schema_: Literal[1] = Field(alias="schema", description="this file's shape; raised when it changes")
-    formulation: str | None = Field(default=None, description="one formulation ID (models.md § 4)")
+    formulation: str | None = Field(default=None, description="one formulation ID", json_schema_extra={"doc": "models.md § 4"})
     parameters: dict[str, str] = Field(default_factory=dict, description="each named quantity, or an expression of "
                                        "the ones above it", json_schema_extra={"quantity": "any"})
     frame: Frame | None = Field(default=None, description="the coordinates' unit")
@@ -257,7 +282,7 @@ class ModelFile(Model):
 
 class Element(Model):
     """The element family and its degree."""
-    family: str = Field(description="`lagrange`, `nedelec`, …: mapped per environment (models.md § 6.4)")
+    family: str = Field(description="`lagrange`, `nedelec`, …: mapped per environment", json_schema_extra={"doc": "models.md § 6.4"})
     degree: int = Field(ge=1, description="its polynomial degree")
 
 
@@ -286,7 +311,7 @@ class Numerics(Model):
 class Axis(Model):
     """What one axis varies, keyed by the case path it varies."""
     class_: Literal["numerical convergence", "geometry convergence", "physical sweep"] = Field(
-        alias="class", description="its class (models.md § 5)")
+        alias="class", description="its class", json_schema_extra={"doc": "models.md § 5"})
     values: list[Union[int, Decimal, str]] = Field(min_length=1, description="the values, in order",
                                                    json_schema_extra={"quantity": "any"})
     model_config = ConfigDict(populate_by_name=True)
@@ -318,7 +343,7 @@ class Observable(Model):
 class Binding(Model):
     """What a study binds for one environment (models.md § 5)."""
     mesher: str | None = Field(default=None, description="its mesher, or the study's shared one")
-    resources: Resources | None = Field(default=None, description="its job's resources (jobs.md § 2)")
+    resources: Resources | None = Field(default=None, description="its job's resources", json_schema_extra={"doc": "jobs.md § 2"})
 
 
 AXIS_PATH = re.compile(r"(parameters\.[a-z][a-z0-9_]*|numerics(\.[a-z_]+)+)")
@@ -465,17 +490,151 @@ def _quantities(instance: BaseModel, units: Units, names: dict[str, Quantity]) -
         except UnitError as exc:
             out.append((at, str(exc)))
             continue
-        if kind in ("length", "coordinate") and q.dimension != LENGTH:
+        if kind in DIMENSIONS and q.dimension != DIMENSIONS[kind]:
             out.append((at, f"{value!r} is not a length"))
     return out
 
 
+# ------------------------------------------------------------------ the object types (models.md § 11.2)
+
+@dataclass(frozen=True)
+class ObjectType:
+    """One type of object of the model or a study, declared once: edits, the graph, the checks,
+    the palette and the page all read this table, so where an object lives, what names it,
+    where its types are declared and its place in the chain's order are written nowhere else."""
+
+    kind: str                       # what a person calls it: `region`
+    file: Literal["model", "study"]
+    table: tuple[str, ...]          # where its entries live; for a single object, where it lives
+    many: bool                      # entries by key; else one object
+    named: bool                     # its key is a name that `model rename` takes
+    typed: str | None               # the field holding its type within the kind: `kind` of a region
+    rank: int                       # its place in the chain's order: what it is made from comes first
+    label: str = "{name}"           # what a person calls an entry: `{name}`, `{type}` and `{kind}` filled
+    declared: str | None = None     # the formulation's table declaring its types: `conditions`; with no
+    #                                 `typed` field, an entry holds one value per type, by key (a material)
+    palette: bool = False           # the palette offers to add one
+
+    def root(self) -> type[BaseModel]:
+        return ModelFile if self.file == "model" else StudyFile
+
+    def entries(self, root: BaseModel) -> dict[str, Any]:
+        """Its entries in a loaded file — for a single object, its one entry under its key."""
+        held: Any = root
+        for step in self.table:
+            if isinstance(held, BaseModel):
+                found = field_named(type(held), step)
+                held = getattr(held, found[0]) if found else None
+            else:
+                held = (held or {}).get(step)
+        if not self.many:
+            return {} if held is None else {self.table[-1]: held}
+        return dict(held or {})
+
+    def field(self) -> FieldInfo:
+        """The field that holds it: the table's, or the single object's."""
+        cls: type[BaseModel] = self.root()
+        found = None
+        for step in self.table:
+            found = field_named(cls, step)
+            cls = next(iter(classes(found[1].annotation)), cls)
+        return found[1]
+
+    def entry(self) -> Any:
+        """The annotation of one entry."""
+        annotation = self.field().annotation
+        return values_of(annotation) if self.many else annotation
+
+    def type_of(self, value: Any) -> str | None:
+        if self.typed is None or not isinstance(value, BaseModel):
+            return None
+        found = field_named(type(value), self.typed)
+        return getattr(value, found[0], None) if found else None
+
+    def keyed_by(self) -> list[str]:
+        """What its key names, when the key is another object's name: the table's `ref` key
+        (a condition's key is its region's)."""
+        ref = field_extras(self.field()).get("ref")
+        return ref["key"].split("|") if isinstance(ref, dict) and "key" in ref and "value" not in ref else []
+
+    def types(self, formulation: Any = None) -> list[str]:
+        """Every type its entries may have: the formulation's, where it declares them, else the
+        closed values of the field ``typed`` names, across the classes an entry may be."""
+        if self.declared is not None:
+            return list(getattr(formulation, self.declared, None) or {})
+        if self.typed is None:
+            return []
+        out: list[str] = []
+        for cls in classes(self.entry()):
+            found = field_named(cls, self.typed)
+            out += closed(found[1].annotation) if found else []
+        return list(dict.fromkeys(out))
+
+    def variant(self, type_: str | None) -> type[BaseModel] | None:
+        """The class an entry of ``type_`` is: the one whose typed field allows it, or the one
+        class there is; for one value per type, that value's class."""
+        options = classes(values_of(self.entry())) if self.declared and self.typed is None else classes(self.entry())
+        if self.typed is not None and type_ is not None and len(options) > 1:
+            options = [c for c in options if (f := field_named(c, self.typed)) and type_ in closed(f[1].annotation)]
+        return options[0] if len(options) == 1 else None
+
+    def label_of(self, key: str, value: Any = None) -> str:
+        return self.label.format(name=key, type=self.type_of(value), kind=self.kind)
+
+
+OBJECTS: tuple[ObjectType, ...] = (
+    ObjectType("parameter", "model", ("parameters",), many=True, named=True, typed=None, rank=0, palette=True),
+    ObjectType("frame", "model", ("frame",), many=False, named=False, typed=None, rank=0),
+    ObjectType("geometry", "model", ("geometry",), many=False, named=False, typed=None, rank=0),
+    ObjectType("conventions", "model", ("conventions",), many=False, named=False, typed=None, rank=0),
+    ObjectType("shape", "model", ("geometry", "shapes"), many=True, named=True, typed="kind", rank=1),
+    ObjectType("region", "model", ("regions",), many=True, named=True, typed="kind", rank=2, palette=True),
+    ObjectType("material", "model", ("materials",), many=True, named=True, typed=None, rank=3,
+               declared="properties", palette=True),
+    ObjectType("condition", "model", ("conditions",), many=True, named=False, typed="kind", rank=3,
+               label="{type} on {name}", declared="conditions", palette=True),
+    ObjectType("source", "model", ("sources",), many=True, named=True, typed="kind", rank=3, declared="sources",
+               palette=True),
+    ObjectType("radiation", "model", ("radiation",), many=False, named=False, typed=None, rank=3),
+    ObjectType("numerics", "study", ("numerics",), many=False, named=False, typed=None, rank=4),
+    ObjectType("axis", "study", ("axes",), many=True, named=False, typed="class", rank=4),
+    ObjectType("observable", "study", ("observables",), many=True, named=True, typed="quantity", rank=4,
+               declared="derived", palette=True),
+    ObjectType("binding", "study", ("environments",), many=True, named=True, typed=None, rank=4),
+)
+
+
+def object_type(kind: str) -> ObjectType:
+    return next(o for o in OBJECTS if o.kind == kind)
+
+
+def locate(file: Literal["model", "study"], path: tuple) -> tuple[ObjectType, str | None] | None:
+    """The object a location lies in — the type whose object holds it most closely — and the
+    entry's key, none for a single object; for a location that is a table of entries itself and
+    in no object, that table's type with no key."""
+    path = tuple(str(p) for p in path)
+    fits = [o for o in OBJECTS if o.file == file and path[:len(o.table)] == o.table]
+    inside = [o for o in fits if not o.many or len(path) > len(o.table)]
+    best = max(inside or fits, key=lambda o: len(o.table), default=None)
+    if best is None:
+        return None
+    return best, (path[len(best.table)] if best.many and len(path) > len(best.table) else None)
+
+
 def objects(m: ModelFile) -> dict[str, set[str]]:
-    """The names each reference type may take, in this model."""
-    found = {"shape": set(m.geometry.shapes) if m.geometry else set(), "material": set(m.materials),
-             "parameter": set(m.parameters), "region": set(m.regions)}
-    for kind in ("domain", "boundary", "interface"):
-        found[f"region:{kind}"] = {n for n, r in m.regions.items() if r.kind == kind}
+    """The names each reference type may take, in this model: an object type's kind, and with
+    its type, `region:domain`."""
+    found: dict[str, set[str]] = {}
+    for o in OBJECTS:
+        if o.file != "model" or not o.named:
+            continue
+        found[o.kind] = set()
+        for t in o.types():
+            found[f"{o.kind}:{t}"] = set()
+        for name, value in o.entries(m).items():
+            found.setdefault(o.kind, set()).add(name)
+            if (t := o.type_of(value)) is not None:
+                found.setdefault(f"{o.kind}:{t}", set()).add(name)
     return found
 
 

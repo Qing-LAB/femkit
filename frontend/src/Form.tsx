@@ -2,7 +2,7 @@ import type { JsonSchema } from "./api";
 import { kindOf, label, unwrapOptional } from "./schema";
 
 // The request form, from its schema alone. A field left empty is not sent, so the server's
-// default holds; every value is checked by the plan or run route, never here (api.md § 5.5).
+// default holds; every value is checked by the plan or run route, never here (web.md § 5).
 
 export type Values = Record<string, string | boolean>;
 

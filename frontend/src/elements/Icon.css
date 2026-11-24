@@ -1,0 +1,2 @@
+.icon { flex: none; vertical-align: middle; }
+.icon--missing { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--text-faint); }

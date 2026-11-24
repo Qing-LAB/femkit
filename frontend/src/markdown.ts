@@ -1,4 +1,4 @@
-// Markdown as the repository's documents are written (api.md § 5.2): GitHub's tables and code,
+// Markdown as the repository's documents are written (web.md § 2): GitHub's tables and code,
 // math between dollar signs, Mermaid diagrams. Raw HTML is shown as text (`html: false`); every
 // link is decided here, against the list of documents.
 import MarkdownIt from "markdown-it";
