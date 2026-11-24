@@ -72,6 +72,11 @@ run inside an allocation as anywhere else.
 
 No tier feeds a reader text typed by hand as if a solver, manager or scheduler
 had printed it. A reader is tested on real output, in the tier that produces it.
+One exception, the person's (2026-11-24): output measured from the real program
+that this machine's field tier cannot produce — another version's answer, a
+compiler the system killed — may stand in the basic tier, quoted as measured,
+with the program and its version, or the machine it came from, noted beside
+it.
 
 ### 2.2 Canaries — the outcome, measured
 
