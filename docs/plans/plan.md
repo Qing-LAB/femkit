@@ -312,6 +312,36 @@ geometry script, meshing, solving — is milestone X, designed after R.
   kind, operation, address or sentence named in the page's code, no style
   outside its layers and no hand-written type of server data; every element
   exercised in a browser.
+
+  First, what step B's review found in the kernel and elements, fixed as each
+  part enters the page (the person's decision, 2026-11-24):
+  - **Reported nowhere**: a lost connection, a wrong token or an unreadable
+    answer during an action; an event stream refused or ended early, which
+    leaves progress at "running"; a stream broken mid-apply.
+  - **Dropped or missing**: a next step that is a shell line; each step's
+    command and the plan's asks in the plan a person consents to; a failed
+    outcome's findings and log; the help every action carries (`web.md` § 7.2),
+    which no action fills yet.
+  - **Written in the page that belongs to data**: the controls' words (Cancel,
+    Apply, "Nothing to do"), which § 11 says come from the declaration — where
+    they live there is the person's; the context's keys and dependencies, which
+    the declaration holds; the connect hole's spelling; a unit and a quantity
+    guessed in the field element; types of server data written again (`Table`,
+    `Plan`, `Step`).
+  - **The declaration**: its old Model workspace and sentences; the Delete
+    shortcut's help; context keys § 8.1 does not list; the context names
+    repeated in `page.py`; duplicate keys and a request field's context not
+    checked by the loader.
+  - **Behaviour**: an unknown operation run as a read; a record's fixed key not
+    written; an added list item written as `""`; the address keeping a project
+    from storage; a selection made a history entry; colours for five of the
+    chain's six places.
+  - **Styles and parts unused**: values outside the tokens, a breakpoint and a
+    container query that never applies, an inline style, class prefixes not
+    the element's own, a fourth button tone, and the parts, tokens and fonts
+    nothing uses; the mark not the page's icon.
+  - **Open, the person's**: one model for a value a person fills in, as
+    `web.md` § 7.2 says, or the fill as its own model.
 - **H. Use.** The keyboard, the undo notification, the project chooser, what an
   action selects, errors at their text's line, the narrow screen's drawers.
   Acceptance: the Laplace project built and changed by keyboard alone; every
