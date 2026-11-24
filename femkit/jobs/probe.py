@@ -13,13 +13,12 @@ import platform
 import re
 import shutil
 import socket
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from femkit.config import probe as config_probe
 from femkit.config import settings
-from femkit.core import dirs, process, view
+from femkit.core import clock, dirs, process, view
 from femkit.core.errors import Refusal, Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.definitions import catalogue
@@ -181,7 +180,7 @@ def measure(ctx: Context, scheduler: str | None, declared: dict[str, str]) -> Re
 
     data = {
         "schema": 1,
-        "measured": {"time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "where": where},
+        "measured": {"time": clock.stamp(ctx.now()), "where": where},
         "identity": identity,
         "host": _host(),
         "manager": _manager(ctx),

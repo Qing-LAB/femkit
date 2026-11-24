@@ -9,7 +9,6 @@ from __future__ import annotations
 import base64
 import json
 import queue
-import re
 import threading
 import traceback
 from pathlib import Path
@@ -21,21 +20,17 @@ from femkit import registry
 from femkit.core import eventlog, view
 from femkit.core.markdown import headings
 from femkit.core.errors import PlanStale, Refusal
-from femkit.core.operations import Context, Operation, Plan, PlanAnswer, SilentObserver, operations_root
-from femkit.core.process import tail
+from femkit.core.operations import Context, Operation, OperationAddress, Plan, PlanAnswer, SilentObserver, operations_root
+from femkit.core.process import TAIL_LINES, tail
 from femkit.server import health
 from femkit import page as page_declaration
 from femkit.server.protocol import Listen
 from femkit.web import access, docs
 
 STATIC = Path(__file__).parent / "static"
-SUBJECT = re.compile(r"[a-z0-9][a-z0-9._-]*")
-TIME = re.compile(r"\d{8}T\d{6}\.\d{6}Z")
-STEP = re.compile(r"[A-Za-z0-9][A-Za-z0-9:._-]*")
 STREAMS = 8              # open event streams at most, below the thread pool's size (web.md § 5)
 POLL = 0.25              # seconds between looks at a growing event log
 KEEPALIVE = 5.0          # seconds of quiet after which a stream sends an empty line
-TAIL_LINES = 40
 
 REFUSAL_STATUS = 409
 
@@ -86,17 +81,12 @@ class _Started(SilentObserver):
         self.where.put(where)
 
 
-def _address(where: Path) -> str:
-    """`<subject>/<time>`: the operation directory as the event routes take it."""
-    return f"{where.parent.name}/{where.name}"
-
-
 def _operation_dir(subject: str, at: str) -> Path:
-    if not SUBJECT.fullmatch(subject) or not TIME.fullmatch(at):
+    address = OperationAddress.parse(subject, at)
+    if address is None:
         abort(404)
-    root = operations_root("").resolve()
-    where = (root / subject / at).resolve()
-    if root not in where.parents or not (where / "events.jsonl").is_file():
+    root, where = operations_root().resolve(), address.folder().resolve()
+    if root not in where.parents or not (where / eventlog.FILE).is_file():
         abort(404)
     return where
 
@@ -200,7 +190,7 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
                     return _defect(value, app)
 
         def answer() -> Iterator[str]:
-            yield _line(view.Started(operation=_address(where)))
+            yield _line(view.Started(operation=str(OperationAddress.of(where))))
             while True:  # each later run's directory as it starts, until the apply ends
                 try:
                     kind, value = done.get(timeout=0.2)
@@ -208,9 +198,9 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
                 except queue.Empty:
                     pass
                 while not observer.where.empty():
-                    yield _line(view.Started(operation=_address(observer.where.get())))
+                    yield _line(view.Started(operation=str(OperationAddress.of(observer.where.get()))))
             while not observer.where.empty():
-                yield _line(view.Started(operation=_address(observer.where.get())))
+                yield _line(view.Started(operation=str(OperationAddress.of(observer.where.get()))))
             if kind == "outcome":
                 yield _line(view.Ended(ok=value.ok(), outcome=value.model_dump(mode="json")))
             elif isinstance(value, Refusal):
@@ -249,7 +239,7 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
             try:
                 sent, quiet = 0, 0.0
                 while not stopping.is_set():
-                    records = eventlog.EventLog(where / "events.jsonl").events()
+                    records = eventlog.EventLog.of(where).events()
                     for record in records[sent:]:
                         yield json.dumps(record) + "\n"
                         quiet = 0.0
@@ -267,16 +257,15 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
 
         return Response(stream(), mimetype="application/x-ndjson")
 
-    @app.get("/api/tail/<subject>/<at>/<step>")
+    @app.get("/api/tail/<subject>/<at>/<path:step>")
     def tail_route(subject: str, at: str, step: str):
         where = _operation_dir(subject, at)
-        if not STEP.fullmatch(step):
-            abort(404)
-        logs = [r["log"] for r in eventlog.EventLog(where / "events.jsonl").events()
-                if r.get("step") == step and r.get("log") and r.get("kind") in ("step-log", "step-end")]
-        if not logs:
+        found = next((s for s in eventlog.fold(eventlog.EventLog.of(where).events()).steps if s.id == step), None)
+        if found is None:
+            abort(404)                                    # a step the operation's log does not name
+        if found.log is None:
             return _json(view.Lines())
-        path = Path(logs[-1]).resolve()
+        path = Path(found.log).resolve()
         if where not in path.parents or not path.is_file():
             abort(404)
         return _json(view.Lines(lines=tail(path, TAIL_LINES)))

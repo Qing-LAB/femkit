@@ -24,17 +24,17 @@ from femkit.config.requests import CONFIG_INIT, CONFIG_PATH, CONFIG_SET, CONFIG_
 # ------------------------------------------------------------------ config path
 
 class DirectoryRow(Model):
-    name: str = Field(description="config, data, cache or state")
+    name: str = Field(description=f"one of {', '.join(dirs.VARIABLES)}")
     path: str = Field(description="the directory")
-    rule: str = Field(description="what chose it: a FEMKIT_* variable, an XDG variable, or the default")
+    rule: str = Field(description="what chose it: its own variable, an XDG variable, or the default")
     entries: list[str] = Field(description="every file under the config directory; the top-level entries of the others")
 
 
 class PathResult(Result):
-    directories: list[DirectoryRow] = Field(description="the four directories, in the order config, data, cache, state")
+    directories: list[DirectoryRow] = Field(description=f"femkit's directories: {', '.join(dirs.VARIABLES)}")
 
     def text(self) -> str:
-        lines = ["the four femkit directories"]
+        lines = ["femkit's directories"]
         lines += text.table((d.name, d.path, f"# from {d.rule}") for d in self.directories)
         for d in self.directories:
             lines.append(f"  in {d.name}:")
@@ -44,7 +44,7 @@ class PathResult(Result):
 
 @operation(CONFIG_PATH, result=PathResult)
 def config_path(req: PathRequest, ctx: Context) -> PathResult:
-    """Print the four femkit directories, what chose each, and what is in them."""
+    """Print femkit's directories, what chose each, and what is in them."""
     rows = []
     for name, (path, rule) in dirs.directory_sources().items():
         if not path.exists():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -101,8 +102,10 @@ def test_users_share_a_lock_and_a_change_is_refused_naming_each_and_what_ends_it
     from femkit.core.locks import is_held, require_free
     from femkit.core.locks import lock_path
     lock_path("env-x").parent.mkdir(parents=True, exist_ok=True)
-    lock_path("env-x").write_text('{"pid": 999999999, "by": "a holder long gone", "next": []}\n'
-                                  f'{{"pid": {os.getpid()}, "by": "a holder of another shape", "next": [{{"no": "action"}}]}}\n')
+    gone = {"pid": 999999999, "start": 1, "boot": process.boot_id()}
+    lock_path("env-x").write_text(json.dumps({"process": gone, "by": "a holder long gone", "next": []}) + "\n"
+                                  + json.dumps({"process": process.identify(os.getpid()).as_json(),
+                                                "by": "a holder of another shape", "next": [{"no": "action"}]}) + "\n")
     users = [hold("env-x", "shared"), hold("env-x", "shared")]
     try:
         assert not is_held("env-x")                         # a use is not a change
@@ -131,11 +134,14 @@ def test_users_share_a_lock_and_a_change_is_refused_naming_each_and_what_ends_it
 
 def test_the_event_log_fold_reads_progress_interruption_and_a_torn_line(tmp_path):
     """Fails if resume could skip an unfinished step, a dead writer's run read as in
-    progress, or a torn last line break the read (core.md § 6)."""
-    dead = subprocess.Popen([sys.executable, "-c", "pass"])
-    dead.wait()
-    log = EventLog(tmp_path / "events.jsonl")
-    log.append("operation-start", operation="env.install", pid=dead.pid)
+    progress, a run told alive by its process ID alone, the steps not told as the log
+    tells them, or a torn last line break the read (core.md §§ 6, 8)."""
+    writer = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    gone = process.identify(writer.pid)
+    writer.kill()
+    writer.wait()
+    log = EventLog.of(tmp_path)
+    log.append("operation-start", operation="env.install", process=gone.as_json())
     log.append("step-start", step="a")
     log.append("step-end", step="a", outcome="done")
     log.append("step-start", step="b")
@@ -146,7 +152,12 @@ def test_the_event_log_fold_reads_progress_interruption_and_a_torn_line(tmp_path
     state = fold(log.events())
     assert state.finished_steps == ("a",)
     assert state.failed_step == "b"
+    assert [(s.id, s.outcome) for s in state.steps] == [("a", "done"), ("b", "running")]
     assert state.interrupted and not state.ended
+    me = process.identify(os.getpid())
+    assert not fold([{"kind": "operation-start", "process": me.as_json()}]).interrupted
+    reused = {**me.as_json(), "start": me.start + 1}           # this process's ID, another process's start
+    assert fold([{"kind": "operation-start", "process": reused}]).interrupted
 
 
 def test_a_timeout_stops_the_whole_process_group(tmp_path):

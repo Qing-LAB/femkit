@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from werkzeug.serving import BaseWSGIServer, WSGIRequestHandler
 
-from femkit.server.protocol import LOOPBACK, Listen
+from femkit.server.protocol import LOOPBACK, Listen, event_line
 
 THREADS = 16          # above the app's cap on event streams (app.STREAMS)
 READ_TIMEOUT = 15.0   # seconds a connection may take to send a request, and stay idle
@@ -33,11 +33,11 @@ class _Handler(WSGIRequestHandler):
     def log_request(self, code="-", size="-") -> None:
         path = (getattr(self, "path", "") or "").split("?", 1)[0].encode("unicode_escape").decode("ascii")
         elapsed = (time.monotonic() - getattr(self, "_began", time.monotonic())) * 1000
-        print(f"[serve-request] {time.strftime('%Y-%m-%dT%H:%M:%S%z')} {getattr(self, 'command', None) or '-'} "
-              f"{path or '-'} {getattr(code, 'value', code)} {elapsed:.0f} ms", flush=True)
+        print(event_line("request", f"{getattr(self, 'command', None) or '-'} {path or '-'} "
+                                    f"{getattr(code, 'value', code)} {elapsed:.0f} ms"), end="", flush=True)
 
     def log_error(self, format: str, *args) -> None:
-        print(f"[serve-error] {time.strftime('%Y-%m-%dT%H:%M:%S%z')} " + (format % args), flush=True)
+        print(event_line("error", format % args), end="", flush=True)
 
     def log_message(self, format: str, *args) -> None:
         pass  # werkzeug's own lines would carry the full request line
@@ -81,7 +81,7 @@ class BoundedServer(BaseWSGIServer):
             creds = request.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
             _, uid, _ = struct.unpack("3i", creds)
             if uid != os.getuid():
-                print(f"[serve-error] a connection from uid {uid} refused", flush=True)
+                print(event_line("error", f"a connection from uid {uid} refused"), end="", flush=True)
                 return False
         return True
 
@@ -98,7 +98,7 @@ class BoundedServer(BaseWSGIServer):
             self.shutdown_request(request)
 
     def handle_error(self, request, client_address) -> None:
-        print(f"[serve-error] {time.strftime('%Y-%m-%dT%H:%M:%S%z')} {sys.exc_info()[1]!r}", flush=True)
+        print(event_line("error", repr(sys.exc_info()[1])), end="", flush=True)
 
     def close(self) -> None:
         """After `serve_forever` returns: no new request starts; those running are left to end."""

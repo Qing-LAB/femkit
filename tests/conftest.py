@@ -44,11 +44,11 @@ REAL_ENVIRONMENTS = [REAL_CONTROL] + [_real_engine_root() / name for name in loa
 
 @pytest.fixture(autouse=True)
 def isolated_dirs(tmp_path, monkeypatch):
-    """Every test's own four directories (§ 2.1)."""
-    for name in ("config", "data", "cache", "state"):
+    """Every test's own directories, each one femkit has (§ 2.1)."""
+    for name, variable in dirs.VARIABLES.items():
         path = tmp_path / f"femkit-{name}"
         path.mkdir()
-        monkeypatch.setenv(f"FEMKIT_{name.upper()}_DIR", str(path))
+        monkeypatch.setenv(variable, str(path))
     yield
 
 

@@ -28,21 +28,22 @@ module reads no file, probes nothing and starts nothing.
 
 | module | offers | § |
 |---|---|---|
-| `dirs` | the user's directories, the control prefix, and the checkout femkit runs from | 3 |
+| `dirs` | the user's directories and the variables that name them, the control prefix, and the checkout femkit runs from | 3 |
+| `clock` | how femkit writes a moment: UTC, ISO 8601, to the second — in every record, event log and server log line | 6 |
 | `paths` | `inside(path, root)`: the one test that a path resolves within a prefix or tree; `nearest_existing(path)`: where a place not made yet would be made | 3 |
 | `schema` | `Model`, the loader, `DefinitionError`, the placeholder grammar | 2 |
 | `persist` | atomic writes, TOML and JSON reads and writes | 4 |
-| `locks` | `subject_lock` | 5 |
-| `eventlog` | `EventLog` and its fold | 6 |
+| `locks` | `subject_lock`, and the grammar of a subject's name | 5 |
+| `eventlog` | `EventLog`, its file's name, the record kinds, the step outcomes, and its fold | 6 |
 | `states` | `Machine`, `Rule`, `Action` | 7 |
-| `process` | `run`, `ProcessResult`, `tail` (a log's last lines) | 8 |
+| `process` | `run`, `ProcessResult`, `tail` (a log's last lines), a process's `Identity`, the one stop grace | 8 |
 | `errors` | `Refusal` and its six kinds | 9 |
 | `issues` | `Issue` | 10 |
 | `units` | the unit table's schema, `Quantity`, `Units`: one grammar for a quantity, a unit and an expression of named quantities; conversion | 11 |
 | `text` | how a value, a path (from `~`), a count (`1 step`, `16 steps`), a table, a finding and a "next" block are shown | [`api.md`](api.md) § 4.4 |
 | `view` | the one vocabulary of what a person may read and do: `Help`, `Action`, `Field`, `Table` — every next step an `Action` | [`web.md`](web.md) § 7 |
 | `commandline` | the one mapping between a request's fields and a command's arguments, both ways: the command line parses by it, and an `Action` is written as a command by it | [`api.md`](api.md) § 4.1 |
-| `operations` | `Context`, `Plan`, `Step`, `Result`, `Outcome`, `Observer`, `operation` | [`api.md`](api.md) |
+| `operations` | `Context`, `Plan`, `Step`, `Result`, `Outcome`, `Observer`, `operation`, `run_steps`; an operation's address and its folder | [`api.md`](api.md), § 6 |
 
 ## 2. Schema — `core/schema.py`
 
@@ -134,6 +135,8 @@ def data_dir() -> Path      # FEMKIT_DATA_DIR,   else $XDG_DATA_HOME/femkit,   e
 def cache_dir() -> Path     # FEMKIT_CACHE_DIR,  else $XDG_CACHE_HOME/femkit,  else ~/.cache/femkit
 def state_dir() -> Path     # FEMKIT_STATE_DIR,  else $XDG_STATE_HOME/femkit,  else ~/.local/state/femkit
 def runtime_dir() -> Path   # FEMKIT_RUNTIME_DIR, else as config.md § 2 says; made private by persist.private_dir
+VARIABLES: dict[str, str]   # each of the five directories -> the variable that names it outright; a test
+                            # isolates every one of them from this list (testing.md § 2.1)
 def host() -> str           # this machine's name, which keys the runtime directory
 def control_prefix() -> Path            # <data>/environments/control (envs.md § 1)
 def checkout() -> Path                  # the checkout femkit runs from; it is never installed (envs.md § 7)
@@ -225,19 +228,27 @@ def holders() -> dict[str, int]         # subject -> pid, from the kernel's lock
   alone — is changing it; `require_free` refuses while anyone holds it.
 - `Busy` means **another** process holds it. The process that holds it reads
   its own subject as not busy: its facts function is told so.
-- The file holds one line per holder — its pid, what it is, and the commands
-  that end its hold — only so `Busy` can name the live ones and offer those
-  commands as its next steps; nothing is decided from its content. A holder
-  alone rewrites the file; a shared holder adds its line.
-- A subject is a stable name: `env-ngsolve`, `run-<calculation path hash>`.
-  The operation declares it ([`api.md`](api.md) § 2); the operation runner,
-  not the operation, takes the lock.
+  — only so `Busy` can name the live ones and offer those commands as its next
+  steps; nothing is decided from its content. A holder alone rewrites the file;
+  a shared holder adds its line.
+- A subject is a stable name — `env-ngsolve`, `machine-Sol`, `server-<host>-8000` —
+  of letters, digits, `.`, `_` and `-`, starting with a letter or a digit
+  (`locks.SUBJECT`): its lock file and its operations' folder are called by it,
+  and a name outside the grammar is a defect where it is made. The operation
+  declares it ([`api.md`](api.md) § 2); the operation runner, not the
+  operation, takes the lock.
+- The file holds one line per holder — the holder's process, by its identity
+  (§ 8), what it is, and the commands that end its hold
 
 ## 6. Event logs — `core/eventlog.py`
 
 ```python
+FILE = "events.jsonl"                                  # in its operation directory; nothing else names it
+StepOutcome = Literal["done", "failed", "killed"]      # how a step ends; OUTCOMES lists them
+
 class EventLog:
-    def __init__(self, path: Path)                   # <operation directory>/events.jsonl
+    @classmethod
+    def of(cls, folder: Path, now=clock.now) -> EventLog  # the log of the operation in folder; its moments from now
     def append(self, kind: str, **fields) -> None     # one JSON line, flushed and fsynced
     def events(self) -> list[dict]                     # every complete line; a torn last line is ignored
 
@@ -246,9 +257,18 @@ class LogState(Model):
     started: bool
     ended: bool                    # an operation-end record exists
     outcome: str | None            # its outcome: done | failed
+    steps: tuple[StepState, ...]   # each step: its ID, its outcome or `running`, its log — what a surface shows
     finished_steps: tuple[str, ...]   # step IDs with step-end outcome done, in order
     failed_step: str | None
-    interrupted: bool              # started, not ended, and the pid in operation-start is not alive
+    interrupted: bool              # started, not ended, and the process that started it no longer runs —
+                                   # by its identity (§ 8), never its ID alone
+
+class OperationAddress:            # in core/operations.py: `<subject>/<time>`, how a surface names a run
+    @classmethod
+    def at(cls, subject, moment) -> OperationAddress   # its time: UTC, `%Y%m%dT%H%M%S.%fZ`
+    @classmethod
+    def parse(cls, subject, time) -> OperationAddress | None   # None where either breaks its grammar
+    def folder(self) -> Path
 ```
 
 An **operation directory** is `<state>/operations/<subject>/<time>/`, or
@@ -257,9 +277,11 @@ holds the event log and each step's log; nothing else names this path. An
 operation over several subjects (`env install ngsolve elmer`) writes one
 directory per subject, and its result names each on its row.
 
-Record kinds, each with `time`: `operation-start` (operation, request, pid),
+Record kinds, each with `time` (`core/clock.py`, from the operation's
+context): `operation-start` (operation, request, basis — the facts its plan was
+made from — and process, its identity),
 `step-start` (step), `step-log` (step, log: the running step's log, as it reports it to the observer — the runner wraps every apply's observer to record it), `step-end` (step, outcome, log), `operation-end`
-(outcome). Progress, the failed step, interruption and what a resume may skip
+(outcome). A step outcome outside `StepOutcome` is a defect of the step. Progress, the failed step, interruption and what a resume may skip
 are folds over the log; nothing else records them. An operation's result
 becomes visible only through its commit write (§ 4), never through the log.
 
@@ -329,7 +351,8 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
   checks); without it, both are captured whole (for short answers a reader
   parses).
 - Each command runs in its own process group. A timeout or an interrupt stops
-  the whole group (`SIGTERM`, then `SIGKILL` after 5 s).
+  the whole group (`SIGTERM`, then `SIGKILL` after `GRACE`, 5 s — the one grace for
+  every process femkit stops).
 - A non-zero exit is a result, not an exception; the caller decides.
 - A detached, supervised process — the web server's supervisor and its child
   ([`web.md`](web.md) § 4), and a job a person launches — is started through

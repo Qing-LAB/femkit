@@ -173,8 +173,8 @@ def test_a_changing_operation_must_have_plan_and_apply():
 
 
 def test_steps_write_the_event_log_and_stop_at_the_first_failure():
-    """Fails if applying steps leaves no event log, runs past a failed step, or loses the
-    log of a step that raised (api.md § 3, core.md § 6, § 9)."""
+    """Fails if applying steps leaves no event log, runs past a failed step, loses the log of
+    a step that raised, or takes an outcome no step can have (api.md § 3, core.md § 6, § 9)."""
     ctx = Context.from_process()
     plan = Plan(operation="toy.steps", request={}, subjects=("toy",),
                 steps=tuple(Step(id=i, describe=i) for i in ("a", "b", "c")))
@@ -185,7 +185,7 @@ def test_steps_write_the_event_log_and_stop_at_the_first_failure():
         return ("failed" if step.id == "b" else "done"), None
 
     status, where = run_steps(plan, ctx, SilentObserver(), do)
-    state = fold(EventLog(where / "events.jsonl").events())
+    state = fold(EventLog.of(where).events())
     assert status == "failed" and ran == ["a", "b"]
     assert state.finished_steps == ("a",) and state.failed_step == "b" and state.outcome == "failed"
 
@@ -194,7 +194,11 @@ def test_steps_write_the_event_log_and_stop_at_the_first_failure():
 
     with pytest.raises(RuntimeError) as caught:
         run_steps(plan, ctx, SilentObserver(), boom)
-    assert fold(EventLog(Path(caught.value.femkit_log) / "events.jsonl").events()).failed_step == "a"
+    assert fold(EventLog.of(Path(caught.value.femkit_log)).events()).failed_step == "a"
+
+    with pytest.raises(ValueError) as caught:
+        run_steps(plan, ctx, SilentObserver(), lambda step, where: ("skipped", None))
+    assert fold(EventLog.of(Path(caught.value.femkit_log)).events()).failed_step == "a"
 
 
 def test_nothing_to_do_still_answers_with_the_outcome_and_asks_no_consent():

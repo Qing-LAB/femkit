@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 
 from femkit.config import probe, settings
-from femkit.config.operations import ConfigInit, ConfigSet, config_show
+from femkit.config.operations import ConfigInit, ConfigSet, config_path, config_show
+from femkit.core import dirs
 from femkit.core.operations import Context
 from femkit.core.errors import UsageError
 from femkit.core.schema import DefinitionError
@@ -108,3 +109,10 @@ def test_a_login_node_with_only_the_submit_command_is_detected_as_its_scheduler(
     monkeypatch.setenv("PATH", str(bin_dir))
     kind, _why = probe.detect_scheduler(load_schedulers())
     assert kind == "slurm"
+
+
+def test_config_path_names_each_of_femkits_directories_and_what_chose_it():
+    """Fails if `config path` leaves out one of femkit's directories — the runtime one among them —
+    or names another rule than the variable that chose it (config.md § 2)."""
+    rows = config_path.run(config_path.request(), Context.from_process()).directories
+    assert [(r.name, r.rule) for r in rows] == list(dirs.VARIABLES.items())

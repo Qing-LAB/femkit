@@ -16,10 +16,11 @@ from pathlib import Path
 import pytest
 
 from femkit import registry
-from femkit.core import locks
+from femkit.core import clock, locks
+from femkit.core.eventlog import EventLog
 from femkit.core.errors import Busy, Refused
-from femkit.core.operations import Context
-from femkit.core.process import Identity, end, identify
+from femkit.core.operations import Context, OperationAddress, operations_root
+from femkit.core.process import GRACE, Identity, end, identify
 from femkit.server import health, protocol
 from femkit.server.protocol import Listen, LogRoll, Pidfile
 from femkit.server.state import MACHINE, ServerFacts, ServerState, facts
@@ -325,19 +326,16 @@ def test_stop_is_prompt_with_an_event_stream_open(server):
     """Fails if an open event stream holds up `stop`: the child ends its streams, and the
     supervisor kills a child that has not gone within its grace (web.md § 4)."""
     import http.client
-    from femkit.core.operations import operations_root
-    where = operations_root("demo") / "20260101T000000.000000Z"
-    where.mkdir(parents=True)
-    (where / "events.jsonl").write_text(json.dumps({"kind": "operation-start", "pid": os.getpid(),
-                                                    "time": "t"}) + "\n")  # running: this test's pid lives
+    address = OperationAddress.at("demo", clock.now())
+    EventLog.of(address.folder()).append("operation-start", process=identify(os.getpid()).as_json())  # running: this test
     token = protocol.token_file(str(server)).read_text().strip()
     conn = http.client.HTTPConnection("127.0.0.1", server, timeout=30)
-    conn.request("GET", f"/api/events/demo/{where.name}", headers={"Authorization": f"Bearer {token}"})
+    conn.request("GET", f"/api/events/{address}", headers={"Authorization": f"Bearer {token}"})
     response = conn.getresponse()
     assert json.loads(response.readline())["kind"] == "operation-start"
     began = time.monotonic()
     assert apply("serve.stop", port=server).ok()
-    assert time.monotonic() - began < protocol.STOP_GRACE + 3
+    assert time.monotonic() - began < GRACE + 3
     conn.close()
 
 
@@ -348,7 +346,7 @@ def test_a_child_that_does_not_end_is_killed_after_the_grace(server):
     os.kill(p.child.pid, signal.SIGSTOP)  # it cannot act on SIGTERM
     began = time.monotonic()
     assert apply("serve.stop", port=server).ok()
-    assert not p.child.alive() and time.monotonic() - began < protocol.STOP_GRACE + 3
+    assert not p.child.alive() and time.monotonic() - began < GRACE + 3
 
 
 def fake_operation(runs: int, step_log: bool = False):
@@ -409,7 +407,6 @@ def test_a_running_steps_log_is_found_while_it_runs():
     worker = _t.Thread(target=op.apply, args=(plan, Ctx.from_process()))
     worker.start()
     try:
-        from femkit.core.operations import operations_root
         assert wait_until(lambda: any(operations_root("demo-0").glob("*/work.log")))
         at = next(operations_root("demo-0").iterdir()).name
         assert wait_until(lambda: client.get(f"/api/tail/demo-0/{at}/work", headers=auth).get_json()["lines"]
@@ -419,19 +416,30 @@ def test_a_running_steps_log_is_found_while_it_runs():
         worker.join()
 
 
+def test_a_run_on_a_subject_named_with_capitals_can_be_followed(client):
+    """Fails if the event routes turn away a subject a lock may have — a machine named `Sol` —
+    so the page cannot follow its run (core.md § 5, web.md § 1)."""
+    address = OperationAddress.at("machine-Sol", clock.now())
+    log = EventLog.of(address.folder())
+    log.append("operation-start", process=identify(os.getpid()).as_json())
+    log.append("step-start", step="probe")
+    log.append("operation-end", outcome="done")
+    lines = client.get(f"/api/events/{address}", headers=AUTH).get_data(as_text=True).splitlines()
+    assert json.loads(lines[-1])["kind"] == "operation-end"
+    assert client.get(f"/api/tail/{address}/probe", headers=AUTH).status_code == 200
+
+
 def test_unread_event_streams_hold_no_slot(client):
     """Fails if a stream answered but never read (HEAD) keeps one of the few stream slots,
     until no page can follow an operation (web.md § 5)."""
-    from femkit.core.operations import operations_root
     from femkit.web.app import STREAMS
-    where = operations_root("demo") / "20260101T000000.000000Z"
-    where.mkdir(parents=True)
-    (where / "events.jsonl").write_text(json.dumps({"kind": "operation-start", "pid": os.getpid(), "time": "t"})
-                                        + "\n" + json.dumps({"kind": "operation-end", "outcome": "done",
-                                                               "time": "t"}) + "\n")
+    address = OperationAddress.at("demo", clock.now())
+    log = EventLog.of(address.folder())
+    log.append("operation-start", process=identify(os.getpid()).as_json())
+    log.append("operation-end", outcome="done")
     for _ in range(STREAMS + 2):
-        client.head(f"/api/events/demo/{where.name}", headers=AUTH)
-    lines = client.get(f"/api/events/demo/{where.name}", headers=AUTH).get_data(as_text=True).splitlines()
+        client.head(f"/api/events/{address}", headers=AUTH)
+    lines = client.get(f"/api/events/{address}", headers=AUTH).get_data(as_text=True).splitlines()
     assert json.loads(lines[-1])["kind"] == "operation-end"
 
 

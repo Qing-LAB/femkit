@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 
@@ -10,7 +11,8 @@ from femkit.config import settings
 from femkit.config.probe import place
 from femkit.core import locks, process, text, view
 from femkit.core.errors import PlanStale, Unstated, UsageError
-from femkit.core.eventlog import EventLog, fold
+from femkit.core import eventlog
+from femkit.core.eventlog import EventLog, StepState, fold
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.schema import Model
@@ -108,22 +110,16 @@ class EnvClean:
 
 # ------------------------------------------------------------------ env log
 
-class StepRow(Model):
-    step: str = Field(description="the step's ID")
-    outcome: str = Field(description="done, failed, killed, or running when it never ended")
-    log: str | None = Field(default=None, description="its log file")
-
-
 class LogResult(Result):
     operation: str | None = Field(default=None, description="the last operation's directory; none if never run")
-    outcome: str | None = Field(default=None, description="done, failed, or none when it did not end")
-    steps: list[StepRow] = Field(default_factory=list, description="its steps, in order")
+    outcome: Literal["done", "failed"] | None = Field(default=None, description="how it ended; none when it did not")
+    steps: list[StepState] = Field(default_factory=list, description="its steps, in order")
 
     def text(self) -> str:
         if self.operation is None:
             return "no operation has run on it yet"
         lines = [f"last operation: {self.outcome or 'did not end'}   # {self.operation}"]
-        return "\n".join(lines + text.table((s.outcome, s.step, s.log or "") for s in self.steps))
+        return "\n".join(lines + text.table((s.outcome, s.id, s.log or "") for s in self.steps))
 
 
 @operation(ENV_LOG, result=LogResult)
@@ -133,16 +129,9 @@ def env_log(req: LogRequest, ctx: Context) -> LogResult:
     runs = _runs(req.name)
     if not runs:
         return LogResult()
-    events = EventLog(runs[-1]).events()
-    state = fold(events)
-    rows, open_steps = [], {}
-    for e in events:
-        if e["kind"] == "step-start":
-            open_steps[e["step"]] = len(rows)
-            rows.append(StepRow(step=e["step"], outcome="running"))
-        elif e["kind"] == "step-end" and e["step"] in open_steps:
-            rows[open_steps[e["step"]]] = StepRow(step=e["step"], outcome=e["outcome"], log=e.get("log"))
-    return LogResult(operation=str(runs[-1].parent), outcome=state.outcome, steps=rows)
+    state = fold(EventLog(runs[-1]).events())
+    return LogResult(operation=str(runs[-1].parent), outcome=state.outcome,
+                     steps=list(state.steps))
 
 
 # ------------------------------------------------------------------ env install
@@ -150,7 +139,7 @@ def env_log(req: LogRequest, ctx: Context) -> LogResult:
 def _runs(name: str) -> list[Path]:
     """Every operation on an environment, oldest first."""
     root = layout.operations_dir(name)
-    return sorted(root.glob("*/events.jsonl")) if root.exists() else []
+    return sorted(root.glob(f"*/{eventlog.FILE}")) if root.exists() else []
 
 
 def last_operation(name: str) -> tuple[str | None, frozenset[str]]:

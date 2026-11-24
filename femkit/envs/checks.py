@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from femkit.config import settings
-from femkit.core import paths, process, text
+from femkit.core import clock, paths, process, text
 from femkit.core.operations import Context, Plan, Step, run_steps
 from femkit.core.persist import write_json
 from femkit.core.schema import render
@@ -285,7 +285,7 @@ def run_validation(ctx: Context, name: str, gpu: bool, plan_steps: tuple[Step, .
             recorded.extend(kept[c.id] for c in r.env.checks if c.id in kept)
             write_json(layout.checks_file(f.prefix), ChecksRecord(
                 check_fingerprint=f.check_fingerprint, outcomes=recorded,
-                time=ctx.now().isoformat(timespec="seconds")).model_dump())
+                time=clock.stamp(ctx.now())).model_dump())
             return "done", None
         check = by_id[step.id.split(":", 1)[1]]
         outcome = run_check(r, check, where / check.id)

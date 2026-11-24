@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import BinaryIO, Callable
 
 from femkit.core import dirs, locks
-from femkit.core.process import Identity, identify
+from femkit.core.process import GRACE, Identity, identify
 from femkit.server import protocol
 from femkit.server.protocol import Listen, LogRoll, Pidfile, event_line
 
@@ -55,7 +55,7 @@ def supervise(listen: Listen, fd: int, python: str, *, log_max_bytes: int, log_k
     state: dict = {"child": None, "restart": False, "stop": False}
 
     def note(message: str) -> None:
-        line = event_line("supervisor", message)
+        line = event_line("supervisor", message).encode()
         roll.write(line)
         if echo is not None:
             echo.write(line)
@@ -68,7 +68,7 @@ def supervise(listen: Listen, fd: int, python: str, *, log_max_bytes: int, log_k
         if child is None or child.poll() is not None:
             return
         child.terminate()
-        timer = threading.Timer(protocol.STOP_GRACE, lambda: child.poll() is None and child.kill())
+        timer = threading.Timer(GRACE, lambda: child.poll() is None and child.kill())
         timer.daemon = True
         timer.start()
 
@@ -128,7 +128,7 @@ def supervise(listen: Listen, fd: int, python: str, *, log_max_bytes: int, log_k
         if live is not None and live.poll() is None:
             live.terminate()
             try:
-                live.wait(timeout=protocol.STOP_GRACE)
+                live.wait(timeout=GRACE)
             except subprocess.TimeoutExpired:
                 live.kill()
                 live.wait()

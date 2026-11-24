@@ -14,7 +14,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-TAIL_LINES = 40
+TAIL_LINES = 40   # a step's last lines, as a surface shows a running step's live line
+GRACE = 5.0       # seconds between SIGTERM and SIGKILL, for every process femkit stops
 
 
 @dataclass(frozen=True)
@@ -34,7 +35,7 @@ class ProcessResult:
 def _stop_group(proc: subprocess.Popen) -> None:
     try:
         os.killpg(proc.pid, signal.SIGTERM)
-        proc.wait(timeout=5)
+        proc.wait(timeout=GRACE)
     except (ProcessLookupError, subprocess.TimeoutExpired):
         try:
             os.killpg(proc.pid, signal.SIGKILL)
@@ -195,7 +196,7 @@ def start_detached(
 _detached: list[subprocess.Popen] = []  # started here and not yet reaped: an ended one is collected later
 
 
-def end(identity: Identity, *, grace: float = 5.0) -> bool:
+def end(identity: Identity, *, grace: float = GRACE) -> bool:
     """``SIGTERM``, then ``SIGKILL`` after ``grace`` seconds; only to a process that is
     ``identity``. False when it was not running."""
     if not identity.alive():

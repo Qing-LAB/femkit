@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,10 +13,22 @@ from typing import Iterable, Iterator
 
 from femkit.core import dirs
 from femkit.core.errors import Busy
+from femkit.core.process import Identity, identify
+
+#: A subject's name — `env-ngsolve`, `machine-Sol`, `server-<host>-8000` — which its lock file and its
+#: operations' folder are called (core.md § 5).
+SUBJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
-def lock_path(subject: str):
-    return dirs.data_dir() / "locks" / f"{subject}.lock"
+def root() -> Path:
+    """`<data>/locks/`: every subject's lock file (core.md § 5)."""
+    return dirs.data_dir() / "locks"
+
+
+def lock_path(subject: str) -> Path:
+    if not SUBJECT.fullmatch(subject):
+        raise ValueError(f"{subject!r} is no subject (core.md § 5)")
+    return root() / f"{subject}.lock"
 
 
 def is_held(subject: str) -> bool:
@@ -59,20 +72,11 @@ def _label(fd: int, by: str | None = None, next: Iterable[dict] = ()) -> None:
     """This process's line in the lock's file: a holder alone rewrites it, a shared holder (its
     descriptor opened to append) adds its line. ``next``: each action that ends the hold, as
     its JSON — so a process that writes one need not import the vocabulary."""
-    line = json.dumps({"pid": os.getpid(), "by": by or " ".join(sys.argv), "next": list(next)}) + "\n"
+    line = json.dumps({"process": identify(os.getpid()).as_json(), "by": by or " ".join(sys.argv),
+                       "next": list(next)}) + "\n"
     if not fcntl.fcntl(fd, fcntl.F_GETFL) & os.O_APPEND:
         os.ftruncate(fd, 0)
     os.pwrite(fd, line.encode(), 0)                       # with O_APPEND, at the end
-
-
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
 
 
 def _busy(subject: str, fd: int) -> Busy:
@@ -84,12 +88,12 @@ def _busy(subject: str, fd: int) -> Busy:
     for raw in os.pread(fd, 1 << 16, 0).decode("utf-8", "replace").splitlines():
         try:
             line = json.loads(raw)
-            said[int(line["pid"])] = line
+            said[Identity.from_json(line["process"])] = line
         except (ValueError, KeyError, TypeError):
             if raw.strip():
                 said[raw] = {"by": raw.strip()}          # a line it cannot read: named as it is
-    live = [(k, v) for k, v in said.items() if not isinstance(k, int) or _alive(k)]
-    who = "; ".join(f"{v.get('by')} (pid {k})" if isinstance(k, int) else str(v["by"]) for k, v in live)
+    live = [(k, v) for k, v in said.items() if not isinstance(k, Identity) or k.alive()]
+    who = "; ".join(f"{v.get('by')} (pid {k.pid})" if isinstance(k, Identity) else str(v["by"]) for k, v in live)
     steps: list[Action] = []
     for _, v in live:
         written = v.get("next")
@@ -137,11 +141,11 @@ def adopt(fd: int, by: str | None = None, next: Iterable[dict] = ()) -> None:
 def holders() -> dict[str, int]:
     """Each subject whose lock a process holds now, and that process's ID, as the kernel's
     lock table says — never read from a lock file's text."""
-    root = dirs.data_dir() / "locks"
-    if not root.is_dir():
+    folder = root()
+    if not folder.is_dir():
         return {}
     by_inode = {}
-    for path in root.glob("*.lock"):
+    for path in folder.glob("*.lock"):
         try:
             info = path.stat()
         except OSError:

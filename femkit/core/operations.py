@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -17,11 +18,12 @@ from typing import Any, Callable, Literal, Mapping, Protocol, TypeVar
 
 from pydantic import Field, ValidationError
 
-from femkit.core import dirs, text
+from femkit.core import clock, dirs, text
 from femkit.core.errors import UsageError
-from femkit.core.eventlog import EventLog
+from femkit.core.eventlog import OUTCOMES, EventLog
 from femkit.core.issues import Issue
-from femkit.core.locks import subject_lock
+from femkit.core.locks import SUBJECT, subject_lock
+from femkit.core.process import identify
 from femkit.core.view import Verb
 from femkit.core.schema import Model, key_path
 
@@ -35,7 +37,7 @@ class Context:
     """One per invocation (api.md § 2.4)."""
 
     env: Mapping[str, str]
-    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+    now: Callable[[], datetime] = clock.now
     _cache: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def cached(self, key: str, factory: Callable[[], T]) -> T:
@@ -161,14 +163,14 @@ class _Recording:
     Wraps every apply's observer (`Operation.apply`), so a step that reports to the apply's
     observer is recorded as one that reports to `run_steps`'s."""
 
-    def __init__(self, observer: Observer) -> None:
-        self._observer, self._log, self._step = observer, None, None
+    def __init__(self, observer: Observer, now: Callable[[], datetime]) -> None:
+        self._observer, self._now, self._log, self._step = observer, now, None, None
 
     def __getattr__(self, name: str):
         return getattr(self._observer, name)
 
     def operation_start(self, plan: Plan, where: Path) -> None:
-        self._log, self._step = EventLog(where / "events.jsonl"), None
+        self._log, self._step = EventLog.of(where, self._now), None
         self._observer.operation_start(plan, where)
 
     def step_start(self, step: Step, index: int, total: int) -> None:
@@ -181,14 +183,50 @@ class _Recording:
         self._observer.step_log(log)
 
 
-def operations_root(subject: str) -> Path:
-    """`<state>/operations/<subject>/`: every operation on a subject (core.md § 6)."""
-    return dirs.state_dir() / "operations" / subject
+def operations_root(subject: str | None = None) -> Path:
+    """`<state>/operations/<subject>/`: every operation on a subject; with none, every subject's
+    (core.md § 6)."""
+    if subject is not None and not SUBJECT.fullmatch(subject):
+        raise ValueError(f"{subject!r} is no subject (core.md § 5)")
+    return dirs.state_dir() / "operations" / (subject or "")
+
+
+#: An operation folder's name: the moment its run started, in UTC to the microsecond (core.md § 6).
+TIME_FORMAT = "%Y%m%dT%H%M%S.%fZ"
+TIME = re.compile(r"\d{8}T\d{6}\.\d{6}Z")
+
+
+@dataclass(frozen=True)
+class OperationAddress:
+    """`<subject>/<time>`: one operation's folder under `<state>/operations/` (core.md § 6) — how a
+    surface names a run, and the event routes take it."""
+
+    subject: str
+    time: str
+
+    def __str__(self) -> str:
+        return f"{self.subject}/{self.time}"
+
+    def folder(self) -> Path:
+        return operations_root(self.subject) / self.time
+
+    @classmethod
+    def at(cls, subject: str, moment: datetime) -> "OperationAddress":
+        return cls(subject, moment.astimezone(timezone.utc).strftime(TIME_FORMAT))
+
+    @classmethod
+    def of(cls, folder: Path) -> "OperationAddress":
+        return cls(Path(folder).parent.name, Path(folder).name)
+
+    @classmethod
+    def parse(cls, subject: str, time: str) -> "OperationAddress | None":
+        """The address these name; None when either breaks its grammar (core.md §§ 5–6)."""
+        return cls(subject, time) if SUBJECT.fullmatch(subject) and TIME.fullmatch(time) else None
 
 
 def operation_dir(plan: Plan, now: datetime) -> Path:
     """`<state>/operations/<subject>/<time>/` (core.md § 6)."""
-    return operations_root(plan.subjects[0] if plan.subjects else plan.operation) / now.strftime("%Y%m%dT%H%M%S.%fZ")
+    return OperationAddress.at(plan.subjects[0] if plan.subjects else plan.operation, now).folder()
 
 
 def run_steps(
@@ -202,16 +240,16 @@ def run_steps(
     """Run the plan's steps in order, writing the event log (api.md § 3).
 
     ``do(step, where)`` performs one step — ``where`` is the operation
-    directory, the home of its logs — and returns ``("done" | any other outcome,
-    its log)``. The first step that is not done stops the run, unless
+    directory, the home of its logs — and returns its outcome, one of
+    ``eventlog.OUTCOMES``, and its log. The first step that is not done stops the run, unless
     ``keep_going``: for steps that do not depend on each other, every step runs
     and the run fails if any did. An exception is recorded as the step's
     failure and re-raised carrying the operation directory as ``femkit_log``.
     """
     where = operation_dir(plan, ctx.now())
-    log = EventLog(where / "events.jsonl")
+    log = EventLog.of(where, ctx.now)
     log.append("operation-start", operation=plan.operation, request=plan.request, basis=plan.basis,
-               pid=os.getpid())
+               process=identify(os.getpid()).as_json())
     failed = False
     observer.operation_start(plan, where)
     for index, step in enumerate(plan.steps, 1):
@@ -219,6 +257,8 @@ def run_steps(
         log.append("step-start", step=step.id)
         try:
             outcome, step_log = do(step, where)
+            if outcome not in OUTCOMES:
+                raise ValueError(f"step {step.id}: {outcome!r} is no step outcome; they are {', '.join(OUTCOMES)}")
         except BaseException as exc:
             log.append("step-end", step=step.id, outcome="failed", log=None)
             log.append("operation-end", outcome="failed")
@@ -285,7 +325,7 @@ class Operation:
                 stack.enter_context(subject_lock(subject))
             for subject in plan.shared:
                 stack.enter_context(subject_lock(subject, shared=True))
-            return self.impl.apply(plan, ctx, _Recording(observer or SilentObserver()))
+            return self.impl.apply(plan, ctx, _Recording(observer or SilentObserver(), ctx.now))
 
 
 def operation(

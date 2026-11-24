@@ -22,7 +22,7 @@ from femkit.core import dirs, locks, text, view
 from femkit.core.errors import PlanStale, Refused, UsageError
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import open_private, private_dir
-from femkit.core.process import Identity, end, start_detached, tail
+from femkit.core.process import GRACE, Identity, end, start_detached, tail
 from femkit.core.schema import Model
 from femkit.definitions import catalogue
 from femkit.server import health, protocol, supervisor
@@ -34,7 +34,7 @@ from femkit.server.requests import (SERVE_FOREGROUND, SERVE_RESTART, SERVE_START
                                     ServeRequest, StatusRequest, TargetRequest)
 
 ANSWER_WAIT = 30.0     # seconds a start or a restart waits for the child to answer
-STOP_WAIT = protocol.STOP_GRACE + 5.0
+STOP_WAIT = GRACE + 5.0
 
 
 # ------------------------------------------------------------------ requests
@@ -175,7 +175,7 @@ def _end_stale(f) -> list[str]:
     """A stale server's leftovers: a child it names that still runs is ended, the files removed."""
     said = []
     if f.pidfile is not None and f.pidfile.child is not None and f.pidfile.child.alive():
-        end(f.pidfile.child, grace=protocol.STOP_GRACE)
+        end(f.pidfile.child)
         said.append(f"ended the child still running, pid {f.pidfile.child.pid}")
     listen = f.pidfile.listen if f.pidfile else Listen.named(f.name)
     supervisor.remove_files(listen)
@@ -532,7 +532,7 @@ def _row(name: str) -> ServerRow:
         if not ok:
             try:
                 with open_private(protocol.log_file(name), "ab") as fh:
-                    fh.write(event_line("status", f"up, pid {p.supervisor.pid}, but not answering: {said}"))
+                    fh.write(event_line("status", f"up, pid {p.supervisor.pid}, but not answering: {said}").encode())
             except OSError:
                 pass
     return row

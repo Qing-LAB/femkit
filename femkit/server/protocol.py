@@ -10,11 +10,10 @@ from __future__ import annotations
 import gzip
 import json
 import shutil
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from femkit.core import dirs
+from femkit.core import clock, dirs
 from femkit.core.persist import open_private, write_json
 from femkit.core.process import Identity
 
@@ -22,7 +21,6 @@ SOCKET_NAME = "sock"          # <name> of a server on a Unix socket; a TCP serve
 LOOPBACK = "127.0.0.1"        # printed and bound as this, never `localhost` (web.md § 5)
 SOCKET_PATH_MAX = 107         # bytes a Unix socket's path may hold, its terminating NUL aside
 FLAP_WINDOW = 30.0            # two deaths by a signal within this many seconds: the supervisor gives up
-STOP_GRACE = 5.0              # seconds between SIGTERM and SIGKILL
 CHILD_MODULE = "femkit.web"   # what the supervisor runs
 
 
@@ -147,9 +145,10 @@ def flapping(deaths: list[float], now: float) -> bool:
 
 # -------------------------------------------------------------------- the log
 
-def event_line(source: str, message: str) -> bytes:
-    """One line of the server's log: `[serve-<source>] <time> <message>`."""
-    return f"[serve-{source}] {time.strftime('%Y-%m-%dT%H:%M:%S%z')} {message}\n".encode()
+def event_line(source: str, message: str) -> str:
+    """One line of the server's log: `[serve-<source>] <time> <message>`, its moment as femkit
+    writes one (core/clock.py); every writer of the log — the supervisor, the child — builds it here."""
+    return f"[serve-{source}] {clock.stamp()} {message}\n"
 
 
 class LogRoll:

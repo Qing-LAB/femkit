@@ -18,12 +18,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
 from femkit.config import settings
-from femkit.core import paths, process, text
+from femkit.core import clock, paths, process, text
+from femkit.core.eventlog import StepOutcome
 from femkit.core.operations import Context, Step
 from femkit.core.persist import atomic_write_text, write_json
 from femkit.core.schema import render
@@ -178,7 +178,7 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
 
 # ------------------------------------------------------------------ the steps
 
-KILLED = "killed"
+KILLED: StepOutcome = "killed"
 SIGKILL_CODES = (-9, 137)  # killed by SIGKILL: directly, or as a shell reports it
 
 
@@ -466,7 +466,7 @@ def step_manifest(t: Target, step: Step, log: Path, say: Say) -> str:
     write_json(layout.manifest_file(t.prefix), Manifest(
         install_fingerprint=t.install_fingerprint, lock_sha256=_sha256(t.lock), manager_kind=t.manager.kind_name,
         manager_version=found.group(1) if found else "unknown", solver_version=version,
-        time=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        time=clock.stamp(),
     ).model_dump())
     return "done"
 

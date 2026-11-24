@@ -697,7 +697,7 @@
           "type": "array"
         },
         "name": {
-          "description": "config, data, cache or state",
+          "description": "one of config, data, cache, state, runtime",
           "type": "string"
         },
         "path": {
@@ -705,7 +705,7 @@
           "type": "string"
         },
         "rule": {
-          "description": "what chose it: a FEMKIT_* variable, an XDG variable, or the default",
+          "description": "what chose it: its own variable, an XDG variable, or the default",
           "type": "string"
         }
       },
@@ -2102,6 +2102,10 @@
         "outcome": {
           "anyOf": [
             {
+              "enum": [
+                "done",
+                "failed"
+              ],
               "type": "string"
             },
             {
@@ -2109,12 +2113,12 @@
             }
           ],
           "default": null,
-          "description": "done, failed, or none when it did not end"
+          "description": "how it ended; none when it did not"
         },
         "steps": {
           "description": "its steps, in order",
           "items": {
-            "$ref": "#/$defs/StepRow"
+            "$ref": "#/$defs/StepState"
           },
           "type": "array"
         }
@@ -2406,7 +2410,7 @@
       "additionalProperties": false,
       "properties": {
         "directories": {
-          "description": "the four directories, in the order config, data, cache, state",
+          "description": "femkit's directories: config, data, cache, state, runtime",
           "items": {
             "$ref": "#/$defs/DirectoryRow"
           },
@@ -3227,9 +3231,14 @@
       "title": "Step",
       "type": "object"
     },
-    "StepRow": {
+    "StepState": {
       "additionalProperties": false,
+      "description": "One step of an operation, as its event log tells it.",
       "properties": {
+        "id": {
+          "description": "the step's ID",
+          "type": "string"
+        },
         "log": {
           "anyOf": [
             {
@@ -3243,20 +3252,29 @@
           "description": "its log file"
         },
         "outcome": {
-          "description": "done, failed, killed, or running when it never ended",
-          "type": "string"
-        },
-        "step": {
-          "description": "the step's ID",
-          "type": "string"
+          "anyOf": [
+            {
+              "enum": [
+                "done",
+                "failed",
+                "killed"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "running",
+              "type": "string"
+            }
+          ],
+          "description": "how it ended; running: started, never ended"
         }
       },
       "required": [
-        "step",
+        "id",
         "outcome",
         "log"
       ],
-      "title": "StepRow",
+      "title": "StepState",
       "type": "object"
     },
     "StudyList": {

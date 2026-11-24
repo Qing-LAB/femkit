@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         settings.load(Context.from_process(), fresh=True)
     except Exception as exc:  # noqa: BLE001 — a configuration that does not load: exit, not respawned
-        print(f"[serve-error] config.toml does not load: {exc}", flush=True)
+        print(protocol.event_line("error", f"config.toml does not load: {exc}"), end="", flush=True)
         return 2
     token = protocol.token_file(listen.name).read_text(encoding="utf-8").strip()
 
@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    print(f"[serve-child] serving on {listen.describe()}, pid {os.getpid()}", flush=True)
+    print(protocol.event_line("child", f"serving on {listen.describe()}, pid {os.getpid()}"), end="", flush=True)
     server.serve_forever()
     server.close()
     return 0

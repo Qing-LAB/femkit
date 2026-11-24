@@ -52,9 +52,10 @@ a directory that is still relative is refused, so no file is read from the
 working directory. No two files of one kind are combined. `scripts/install-env.sh`
 resolves the data directory by the same rule, because it must find the control
 environment before Python runs.
-`python -m femkit config path` prints the four directories (five once the runtime
-directory is built, plan § 3, M7), the rule that chose each,
-every file under the configuration directory and the top-level entries of the others, so which file is in effect is never a guess.
+`python -m femkit config path` prints the five directories, the rule that chose
+each, every file under the configuration directory and the top-level entries of
+the others, so which file is in effect is never a guess. `core/dirs.py` holds
+the list of the five and their variables ([`core.md`](core.md) § 3).
 
 `FEMKIT_ENV_MANAGER` is set by the install script to the manager it found; it
 is not a setting. How Python learns the manager without it is
