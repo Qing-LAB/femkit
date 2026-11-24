@@ -30,6 +30,15 @@ femkit/
 ├── jobs/          machine records and the probe; this machine's setup (`doctor`,
 │                  `env bootstrap`); job requests, preparation, run scripts, runs
 │                  (jobs.md) — records, the probe and setup built, the rest not yet
+├── projects/      the projects root, a project's tree and the one door to it:
+│                  every path, every read and write, transactions and undo
+│                  (projects.md) — proposed, not built yet (plan § 3, R)
+├── materials/     the property list, the material format, libraries, importers,
+│                  a property's data for a case (materials.md) — proposed, not built yet
+├── geometry/      the geometry script's contract, mesh recipes, the mesh step,
+│                  kinds and coverage, the hand-over to each engine (geometry.md) —
+│                  proposed, not built yet; the mesh step's code runs inside its
+│                  environment (plan § 3, X)
 ├── models/        calculations described once: model, studies, cases, the match
 │                  against an environment's abilities, decisions, customizations,
 │                  preparation (models.md) — the schemas and `model check` built;
@@ -37,12 +46,12 @@ femkit/
 ├── results/       a run's observables, proofs, comparisons, analysis (models.md
 │                  § 6.3, § 10) — not built yet (plan § 3, M6)
 ├── server/        `serve`: the web server's verbs, state machine, supervisor,
-│                  pidfile and log (api.md § 5.4); `web build`, the page's
-│                  bundle (§ 5.3)
+│                  pidfile and log (web.md § 4); `web build`, the page's
+│                  bundle (web.md § 3)
 ├── registry.py    the one list of operation modules (api.md § 6)
 ├── reference.py   `schema check|docs`: they span every domain (definitions.md § 2.3)
 ├── cli/           the generic command-line adapter (api.md § 4)
-└── web/           the generic flask adapter (api.md § 5), run in the `web`
+└── web/           the generic flask adapter (web.md), run in the `web`
                    environment; its built front end
 scripts/install-env.sh  the install script (envs.md § 7) — the only shell code
 tools/             developer tools that import nothing from femkit (testing.md § 4)
@@ -51,33 +60,58 @@ tools/             developer tools that import nothing from femkit (testing.md �
 | layer | packages | may import |
 |---|---|---|
 | core | `core` | the standard library and declared third-party libraries |
-| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `jobs`, `models`, `results`, `server` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
+| domains | `definitions`, `engines`, `schedulers`, `config`, `envs`, `jobs`, `projects`, `materials`, `geometry`, `models`, `results`, `server` | core, and any domain earlier in this list — except `engines`, which imports only the standard library, `femkit.core.process` and its own package, because its check programs run inside an engine environment that holds no femkit dependency; an engine never imports another engine |
 | registry | `registry.py`, `reference.py` | every domain |
 | surfaces | `cli`, `web` | everything below; never each other |
+
+**One way to do each thing.** Decided by the person; not built yet (plan § 3, R step C). Each rule below
+has one home, held by design where it can be — a module never given a
+project's folder cannot form a path in it — and by each milestone's
+independent review, which reads the source against it; no test reads code
+([`testing.md`](testing.md) § 3):
+
+1. in the control process, only `core/persist.py` opens or writes a file —
+   code that runs inside an environment (`engines/`) holds to its own
+   package's one writer, since it imports nothing of femkit's;
+2. only `projects` forms a path inside a project ([`projects.md`](projects.md) § 6);
+3. only `core/units.py` reads a quantity or converts a unit ([`core.md`](core.md) § 11);
+4. only the property list names a material property, in femkit, an engine or a
+   source ([`materials.md`](materials.md) § 1);
+5. only a declared importer reads another library's format
+   ([`materials.md`](materials.md) § 7);
+6. only an engine's translator writes that engine's input ([`models.md`](models.md) § 9.1);
+7. every rule, table and state machine that can be data is data
+   (`femkit/data/`, [`definitions.md`](definitions.md) § 1); code gathers facts
+   and does the work.
 
 - The control process never imports a solver library; engine code that needs
   one runs inside the engine's environment as a subprocess.
 - Importing a module probes nothing, reads no user file, starts no process and
   writes nothing; work starts when a function is called.
 - One name per domain: the contract of package `p` is `docs/contracts/p.md`.
-  `api.md` covers `registry`, `cli`, `web` and `core/operations.py`;
-  `testing.md` covers `tests/` and `tools/`. One exception: `doctor` and
+  `api.md` covers `registry`, `cli` and `core/operations.py`; `web.md`
+  covers `web`, `server` and the page in `frontend/`; `testing.md` covers
+  `tests/` and `tools/`. One exception: `doctor` and
   `env bootstrap` are declared in `jobs/setup.py`, because they read and write
   the machine record, and their rules are `envs.md` § 6.1–6.2, because they set
   up environments.
-  Two more exceptions, until their own contracts are written: `results` is
-  governed by `models.md` § 6.3 and § 10, and `server` by `api.md` § 5.4.
+  One more exception, until its own contract is written: `results` is
+  governed by `models.md` § 6.3 and § 10.
 
 ## 2. Where each concern is governed
 
 | concern | contract |
 |---|---|
 | schemas and loading, directories, persistence, locks, event logs, state-machine primitive, process runner, refusals, issues, units | [`core.md`](core.md) |
-| operation declaration, requests and results, plan/apply, context, CLI and web conventions, exit codes | [`api.md`](api.md) |
+| operation declaration, requests and results, plan/apply, context, CLI conventions, exit codes | [`api.md`](api.md) |
+| routes, access, serving, the page: its vocabulary, declaration, layers, elements and styles | [`web.md`](web.md) |
 | shipped definitions and kinds | [`definitions.md`](definitions.md) |
 | configuration | [`config.md`](config.md) |
 | environments, installs, the install script | [`envs.md`](envs.md) |
-| calculations: project, model, studies, cases, formulations, meshers, environment abilities and proofs, the match report, decisions, customizations, preparation, results | [`models.md`](models.md) — not built yet (plan § 3, M5–M9) |
+| a project's tree, its parts, addresses, the one door, transactions and undo | [`projects.md`](projects.md) — proposed (plan § 3, R) |
+| the property list, materials, libraries, importers | [`materials.md`](materials.md) — proposed (plan § 3, R) |
+| the geometry script's contract, the pipeline's steps, mesh recipes, the mesh step and the hand-over | [`geometry.md`](geometry.md) — proposed (plan § 3, R) |
+| calculations: parameters, physics, studies, observables, cases, formulations, environment abilities and proofs, the match report, decisions, customizations, preparation, results and analyses | [`models.md`](models.md) — not built yet (plan § 3, M5–M9, R) |
 | machine records and the probe, jobs, schedulers | [`jobs.md`](jobs.md) |
 | tests and the test runner | [`testing.md`](testing.md) |
 
@@ -86,13 +120,15 @@ The rules every change follows, whatever package it touches, are
 
 ## 3. State machines
 
-femkit has six: the install script's control environment
-([`envs.md`](envs.md) § 7), an environment ([`envs.md`](envs.md) § 3), an
-install's steps ([`envs.md`](envs.md) § 4), the web server
-([`api.md`](api.md) § 5.4), and, not built yet (plan § 3, M3, M6), a run
-([`jobs.md`](jobs.md) § 5) and a case's preparation
-([`models.md`](models.md) § 9.5); the test runner's batch states
-([`testing.md`](testing.md) § 4.4) are a seventh, outside femkit.
+Built: the install script's control environment ([`envs.md`](envs.md) § 7),
+an environment ([`envs.md`](envs.md) § 3), an install's steps
+([`envs.md`](envs.md) § 4) and the web server ([`web.md`](web.md) § 4). Not
+built yet: a run ([`jobs.md`](jobs.md) § 5; plan § 3, M3) and a case's
+preparation ([`models.md`](models.md) § 9.5; M6); a part of a project
+([`projects.md`](projects.md) § 8), a step's run
+([`geometry.md`](geometry.md) § 4; plan § 3, X), a study's expansion (plan
+§ 3, R) and a run's results (M6). The test runner's batch states ([`testing.md`](testing.md)
+§ 4.4) are a machine outside femkit.
 
 Every one follows these rules. In Python the primitive that enforces them is
 [`core.md`](core.md) § 7, and an install's steps are a fold over its event log
@@ -110,6 +146,10 @@ same rules without importing femkit:
 - **Event logs for steps.** Progress, failure, interruption and resume are
   folds over an operation's append-only log; one atomic write commits the
   result.
+
+The page's own machines — an action's run and the page's state
+([`web.md`](web.md) § 9.1) — hold nothing durable; they keep the one closed
+table, and live in the page.
 
 ## 4. Requests, records and outcomes
 

@@ -5,7 +5,7 @@
 **Status:** accepted (2026-11-22)
 
 **Authority:** the reasons and the alternatives only;
-[`api.md`](../contracts/api.md) § 5 owns the rules
+[`web.md`](../contracts/web.md) owns the rules
 
 ## Context
 
@@ -62,7 +62,7 @@ node editor is a program that runs in the browser, and femkit has none.
   stale bundle fails a basic test, as a stale reference page does.
 - The page works offline and on a cluster through an SSH tunnel, served only
   locally — on the loopback address, or on a cluster login node on a Unix
-  socket (`api.md` § 5.4) — by the machine that holds the calculation folders.
+  socket (`web.md` § 4) — by the machine that holds the calculation folders.
 - Nothing about a model's meaning lives in the front end: a new field,
   operation or node kind reaches the page through the schemas and the graph
   document.

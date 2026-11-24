@@ -26,7 +26,7 @@ its progress log, its one-run-per-batch lock and the states it reports
 | tier | answers | needs | directory |
 |---|---|---|---|
 | **basic** | does femkit decide and write what its contracts say? | the control environment only | `tests/basic/` |
-| **web** | does the web surface serve, check and refuse what its contract says? | the `web` environment's Python, which holds flask (`env install web`; [`api.md`](api.md) § 5) | `tests/web/` |
+| **web** | does the web surface serve, check and refuse what its contract says? | the `web` environment's Python, which holds flask (`env install web`; [`web.md`](web.md)) | `tests/web/` |
 | **field** | does it work with **this** machine — its manager, its scheduler, its records? | this machine's manager (and network for a small package solve); on a cluster, its scheduler | `tests/field/` |
 | **engine** | do the installed solvers give the right numbers, and does a real job run end to end? | installed engine environments; their CPUs and GPUs | `tests/engine/` |
 
@@ -102,9 +102,18 @@ it ends, and a difference fails the run, naming what changed:
 - **First lines.** Its docstring states that failure and the contract section
   owning the rule. A rule no contract states is not tested; it is first written
   into its contract or dropped.
-- **Results, not text.** Assert on what an operation returns, the records and
-  files it writes, and the outcome of running what it generated. A test that
-  reads source files, or greps a rendered script for a line, is not a test.
+- **Tests check the API.** A test asserts on what an operation returns, the
+  records and files it writes, and the outcome of running what it generated —
+  through the interfaces femkit offers, never by reading source code or
+  grepping a rendered file for a line.
+- **The code's discipline is the review's.** Rules about the code itself — the
+  one-way rules and the layers ([`framework.md`](framework.md) § 1), no
+  duplicated or hand-made code, the page naming no field
+  ([`web.md`](web.md) § 12) — are held by design where it can hold them, and
+  by each milestone's independent review, which reads the source against them
+  ([`../process/conventions.md`](../process/conventions.md) § 1). No test reads
+  code. The person's decision (plan § 6); today's tests that read source are
+  removed in plan § 3, R step B.
 - **Proven to fail.** Before a test is trusted, the rule it guards is broken in
   the code and the test is seen to fail.
 - **Retired with its design.** When a design is replaced, its tests are deleted

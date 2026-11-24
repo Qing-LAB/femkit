@@ -31,12 +31,31 @@ femkit/data/
 ├── channels.txt               the channel order every environment is solved with
 ├── control.txt                the control environment's packages, as `conda create --file` reads them
 ├── environments/<name>.toml   one per engine environment
-├── formulations/<id>.toml     a physical problem stated for every engine (models.md § 4)
-├── meshers/<id>.toml          a mesher and what it builds (models.md § 6.5)
+├── formulations/<family>.toml a formulation family, stated for every engine (models.md § 4)
+├── meshers/<id>.toml          a mesher and what it builds (models.md § 6.5); decided: `gmsh.toml` alone,
+│                              with the hand-over to each engine (geometry.md § 8)
 ├── managers/<kind>.toml       how to drive a package manager (conda, mamba)
 ├── schedulers/<kind>.toml     how to talk to a scheduler (local, slurm)
 ├── units.toml                 the units a value may be written in, with exact factors (core.md § 11)
 └── templates/                 starting text for user configuration files
+```
+
+The data the new parts are driven by, decided by the person (plan § 6) and not
+built yet (plan § 3, R; the mesh step's environment, X, where it is still
+open):
+
+```text
+femkit/data/
+├── environments/gmsh.toml     the mesh step's tool environment, Gmsh with its Python interface — proposed, open with X (geometry.md § 5)
+├── step_kinds.toml            the kinds of calculation: stationary, frequency, … (models.md § 4.2)
+├── couplings/<coupling>.toml  a coupling joining formulation families (models.md § 4.5)
+├── properties.toml            the property list: names in femkit, each engine and each source (materials.md § 1)
+├── dispersion.toml            the dispersion models (materials.md § 2)
+├── materials/<name>/          the shipped materials, seeding the global library (materials.md § 4)
+├── importers/<source>.toml    how another library's files map onto femkit's (materials.md § 7)
+├── geometry/                  the example scripts with their contracts, and the kinds table (geometry.md §§ 2, 7)
+├── project/layout.toml        a project's parts and folders (projects.md § 4)
+└── states/<machine>.toml      each state machine (core.md § 7)
 ```
 
 A definition changes only when femkit changes: it is reviewed, versioned
@@ -292,7 +311,7 @@ processor — and CMake to its 4.5 series (ADR 0006).
 ### 4.7 A tool environment
 
 An environment that runs no engine — what femkit's own surfaces need, such as
-the web server and the tool its page is built with ([`api.md`](api.md) § 5) —
+the web server and the tool its page is built with ([`web.md`](web.md)) —
 states no `engine`; it states the command that reports its version instead:
 
 ```toml

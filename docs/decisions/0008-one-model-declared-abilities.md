@@ -49,10 +49,14 @@ input — without losing track of what was solved.
 9. **Meshers are declared, and each engine meshes with its own by default** —
    NGSolve with Netgen, Elmer with Gmsh. A study may share one mesh between
    engines, so that a difference between them is their discretization alone.
+   *Superseded 2026-11-23:* one mesh path, Gmsh, for every engine
+   ([ADR 0012](0012-one-mesh-path.md)).
 10. **Observables are computed on the engine's own discretization**, inside its
    environment, and written to one result form.
 11. **TOML files and web forms** built from the same schemas, as for the rest
    of femkit.
+   *Amended 2026-11-23:* the page edits a part's text beside its help, not
+   forms ([ADR 0010](0010-describe-the-system.md)).
 
 ## Alternatives not chosen
 
@@ -91,8 +95,11 @@ input — without losing track of what was solved.
   preparable for several engines, each with its own decisions, in one place
   that names the study they belong to.
 - **Customization code typed into the web interface.** A request field never
-  carries executable text ([`api.md`](../contracts/api.md) § 5); code is a
+  carries executable text ([`web.md`](../contracts/web.md)); code is a
   file in the project, and its review is the consent.
+  *Amended 2026-11-23:* a geometry script is written in the page as the text
+  of its file, and run only under review
+  ([ADR 0013](0013-geometry-scripts.md)).
 
 ## Consequences
 
@@ -113,4 +120,4 @@ input — without losing track of what was solved.
   translators and parsers; nothing in the model, the study, the matching or
   the surfaces changes.
 - The first formulation built end to end is `electrostatics`, proven by its
-  benchmark set, before `maxwell-frequency` (plan § 3, M6, M9).
+  benchmark set, before `maxwell` at a frequency (plan § 3, M6, M9).

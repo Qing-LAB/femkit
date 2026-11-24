@@ -54,7 +54,7 @@ The three questions every command answers in this order:
 | environment | defined by | holds |
 |---|---|---|
 | `control` | `femkit/data/channels.txt`, `control.txt` | Python and the libraries the `femkit` command needs; no solver, no web server |
-| `web` | `femkit/data/environments/web.toml`, a tool environment ([`definitions.md`](definitions.md) § 4.7) | everything the web surface needs: the control environment's packages, by reference, with flask to serve the page and Node.js to build it ([`api.md`](api.md) § 5); installed on request, `env install web`, never by `--all` or `bootstrap` |
+| `web` | `femkit/data/environments/web.toml`, a tool environment ([`definitions.md`](definitions.md) § 4.7) | everything the web surface needs: the control environment's packages, by reference, with flask to serve the page and Node.js to build it ([`web.md`](web.md)); installed on request, `env install web`, never by `--all` or `bootstrap` |
 | `ngsolve`, `elmer` | `femkit/data/environments/<name>.toml` | one engine with everything it builds and runs with on CPUs; the defaults |
 | `ngsolve-cuda`, `elmer-cuda` | the same file's `[cuda]` part ([`definitions.md`](definitions.md) § 4.5) | the same engine with CUDA; installed on request, never by `--all` or `bootstrap` |
 
@@ -116,7 +116,7 @@ All are read from disk; observing starts no process and needs no network.
 
 | fact | read from |
 |---|---|
-| lock held | another process holds the environment's subject lock alone ([`core.md`](core.md) § 5); the process holding it reads its own environment as not busy. A lock held shared — a program using the environment, as a running web server uses `web` ([`api.md`](api.md) § 5.4) — leaves its state as it is; `install`, `clean` and `validate`, which need the lock alone, are refused while it is held, naming each user and the command that ends its use |
+| lock held | another process holds the environment's subject lock alone ([`core.md`](core.md) § 5); the process holding it reads its own environment as not busy. A lock held shared — a program using the environment, as a running web server uses `web` ([`web.md`](web.md) § 4) — leaves its state as it is; `install`, `clean` and `validate`, which need the lock alone, are refused while it is held, naming each user and the command that ends its use |
 | prefix | `absent`, a plain directory, or a manager environment (`conda-meta/` present) |
 | manifest | `<prefix>/.femkit/manifest.json`: missing, unreadable, or its install fingerprint |
 | checks | `<prefix>/.femkit/checks.json`: missing, or its check fingerprint and outcomes |

@@ -38,11 +38,11 @@ device model, site name or credential appears in a committed file.
 
 | directory | holds | default | override |
 |---|---|---|---|
-| `<config>` | what a person set and what a probe measured: `config.toml`, `machines/`; the web server's secrets, `secrets/` ([`api.md`](api.md) § 5.5; not built yet, plan § 3, M7) | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
+| `<config>` | what a person set and what a probe measured: `config.toml`, `machines/`; the web server's secrets, `secrets/` ([`web.md`](web.md) § 5; not built yet, plan § 3, M7) | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
 | `<data>` | environments, package locks, subject locks; benchmark projects, `<data>/benchmarks/` ([`models.md`](models.md) § 6.3; not built yet, plan § 3, M6) | `$XDG_DATA_HOME/femkit`, else `~/.local/share/femkit` | `FEMKIT_DATA_DIR` |
 | `<cache>` | downloads femkit can fetch again; may be emptied at any time | `$XDG_CACHE_HOME/femkit`, else `~/.cache/femkit` | `FEMKIT_CACHE_DIR` |
-| `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them; the web server's logs, `<state>/logs/` ([`api.md`](api.md) § 5.4) | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
-| `<runtime>` | a running web server's pidfile, token and socket ([`api.md`](api.md) § 5.4); its sign-in session records, not built yet (plan § 3, M7) | `<state>/run/<host>/` | `FEMKIT_RUNTIME_DIR` |
+| `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them; the web server's logs, `<state>/logs/` ([`web.md`](web.md) § 4) | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
+| `<runtime>` | a running web server's pidfile, token and socket ([`web.md`](web.md) § 4); its sign-in session records, not built yet (plan § 3, M7) | `<state>/run/<host>/` | `FEMKIT_RUNTIME_DIR` |
 
 A log is not a cache: emptying a cache must lose nothing but downloads, so the
 logs live apart from it, under `$XDG_STATE_HOME`.
@@ -66,6 +66,8 @@ is not a setting. How Python learns the manager without it is
 
 | key | meaning | when unset |
 |---|---|---|
+| `projects.undo` | how many edits of a project `project undo` reaches back through ([`projects.md`](projects.md) § 7); decided by the person, not built yet (plan § 3, R step C) | 100 |
+| `paths.projects` | the projects root: the person's material library and their projects ([`projects.md`](projects.md) § 1); replacing `web.projects`; decided by the person (plan § 6), not built yet (plan § 3, R) | the page cannot list or create projects, and `material add --from` and `material import --into library` are refused, naming this key |
 | `paths.environments` | where engine environment prefixes are created (the control environment's place is fixed, [`envs.md`](envs.md) § 1) — on a cluster, typically project storage rather than a small home quota | `<data>/environments` |
 | `build.cuda_architectures` | GPU architectures the CUDA environments target, e.g. `["80", "90"]` ([`definitions.md`](definitions.md) § 4.5); the default environments never read it | installing an environment with a build compiled for CUDA (both CUDA environments have one) is refused, naming this key |
 | `build.jobs` | parallel compile jobs | the CPUs this process may use (its CPU affinity: on a cluster, the allocation's share, never the whole login node) |
@@ -75,7 +77,9 @@ is not a setting. How Python learns the manager without it is
 
 The web server's keys — `[web.auth]`, `web.tls`, `web.trust_proxy`,
 `web.public_name`, `web.projects`, `web.upload_max_mb` — are
-[`api.md`](api.md) § 5.5's; not built yet (plan § 3, M7).
+[`web.md`](web.md) § 5's and § 8.6's; `web.projects` is built, and becomes
+`paths.projects`, decided, once plan § 3, R lands; the others are not built yet
+(plan § 3, M7).
 
 Every key is optional in the file, and its absence has the one consequence the
 table states. Unknown keys are refused at load. The schema model is the

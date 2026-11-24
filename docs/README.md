@@ -19,7 +19,7 @@ kind of document each is.
 | folder | holds |
 |---|---|
 | *(root)* | this index; [`design.md`](design.md) — mission, design values, scientific-data rules, settled choices |
-| `contracts/` | one contract per package, named after it ([`contracts/framework.md`](contracts/framework.md) § 1) |
+| `contracts/` | one contract per package, named after it, with the exceptions [`contracts/framework.md`](contracts/framework.md) § 1 names |
 | `reference/` | pages generated from the schema models by `python -m femkit schema docs`; never edited by hand |
 | `science/` | equations, assumptions, validity limits, citations, observable definitions |
 | `decisions/` | ADRs, `NNNN-short-name.md`, one settled choice each |
@@ -126,13 +126,25 @@ Moving or merging a document is a review, not a file move:
 - [`contracts/core.md`](contracts/core.md) — the building blocks every package
   uses: schema, directories, persistence, locks, event logs, processes, errors.
 - [`contracts/api.md`](contracts/api.md) — how an operation is declared, and
-  how the command line and the web serve it.
+  how the command line serves it.
+- [`contracts/web.md`](contracts/web.md) — the web surface: its routes,
+  access and serving, and the page — its vocabulary, declaration, layers,
+  elements and styles.
 - [`contracts/definitions.md`](contracts/definitions.md) — what femkit ships:
   the control environment, engine environments, manager and scheduler kinds.
 - [`contracts/config.md`](contracts/config.md) — where configuration lives,
   and what a machine record is.
 - [`contracts/envs.md`](contracts/envs.md) — how an environment is installed,
   validated and entered, and the install script.
+- [`contracts/projects.md`](contracts/projects.md) — the projects root, a
+  project's tree and parts, addresses, and the one door every read and write
+  passes through; not built yet (plan § 3, R).
+- [`contracts/materials.md`](contracts/materials.md) — the property list, the
+  material format, the global and local libraries, importers; not built yet
+  (plan § 3, R).
+- [`contracts/geometry.md`](contracts/geometry.md) — the geometry script, its
+  contract, the pipeline's steps, mesh recipes, the mesh step and the hand-over to each engine;
+  not built yet (plan § 3, R).
 - [`contracts/models.md`](contracts/models.md) — how a calculation is described
   once, matched against an environment's declared and proven abilities,
   decided on, customized, prepared and reduced; not built yet (plan § 3).
@@ -183,6 +195,18 @@ Moving or merging a document is a review, not a file move:
 - [`decisions/0009-web-front-end.md`](decisions/0009-web-front-end.md)
   — the web front end is a React application with React Flow, built and
   shipped in the package.
+- [`decisions/0010-describe-the-system.md`](decisions/0010-describe-the-system.md)
+  — the page describes the system's structure; each part's detail is
+  text.
+- [`decisions/0011-project-structure.md`](decisions/0011-project-structure.md)
+  — a project is parts in a fixed tree, reached through one door.
+- [`decisions/0012-one-mesh-path.md`](decisions/0012-one-mesh-path.md)
+  — Gmsh makes every mesh, in an environment of its own.
+- [`decisions/0013-geometry-scripts.md`](decisions/0013-geometry-scripts.md)
+  — geometry is the person's Gmsh script, wrapped by a contract.
+- [`decisions/0014-materials.md`](decisions/0014-materials.md)
+  — materials in femkit's own format, named once and per engine,
+  global and local libraries.
 
 ### Plan
 

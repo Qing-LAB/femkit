@@ -58,7 +58,7 @@ same change.
 | `pyproject.toml` | developer-tool configuration (pytest) | package metadata for installing femkit |
 | `scripts/` | the install script ([`envs.md`](docs/contracts/envs.md) § 7) | version or package knowledge kept outside `femkit/data/` |
 | `femkit/` | product code and shipped definitions, run from the checkout | user projects, generated cases or results |
-| `frontend/` | the web page's source, built into `femkit/web/static/` ([`api.md`](docs/contracts/api.md) § 5.3) | the built bundle, or `node_modules/` |
+| `frontend/` | the web page's source, built into `femkit/web/static/` ([`web.md`](docs/contracts/web.md) § 3) | the built bundle, or `node_modules/` |
 | `tests/` | executable evidence of the contracts ([`testing.md`](docs/contracts/testing.md)) | data copied from `projects/` or `work/` |
 | `tools/` | developer tools that import nothing from `femkit` | product code |
 | `docs/` | the documents [`docs/README.md`](docs/README.md) lists | generated dumps other than `docs/reference/`, copied upstream manuals, or history |

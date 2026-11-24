@@ -13,6 +13,7 @@ for code and configuration, and working practice;
 | Work starts at the architecture, then the framework and API, then the contract, and reaches the code last | 1 |
 | A case solved by a private helper, a second file shape or a name check, where the framework could carry it, is not finished | 1 |
 | What varies between engines, managers and schedulers is data under a schema, read by generic code | 2 |
+| The web page is built framework first, from one vocabulary and one declaration, with one element for each need, driven by data and state machines, and nothing handcrafted or written twice | 2.1 |
 | Every fact has one home and one reader; the core is the only way to write a file, start a process or take a lock | 2, 3 |
 | The repository holds no user, machine or environment data | 4 |
 | Environment changes, cluster submissions and history are the person's decisions | 6 |
@@ -115,6 +116,34 @@ top-level directory, a scientific observable or unit convention.
   refused, never approximated silently ([`design.md`](../design.md)). Clarity beats
   cleverness.
 
+### 2.1 The web page
+
+The page ([`web.md`](../contracts/web.md) §§ 6–12) answers to five rules, on
+the server that writes its documents as in the page itself. Each step of the
+page's work is checked against them, and each ends with an independent,
+holistic review against them:
+
+1. **Framework first.** A need is met in the layer that owns it, for every view
+   at once, and work starts at that layer — never with a patch to the one view
+   that showed it.
+2. **One interface for each element.** A button, a field, a help, an action, a
+   finding, a table, a plan, a progress: each is one component with one
+   interface, used by every view.
+3. **One data structure for the UI.** What the page shows is a document the
+   server writes in one vocabulary, and the page's own structure is one
+   declaration; the page keeps no second description of either.
+4. **Data and state machines drive behaviour.** The page's context and every
+   action's run are state machines; what the page offers comes from the
+   documents.
+5. **Nothing handcrafted, nothing twice.** No field, kind, operation name,
+   address, sentence, template or magic value is written in code — the
+   server's or the page's; no logic, style or type exists twice; a type the
+   server defines is generated, never retyped.
+
+Extensibility, logic and cleanness decide between two ways that both work: a
+new field, kind, operation or workspace changes data or one view, never the
+framework.
+
 ## 3. Rules for code
 
 These hold for every change; a review checks each.
@@ -138,7 +167,7 @@ These hold for every change; a review checks each.
   never sets `PATH` or `LD_LIBRARY_PATH` by hand, and never derives a prefix
   from where a program lives. femkit itself runs on the control environment's
   own `python`, and its web server's child on the `web` environment's own
-  `python` ([`api.md`](../contracts/api.md) § 5.4); neither needs activation.
+  `python` ([`web.md`](../contracts/web.md) § 4); neither needs activation.
 
 ## 4. Configuration and data
 

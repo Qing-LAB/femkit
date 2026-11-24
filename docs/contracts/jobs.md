@@ -36,10 +36,10 @@ the inputs a job request names.
 ```
 
 A calculation folder is written by a person, or by `case prepare` for a
-prepared case, whose `studies/<study>/prepared/<case id>/<environment>/` holds
-its `job.toml` (§ 2) beside the prepared `final/` inputs; a job reads nothing
-else of the preparation ([`models.md`](models.md) § 9.3; not built yet, plan
-§ 3, M3).
+prepared case, in its project's run folders (`runs/`,
+[`projects.md`](projects.md) § 2; their design is plan § 3, X), holding its
+`job.toml` (§ 2) beside the prepared `final/` inputs; a job reads nothing else of the
+preparation ([`models.md`](models.md) § 9.3; not built yet, plan § 3, M3).
 
 ## 2. The job request — `job.toml`
 

@@ -40,6 +40,8 @@ module reads no file, probes nothing and starts nothing.
 | `issues` | `Issue` | 10 |
 | `units` | the unit table's schema, `Quantity`, `Units`: one grammar for a quantity, a unit and an expression of named quantities; conversion | 11 |
 | `text` | how a value, a path (from `~`), a count (`1 step`, `16 steps`), a table, a finding and a "next" block are shown | [`api.md`](api.md) § 4.4 |
+| `view` | the one vocabulary of what a person may read and do: `Help`, `Action`, `Field`, `Table` — every next step an `Action` (built, uncommitted; settled in plan § 3, R step B) | [`web.md`](web.md) § 7 |
+| `commandline` | the one mapping between a request's fields and a command's arguments, both ways: the command line parses by it, and an `Action` is written as a command by it (built, uncommitted; settled in plan § 3, R step B) | [`api.md`](api.md) § 4.1 |
 | `operations` | `Context`, `Plan`, `Step`, `Result`, `Outcome`, `Observer`, `operation` | [`api.md`](api.md) |
 
 ## 2. Schema — `core/schema.py`
@@ -51,6 +53,10 @@ class Model(pydantic.BaseModel):          # extra="forbid", frozen=True
 def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact: bool = False) -> M
 def validate(model: type[M], data: Any, file: Path | str, context: dict | None = None) -> M
 def field_extras(field: FieldInfo) -> dict              # a field's annotations, its Annotated type's included
+def alternatives(annotation) -> list                    # what it may hold, through Annotated, Optional, unions
+def classes(annotation), values_of(annotation), items_of(annotation), closed(annotation)
+                                                        # its models; a table's values; a list's items; a Literal's texts
+def field_named(cls, key) -> tuple[str, FieldInfo] | None   # the field a file writes as `key`, alias or name
 def references(instance) -> Iterator[tuple[location, type, name]]   # every name its `ref` fields hold
 
 class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[key_path, reason]]
@@ -66,12 +72,26 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   § 9.2), `cli` (how the command line spells it, [`api.md`](api.md) § 4),
   `placeholders` (the names a templated field accepts, § 2.1), `ref` (the type of
   object a field refers to by name, read by both the cross-reference check and
-  the model graph, [`models.md`](models.md) § 11.2) and `quantity` (a value
+  the model graph, [`models.md`](models.md) § 11.2), `quantity` (a value
   written as a quantity, § 11: `any`, `length`, `coordinate` — a bare number in
-  the frame's unit, or a length — or `unit`, a unit text alone).
+  the frame's unit, or a length — or `unit`, a unit text alone), `toml` (a
+  field that takes a value as its TOML text, `whole` — `project set`'s and
+  `config set`'s `value`, `whole`; a surface writes the text from the value a
+  person gives), `doc` (where the field is defined: a document and its
+  section, so a description holds its sentence and nothing else), `context`
+  (the page's context a request field takes — `project`, `study` or
+  `environment`, [`web.md`](web.md) § 8.1), `for` (the one type of its object
+  a field belongs to, when the others never hold it) and `stated` (a field a
+  file may leave out while it is being written, which `project check` asks for
+  and `study expand` requires — what a material's dataset rests on,
+  [`materials.md`](materials.md) § 3).
+- **One reading of an annotation.** Every walk of a schema — the command
+  line's spelling, the object types, the graph, the fragments — reads a
+  field's annotation through `alternatives` and the functions beside it, and
+  finds a field by the key a file writes with `field_named`.
 - **`ref`** on a text or a list of texts names the type its values refer to; on
   a table it is `{"key": type, "value": type}`, either part optional. A type may
-  offer alternatives, `region:boundary|region:interface`. `references` walks a
+  offer alternatives, `group:boundary|group:interface`. `references` walks a
   loaded file's fields and yields every name with its location and type; the
   domain that owns the file says which names exist.
 - **`exact=True`** reads every TOML float from its decimal text as a
@@ -143,7 +163,7 @@ def open_private(path: Path, mode: str) -> IO   # 0600 from its first byte, neve
 ```
 
 A person's TOML file keeps its comments, its order and its layout through every
-edit a command makes — `config set`, `model set` — read as a document, changed
+edit a command makes — `config set`, `project set` — read as a document, changed
 key by key, and written whole and atomically. tomlkit renames a key in place
 only through `Container._replace`, held to it by tomlkit's version range in
 `control.txt` and a test.
@@ -180,7 +200,7 @@ def holders() -> dict[str, int]         # subject -> pid, from the kernel's lock
 - **A lock can be handed over**: a process started with the descriptor
   (`process.start_detached(keep_fds=...)`) holds it too, so it stays held for
   as long as either runs — how `serve start` leaves its lock with the
-  supervisor it detaches ([`api.md`](api.md) § 5.4).
+  supervisor it detaches ([`web.md`](web.md) § 4).
 
 - A non-blocking `flock` on `<data>/locks/<subject>.lock` (a *subject lock*;
   the solved package lists beside it are *package locks*,
@@ -190,7 +210,7 @@ def holders() -> dict[str, int]         # subject -> pid, from the kernel's lock
   uses it holds it shared — any number of users at once, and none while
   something holds it alone. A running web server holds the `web`
   environment's lock shared, so the environment is never removed under it
-  ([`api.md`](api.md) § 5.4). `is_held` answers whether something holds it
+  ([`web.md`](web.md) § 4). `is_held` answers whether something holds it
   alone — is changing it; `require_free` refuses while anyone holds it.
 - `Busy` means **another** process holds it. The process that holds it reads
   its own subject as not busy: its facts function is told so.
@@ -234,44 +254,40 @@ becomes visible only through its commit write (§ 4), never through the log.
 
 ## 7. State machines — `core/states.py`
 
-```python
-@dataclass(frozen=True)
-class Rule(Generic[F, S]):
-    describe: str
-    state: S
-    when: Callable[[F], bool] | None = None    # None only on the last rule: otherwise
+A state machine says what state a subject is in and what may be done in each
+state. Built: each machine declared in Python, beside its facts function —
+rules as functions of the facts, actions as `Action`s of `core/view.py`
+([`web.md`](web.md) § 7.2; uncommitted, plan § 3, R step B). Decided by the
+person, not built yet (plan § 3, R step C): the machine itself is data.
 
-@dataclass(frozen=True)
-class Action:
-    describe: str
-    command: str        # what a person types, a "next" line; `{name}` is what the machine describes (`ngsolve`);
-                        # empty for an allowed action with nothing to do
-    def typed(self, name: str) -> str
-
-@dataclass(frozen=True)
-class Machine(Generic[F, S]):
-    name: str
-    states: type[S]                            # an Enum
-    rules: tuple[Rule[F, S], ...]
-    actions: Mapping[S, Mapping[str, Action]]
-    def observe(self, facts: F) -> S
-    def allowed(self, state: S) -> Mapping[str, Action]
-    def require(self, state: S, action: str, name: str) -> Action    # raises Refused
-    def next_commands(self, state: S, name: str) -> tuple[str, ...]  # each allowed command once
+```text
+femkit/data/states/<machine>.toml      one machine, declared:
+  states       its states, each with its sentence
+  rules        in order: a state and the condition on named facts that gives it;
+               the last rule is the otherwise
+  actions      per state: each allowed operation, by its name, and how its
+               request is filled from the subject
 ```
 
-- **Facts** are a frozen dataclass or `Model` gathered by one function that
-  reads durable things — directories, records, event logs, a scheduler's
-  answer. `observe` is pure: same facts, same state.
-- **Closed and total**, checked when the `Machine` is constructed: the last
-  rule is `otherwise` and only it; every state is produced by some rule; every
-  state has an action row (possibly empty).
-- **Never stored.** No module writes a state label to disk.
-- **One source of "next".** Refusals, `doctor` and every "next" line read
-  `allowed()`; no message writes a remedy by hand.
-- Each machine lives in its domain module, beside its facts function. Its
-  contract shows the same table; rendering it into `docs/reference/` with
-  `schema docs`, so the two cannot drift, is not built yet.
+- **Facts** are gathered by one function per machine, in its domain module,
+  which reads durable things — directories, records, event logs, a scheduler's
+  answer, file hashes — into named values. Nothing else is code: a condition
+  is written over those names in one small grammar, read by `core/states.py`.
+- **Closed and total**, checked when the machine loads: the last rule is the
+  otherwise and only it; every state is produced by some rule; every state has
+  an action row (possibly empty); every action names a registered operation
+  whose request the row fills.
+- **Never stored.** No module writes a state label to disk; every state is
+  observed from the facts, each time.
+- **One source of "next".** Refusals, findings, `doctor` and every next step
+  read the machine's allowed actions; no message writes a remedy by hand.
+- **One machine per subject**: the subject is the thing whose state it is — an
+  environment, the server, a part of a project, a step's run, a study's
+  expansion, a case's preparation for one environment, a run, a run's results.
+  A count over subjects — a project's parts, a study's cases — is a summary,
+  never a machine.
+- `schema docs` renders each machine into `docs/reference/`, so its contract and
+  its declaration cannot drift.
 
 ## 8. Processes — `core/process.py`
 
@@ -305,7 +321,7 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
   the whole group (`SIGTERM`, then `SIGKILL` after 5 s).
 - A non-zero exit is a result, not an exception; the caller decides.
 - A detached, supervised process — the web server's supervisor and its child
-  ([`api.md`](api.md) § 5.4), and a job a person launches — is started through
+  ([`web.md`](web.md) § 4), and a job a person launches — is started through
   one building block beside `run`:
 
   ```python
@@ -326,13 +342,13 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
   ID alone: a signal goes only to an `Identity` that is `alive()`. A child that
   must not outlive its parent sets `PR_SET_PDEATHSIG` and checks `getppid`
   after, which `start_detached` does not do — the child that needs it sets it
-  itself (`api.md` § 5.4). Jobs will use the same block (plan § 3, M3).
+  itself (`web.md` § 4). Jobs will use the same block (plan § 3, M3).
 
 ## 9. Errors — `core/errors.py`
 
 ```python
 class Refusal(Exception):        # refused before acting: exit 2
-    next: tuple[str, ...]        # commands a person may run instead
+    next: tuple[Action, ...]     # what a person may do instead (core/view.py; command text until plan § 3, R step B)
 
 class DefinitionError(Refusal)   # a declared file does not load (§ 2); defined in core/schema.py
 class Refused(Refusal)           # a state does not allow the action (§ 7)
@@ -355,9 +371,10 @@ the operation's log path and exits 1.
 class Issue(Model):
     severity: Literal["error", "warning", "info"]
     code: str                    # stable, kebab-case, e.g. "preamble-unset"
-    subject: str                 # what it is about: an environment, a key, a file
-    message: str                 # one sentence for a person
-    next: tuple[str, ...] = ()   # commands that would resolve it
+    subject: str                 # what it is about: an environment, a key, a file, an address
+    label: str                   # what a person calls the subject (not built yet, plan § 3, R step B)
+    message: str                 # one whole sentence for a person
+    next: tuple[Action, ...] = ()  # what would resolve it (core/view.py; command text until plan § 3, R step B)
 ```
 
 `code` is what tests and programs match on; `message` is free to change.

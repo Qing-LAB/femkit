@@ -31,7 +31,7 @@ $s=-1$ and time $t$ in seconds. The homogeneous equation above does not select
 that sign. Selection and loss-sign conversion for material and excitation data are the
 model's: it states the phasor sign and the amplitude convention, and each
 material's source convention is converted to it with a passivity check
-([`../contracts/models.md`](../contracts/models.md) § 3); each engine's
+([`../contracts/materials.md`](../contracts/materials.md) § 6); each engine's
 matching translation is proven by the formulation's benchmarks
 ([`../contracts/models.md`](../contracts/models.md) § 6.3). Installation smoke
 calculations do not establish that portable scientific translation.
