@@ -420,7 +420,9 @@ flowchart LR
   lists — channels femkit never uses — and stops; femkit never accepts terms
   on the person's behalf. A mamba removal names none: mamba 2.9.0 refuses
   channels on `env remove` (exit 109) and checks no terms. Each kind file says
-  which (`remove_channels`, [`definitions.md`](definitions.md) § 6).
+  which (`channels_named`, [`definitions.md`](definitions.md) § 6). A create from a saved lock names them
+  too, for the same reason: measured with conda 26, a rebuild from a lock otherwise stops on the
+  defaults' terms.
 - **Nothing outside the definitions enters a prefix.** Every environment,
   the control one included, is created by the manager kind's `create`: the
   channels `channels.txt` names and no others — the person's own conda

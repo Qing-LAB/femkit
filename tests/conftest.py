@@ -52,6 +52,18 @@ def isolated_dirs(tmp_path, monkeypatch):
     yield
 
 
+@pytest.fixture
+def definitions(tmp_path, monkeypatch) -> Path:
+    """The shipped definitions copied into the test's own folder, and femkit pointed at the copy
+    (`FEMKIT_DEFINITIONS_DIR`, § 2.1): a test edits a definition there, never a function of femkit's."""
+    import shutil
+    from femkit.definitions import catalogue
+    copy = tmp_path / "definitions"
+    shutil.copytree(catalogue.data_root(), copy)
+    monkeypatch.setenv(catalogue.VARIABLE, str(copy))
+    return copy
+
+
 # ------------------------------------------------------------------ canaries
 
 def _tree(root: Path):

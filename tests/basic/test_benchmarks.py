@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from fractions import Fraction
 
 import pytest
@@ -45,12 +44,11 @@ def test_the_two_material_reference_follows_from_its_own_model():
     ('potential_middle = "4/5 V"', 'potential_middle = "4/5 V"\nnowhere = "1 V"'),  # a reference to no observable
     ('potential_low = "2/5 V"', 'potential_low = "2/5 m"'),                      # a reference in another dimension
 ])
-def test_schema_check_refuses_a_benchmark_that_is_not_complete_or_misnames_its_reference(tmp_path, monkeypatch,
+def test_schema_check_refuses_a_benchmark_that_is_not_complete_or_misnames_its_reference(definitions,
                                                                                          old, new):
     """Fails if a benchmark project `model check` faults, or a reference naming no observable,
     or in another dimension, passes `schema check` (models.md § 4)."""
-    data = tmp_path / "data"
-    shutil.copytree(catalogue.data_root(), data)
+    data = definitions
     for path in [data / "formulations" / "electrostatics.toml",
                  *(data / "formulations" / "electrostatics" / "benchmarks").rglob("*.toml")]:
         text = path.read_text()
@@ -59,7 +57,6 @@ def test_schema_check_refuses_a_benchmark_that_is_not_complete_or_misnames_its_r
             break
     else:
         pytest.fail(f"{old!r} is in no file")
-    monkeypatch.setattr(catalogue, "data_root", lambda: data)
     op = registry.operations()["schema.check"]
     result = op.run(op.request_from({}), Context.from_process())
     assert not result.ok() and any("benchmarks.two_material" in i.message for i in result.issues)

@@ -588,10 +588,11 @@ class ManagerKind(Model):
     create_from_lock: ManagerArgv = Field(description="creates {prefix} from the exact package list in {file}")
     export_lock: ManagerArgv = Field(description="prints the exact package list of {prefix}, one URL a line")
     remove: ManagerArgv = Field(description="removes {prefix}")
-    remove_channels: bool = Field(default=False, description="whether `remove` names the declared channels as "
-                                  "`create` does, `channel` once per channel after it: conda 26 otherwise checks the "
-                                  "terms of its base configuration's defaults; mamba 2.9.0 refuses channels on a "
-                                  "removal (both measured, envs.md § 4.4)")
+    channels_named: list[Literal["create_from_lock", "remove"]] = Field(
+        default_factory=list,
+        description="the commands beside `create` that name the declared channels, `channel` once per channel after "
+                    "the command: conda 26 otherwise checks the terms of its base configuration's defaults and stops; "
+                    "mamba 2.9.0 refuses channels on a removal (both measured, envs.md § 4.4)")
 
     @field_validator("channel")
     @classmethod

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import tomllib
 from pathlib import Path
 
@@ -170,29 +169,27 @@ def test_what_the_cpu_environment_runs_may_not_name_what_only_cuda_declares(tmp_
 
 
 @pytest.mark.parametrize("name", [CONTROL, "ngsolve" + CUDA_SUFFIX])
-def test_a_definition_may_not_take_another_environments_name(tmp_path, name):
+def test_a_definition_may_not_take_another_environments_name(definitions, name):
     """Fails if a definition named `control` or `<name>-cuda` loads: installing it would remove
     femkit's own control environment, or take a definition's CUDA environment's place
     (definitions.md § 4.5)."""
-    (tmp_path / "environments").mkdir()
-    (tmp_path / "environments" / f"{name}.toml").write_text(_shipped("ngsolve"))
+    (definitions / "environments" / f"{name}.toml").write_text(_shipped("ngsolve"))
     with pytest.raises(CatalogueError) as refused:
-        load_environments(tmp_path)
+        load_environments()
     assert [Path(e.file).stem for e in refused.value.errors] == [name]
 
 
 @pytest.mark.parametrize("line", ["", "# the channel femkit uses", "conda-forge  "])
-def test_channels_hold_one_bare_name_a_line(tmp_path, line):
+def test_channels_hold_one_bare_name_a_line(definitions, line):
     """Fails if channels.txt loads holding a blank line, a comment or stray spaces: the install
     script passes each line to the manager as a channel exactly as it stands, so femkit and the
     script would solve with different channels (definitions.md § 3)."""
     from femkit.definitions.catalogue import control_files, load_control
-    channels, packages = control_files()
-    (tmp_path / packages.name).write_text(packages.read_text())
-    (tmp_path / channels.name).write_text(channels.read_text() + line + "\n")
-    with pytest.raises(DefinitionError):
-        load_control(tmp_path)
     assert load_control().channels and load_control().python_minor
+    channels, _ = control_files()
+    channels.write_text(channels.read_text() + line + "\n")
+    with pytest.raises(DefinitionError):
+        load_control()
 
 
 def test_an_environment_with_builds_declares_its_toolchain(tmp_path):
@@ -242,34 +239,33 @@ def test_the_web_environment_takes_the_control_environments_packages_by_referenc
     assert not any(d.startswith(("flask", "nodejs")) for d in control)
 
 
-def test_a_tool_environment_without_control_packages_holds_only_its_own(manager, tmp_path, monkeypatch):
+def test_a_tool_environment_without_control_packages_holds_only_its_own(manager, definitions):
     """Fails if the create planned for a tool environment that does not ask for femkit's
     libraries installs them, or the Python femkit's own programs need (definitions.md § 4.7)."""
     from femkit.envs.operations import EnvInstall
-    data = tmp_path / "data"
-    shutil.copytree(catalogue.data_root(), data)
+    data = definitions
     (data / "environments" / "tool.toml").write_text(
         'description = "a tool"\nversion = "v1"\nversion_command = ["tool", "--version"]\n'
         '[packages]\nconda = ["tool=1"]\n[provides]\nexecutables = ["tool"]\n')
-    monkeypatch.setattr(catalogue, "data_root", lambda: data)
     plan = EnvInstall.plan(EnvInstall.request(names=["tool"]), Context.from_process())
     create = list(next(s for s in plan.steps if s.id.endswith("/create")).argv)
     assert create[-1] == "tool=1" and not any(a.startswith("python") for a in create)
     assert not set(catalogue.load_control().dependencies) & set(create)
 
 
-def test_a_conda_removal_names_the_declared_channels_and_a_mamba_one_none():
-    """Fails if conda's removal leaves out the declared channels — under femkit's HOME it would
-    stop on the terms of the base configuration's `defaults`, channels femkit never uses — or
-    mamba's names them, which mamba 2.9.0 refuses (envs.md § 4.4; measured forms)."""
+def test_conda_names_the_declared_channels_on_a_create_from_a_lock_and_a_removal_and_mamba_on_neither():
+    """Fails if conda's create from a saved lock or its removal leaves out the declared channels —
+    under femkit's HOME it would stop on the terms of the base configuration's `defaults`, channels
+    femkit never uses — or mamba's names them, which mamba 2.9.0 refuses on a removal (envs.md
+    § 4.4; measured forms)."""
     from femkit.definitions.catalogue import load_control, load_managers
     from femkit.envs.manager import Manager
     kinds, channels = load_managers(), load_control().channels
-    conda = Manager(Path("/m/conda"), "conda", kinds["conda"], {}).remove(Path("/p"), channels)
-    mamba = Manager(Path("/m/mamba"), "mamba", kinds["mamba"], {}).remove(Path("/p"), channels)
-    assert channels == ["conda-forge"]
-    assert conda == ["/m/conda", "remove", "--all", "-y", "-p", "/p", "--override-channels", "-c", "conda-forge"]
-    assert mamba == ["/m/mamba", "env", "remove", "-y", "-p", "/p"]
+    for kind, named in (("conda", True), ("mamba", False)):
+        m = Manager(Path(f"/m/{kind}"), kind, kinds[kind], {})
+        for argv in (m.create_from_lock(Path("/p"), Path("/lock.txt"), channels), m.remove(Path("/p"), channels)):
+            assert (argv[-len(channels) * 2:] == [a for c in channels for a in ("-c", c)]) is named, (kind, argv)
+            assert ("--override-channels" in argv) is named, (kind, argv)
 
 
 DERIVED = {"description": "d", "section": "7-derived-quantities"}
@@ -300,14 +296,11 @@ def test_a_formulation_that_misstates_itself_does_not_load(change, at):
     assert at in [path for path, _ in caught.value.problems]
 
 
-def test_schema_check_refuses_a_page_declaration_that_names_what_is_not_served(tmp_path, monkeypatch):
+def test_schema_check_refuses_a_page_declaration_that_names_what_is_not_served(definitions):
     """Fails if a page declaration whose workspace shows an operation that does not exist
     passes `schema check` (definitions.md § 2.3, web.md § 8.1)."""
-    data = tmp_path / "data"
-    shutil.copytree(data_root(), data)
-    page = data / "web" / "page.toml"
+    page = definitions / "web" / "page.toml"
     page.write_text(page.read_text().replace('document = "model.graph"', 'document = "model.nothing"', 1))
-    monkeypatch.setattr(catalogue, "data_root", lambda: data)
     result = schema_check.run(schema_check.request(), Context.from_process())
     assert [i.subject for i in result.issues] == [str(page)]
     assert "workspaces.0.document" in result.issues[0].message

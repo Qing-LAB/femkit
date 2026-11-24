@@ -123,3 +123,19 @@ def manager(tmp_path, monkeypatch, tripwire_dir):
 def running_manager(tmp_path, monkeypatch, tripwire_dir):
     """The stand-in, also running each command it is asked to run in a prefix."""
     return _stand_in(tmp_path, monkeypatch, tripwire_dir, runs=True)
+
+
+@pytest.fixture
+def give_checks(definitions):
+    """Give a shipped definition these checks and agreements, in the test's own copy of the
+    definitions, written as its file holds them: what its two environments then load."""
+    import tomllib
+    from femkit.core.persist import write_toml
+
+    def give(name: str, checks: list, agreements: dict | None = None) -> None:
+        path = definitions / "environments" / f"{name}.toml"
+        data = tomllib.loads(path.read_text())
+        data["checks"] = [c.model_dump(mode="json", exclude_defaults=True) for c in checks]
+        data["agreements"] = {k: a.model_dump(mode="json", exclude_defaults=True) for k, a in (agreements or {}).items()}
+        write_toml(path, data)
+    return give

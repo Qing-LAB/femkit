@@ -157,7 +157,7 @@
       "src/elements/Tabs.css": "5e446c68912aefd9dca27c3a7e7dc131dd856eb75393362157a5888dc212d70b",
       "src/elements/Tabs.tsx": "e139df4ccc80e18199c941298037af34dc1bfa5399d40566462def4fc5e982bf",
       "src/generated/icons.ts": "f1619fdf7859da43242424467e7e75904e360dedd2de5e90b640624f138a3cff",
-      "src/generated/schemas.json": "0004a522c11b285799a2f0d4cbc23d0d410fdce7fd4c5ae7f5a15d4a6283fbab",
+      "src/generated/schemas.json": "ca32c1370b7b79c007f5471596171fbf146c066ecde31b0df8fecc3eb6afbe50",
       "src/kernel/action.ts": "f20afd6f2f706a38dd1dfe3e3fbbef31b848a57b678f6b7f9c7afee6735b228c",
       "src/kernel/client.ts": "e472d708c1f3583ece31fe539b0c7a4cced708954283aeae8ad223c1bb3fbffb",
       "src/kernel/names.ts": "33857a2b89339be00da4ffce443e321f3b14f762d6695af2523f8f033c145b3c",
@@ -173,6 +173,6 @@
       "tsconfig.json": "231d90c9d10bfb19983a526256cffe9702180a27b7e40237502c05897968567e",
       "vite.config.ts": "7b51051b9e2ba19a03c74b03bf8e4e2623883475460cb8bd67408fb958889c2d"
     },
-    "sha256": "97f24ed926f5dec5faabad4ade8f7f712aabd6cbd2c064260a52109cfe145294"
+    "sha256": "d3a517b19e5d8c548a66f1006412b78e4c111edbc060064264376626677f2658"
   }
 }

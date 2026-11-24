@@ -13,7 +13,8 @@ from femkit.core.operations import Context
 from femkit.core.persist import write_json
 from femkit.definitions.models import Check
 from femkit.core import dirs
-from femkit.envs import layout, manager, state as state_module
+from femkit.definitions.catalogue import CUDA_SUFFIX
+from femkit.envs import layout, manager
 from femkit.envs.manager import resolve
 from femkit.envs.operations import EnvClean
 from femkit.jobs.setup import doctor
@@ -21,16 +22,16 @@ from femkit.envs.records import CheckOutcome, ChecksRecord, Manifest
 from femkit.envs.state import MACHINE, EnvState, facts, observe
 
 NAME = "ngsolve"
+CUDA = NAME + CUDA_SUFFIX   # the environment the device check belongs to
 CPU = Check(id="cpu", kind="command", run=["true"], read="summary")
 GPU = Check(id="gpu", kind="command", run=["true"], read="summary", device=True)
 
 
 @pytest.fixture(autouse=True)
-def with_checks(monkeypatch):
-    """The shipped definition with one CPU and one device check: a fixture, not shipped data."""
-    real = state_module.definition
-    monkeypatch.setattr(state_module, "definition",
-                        lambda ctx, name: real(ctx, name).model_copy(update={"checks": [CPU, GPU]}))
+def with_checks(give_checks):
+    """The shipped definition with one CPU and one device check, in the test's own copy: its CPU
+    environment runs the first, its CUDA environment both."""
+    give_checks(NAME, [CPU, GPU])
 
 
 def ctx() -> Context:
@@ -74,7 +75,7 @@ def test_absent_and_incomplete_are_observed_from_disk():
 
 def test_a_manifest_in_a_folder_that_is_not_a_manager_environment_is_incomplete():
     """Fails if a manifest alone makes wreckage look installed (envs.md § 3.2 rule 3)."""
-    f = installed(outcomes=[passed("cpu"), passed("gpu")])
+    f = installed(outcomes=[passed("cpu")])
     (f.prefix / "conda-meta").rmdir()
     assert state() is EnvState.incomplete
 
@@ -92,11 +93,11 @@ def test_a_manifest_in_a_folder_that_is_not_a_manager_environment_is_incomplete(
 def test_installed_states_follow_the_fingerprints_and_every_cpu_check(setup, expected, gpu):
     """Fails if a changed definition, missing, stale or partial CPU check results, or a failed
     CPU check do not decide the state as envs.md § 3.2 rules 4–7 say, or a device check —
-    failed or never asked for — makes a CPU environment unusable (§ 5)."""
-    installed(**setup)
-    assert state() is expected
+    failed or never asked for — makes an environment unusable (§ 5)."""
+    installed(**setup, name=CUDA)
+    assert state(CUDA) is expected
     if expected in (EnvState.failing, EnvState.ready):
-        assert facts(ctx(), NAME).gpu == gpu
+        assert facts(ctx(), CUDA).gpu == gpu
 
 
 def test_an_environment_is_looked_at_with_no_manager_named_and_as_the_manager_that_built_it(monkeypatch):
@@ -131,7 +132,7 @@ def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manag
         with pytest.raises(Busy) as caught:                 # absent: an install has steps
             EnvInstall.plan(EnvInstall.request(names=[NAME]), ctx())
         assert [n.command for n in caught.value.next] == ["end it"]
-        installed(outcomes=[passed("cpu"), passed("gpu")])
+        installed(outcomes=[passed("cpu")])
         assert state() is EnvState.ready
         for op, request in ((EnvClean, EnvClean.request(name=NAME)), (EnvValidate, EnvValidate.request(name=NAME))):
             with pytest.raises(Busy, match=f"a user of {layout.subject(NAME)}"):
@@ -144,11 +145,11 @@ def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manag
 def test_changing_the_cuda_targets_makes_a_cuda_build_outdated():
     """Fails if build.cuda_architectures does not enter the install fingerprint of an
     environment with a CUDA build, or enters one without (envs.md § 2)."""
-    installed(outcomes=[passed("cpu"), passed("gpu")], name="ngsolve-cuda")
-    installed(outcomes=[passed("cpu"), passed("gpu")])
+    installed(outcomes=[passed("cpu"), passed("gpu")], name=CUDA)
+    installed(outcomes=[passed("cpu")])
     c = ctx()
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="build.cuda_architectures", value='["90"]'), c), c)
-    assert state("ngsolve-cuda") is EnvState.outdated and state() is EnvState.ready
+    assert state(CUDA) is EnvState.outdated and state() is EnvState.ready
 
 
 def test_install_never_discards_a_failing_build_on_its_own():
@@ -170,7 +171,7 @@ def test_doctor_reports_an_environment_that_is_not_ready():
 def test_clean_removes_the_prefix_through_the_manager_while_holding_its_lock(manager):
     """Fails if clean's apply mistakes its own lock for another holder, or removes the
     prefix other than by the manager's declared command (envs.md § 3.3, § 6)."""
-    f = installed(outcomes=[passed("cpu"), passed("gpu")])
+    f = installed(outcomes=[passed("cpu")])
     c = ctx()
     outcome = EnvClean.apply(EnvClean.plan(EnvClean.request(name=NAME), c), c)
     assert outcome.status == "done" and not f.prefix.exists()

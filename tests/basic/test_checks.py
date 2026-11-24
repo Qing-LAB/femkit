@@ -19,12 +19,14 @@ from femkit.core.operations import Context, SilentObserver
 from femkit.core.persist import write_json
 from femkit.definitions.models import Agreement, Check, Expectation
 from femkit.engines import junit
-from femkit.envs import checks, layout, operations, state as state_module
+from femkit.definitions.catalogue import CUDA_SUFFIX
+from femkit.envs import checks, layout, state as state_module
 from femkit.envs.operations import EnvInstall, EnvValidate
 from femkit.envs.records import CheckOutcome, ChecksRecord, Manifest, read
 from femkit.envs.state import EnvState, facts, observe
 
-NAME = "ngsolve"  # thread_variables NGS_NUM_THREADS, fixed_variables OMP_NUM_THREADS = "1"
+DEFINITION = "ngsolve"  # thread_variables NGS_NUM_THREADS, fixed_variables OMP_NUM_THREADS = "1"
+NAME = DEFINITION + CUDA_SUFFIX  # its CUDA environment: it runs CPU and device checks alike
 
 # A check program for femkit: reports what it was started with, and the value it is given.
 PROGRAM = ("import os, sys; from femkit.engines import summary; summary.write(sys.argv[1], dict("
@@ -47,17 +49,14 @@ def set_key(key: str, value: str) -> None:
 
 
 @pytest.fixture
-def declared(monkeypatch, running_manager):
-    """Give the environment these checks (a fixture, not shipped data), installed and unchecked."""
-    def declare(*declared_checks: Check, agreements: dict | None = None, launcher: bool = True):
-        real = state_module.definition
-        fake = lambda c, name: real(c, name).model_copy(update={  # noqa: E731
-            "checks": list(declared_checks), "agreements": agreements or {}})
-        monkeypatch.setattr(state_module, "definition", fake)
-        monkeypatch.setattr(operations, "definition", fake)
+def declared(give_checks, running_manager):
+    """Give the definition these checks, in the test's own copy, and its environment installed
+    and unchecked."""
+    def declare(*declared_checks: Check, agreements: dict | None = None, launcher: bool = True, name: str = NAME):
+        give_checks(DEFINITION, list(declared_checks), agreements)
         if launcher:
             set_key("launch.mpi", '["env", "RANKS={ranks}"]')  # a launcher that starts nothing else
-        f = facts(ctx(), NAME)
+        f = facts(ctx(), name)
         (f.prefix / "conda-meta").mkdir(parents=True)
         write_json(layout.manifest_file(f.prefix), Manifest(
             install_fingerprint=f.install_fingerprint, lock_sha256="0" * 64, manager_kind="conda",
@@ -66,9 +65,9 @@ def declared(monkeypatch, running_manager):
     return declare
 
 
-def validate(**fields):
+def validate(name: str = NAME, **fields):
     c = ctx()
-    return EnvValidate.apply(EnvValidate.plan(EnvValidate.request(name=NAME, **fields), c), c)
+    return EnvValidate.apply(EnvValidate.plan(EnvValidate.request(name=name, **fields), c), c)
 
 
 def recorded() -> dict[str, CheckOutcome]:
@@ -206,12 +205,12 @@ def test_validate_gpu_is_refused_where_no_gpu_check_is_declared(declared):
     success, as if its GPU path were qualified, or on a CPU environment does not name its CUDA
     environment — before its first validate too, not after sending the person through a CPU
     one (envs.md § 5; definitions.md § 4.5)."""
-    declared(program("cpu"))
+    declared(program("cpu"), name=DEFINITION)
     for when in ("before its first validate", "once validated"):
         with pytest.raises(UsageError) as caught:
-            validate(gpu=True)
-        assert [n.command for n in caught.value.next] == [f"python -m femkit env validate {NAME}-cuda --gpu"], when
-        validate()
+            validate(DEFINITION, gpu=True)
+        assert [n.command for n in caught.value.next] == [f"python -m femkit env validate {NAME} --gpu"], when
+        validate(DEFINITION)
 
 
 @pytest.mark.parametrize("value, ready", [(1.0, True), (2.0, False)], ids=["passes", "fails"])

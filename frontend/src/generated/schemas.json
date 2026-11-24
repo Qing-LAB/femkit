@@ -2077,6 +2077,33 @@
       "title": "ListResult",
       "type": "object"
     },
+    "Loaded": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "description": "where its files are, under femkit/data/",
+          "type": "string"
+        },
+        "names": {
+          "description": "each of its definitions, by name; none for one file",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "description": "a type of shipped definition",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "files",
+        "names"
+      ],
+      "title": "Loaded",
+      "type": "object"
+    },
     "LogResult": {
       "additionalProperties": false,
       "properties": {
@@ -2753,20 +2780,6 @@
     "SchemaCheckResult": {
       "additionalProperties": false,
       "properties": {
-        "environments": {
-          "description": "engine environments that loaded",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "formulations": {
-          "description": "formulations that loaded",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "issues": {
           "description": "findings a person should act on",
           "items": {
@@ -2774,41 +2787,17 @@
           },
           "type": "array"
         },
-        "managers": {
-          "description": "manager kinds that loaded",
+        "loaded": {
+          "description": "each type of shipped definition that loaded",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Loaded"
           },
           "type": "array"
-        },
-        "meshers": {
-          "description": "meshers that loaded",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "schedulers": {
-          "description": "scheduler kinds that loaded",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "units": {
-          "default": 0,
-          "description": "unit symbols the unit table reads, prefixed ones included",
-          "type": "integer"
         }
       },
       "required": [
         "issues",
-        "environments",
-        "managers",
-        "schedulers",
-        "units",
-        "formulations",
-        "meshers"
+        "loaded"
       ],
       "title": "SchemaCheckResult",
       "type": "object"

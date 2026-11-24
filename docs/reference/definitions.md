@@ -157,7 +157,7 @@ Checks that must give the same quantity (definitions.md § 5.2).
 | `create_from_lock` | list of text | required | creates {prefix} from the exact package list in {file}. Placeholders: `{exe}`, `{file}`, `{prefix}` |
 | `export_lock` | list of text | required | prints the exact package list of {prefix}, one URL a line. Placeholders: `{exe}`, `{file}`, `{prefix}` |
 | `remove` | list of text | required | removes {prefix}. Placeholders: `{exe}`, `{file}`, `{prefix}` |
-| `remove_channels` | boolean | `False` | whether `remove` names the declared channels as `create` does, `channel` once per channel after it: conda 26 otherwise checks the terms of its base configuration's defaults; mamba 2.9.0 refuses channels on a removal (both measured, envs.md § 4.4) |
+| `channels_named` | list of `create_from_lock` \| `remove` | empty | the commands beside `create` that name the declared channels, `channel` once per channel after the command: conda 26 otherwise checks the terms of its base configuration's defaults and stops; mamba 2.9.0 refuses channels on a removal (both measured, envs.md § 4.4) |
 
 ## JsonQuery
 
@@ -337,3 +337,58 @@ The mesh file it writes.
 | `format` | text | required | the format (`msh`, `vol`) |
 | `version` | text, optional | — | the format's version, where it has several |
 | `encoding` | `ascii` \| `binary`, optional | — | text or binary |
+
+## Page
+
+`femkit/data/web/page.toml`.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `schema` | `1` | required | this file's shape; raised when it changes |
+| `app` | [App](#app) | required |  |
+| `workspaces` | list of [Workspace](#workspace) | required |  |
+| `context` | list of [ContextPart](#contextpart) | required |  |
+| `kinds` | table of text → text | required | each object type's icon (models.md § 11.2) |
+| `shortcuts` | list of [Shortcut](#shortcut) | empty |  |
+
+## App
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `name` | text | required | what the page is called |
+| `tagline` | text | required | what femkit is, in one sentence |
+| `mark` | text | required | its mark, a file the page ships |
+
+## Workspace
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `key` | text | required | how the address names it |
+| `title` | text | required | what a person reads on it |
+| `icon` | text | required | its icon, by the icon set's name |
+| `tagline` | text | required | what it is, in one sentence |
+| `help` | text | required | how it is used |
+| `document` | text, optional | — | the read-only operation whose answer it shows; none: the registry itself |
+| `context` | list of `project` \| `study` \| `environment` | empty | the context it needs |
+| `empty` | text | required | what it says before there is anything to show |
+
+## ContextPart
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `key` | `project` \| `study` \| `environment` | required |  |
+| `label` | text | required | what a person reads beside it |
+| `help` | text | required | what it is |
+| `choices` | text | required | the read-only operation that lists its choices |
+| `rows` | text | required | the field of that operation's result holding the choices |
+| `value_key` | text, optional | — | each row's key holding the choice; none: the row is it |
+| `label_key` | text, optional | — | each row's key a person reads; none: the value |
+| `depends` | list of `project` \| `study` \| `environment` | empty | what must be chosen first |
+
+## Shortcut
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `key` | text | required | the key, `Mod` the platform's command key |
+| `command` | `undo` \| `redo` \| `remove` \| `commit` \| `cancel` | required | the page's command it runs |
+| `help` | text | required | what it does |

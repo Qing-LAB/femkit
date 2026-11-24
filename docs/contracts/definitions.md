@@ -85,7 +85,12 @@ Engine code lives in `femkit/engines/<engine>/` and provides only:
 
 ## 2. Schemas
 
-### 2.1 One definition per field
+### 2.1 One definition per field, one list of types
+
+The catalogue's record (`definitions/catalogue.py`) holds one field per type of
+shipped definition, each declaring where its files are, its model and its
+loader: the catalogue, `schema check`, `schema docs` and the reference all read
+that list, and no other keeps one.
 
 Each definition type has one schema model. The model owns every field's type,
 default, allowed values and description; no other module, document or command
@@ -458,7 +463,7 @@ by ID and named in the kind.
 
 | directory | one file per | declares |
 |---|---|---|
-| `managers/` | conda; mamba, 1.x and 2.x (every form measured on 1.5.9 and 2.9.0); micromamba once measured (plan) | create from constraints (the control environment's: `--file control.txt`), overriding the person's own conda channels and, where the manager can, default packages / from a lock; run in a prefix (and, not built yet, the text its `run` prints when it cannot start a command, [`envs.md`](envs.md) § 4.4); export the lock; remove, naming the declared channels as a create does where the kind needs them (`remove_channels`: conda does, mamba refuses them) ([`envs.md`](envs.md) § 4.4); report version, root and platform; `activate`: the kind's two ways a shell enters a prefix, between which this machine's `activation.command` chooses ([`config.md`](config.md) § 3.1) — the shell function, with the hook file under `{root}` that defines it (for conda `{root}/etc/profile.d/conda.sh`, checked on disk, never derived from the binary's path, which on a cluster may be a module's wrapper), and the activate script (`source activate {prefix}`) ([`envs.md`](envs.md) § 6.2) |
+| `managers/` | conda; mamba, 1.x and 2.x (every form measured on 1.5.9 and 2.9.0); micromamba once measured (plan) | create from constraints (the control environment's: `--file control.txt`), overriding the person's own conda channels and, where the manager can, default packages / from a lock; run in a prefix (and, not built yet, the text its `run` prints when it cannot start a command, [`envs.md`](envs.md) § 4.4); export the lock; create from a lock and remove, each naming the declared channels as a create does where the kind needs them (`channels_named`: conda does, mamba refuses them on a removal) ([`envs.md`](envs.md) § 4.4); report version, root and platform; `activate`: the kind's two ways a shell enters a prefix, between which this machine's `activation.command` chooses ([`config.md`](config.md) § 3.1) — the shell function, with the hook file under `{root}` that defines it (for conda `{root}/etc/profile.d/conda.sh`, checked on disk, never derived from the binary's path, which on a cluster may be a module's wrapper), and the activate script (`source activate {prefix}`) ([`envs.md`](envs.md) § 6.2) |
 | `schedulers/` | local, slurm | the parts of the `SchedulerKind` model (`docs/reference/`); [`jobs.md`](jobs.md) § 7 says what each is for |
 
 The manager in use and the scheduler a machine has are facts of that machine

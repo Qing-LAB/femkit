@@ -6,8 +6,10 @@ Loading reads only definition files: it probes nothing and starts nothing.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field, fields
 from pathlib import Path
+from typing import Any, Callable
 
 from femkit.core import view
 from femkit.core.dirs import CONTROL
@@ -21,19 +23,14 @@ from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, 
 from femkit.definitions.requests import SCHEMA_CHECK
 
 
+VARIABLE = "FEMKIT_DEFINITIONS_DIR"   # a test's own definitions, read in place of the shipped ones
+
+
 def data_root() -> Path:
-    return Path(__file__).resolve().parent.parent / "data"
-
-
-@dataclass(frozen=True)
-class Catalogue:
-    control: ControlDefinition
-    environments: dict[str, EnvironmentDefinition]
-    managers: dict[str, ManagerKind]
-    schedulers: dict[str, SchedulerKind]
-    units: UnitTable
-    formulations: dict[str, FormulationDefinition]
-    meshers: dict[str, MesherDefinition]
+    """`femkit/data/`, the shipped definitions — or the folder FEMKIT_DEFINITIONS_DIR names, which
+    only a test sets (testing.md § 2.1); read when asked, never at import."""
+    own = os.environ.get(VARIABLE)
+    return Path(own) if own else Path(__file__).resolve().parent.parent / "data"
 
 
 class CatalogueError(DefinitionError):
@@ -49,24 +46,24 @@ class CatalogueError(DefinitionError):
         )
 
 
-def control_files(root: Path | None = None) -> tuple[Path, Path]:
+def control_files() -> tuple[Path, Path]:
     """The control environment's two files: the channel order every environment is solved with,
     and the control environment's packages (definitions.md § 3)."""
-    return (root or data_root()) / "channels.txt", (root or data_root()) / "control.txt"
+    return data_root() / "channels.txt", data_root() / "control.txt"
 
 
-def control_digest(root: Path | None = None) -> str:
+def control_digest() -> str:
     """What the install script's stamp holds: the SHA-256 of both files, channels first (envs.md § 7.2)."""
     digest = hashlib.sha256()
-    for path in control_files(root):
+    for path in control_files():
         digest.update(path.read_bytes())
     return digest.hexdigest()
 
 
-def load_control(root: Path | None = None) -> ControlDefinition:
+def load_control() -> ControlDefinition:
     """channels.txt is taken line by line as it stands, as the install script reads it; in
     control.txt, blank lines and `#` comments are skipped, as conda skips them."""
-    channels_file, packages_file = control_files(root)
+    channels_file, packages_file = control_files()
     try:
         channels = channels_file.read_text(encoding="utf-8").splitlines()
         packages = [line.strip() for line in packages_file.read_text(encoding="utf-8").splitlines()
@@ -76,14 +73,14 @@ def load_control(root: Path | None = None) -> ControlDefinition:
     return validate(ControlDefinition, {"channels": channels, "dependencies": packages}, packages_file.parent)
 
 
-def load_managers(root: Path | None = None) -> dict[str, ManagerKind]:
-    return _load_dir((root or data_root()) / "managers", ManagerKind)
+def load_managers() -> dict[str, ManagerKind]:
+    return _load_dir(data_root() / "managers", ManagerKind)
 
 
-def load_schedulers(root: Path | None = None) -> dict[str, SchedulerKind]:
+def load_schedulers() -> dict[str, SchedulerKind]:
     """Every scheduler kind, each with commands or probe roles checked against its reader in
     `femkit/schedulers/` (jobs.md § 7): a kind without one, or naming roles it does not read, is refused."""
-    directory = (root or data_root()) / "schedulers"
+    directory = data_root() / "schedulers"
     kinds, errors = _load_dir(directory, SchedulerKind), []
     for name, kind in kinds.items():
         module = scheduler_readers(name)
@@ -98,23 +95,23 @@ def load_schedulers(root: Path | None = None) -> dict[str, SchedulerKind]:
     return kinds
 
 
-def load_units(root: Path | None = None) -> UnitTable:
-    return load_toml((root or data_root()) / "units.toml", UnitTable)
+def load_units() -> UnitTable:
+    return load_toml(data_root() / "units.toml", UnitTable)
 
 
-def load_formulations(root: Path | None = None) -> dict[str, FormulationDefinition]:
+def load_formulations() -> dict[str, FormulationDefinition]:
     """Every formulation, its units read by the unit table (models.md § 4)."""
-    return _load_dir((root or data_root()) / "formulations", FormulationDefinition,
-                     {"units": Units(load_units(root)), "root": (root or data_root()) / "formulations"})
+    return _load_dir(data_root() / "formulations", FormulationDefinition,
+                     {"units": Units(load_units()), "root": data_root() / "formulations"})
 
 
 CUDA_SUFFIX = "-cuda"  # a definition's CUDA environment is named after it with this (definitions.md § 4.5)
 
 
-def load_environments(root: Path | None = None) -> dict[str, EnvironmentDefinition]:
+def load_environments() -> dict[str, EnvironmentDefinition]:
     """Every environment: one per definition, built without CUDA, and a second, `<name>-cuda`,
     for a definition with a [cuda] part (definitions.md § 4.5)."""
-    directory = (root or data_root()) / "environments"
+    directory = data_root() / "environments"
     found = _load_dir(directory, EnvironmentDefinition)
     taken = {name: f"{CONTROL!r} names the control environment (control.txt)" for name in found if name == CONTROL}
     taken |= {name: f"a name ending in {CUDA_SUFFIX!r} is a definition's CUDA environment"
@@ -122,7 +119,7 @@ def load_environments(root: Path | None = None) -> dict[str, EnvironmentDefiniti
     if taken:
         raise CatalogueError([DefinitionError(directory / f"{name}.toml", [("", why)]) for name, why in taken.items()])
     out = {}
-    control = load_control(root).dependencies if any(d.control_packages for d in found.values()) else []
+    control = load_control().dependencies if any(d.control_packages for d in found.values()) else []
     for name, definition in found.items():
         out[name] = definition.built(cuda=False)
         if definition.control_packages:  # femkit's own libraries, by reference (definitions.md § 4.7)
@@ -144,10 +141,10 @@ def schedulers(ctx: Context) -> dict[str, SchedulerKind]:
     return ctx.cached("schedulers", load_schedulers)
 
 
-def load_meshers(root: Path | None = None) -> dict[str, MesherDefinition]:
+def load_meshers() -> dict[str, MesherDefinition]:
     """Every mesher; each names an engine environment that provides it (models.md § 6.5)."""
-    environments = {p.stem for p in ((root or data_root()) / "environments").glob("*.toml")}
-    return _load_dir((root or data_root()) / "meshers", MesherDefinition, {"environments": environments})
+    environments = {p.stem for p in (data_root() / "environments").glob("*.toml")}
+    return _load_dir(data_root() / "meshers", MesherDefinition, {"environments": environments})
 
 
 def meshers(ctx: Context) -> dict[str, MesherDefinition]:
@@ -165,22 +162,34 @@ def units(ctx: Context) -> Units:
     return ctx.cached("units", lambda: Units(load_units()))
 
 
-def load_catalogue(root: Path | None = None) -> Catalogue:
+def _type(files: str, model: type, load: Callable[[], Any]) -> Any:
+    return field(metadata={"files": files, "model": model, "load": load})
+
+
+@dataclass(frozen=True)
+class Catalogue:
+    """Every shipped definition, one field per type, each with where its files are under
+    `femkit/data/`, its model and its loader: the one list the catalogue, `schema check`,
+    `schema docs` and the reference read (definitions.md § 1)."""
+
+    control: ControlDefinition = _type("channels.txt, control.txt", ControlDefinition, load_control)
+    environments: dict[str, EnvironmentDefinition] = _type("environments/<name>.toml", EnvironmentDefinition,
+                                                           load_environments)
+    managers: dict[str, ManagerKind] = _type("managers/<kind>.toml", ManagerKind, load_managers)
+    schedulers: dict[str, SchedulerKind] = _type("schedulers/<kind>.toml", SchedulerKind, load_schedulers)
+    units: UnitTable = _type("units.toml", UnitTable, load_units)
+    formulations: dict[str, FormulationDefinition] = _type("formulations/<family>.toml", FormulationDefinition,
+                                                           load_formulations)
+    meshers: dict[str, MesherDefinition] = _type("meshers/<id>.toml", MesherDefinition, load_meshers)
+
+
+def load_catalogue() -> Catalogue:
     """Every definition, or every problem with every file."""
     errors: list[DefinitionError] = []
     parts: dict = {}
-    loaders = {
-        "control": lambda: load_control(root),
-        "environments": lambda: load_environments(root),
-        "managers": lambda: load_managers(root),
-        "schedulers": lambda: load_schedulers(root),
-        "units": lambda: load_units(root),
-        "formulations": lambda: load_formulations(root),
-        "meshers": lambda: load_meshers(root),
-    }
-    for name, load in loaders.items():
+    for kind in fields(Catalogue):
         try:
-            parts[name] = load()
+            parts[kind.name] = kind.metadata["load"]()
         except CatalogueError as exc:
             errors.extend(exc.errors)
         except DefinitionError as exc:

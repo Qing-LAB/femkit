@@ -147,7 +147,7 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
     if discard_lock:
         steps.append(Step(id="discard-lock", describe=f"discard the saved lock {text.path(t.lock)}"))
     if t.lock.exists() and not discard_lock:
-        create = m.argv(m.kind.create_from_lock, prefix=str(p), file=str(t.lock))
+        create = m.create_from_lock(p, t.lock, t.channels)
         how = "from the saved lock"
     else:
         # femkit's own programs run inside an engine's prefix on the Python every environment shares;

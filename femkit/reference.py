@@ -7,6 +7,7 @@ domains (framework.md § 1).
 from __future__ import annotations
 
 import json
+from dataclasses import fields
 
 import enum
 import html
@@ -25,11 +26,8 @@ from femkit.core.operations import Context, Outcome, Plan, Result, Step, operati
 from femkit.core.persist import atomic_write_text
 from femkit.core.schema import (DefinitionError, Model, allowed, alternatives, classes, described, field_extras,
                                 items_of, keys_of, optional, values_of)
-from femkit.core.units import UnitTable, Units
+from femkit.core.units import Units
 from femkit.definitions import catalogue
-from femkit.definitions.formulations import FormulationDefinition
-from femkit.definitions.meshers import MesherDefinition
-from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 from femkit.jobs.record import Record
 from femkit.models.schema import QUANTITIES, ModelFile, StudyFile
 from femkit import page
@@ -38,8 +36,7 @@ from femkit.definitions.requests import SCHEMA_CHECK, SCHEMA_DOCS
 # page name -> (title, the files it describes, models)
 PAGES: dict[str, tuple[str, str, list[type[Model]]]] = {
     "definitions": ("Shipped definitions", "`femkit/data/` (definitions.md)",
-                    [ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind, UnitTable,
-                     FormulationDefinition, MesherDefinition]),
+                    [kind.metadata["model"] for kind in fields(catalogue.Catalogue)] + [page.Page]),
     "config": ("User configuration", "`<config>/config.toml` (config.md § 3)", [UserConfig]),
     "machines": ("Machine records", "`<config>/machines/<name>.toml` (jobs.md § 9)", [Record]),
     "models": ("Models and studies", "`<project>/model.toml` and `<project>/studies/<study>/study.toml` "
@@ -53,27 +50,20 @@ def reference_dir() -> Path:
 
 # ----------------------------------------------------------------- schema check
 
+class Loaded(Model):
+    type: str = Field(description="a type of shipped definition")
+    files: str = Field(description="where its files are, under femkit/data/")
+    names: list[str] = Field(default_factory=list, description="each of its definitions, by name; none for one file")
+
+
 class SchemaCheckResult(Result):
-    environments: list[str] = Field(default_factory=list, description="engine environments that loaded")
-    managers: list[str] = Field(default_factory=list, description="manager kinds that loaded")
-    schedulers: list[str] = Field(default_factory=list, description="scheduler kinds that loaded")
-    units: int = Field(0, description="unit symbols the unit table reads, prefixed ones included")
-    formulations: list[str] = Field(default_factory=list, description="formulations that loaded")
-    meshers: list[str] = Field(default_factory=list, description="meshers that loaded")
+    loaded: list[Loaded] = Field(default_factory=list, description="each type of shipped definition that loaded")
 
     def text(self) -> str:
         if not self.ok():
             return "\n".join(["shipped definitions that do not load"] + text.findings(self.issues))
-        return "\n".join(["every shipped definition loads"] + text.table([
-            ("control", "channels.txt, control.txt"),
-            ("environments", text.show(self.environments)),
-            ("managers", text.show(self.managers)),
-            ("schedulers", text.show(self.schedulers)),
-            ("units", f"units.toml, {text.count(self.units, 'symbol')}"),
-            ("formulations", text.show(self.formulations)),
-            ("meshers", text.show(self.meshers)),
-            ("page", str(page.path().relative_to(catalogue.data_root()))),
-        ]))
+        return "\n".join(["every shipped definition loads"] + text.table(
+            (row.type, text.show(row.names) if row.names else row.files) for row in self.loaded))
 
 
 @operation(SCHEMA_CHECK, result=SchemaCheckResult)
@@ -91,9 +81,10 @@ def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
         issues += _issues(exc)
     if issues:
         return SchemaCheckResult(issues=issues)
-    return SchemaCheckResult(environments=list(cat.environments), managers=list(cat.managers),
-                       schedulers=list(cat.schedulers), units=len(Units(cat.units).symbols()),
-                       formulations=list(cat.formulations), meshers=list(cat.meshers))
+    loaded = [Loaded(type=kind.name, files=kind.metadata["files"],
+                     names=list(part) if isinstance(part := getattr(cat, kind.name), dict) else [])
+              for kind in fields(catalogue.Catalogue)]
+    return SchemaCheckResult(loaded=loaded + [Loaded(type="page", files=str(page.path().relative_to(catalogue.data_root())))])
 
 
 def _issues(err: DefinitionError) -> list[Issue]:

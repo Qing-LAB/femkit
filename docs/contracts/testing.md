@@ -54,9 +54,12 @@ A tier passes before the next is worth running.
 
 ### 2.1 By construction
 
-Every test, in every tier, runs with `FEMKIT_CONFIG_DIR`,
-`FEMKIT_DATA_DIR`, `FEMKIT_CACHE_DIR` and `FEMKIT_STATE_DIR` set to its own
-temporary directories. No test reads or writes the person's configuration, records or
+Every test, in every tier, runs with each of femkit's five directories set to
+its own temporary directory, from `core/dirs.py`'s list of their variables
+([`core.md`](core.md) § 3). A test that needs definitions of its own copies the
+shipped ones into its folder, edits the copy as its files hold it, and points
+femkit at it with `FEMKIT_DEFINITIONS_DIR`; nothing else sets that variable, and
+no test replaces a function of femkit's to change what it reads. No test reads or writes the person's configuration, records or
 projects, and only the engine tier reaches the person's environments: its
 temporary `config.toml` points `paths.environments` at them, on the person's
 word, and `env validate` writes each prefix's check results there exactly as it

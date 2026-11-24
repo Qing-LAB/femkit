@@ -7,7 +7,6 @@ never from typed-in scheduler output (testing.md § 2.1).
 
 from __future__ import annotations
 
-import shutil
 import tomllib
 
 import pytest
@@ -18,7 +17,7 @@ from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import write_toml
 from femkit.core.schema import DefinitionError, validate
-from femkit.definitions.catalogue import CatalogueError, data_root, load_schedulers
+from femkit.definitions.catalogue import CatalogueError, load_schedulers
 from femkit.definitions.models import SchedulerKind
 from femkit.jobs import record
 from femkit.jobs.operations import JobProbe, job_machines
@@ -122,20 +121,18 @@ def test_the_probe_refuses_before_it_measures(fields, refusal):
             '[job_variables]\nid = "PBS_JOBID"\n', ""),                                      # commands no reader reads
     ("slurm", None, "probe"),                                                               # a role its reader does not read
 ])
-def test_a_scheduler_kind_its_reader_cannot_read_does_not_load(tmp_path, name, text, where):
+def test_a_scheduler_kind_its_reader_cannot_read_does_not_load(definitions, name, text, where):
     """Fails if a kind file loads with commands no module in femkit/schedulers/ reads, or with
     probe roles other than its reader's — its probe would record every queue as unknown
     (jobs.md § 7)."""
-    root = tmp_path / "data"
-    shutil.copytree(data_root() / "schedulers", root / "schedulers")
-    path = root / "schedulers" / f"{name}.toml"
+    path = definitions / "schedulers" / f"{name}.toml"
     if text is not None:
         path.write_text(text)
     else:
         data = tomllib.loads(path.read_text())
         write_toml(path, {**data, "probe": {**data["probe"], "nodes": "sinfo"}})
     with pytest.raises(CatalogueError) as refused:
-        load_schedulers(root)
+        load_schedulers()
     assert [(e.file, [w for w, _ in e.problems]) for e in refused.value.errors] == [(str(path), [where])]
 
 

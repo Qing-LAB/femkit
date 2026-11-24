@@ -9,7 +9,9 @@ activate = { hook = "{root}/etc/profile.d/conda.sh", with_hook = ["conda", "acti
 # The control environment is this create too, its packages read from control.txt (`--file`).
 create = ["{exe}", "create", "-y", "-p", "{prefix}", "--override-channels", "--no-default-packages"]
 channel = ["-c", "{channel}"]
-create_from_lock = ["{exe}", "create", "-y", "-p", "{prefix}", "--file", "{file}", "--no-default-packages"]
+create_from_lock = ["{exe}", "create", "-y", "-p", "{prefix}", "--file", "{file}", "--no-default-packages", "--override-channels"]
 export_lock = ["{exe}", "list", "--explicit", "--md5", "-p", "{prefix}"]
-remove = ["{exe}", "remove", "--all", "-y", "-p", "{prefix}", "--override-channels"]   # with the declared channels: conda 26 otherwise checks the terms of the base configuration's defaults (envs.md § 4.4)
-remove_channels = true
+remove = ["{exe}", "remove", "--all", "-y", "-p", "{prefix}", "--override-channels"]
+# With the declared channels: conda 26 otherwise checks the terms of the base configuration's
+# defaults, and a create from a saved lock or a removal stops (measured, envs.md § 4.4).
+channels_named = ["create_from_lock", "remove"]

@@ -50,10 +50,17 @@ class Manager:
             argv += [render(arg, {"channel": channel}) for arg in self.kind.channel]
         return argv + list(packages)
 
+    def create_from_lock(self, prefix: Path, lock: Path, channels: list[str]) -> list[str]:
+        """The kind's `create_from_lock`, naming the declared channels where the kind does (envs.md § 4.4)."""
+        return self._named(self.argv(self.kind.create_from_lock, prefix=str(prefix), file=str(lock)),
+                           "create_from_lock", channels)
+
     def remove(self, prefix: Path, channels: list[str]) -> list[str]:
         """The kind's `remove`, naming the declared channels where the kind does (envs.md § 4.4)."""
-        argv = self.argv(self.kind.remove, prefix=str(prefix))
-        for channel in channels if self.kind.remove_channels else []:
+        return self._named(self.argv(self.kind.remove, prefix=str(prefix)), "remove", channels)
+
+    def _named(self, argv: list[str], command: str, channels: list[str]) -> list[str]:
+        for channel in channels if command in self.kind.channels_named else []:
             argv += [render(arg, {"channel": channel}) for arg in self.kind.channel]
         return argv
 

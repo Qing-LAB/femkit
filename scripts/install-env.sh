@@ -294,7 +294,7 @@ recreate_control() {
     trap rebuild_failed EXIT
     kind_argv remove; local rm=("${ARGV[@]}") channel arg channels=()
     # Where the kind's removal names the declared channels, as its create does (envs.md § 4.4).
-    if grep -qE "^remove_channels = true" "$REPO_ROOT/femkit/data/managers/$(basename "$ENV_MGR").toml"; then
+    if grep -qE '^channels_named = \[.*"remove"' "$REPO_ROOT/femkit/data/managers/$(basename "$ENV_MGR").toml"; then
         mapfile -t channels < "$CHANNELS_TXT"
         for channel in "${channels[@]}"; do
             kind_argv channel

@@ -277,10 +277,10 @@ geometry script, meshing, solving — is milestone X, designed after R.
      declares every subject it uses (`web build` holds `env-web`); `persist`
      reads, lists, deletes, appends and swaps a folder atomically, and is the
      only writer; observing writes nothing and needs no package manager.
-  5. **Definitions found through the context, listed once.** A test points
-     femkit at definitions of its own through the API; one table of definition
-     types is read by the catalogue, `schema check`, `schema docs` and the
-     reference.
+  5. **Definitions found one way, listed once.** A test points femkit at
+     definitions of its own with `FEMKIT_DEFINITIONS_DIR`, never by replacing a
+     function; one table of definition types is read by the catalogue,
+     `schema check`, `schema docs` and the reference.
   6. **One test kit.** An operation called through the registry, a project
      made through the API, a prefix and a record built once; directories
      isolated from core's list; canaries over `<state>`, `<runtime>`, `<cache>`
@@ -741,6 +741,13 @@ approved as written:
 - An installed environment's fingerprint is read with the manager its manifest
   says built it: looking at an environment needs no manager named and writes
   nothing; another manager named leaves it as built (`envs.md` § 2).
+- The package manager keeps running in femkit's own places, its home in
+  `<cache>`, so a person's conda settings never change an environment and none of
+  its files land in their home; a surprise of that isolation is fixed in the
+  manager's kind file (`envs.md` § 4.4).
+- A test points femkit at definitions of its own with `FEMKIT_DEFINITIONS_DIR`,
+  read as the directories' variables are; nothing but a test sets it
+  (`testing.md` § 2.1).
 - Once B's part 4 lands, Elmer, NGSolve and `web` are rebuilt from nothing and
   validated on this workstation, proving the installer end to end; the CUDA
   environments stay with the person's cluster runs.
