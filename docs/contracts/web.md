@@ -572,7 +572,9 @@ The page owns presentation: layout, elements and interaction.
 
 Pydantic models in `femkit/core/view.py`. Every document the page renders, and
 every answer of a route (§ 1), is built from them; each is built in one place,
-so a refusal's JSON, for one, exists once.
+so a refusal's JSON, for one, exists once. The plan answer — a plan, its digest
+and its text — is built beside the plan it carries, in `core/operations.py`,
+which the vocabulary sits below.
 
 ### 7.1 Help
 
