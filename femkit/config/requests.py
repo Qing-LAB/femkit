@@ -23,7 +23,7 @@ class SetRequest(Model):
     """One key and its new value."""
 
     key: str = Field(description="a dotted key, e.g. build.jobs", json_schema_extra=ARGUMENT)
-    value: str = Field(description='a TOML value (8, ["80", "90"], []) or plain text',
+    value: str = Field(description='a TOML value, as the file writes it: 8, "text", ["80", "90"], []',
                        json_schema_extra={**ARGUMENT, "toml": "whole"})
 
 

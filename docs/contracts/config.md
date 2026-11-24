@@ -122,7 +122,9 @@ someone said nothing is needed.
 - Re-running `config init` adds only keys the file lacks and reports each as
   `added` or `kept`; it never replaces a value.
 - `config set KEY VALUE` validates and writes one key, keeping the file's
-  comments and layout. `config show` prints every key with its value and where
+  comments and layout. `VALUE` is TOML text, as the file writes it —
+  `config set web.projects '"/data/projects"'` — and a bare word is refused,
+  never guessed to be text ([`web.md`](web.md) § 7.3). `config show` prints every key with its value and where
   it came from: the file, or the "when unset" rule.
 
 ## 4. Install records and run files

@@ -42,6 +42,16 @@ def test_an_invalid_value_is_refused_before_anything_is_written():
     assert not settings.config_file().exists()
 
 
+def test_a_value_is_toml_text_and_a_bare_word_is_refused():
+    """Fails if config set guesses that a bare word is text, or reads TOML text otherwise than
+    the file would (config.md § 3, web.md § 7.3)."""
+    ctx = Context.from_process()
+    with pytest.raises(UsageError, match="not a TOML value"):
+        ConfigSet.plan(ConfigSet.request(key="web.projects", value="/data/projects"), ctx)
+    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="web.projects", value='"/data/projects"'), ctx), ctx)
+    assert str(settings.load(Context.from_process()).config.web.projects) == "/data/projects"
+
+
 def test_show_says_where_each_value_came_from_or_what_its_absence_means():
     """Fails if show hides whether a key was set, or loses the unset rule (config.md § 3.2)."""
     init()

@@ -158,7 +158,7 @@ def test_doctor_names_the_probe_while_this_machine_has_no_record_and_states_the_
     ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.preamble", value="[]"), c), c)
     assert [str(n) for n in _row("this machine's record").next[-2:]] == [
         "python -m femkit config init --activation 'source activate'   # or 'conda activate', 'mamba activate'", probe]
-    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.command", value="source activate"), c), c)
+    ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key="activation.command", value='"source activate"'), c), c)
     assert [n.command for n in _row("this machine's record").next] == [probe]
 
 
@@ -258,7 +258,7 @@ def test_bootstrap_measures_the_record_again_unless_it_stays_current_and_nothing
     were before; or if it measures again a record nothing changes (envs.md § 6.2; jobs.md § 9.3)."""
     from femkit.jobs import record
     c = ctx()
-    for key, value in {"activation.preamble": "[]", "activation.command": "source activate", **({"launch.mpi": json.dumps(GIVEN["mpi"])} if mpi_set else {})}.items():
+    for key, value in {"activation.preamble": "[]", "activation.command": '"source activate"', **({"launch.mpi": json.dumps(GIVEN["mpi"])} if mpi_set else {})}.items():
         ConfigSet.apply(ConfigSet.plan(ConfigSet.request(key=key, value=value), c), c)
     unknown = {"unknown": "not measured in a test"}
     now = record.settings_now(settings.load(ctx()).config).model_dump(exclude_none=True)

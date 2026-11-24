@@ -14,6 +14,7 @@ from femkit.core import dirs, paths, text, view
 from femkit.core.errors import PlanStale, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Ask, Context, Outcome, Plan, Result, Step, operation, run_steps
+from femkit.core.persist import parse_value
 from femkit.core.schema import Model
 from femkit.definitions import catalogue
 from femkit.config.requests import OPTION_KEYS, PathRequest, SetRequest, ShowRequest, option_name
@@ -100,13 +101,13 @@ class SetOutcome(Outcome):
         return f"{self.plan.steps[0].describe}\n  in {self.file}"
 
 
-def parse_value(raw: str) -> Any:
-    """A TOML value (`8`, `["80", "90"]`, `[]`, `true`), else the text itself."""
-    import tomllib
+def _value(raw: str) -> Any:
+    """The value its TOML text gives — `8`, `"text"`, `["80", "90"]`, `[]` — as the file writes it;
+    a bare word is refused, never guessed to be text (web.md § 7.3)."""
     try:
-        return tomllib.loads(f"v = {raw}")["v"]
-    except tomllib.TOMLDecodeError:
-        return raw
+        return parse_value(raw).unwrap()
+    except ValueError as exc:
+        raise UsageError(str(exc)) from None
 
 
 @operation(CONFIG_SET, result=SetOutcome, changes=True,
@@ -117,7 +118,7 @@ class ConfigSet:
     def plan(self, req: SetRequest, ctx: Context) -> Plan:
         settings.key(req.key)
         old = settings.load(ctx).present().get(req.key)  # a broken file is refused here, naming it
-        new = parse_value(req.value)
+        new = _value(req.value)
         settings.with_values({req.key: new})  # an invalid new value is refused before anything is asked
         steps = () if old == new else (
             Step(id=f"set:{req.key}", describe=f"set {req.key}: {text.show(old)} -> {text.show(new)}"),)
@@ -129,7 +130,7 @@ class ConfigSet:
             raise PlanStale(f"{req.key} changed since the plan", (view.command(CONFIG_SET, key=req.key, value=req.value),))
 
         def do(step: Step, where):
-            settings.write(settings.with_values({req.key: parse_value(req.value)}))
+            settings.write(settings.with_values({req.key: _value(req.value)}))
             return "done", None
 
         status, log = run_steps(plan, ctx, observer, do)
