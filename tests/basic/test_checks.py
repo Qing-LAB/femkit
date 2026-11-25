@@ -24,7 +24,7 @@ from femkit.core.schema import render
 from femkit.definitions.catalogue import CUDA_SUFFIX, load_managers
 from femkit.envs import checks, layout, state as state_module
 from femkit.envs.records import CheckOutcome, ChecksRecord, read
-from femkit.envs.state import EnvState, facts, observe
+from femkit.envs.state import facts, observe
 
 DEFINITION = "ngsolve"  # thread_variables NGS_NUM_THREADS, fixed_variables OMP_NUM_THREADS = "1"
 NAME = DEFINITION + CUDA_SUFFIX  # its CUDA environment: it runs CPU and device checks alike
@@ -74,7 +74,7 @@ def test_a_check_runs_in_its_environment_with_its_threads_ranks_and_fixed_variab
                  program("threaded", threads=2, expect={"threads": Expectation(equals=2)}),
                  program("mpi", ranks=2, expect={"ranks": Expectation(equals=2)}))
     outcome = validate()
-    assert outcome.ok() and outcome.state is EnvState.ready
+    assert outcome.ok() and outcome.state == "ready"
     got = recorded()
     assert {i: o.outcome for i, o in got.items()} == {"serial": "passed", "threaded": "passed", "mpi": "passed"}
     assert all(o.quantities["omp"] == 1 and o.quantities["nousersite"] == 1 for o in got.values())
@@ -95,7 +95,7 @@ def test_every_check_runs_and_a_failed_one_makes_the_environment_failing(declare
              other_version,
              program("fine", expect={"value": Expectation(max=1.0)}))
     outcome = validate()
-    assert not outcome.ok() and outcome.state is EnvState.failing
+    assert not outcome.ok() and outcome.state == "failing"
     assert {i: o.outcome for i, o in recorded().items()} == {
         "too-big": "failed", "missing": "failed", "other-version": "failed", "fine": "passed"}
 
@@ -118,10 +118,10 @@ def test_validate_runs_the_gpu_checks_only_when_asked_and_reports_what_the_machi
     declared(program("cpu"), gpu_program("gpu"))
     monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
     outcome = validate()
-    assert outcome.ok() and outcome.state is EnvState.ready and outcome.gpu == "not-run"
+    assert outcome.ok() and outcome.state == "ready" and outcome.gpu == "not-run"
     assert set(recorded()) == {"cpu"}
     outcome = validate(gpu=True)
-    assert not outcome.ok() and outcome.state is EnvState.ready and outcome.gpu == "failed"
+    assert not outcome.ok() and outcome.state == "ready" and outcome.gpu == "failed"
     assert recorded()["gpu"].reason == "exited with 1"
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
     assert validate(gpu=True).gpu == "passed"
@@ -139,7 +139,7 @@ def test_each_validate_keeps_the_outcomes_of_the_checks_it_did_not_run(declared,
     validate(gpu=True)
     after = recorded()
     assert after["cpu-only"] == first["cpu-only"] and after["reference"].log != first["reference"].log
-    assert observe(ctx(), NAME)[1] is EnvState.ready
+    assert observe(ctx(), NAME)[1] == "ready"
     validate()
     assert recorded()["gpu"] == after["gpu"] and facts(ctx(), NAME).gpu == "passed"
 
@@ -159,7 +159,7 @@ def test_a_reference_that_fails_later_fails_the_gpu_result_kept_with_it(declared
     assert validate(gpu=True).gpu == "passed"
     broken.touch()
     outcome = validate()
-    assert outcome.state is EnvState.failing and outcome.gpu == "failed"
+    assert outcome.state == "failing" and outcome.gpu == "failed"
     assert [i.code for i in outcome.issues] == ["not-ready"]
     outcome = validate(gpu=True)
     assert sorted(i.code for i in outcome.issues) == ["gpu-not-qualified", "not-ready"]
@@ -216,7 +216,7 @@ def test_an_unchecked_environment_installs_by_validating(declared, value, ready)
     assert [s.id for s in plan.steps] == [f"{NAME}/validate"]
     result = op.apply(plan, c)
     assert result.ok() is ready
-    assert result.environments[0].state is (EnvState.ready if ready else EnvState.failing)
+    assert result.environments[0].state == ("ready" if ready else "failing")
     assert ready or [i.subject for i in result.issues] == [NAME]
     assert set(recorded()) == {"cpu"}
 
@@ -252,7 +252,7 @@ def test_install_numbers_its_validate_as_its_last_step_with_the_checks_run_under
     assert seen.said[0] == ("start", "env.install", n)
     assert seen.said[1] == ("step", "validate", n, n) and seen.said[2] == ("start", "env.validate", 2)
     assert seen.said[-3:] == [("stop", "env.validate"), ("end", "validate", "done"), ("stop", "env.install")]
-    assert result.environments[0].state is EnvState.failing and not result.ok()  # done, not ready
+    assert result.environments[0].state == "failing" and not result.ok()  # done, not ready
 
 
 def test_a_check_on_several_ranks_is_refused_before_anything_runs_without_a_launcher(declared):

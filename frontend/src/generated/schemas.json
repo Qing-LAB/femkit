@@ -318,64 +318,74 @@
       "title": "Call",
       "type": "object"
     },
-    "CaseListResult": {
+    "CaseList": {
       "additionalProperties": false,
       "properties": {
-        "cases": {
-          "items": {
-            "$ref": "#/$defs/CaseRow"
-          },
-          "type": "array"
-        },
-        "expand": {
-          "description": "what writes each study's cases",
-          "items": {
-            "$ref": "#/$defs/Action"
-          },
-          "type": "array"
-        },
         "issues": {
           "description": "findings a person should act on",
           "items": {
             "$ref": "#/$defs/Issue"
           },
           "type": "array"
+        },
+        "project": {
+          "description": "the project, by its path from the projects root",
+          "type": "string"
+        },
+        "studies": {
+          "description": "each study, whether it expands and, if not, why, with the cases written for it",
+          "items": {
+            "$ref": "#/$defs/StudyCases"
+          },
+          "type": "array"
         }
       },
       "required": [
         "issues",
-        "cases",
-        "expand"
+        "project",
+        "studies"
       ],
-      "title": "CaseListResult",
+      "title": "CaseList",
       "type": "object"
     },
     "CaseRow": {
       "additionalProperties": false,
       "properties": {
         "id": {
-          "description": "the case's ID",
+          "description": "the case's ID: the SHA-256 of its content",
+          "doc": "models.md \u00a7 5.3",
           "type": "string"
+        },
+        "made": {
+          "default": false,
+          "description": "whether its study makes it now; one it no longer makes is kept",
+          "type": "boolean"
         },
         "point": {
           "additionalProperties": {
             "type": "string"
           },
-          "description": "its axis values, as a study writes them",
+          "description": "its axis values, as its study writes them \u2014 as its file holds them for a case the study no longer makes",
           "type": "object"
         },
-        "studies": {
-          "description": "the studies that produce it",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "why its file does not load"
         }
       },
       "required": [
         "id",
-        "studies",
-        "point"
+        "point",
+        "made",
+        "why"
       ],
       "title": "CaseRow",
       "type": "object"
@@ -438,14 +448,22 @@
           },
           "type": "array"
         },
+        "parts": {
+          "description": "each part, with its state; what a part rests on comes before it",
+          "items": {
+            "$ref": "#/$defs/PartRow"
+          },
+          "type": "array"
+        },
         "project": {
-          "description": "the project checked",
+          "description": "the project checked, by its path from the projects root",
           "type": "string"
         }
       },
       "required": [
         "issues",
-        "project"
+        "project",
+        "parts"
       ],
       "title": "CheckResult",
       "type": "object"
@@ -498,6 +516,26 @@
         "name"
       ],
       "title": "CleanOutcome",
+      "type": "object"
+    },
+    "Code": {
+      "additionalProperties": false,
+      "description": "Text a person copies as it is \u2014 a diagram's source, a file's lines (web.md \u00a7 7.6): the\ncommand line prints it untouched, the page shows it as a block of code.",
+      "properties": {
+        "kind": {
+          "const": "code",
+          "default": "code",
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "title": "Code",
       "type": "object"
     },
     "Column": {
@@ -907,14 +945,15 @@
         "state": {
           "anyOf": [
             {
-              "$ref": "#/$defs/EnvState"
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "its state afterwards; none when not reached"
+          "description": "its state afterwards; none when not reached",
+          "doc": "envs.md \u00a7 3.2"
         },
         "status": {
           "description": "done, failed, nothing to do, or not reached",
@@ -974,9 +1013,9 @@
           "type": "string"
         },
         "state": {
-          "$ref": "#/$defs/EnvState",
           "description": "its observed state",
-          "doc": "envs.md \u00a7 3.2"
+          "doc": "envs.md \u00a7 3.2",
+          "type": "string"
         }
       },
       "required": [
@@ -990,24 +1029,11 @@
       "title": "EnvRow",
       "type": "object"
     },
-    "EnvState": {
-      "enum": [
-        "busy",
-        "absent",
-        "incomplete",
-        "outdated",
-        "unchecked",
-        "failing",
-        "ready"
-      ],
-      "title": "EnvState",
-      "type": "string"
-    },
     "ExpandOutcome": {
       "additionalProperties": false,
       "properties": {
         "added": {
-          "description": "cases written",
+          "description": "each case written, by its ID",
           "items": {
             "type": "string"
           },
@@ -1021,7 +1047,7 @@
           "type": "array"
         },
         "kept": {
-          "description": "cases already there",
+          "description": "each case it makes that was written already",
           "items": {
             "type": "string"
           },
@@ -1050,6 +1076,10 @@
             "failed"
           ],
           "type": "string"
+        },
+        "study": {
+          "description": "the study, by its name",
+          "type": "string"
         }
       },
       "required": [
@@ -1057,6 +1087,7 @@
         "plan",
         "status",
         "log",
+        "study",
         "added",
         "kept"
       ],
@@ -1205,6 +1236,7 @@
     },
     "GraphEdge": {
       "additionalProperties": false,
+      "description": "A reference from one node to another.",
       "properties": {
         "address": {
           "description": "where the reference is written",
@@ -1230,7 +1262,7 @@
             }
           ],
           "default": null,
-          "description": "the source node's port it leaves by; none: from the node itself \u2014 a key naming it, a name in a text"
+          "description": "the source's port it leaves by; none for a parameter a quantity uses"
         },
         "source": {
           "description": "the node that refers",
@@ -1241,7 +1273,7 @@
           "type": "string"
         },
         "type": {
-          "description": "the reference's type: shape, region:boundary, material, parameter, \u2026",
+          "description": "what it refers to, as the `ref` annotation states it, or `parameter`",
           "type": "string"
         }
       },
@@ -1258,45 +1290,39 @@
     },
     "GraphNode": {
       "additionalProperties": false,
+      "description": "A part, or an object inside one, as the graph shows it.",
       "properties": {
         "address": {
-          "description": "the object's address",
-          "doc": "models.md \u00a7 11.1",
+          "description": "its address",
+          "doc": "projects.md \u00a7 5",
           "type": "string"
         },
         "findings": {
-          "description": "`model check`'s findings that name it",
+          "description": "the findings that name it, in the chain's order",
           "items": {
             "$ref": "#/$defs/Issue"
           },
           "type": "array"
         },
-        "help": {
+        "group": {
           "anyOf": [
             {
-              "$ref": "#/$defs/Help"
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "what it is"
-        },
-        "keys": {
-          "description": "every key it may hold, the help beside its text; required first",
-          "items": {
-            "$ref": "#/$defs/Field"
-          },
-          "type": "array"
+          "description": "for a part, the grouping folder it lies in"
         },
         "kind": {
-          "description": "its object type, from the table of object types",
-          "doc": "models.md \u00a7 11.2",
+          "description": "its part kind or object type, as the layout names it",
+          "doc": "projects.md \u00a7 4",
           "type": "string"
         },
         "label": {
-          "description": "its name, as a person reads it",
+          "description": "what a person calls it",
           "type": "string"
         },
         "name": {
@@ -1309,10 +1335,22 @@
             }
           ],
           "default": null,
-          "description": "the name another object refers to it by"
+          "description": "the name another refers to it by"
+        },
+        "part": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for an object, the address of the part holding it"
         },
         "ports": {
-          "description": "its fields that name another object",
+          "description": "its fields that name another part or a group",
           "items": {
             "$ref": "#/$defs/GraphPort"
           },
@@ -1323,10 +1361,30 @@
           "doc": "models.md \u00a7 11.2",
           "type": "integer"
         },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a part, its state",
+          "doc": "projects.md \u00a7 8"
+        },
         "text": {
-          "description": "its text as its file holds it, comments kept: its table as a TOML document of its own, or a value's inline text",
-          "doc": "web.md \u00a7 8.3",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its text as its file holds it, comments kept; none for a part that cannot be read"
         },
         "type": {
           "anyOf": [
@@ -1338,7 +1396,7 @@
             }
           ],
           "default": null,
-          "description": "its type within that: a region's, a condition's"
+          "description": "its type within that, where its object type has one: a condition's kind"
         }
       },
       "required": [
@@ -1347,10 +1405,11 @@
         "type",
         "label",
         "name",
+        "part",
+        "group",
         "rank",
-        "help",
+        "state",
         "text",
-        "keys",
         "ports",
         "findings"
       ],
@@ -1359,9 +1418,10 @@
     },
     "GraphPort": {
       "additionalProperties": false,
+      "description": "A field of a node that names another part or a group (models.md \u00a7 11.2).",
       "properties": {
         "accepts": {
-          "description": "the node kinds it takes, as `kind` or `kind:type`: `material`, `region:boundary`; a port accepts only these (models.md \u00a7 11.2)",
+          "description": "the types it names, as its `ref` annotation states them: `physics`, `group:outer_boundary`",
           "items": {
             "type": "string"
           },
@@ -1371,28 +1431,16 @@
           "description": "where its names are written",
           "type": "string"
         },
-        "help": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Help"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "its sentence, from the schema"
-        },
         "many": {
-          "description": "a list: a wire adds a name to it; else a wire sets it",
+          "description": "whether it names several: a list, or a table's keys",
           "type": "boolean"
         },
         "name": {
-          "description": "the field that names another object, from the node",
+          "description": "the field, by its dotted path from the node",
           "type": "string"
         },
         "names": {
-          "description": "the names it holds now",
+          "description": "the names it holds",
           "items": {
             "type": "string"
           },
@@ -1404,8 +1452,7 @@
         "address",
         "accepts",
         "many",
-        "names",
-        "help"
+        "names"
       ],
       "title": "GraphPort",
       "type": "object"
@@ -1413,30 +1460,12 @@
     "GraphResult": {
       "additionalProperties": false,
       "properties": {
-        "choices": {
-          "description": "the model's fields that take one of a list",
-          "items": {
-            "$ref": "#/$defs/Field"
-          },
-          "type": "array"
-        },
         "edges": {
+          "description": "each reference between them",
           "items": {
             "$ref": "#/$defs/GraphEdge"
           },
           "type": "array"
-        },
-        "formulation": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the model's formulation"
         },
         "issues": {
           "description": "findings a person should act on",
@@ -1457,50 +1486,23 @@
           "default": null,
           "description": "the graph as Mermaid text, when asked"
         },
-        "next": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Issue"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the model's next step: the first finding, in the chain's order"
-        },
         "nodes": {
+          "description": "each part, then the objects inside it; what a part rests on comes before it",
           "items": {
             "$ref": "#/$defs/GraphNode"
           },
           "type": "array"
         },
         "project": {
-          "description": "the project",
+          "description": "the project, by its path from the projects root",
           "type": "string"
-        },
-        "study": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the study shown"
         }
       },
       "required": [
         "issues",
         "project",
-        "study",
-        "formulation",
-        "choices",
         "nodes",
         "edges",
-        "next",
         "mermaid"
       ],
       "title": "GraphResult",
@@ -1721,11 +1723,44 @@
     },
     "Issue": {
       "additionalProperties": false,
-      "description": "One finding: what it is about, what is wrong, and what a person may do next.",
+      "description": "One finding: what it is about, what is wrong, where the person opens it, what would be\nright, and what a person may do next.",
       "properties": {
+        "choices": {
+          "default": [],
+          "description": "the values that would be right, when more than one would do, each as the file would write it (TOML text)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "code": {
+          "description": "which finding it is: what tests and programs match on, kebab-case",
           "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$",
           "type": "string"
+        },
+        "file": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the file it is about, as the person opens it in their editor: a project's, by its path from the project's folder"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the key in that file, its dotted path: `conditions.left.kind`"
         },
         "label": {
           "anyOf": [
@@ -1736,19 +1771,35 @@
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "description": "what a person calls the subject, where its address is not that"
         },
         "message": {
+          "description": "one whole sentence for a person",
           "type": "string"
         },
         "next": {
           "default": [],
+          "description": "what would resolve it: operations that exist, never an edit of a file the person wrote",
           "items": {
             "$ref": "#/$defs/Action"
           },
           "type": "array"
         },
+        "right": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the one value that would be right, as the file would write it (TOML text)"
+        },
         "severity": {
+          "description": "how much it matters",
           "enum": [
             "error",
             "warning",
@@ -1757,6 +1808,7 @@
           "type": "string"
         },
         "subject": {
+          "description": "what it is about: an environment, a key, a file, an address",
           "type": "string"
         }
       },
@@ -1766,6 +1818,10 @@
         "subject",
         "label",
         "message",
+        "file",
+        "key",
+        "right",
+        "choices",
         "next"
       ],
       "title": "Issue",
@@ -1976,9 +2032,16 @@
       "title": "MachinesResult",
       "type": "object"
     },
-    "NewProjectOutcome": {
+    "NewOutcome": {
       "additionalProperties": false,
       "properties": {
+        "copied": {
+          "description": "each file copied, by its path from the project's folder",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "issues": {
           "description": "findings a person should act on",
           "items": {
@@ -1998,21 +2061,21 @@
           "default": null,
           "description": "the operation directory holding its event log"
         },
+        "name": {
+          "description": "the new project's name: its path from the projects root",
+          "type": "string"
+        },
         "path": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the new project's folder"
+          "description": "its folder",
+          "type": "string"
         },
         "plan": {
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
+        },
+        "source": {
+          "description": "what it copies: a template by its bare name, or a project by its path from the projects root",
+          "type": "string"
         },
         "status": {
           "description": "whether every step finished",
@@ -2028,9 +2091,12 @@
         "plan",
         "status",
         "log",
-        "path"
+        "name",
+        "path",
+        "source",
+        "copied"
       ],
-      "title": "NewProjectOutcome",
+      "title": "NewOutcome",
       "type": "object"
     },
     "Next": {
@@ -2159,7 +2225,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "each object type's icon (models.md \u00a7 11.2)",
+          "description": "each part kind's and object type's icon, as the project layout names them (web.md \u00a7 8.2)",
           "type": "object"
         },
         "schema": {
@@ -2190,6 +2256,31 @@
         "shortcuts"
       ],
       "title": "Page",
+      "type": "object"
+    },
+    "PartRow": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "its file, from the project's folder",
+          "type": "string"
+        },
+        "part": {
+          "description": "the part, by its address",
+          "type": "string"
+        },
+        "state": {
+          "description": "its state",
+          "doc": "projects.md \u00a7 8",
+          "type": "string"
+        }
+      },
+      "required": [
+        "part",
+        "file",
+        "state"
+      ],
+      "title": "PartRow",
       "type": "object"
     },
     "PathResult": {
@@ -2404,22 +2495,15 @@
           "type": "array"
         },
         "projects": {
+          "description": "each project under the root, by name",
           "items": {
             "$ref": "#/$defs/ProjectRow"
           },
           "type": "array"
         },
         "root": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the projects folder, paths.projects; none while it is unset"
+          "description": "the projects root, `paths.projects`",
+          "type": "string"
         }
       },
       "required": [
@@ -2434,7 +2518,7 @@
       "additionalProperties": false,
       "properties": {
         "name": {
-          "description": "its folder's name",
+          "description": "its name: its path from the projects root",
           "type": "string"
         },
         "path": {
@@ -2442,7 +2526,7 @@
           "type": "string"
         },
         "studies": {
-          "description": "its studies",
+          "description": "its studies, by name, as its folders hold them",
           "items": {
             "type": "string"
           },
@@ -2525,6 +2609,7 @@
           "items": {
             "discriminator": {
               "mapping": {
+                "code": "#/$defs/Code",
                 "next": "#/$defs/Next",
                 "table": "#/$defs/Table",
                 "text": "#/$defs/Text"
@@ -2534,6 +2619,9 @@
             "oneOf": [
               {
                 "$ref": "#/$defs/Text"
+              },
+              {
+                "$ref": "#/$defs/Code"
               },
               {
                 "$ref": "#/$defs/Table"
@@ -2772,9 +2860,9 @@
           "type": "string"
         },
         "state": {
-          "$ref": "#/$defs/ServerState",
           "description": "its state, observed (web.md \u00a7 4)",
-          "doc": "web.md \u00a7 4"
+          "doc": "web.md \u00a7 4",
+          "type": "string"
         },
         "supervisor": {
           "anyOf": [
@@ -2803,17 +2891,6 @@
       ],
       "title": "ServerRow",
       "type": "object"
-    },
-    "ServerState": {
-      "enum": [
-        "elsewhere",
-        "stopped",
-        "stale",
-        "running",
-        "starting"
-      ],
-      "title": "ServerState",
-      "type": "string"
     },
     "SetOutcome": {
       "additionalProperties": false,
@@ -3089,6 +3166,52 @@
       "title": "StepState",
       "type": "object"
     },
+    "StudyCases": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "default": 0,
+          "description": "how many cases it makes",
+          "type": "integer"
+        },
+        "expands": {
+          "description": "whether it expands into cases now",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "the study, by its name",
+          "type": "string"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "why it does not expand"
+        },
+        "written": {
+          "description": "every case of the study written, by its ID",
+          "items": {
+            "$ref": "#/$defs/CaseRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "expands",
+        "cases",
+        "why",
+        "written"
+      ],
+      "title": "StudyCases",
+      "type": "object"
+    },
     "StudyList": {
       "additionalProperties": false,
       "properties": {
@@ -3099,19 +3222,62 @@
           },
           "type": "array"
         },
+        "project": {
+          "description": "the project, by its path from the projects root",
+          "type": "string"
+        },
         "studies": {
-          "description": "the project's studies",
+          "description": "each study, whether it expands and, if not, why",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/StudyRow"
           },
           "type": "array"
         }
       },
       "required": [
         "issues",
+        "project",
         "studies"
       ],
       "title": "StudyList",
+      "type": "object"
+    },
+    "StudyRow": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "default": 0,
+          "description": "how many cases it makes",
+          "type": "integer"
+        },
+        "expands": {
+          "description": "whether it expands into cases now",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "the study, by its name",
+          "type": "string"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "why it does not expand"
+        }
+      },
+      "required": [
+        "name",
+        "expands",
+        "cases",
+        "why"
+      ],
+      "title": "StudyRow",
       "type": "object"
     },
     "Table": {
@@ -3218,14 +3384,15 @@
         "state": {
           "anyOf": [
             {
-              "$ref": "#/$defs/EnvState"
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "its state afterwards"
+          "description": "its state afterwards",
+          "doc": "envs.md \u00a7 3.2"
         },
         "status": {
           "description": "whether every step finished",

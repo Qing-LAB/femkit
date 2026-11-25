@@ -234,6 +234,9 @@ control_digest() {  # the SHA-256 of channels.txt then control.txt, as femkit's 
     else cat "$CHANNELS_TXT" "$CONTROL_TXT" | shasum -a 256 | cut -d' ' -f1; fi
 }
 
+# The rules femkit/data/states/control.toml declares, in its order, written here in bash since
+# the script runs before femkit can; tests/basic/test_entry.py holds the two equal on every way
+# the prefix can stand, and the next step a refusal below names to the one that table gives.
 control_state() {
     if [[ ! -e "$CONTROL" ]]; then echo absent
     elif [[ ! -d "$CONTROL/conda-meta" || ! -x "$CONTROL/bin/python" || ! -f "$STAMP" ]]; then echo broken

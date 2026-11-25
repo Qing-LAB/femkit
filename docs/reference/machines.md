@@ -10,7 +10,7 @@ One machine's record, as measured on it (jobs.md § 9.1).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `schema` | `1` | required | the record's schema version |
+| `schema` | `1` | required | the record's schema version: one of `1` |
 | `measured` | [Measured](#measured) | required | when and where the probe ran |
 | `identity` | text or [Unknown](#unknown) | required | the scheduler's cluster name, or the host name |
 | `host` | [Host](#host) | required | the machine the probe ran on; on a cluster, never what a job is fit against |
@@ -28,7 +28,7 @@ One machine's record, as measured on it (jobs.md § 9.1).
 | key | type | default | meaning |
 |---|---|---|---|
 | `time` | text | required | when the probe ran, UTC |
-| `where` | `workstation` \| `login node` \| `scheduler job` | required | where it ran |
+| `where` | `workstation` \| `login node` \| `scheduler job` | required | where it ran: one of `workstation`, `login node`, `scheduler job` |
 
 ## Unknown
 
@@ -113,7 +113,7 @@ A fact that could not be measured, and why. Never read as zero or none.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `state` | text | required | its state when the probe ran (envs.md § 3.2) |
+| `state` | text | required | its state when the probe ran (see envs.md § 3.2) |
 | `gpu` | text, optional | — | its GPU qualification, when ready or failing |
 | `install_fingerprint` | text, optional | — | from its manifest |
 | `solver_version` | text, optional | — | from its manifest |

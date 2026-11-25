@@ -25,7 +25,7 @@ from femkit.core.issues import Issue
 from femkit.core.locks import SUBJECT, subject_lock
 from femkit.core.process import identify
 from femkit.core.view import Verb
-from femkit.core.schema import Model, key_path
+from femkit.core.schema import Model, problem_path
 
 T = TypeVar("T")
 
@@ -69,15 +69,14 @@ class Result(Model):
         raise NotImplementedError(f"{type(self).__name__} builds no report")
 
     def text(self) -> str:
-        """The report as the command line writes it."""
+        """The report as the command line writes it: the one text of every result."""
         return text.report(self.report(), self.issues)
 
     @model_serializer(mode="wrap")
     def _with_report(self, handler):
         """The report goes with the result's JSON: the page draws it (web.md § 7.6)."""
         data = handler(self)
-        if type(self).report is not Result.report:
-            data["report"] = self.report().model_dump(mode="json")
+        data["report"] = self.report().model_dump(mode="json")
         return data
 
 
@@ -334,7 +333,8 @@ class Operation:
         try:
             return self.request.model_validate(data)
         except ValidationError as exc:
-            problems = "; ".join(f"{key_path(e['loc']) or 'request'}: {e['msg']}" for e in exc.errors())
+            problems = "; ".join(f"{problem_path(self.request, e['loc']) or 'request'}: {e['msg']}"
+                                 for e in exc.errors())
             raise UsageError(problems, code="invalid-request", subject=self.name) from None
 
     def run(self, req: Model, ctx: Context) -> Result:
@@ -388,8 +388,10 @@ def operation(
         doc = " ".join((target.__doc__ or "").split())
         if not doc:
             raise TypeError(f"{name}: an operation's docstring is its help; write one")
-        if result.text is Result.text and result.report is Result.report:
+        if result.report is Result.report:
             raise TypeError(f"{name}: {result.__name__} builds no report(); a result is read on a terminal too")
+        if result.text is not Result.text:
+            raise TypeError(f"{name}: {result.__name__} writes a text of its own; a result's text is its report's")
         flags = [n for n, f in request.model_fields.items()
                  if commandline.spelling(n, f).kind == "flag" and (f.is_required() or f.default is not False)]
         if flags:   # a flag only says yes: a field it cannot set back is one the command line cannot write

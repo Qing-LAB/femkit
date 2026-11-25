@@ -23,7 +23,7 @@ from femkit.core import commandline, process, text, view
 from femkit.core.errors import ConsentDeclined, Refusal, UsageError
 from femkit.core.operations import Ask, Context, Operation, Plan, Result, Step
 from femkit.core.schema import described
-from femkit.registry import operations
+from femkit.registry import GROUPS, operations
 
 
 # ------------------------------------------------------------ fields to params
@@ -83,6 +83,8 @@ def _tagged(tag: str, text: str) -> str:
 def _emit(as_json: bool, model: Result | Plan, tag: str) -> None:
     if as_json:
         click.echo(model.model_dump_json(indent=2))
+    elif isinstance(model, Result) and model.report().blocks[:1] and isinstance(model.report().blocks[0], view.Code):
+        click.echo(model.text())   # text to copy as it is, untagged (web.md § 7.6)
     else:
         click.echo(_tagged(tag, model.text()))
 
@@ -234,7 +236,8 @@ def _answer(op: Operation, ask: Ask, req: Any) -> Any:
     for line in ask.context:
         click.echo(f"  {line}", err=True)
     while True:
-        click.echo(ask.question, err=True)
+        click.echo(f"{ask.question}  ({'a line each, then an empty line; ' if is_list else ''}nothing typed: no answer)",
+                   err=True)
         given = _read(is_list)
         if given is None:
             return None
@@ -335,7 +338,7 @@ def build(ops: dict[str, Operation] | None = None) -> click.Group:
             continue
         group = root.commands.get(group_name)
         if group is None:
-            group = click.Group(group_name)
+            group = click.Group(group_name, help=GROUPS.get(group_name))
             root.add_command(group)
         group.add_command(_command(verb, op))
     return root

@@ -134,20 +134,21 @@ Moving or merging a document is a review, not a file move:
 - [`contracts/envs.md`](contracts/envs.md) — how an environment is installed,
   validated and entered, and the install script.
 - [`contracts/projects.md`](contracts/projects.md) — the projects root, a
-  project's tree and parts, addresses, and the one door every read and write
-  passes through; its framework built — finding projects, the layout model,
-  names, addresses, the door — the shipped layout and the part schemas not yet
-  (plan § 4, D).
+  project's tree and parts, addresses, the one door every read and write
+  passes through, and the check frame; built but the global library (plan
+  § 4, E).
 - [`contracts/materials.md`](contracts/materials.md) — the property list, the
-  material format, the global and local libraries, importers; not built yet
-  (plan § 4, D and E).
+  material format, the global and local libraries, importers; a project's own
+  materials with fixed values and the assignment built, the rest not yet
+  (plan § 4, E).
 - [`contracts/geometry.md`](contracts/geometry.md) — the geometry script, its
   contract, the pipeline's steps, mesh recipes, the mesh step and the
-  hand-over to each engine; not built yet (plan § 4, D and X).
+  hand-over to each engine; the contract and the recipes built, the rest not
+  yet (plan § 4, X).
 - [`contracts/models.md`](contracts/models.md) — how a calculation is described
   once, matched against an environment's declared and proven abilities,
-  decided on, customized, prepared and reduced; not built yet (plan § 4, D and
-  M5–M9).
+  decided on, customized, prepared and reduced; the parts, their checks, the
+  cases and the graph built, the rest not yet (plan § 4, M5–M9).
 - [`contracts/jobs.md`](contracts/jobs.md) — machine records and the probe;
   how a job will be prepared and run.
 - [`contracts/testing.md`](contracts/testing.md) — test tiers, isolation, what
@@ -160,8 +161,11 @@ Moving or merging a document is a review, not a file move:
 - [`reference/config.md`](reference/config.md) — every field of `config.toml`.
 - [`reference/machines.md`](reference/machines.md) — every field of a machine
   record.
-- [`reference/models.md`](reference/models.md) — every field of `model.toml` and
-  `study.toml`.
+- [`reference/parts.md`](reference/parts.md) — every field of a project's parts:
+  the project file, physics, observable sets, studies, and each part another
+  package registers.
+- [`reference/cases.md`](reference/cases.md) — every field of a case's
+  `case.json`.
 
 ### Science
 

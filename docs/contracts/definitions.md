@@ -38,27 +38,28 @@ femkit/data/
 ├── managers/<kind>.toml       how to drive a package manager (conda, mamba)
 ├── schedulers/<kind>.toml     how to talk to a scheduler (local, slurm)
 ├── units.toml                 the units a value may be written in, with exact factors (core.md § 11)
+├── geometry/kinds.toml        the kinds of place a group may be (geometry.md § 7)
+├── properties.toml            the property list: names in femkit, each engine and each source (materials.md § 1)
+├── states/<machine>.toml      each state machine declared as data (core.md § 7)
+├── project/layout.toml        a project's parts, folders and object types (projects.md § 4)
 ├── web/page.toml              the web page's own structure (web.md § 8.1)
 └── templates/                 the settings file's template, and the project templates (projects.md § 7)
 ```
 
 The data the new parts are driven by, decided by the person (ADRs
 [0011](../decisions/0011-project-structure.md)–[0014](../decisions/0014-materials.md))
-and not built yet (plan § 4, D and E; couplings after M9; the mesh step's
-environment, X, where it is still open):
+and not built yet (the materials' files, plan § 4, E; the step kinds, with
+Maxwell's frequency step, M9; couplings after M9; the mesh step's environment,
+X, where it is still open):
 
 ```text
 femkit/data/
 ├── environments/gmsh.toml     the mesh step's tool environment, Gmsh with its Python interface — proposed, open with X (geometry.md § 5)
 ├── step_kinds.toml            the kinds of calculation: stationary, frequency, … (models.md § 4.2)
 ├── couplings/<coupling>.toml  a coupling joining formulation families (models.md § 4.5)
-├── properties.toml            the property list: names in femkit, each engine and each source (materials.md § 1)
 ├── dispersion.toml            the dispersion models (materials.md § 2)
 ├── materials/<name>/          the shipped materials, seeding the global library (materials.md § 4)
-├── importers/<source>.toml    how another library's files map onto femkit's (materials.md § 7)
-├── geometry/kinds.toml         the kinds of place a group may be (geometry.md § 7)
-├── project/layout.toml        a project's parts and folders (projects.md § 4)
-└── states/<machine>.toml      each state machine (core.md § 7)
+└── importers/<source>.toml    how another library's files map onto femkit's (materials.md § 7)
 ```
 
 A definition changes only when femkit changes: it is reviewed, versioned
@@ -95,7 +96,15 @@ that list, and no other keeps one.
 
 Each definition type has one schema model. The model owns every field's type,
 default, allowed values and description; no other module, document or command
-keeps a list of those fields. A definition's identity is its file stem —
+keeps a list of those fields. A model lives in `femkit/definitions/` beside the
+catalogue — the place kinds' (`places.py`) and the property list's
+(`properties.py`) among them, though `geometry` and `materials` own their
+rules — since the catalogue sits below those packages ([`framework.md`](framework.md)
+§ 1); a state table's is the core's (`StateTable`). A template has no model of
+its own: it is a project, read through the part schemas
+([`projects.md`](projects.md) § 7). The layout's model and the page's live in
+the packages above that read them (`projects`, `page.py`), so `schema check`
+loads those two files beside the table rather than from it. A definition's identity is its file stem —
 `environments/ngsolve.toml` defines the environment `ngsolve` — and the stem is
 not repeated inside the file.
 
@@ -123,6 +132,10 @@ reads every domain's models) renders `docs/reference/` from the schema models
 committed pages are that output; a test renders them again and fails on any difference. Contracts,
 guides and help text link to the reference instead of restating fields.
 `python -m femkit schema check` loads every shipped definition; a test runs it.
+Beside the table, it checks what only the registry can: each state table's
+operations, by their names and their requests' fields; the layout by its own
+rules ([`projects.md`](projects.md) § 4); each template a project named by one
+step of the name rule; the page's declaration ([`web.md`](web.md) § 8.1).
 
 ## 3. `channels.txt` and `control.txt`
 

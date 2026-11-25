@@ -1,0 +1,191 @@
+# A project's layout (projects.md § 4): each part kind — its folder, whether each part is one
+# file or a folder holding its own, the files every part of its kind holds by a fixed name, the
+# schema it loads with, its place in the chain's order, and whether the projects root holds a
+# global library of it; each folder that holds no part, with its writer; and the object types
+# inside the parts. The project file is fixed, `project.toml`. The door, the graph, the checks
+# and the page read this one declaration; `project new` copies what the person writes.
+
+# The files an editor keeps beside the one it edits — a backup, a swap file, a lock: no part, no
+# stray, and never copied.
+editor_files = ["*~", ".*.swp", ".*.swo", "#*#", ".#*"]
+
+# The kind whose parts `project list` names beside each project (web.md § 8.6).
+listed = "study"
+
+# ------------------------------------------------------------------ the part kinds
+
+[kinds.project]
+shape = "single"
+schema = "models.project"
+rank = 0
+
+[kinds.material]
+folder = "materials"
+shape = "folder"
+file = "material.toml"
+schema = "materials.material"
+rank = 1
+library = true
+
+[kinds.component]
+folder = "components"
+shape = "folder"
+file = "component.toml"
+files = ["geometry.py"]
+schema = "geometry.component"
+rank = 2
+
+[kinds.physics]
+folder = "physics"
+shape = "file"
+schema = "models.physics"
+rank = 3
+
+[kinds.mesh]
+folder = "mesh"
+shape = "file"
+schema = "geometry.recipe"
+rank = 3
+
+[kinds.observables]
+folder = "observables"
+shape = "file"
+schema = "models.observables"
+rank = 3
+
+[kinds.study]
+folder = "studies"
+shape = "file"
+schema = "models.study"
+rank = 4
+
+# ------------------------------------------------------------------ the folders that hold no part
+
+[folders.custom]
+writer = "person"
+moves = "yes"
+
+[folders.cases]
+writer = "femkit"
+moves = "yes"
+
+[folders.runs]
+writer = "run"
+moves = "yes"
+
+[folders.results]
+writer = "femkit"
+moves = "yes"
+
+[folders.".femkit"]
+writer = "femkit"
+moves = "local"
+
+# ------------------------------------------------------------------ the object types inside the parts
+
+[objects.parameter]
+part = "project"
+table = "parameters"
+named = true
+rank = 0
+
+[objects.property]
+part = "material"
+table = "properties"
+named = true
+rank = 1
+
+[objects.frame]
+part = "component"
+table = "frame"
+named = false
+rank = 2
+
+[objects.input]
+part = "component"
+table = "inputs.parameters"
+named = true
+rank = 2
+
+[objects.input_file]
+part = "component"
+table = "inputs.files"
+named = true
+rank = 2
+
+[objects.group]
+part = "component"
+table = "groups"
+named = true
+rank = 2
+
+[objects.assignment]
+part = "component"
+table = "assign"
+named = true
+rank = 2
+
+[objects.condition]
+part = "physics"
+table = "conditions"
+named = true
+typed = "kind"
+rank = 3
+
+[objects.source]
+part = "physics"
+table = "sources"
+named = true
+typed = "kind"
+rank = 3
+
+[objects.radiation]
+part = "physics"
+table = "radiation"
+named = false
+rank = 3
+
+[objects.size]
+part = "mesh"
+table = "sizes"
+named = true
+rank = 3
+
+[objects.observable]
+part = "observables"
+table = "observables"
+named = true
+typed = "quantity"
+rank = 3
+
+[objects.step]
+part = "study"
+table = "steps"
+named = true
+typed = "kind"
+rank = 4
+
+[objects.numerics]
+part = "study"
+table = "numerics"
+named = false
+rank = 4
+
+[objects.axis]
+part = "study"
+table = "axes"
+named = true
+typed = "class"
+rank = 4
+
+[objects.crossing]
+part = "study"
+table = "crossing"
+named = false
+rank = 4
+
+[objects.binding]
+part = "study"
+table = "environments"
+named = true
+rank = 4

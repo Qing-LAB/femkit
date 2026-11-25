@@ -15,10 +15,14 @@ from femkit.core import persist, view
 from femkit.core.dirs import CONTROL, folder_from
 from femkit.core.locks import SUBJECT
 from femkit.core.operations import Context
+from femkit.core import states
 from femkit.core.schema import DefinitionError, load_toml, validate
+from femkit.core.states import StateTable
 from femkit.core.units import UnitTable, Units
 from femkit.definitions.formulations import FormulationDefinition
 from femkit.definitions.meshers import MesherDefinition
+from femkit.definitions.places import PlaceKind, PlaceList
+from femkit.definitions.properties import Property, PropertyList
 from femkit.schedulers import readers as scheduler_readers
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
 from femkit.definitions.requests import SCHEMA_CHECK
@@ -117,9 +121,10 @@ def load_units() -> UnitTable:
 
 
 def load_formulations() -> dict[str, FormulationDefinition]:
-    """Every formulation, its units read by the unit table (models.md § 4)."""
+    """Every formulation, its units read by the unit table, its places by the vocabulary of places
+    and its benchmarks' projects among the project templates (models.md § 4)."""
     return _load_dir(data_root() / "formulations", FormulationDefinition,
-                     {"units": Units(load_units()), "root": data_root() / "formulations"})
+                     {"units": Units(load_units()), "places": frozenset(load_places()), "templates": load_templates()})
 
 
 CUDA_SUFFIX = "-cuda"  # a definition's CUDA environment is named after it with this (definitions.md § 4.5)
@@ -148,6 +153,11 @@ def load_environments() -> dict[str, EnvironmentDefinition]:
         if definition.cuda is not None:
             out[name + CUDA_SUFFIX] = definition.built(cuda=True)
     return dict(sorted(out.items()))
+
+
+def environments(ctx: Context) -> dict[str, EnvironmentDefinition]:
+    """Every environment, loaded once per invocation."""
+    return ctx.cached("environments", load_environments)
 
 
 def load(ctx: Context) -> Catalogue:
@@ -185,7 +195,66 @@ def units(ctx: Context) -> Units:
     return ctx.cached("units", lambda: Units(load_units()))
 
 
-def _type(files: str, model: type, load: Callable[[], Any]) -> Any:
+def load_places() -> dict[str, PlaceKind]:
+    """The kinds of place a group may be (geometry.md § 7)."""
+    return dict(load_toml(data_root() / "geometry" / "kinds.toml", PlaceList).root)
+
+
+def places(ctx: Context) -> dict[str, PlaceKind]:
+    """The kinds of place, loaded once per invocation."""
+    return ctx.cached("places", load_places)
+
+
+def load_properties() -> dict[str, Property]:
+    """The property list, each unit read by the unit table (materials.md § 1)."""
+    return dict(load_toml(data_root() / "properties.toml", PropertyList, {"units": Units(load_units())}).root)
+
+
+def properties(ctx: Context) -> dict[str, Property]:
+    """The property list, loaded once per invocation."""
+    return ctx.cached("properties", load_properties)
+
+
+def states_dir() -> Path:
+    """`states/`: one table per state machine (core.md § 7)."""
+    return data_root() / "states"
+
+
+def state_file(machine: str) -> Path:
+    """`states/<machine>.toml`: one machine's table."""
+    return states_dir() / f"{machine}.toml"
+
+
+def load_states(context: dict | None = None) -> dict[str, StateTable]:
+    """Every machine's table, each closed and total by its own rules; ``context`` adds what is
+    known beside it — the registered operations, for `schema check` (core.md § 7)."""
+    return _load_dir(states_dir(), StateTable, context)
+
+
+def machine(ctx: Context, binding: states.Binding) -> states.Machine:
+    """The machine ``binding`` names, read from its table and bound to the predicates and values
+    its domain gives, once per invocation (core.md § 7)."""
+    return ctx.cached(f"states/{binding.machine}", lambda: states.load(state_file(binding.machine), binding))
+
+
+def templates_dir() -> Path:
+    """`templates/`: the settings file's template, and one folder per project template (projects.md § 7)."""
+    return data_root() / "templates"
+
+
+def load_templates() -> dict[str, Path]:
+    """Each project template by its bare name — a folder of `templates/` — and its folder. Each is
+    a project, read through the parts' own schemas; what makes one a project, and its name, are
+    the projects domain's to check (projects.md § 7)."""
+    return {p.name: p for p in sorted(templates_dir().iterdir()) if p.is_dir()}
+
+
+def templates(ctx: Context) -> dict[str, Path]:
+    """The project templates, listed once per invocation."""
+    return ctx.cached("templates", load_templates)
+
+
+def _type(files: str, model: type | None, load: Callable[[], Any]) -> Any:
     return field(metadata={"files": files, "model": model, "load": load})
 
 
@@ -193,7 +262,8 @@ def _type(files: str, model: type, load: Callable[[], Any]) -> Any:
 class Catalogue:
     """Every shipped definition, one field per type, each with where its files are under
     `femkit/data/`, its model and its loader: the one list the catalogue, `schema check`,
-    `schema docs` and the reference read (definitions.md § 1)."""
+    `schema docs` and the reference read (definitions.md § 1). A template has no model of its
+    own: it is a project, read through the part schemas (projects.md § 7)."""
 
     control: ControlDefinition = _type("channels.txt, control.txt", ControlDefinition, load_control)
     environments: dict[str, EnvironmentDefinition] = _type("environments/<name>.toml", EnvironmentDefinition,
@@ -204,6 +274,10 @@ class Catalogue:
     formulations: dict[str, FormulationDefinition] = _type("formulations/<family>.toml", FormulationDefinition,
                                                            load_formulations)
     meshers: dict[str, MesherDefinition] = _type("meshers/<id>.toml", MesherDefinition, load_meshers)
+    places: dict[str, PlaceKind] = _type("geometry/kinds.toml", PlaceKind, load_places)
+    properties: dict[str, Property] = _type("properties.toml", Property, load_properties)
+    states: dict[str, StateTable] = _type("states/<machine>.toml", StateTable, load_states)
+    templates: dict[str, Path] = _type("templates/<name>/", None, load_templates)
 
 
 def load_catalogue() -> Catalogue:

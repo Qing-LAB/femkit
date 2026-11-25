@@ -2,14 +2,13 @@ import { useEffect, useState } from "react";
 import { apply, lines, NeedToken, OperationInfo, planOperation, Refused, runOperation } from "./api";
 import { Form, requestFrom, Values } from "./Form";
 import { Progress } from "./Progress";
-import { Findings, Value } from "./Value";
 import { ActionButton } from "./elements/ActionButton";
 import { Report } from "./elements/Report";
 import type { Action } from "./generated/schemas";
 
 // One operation as a form, its plan, its outcome (web.md § 2): a read-only one is run; a
 // changing one is planned, shown, and applied with the digest of the plan shown. A result is
-// drawn from its report; one that carries none yet, field by field.
+// drawn from its report, which every result carries (web.md § 7.6).
 
 type Phase =
   | { kind: "idle" }
@@ -114,7 +113,7 @@ export function OperationView({ op, onNeedToken }: { op: OperationInfo; onNeedTo
                     ))}
                   </ol>
                 )}
-                <Findings issues={p.issues} />
+                <Report result={{ issues: p.issues }} />
                 {p.asks?.length > 0 && (
                   <p className="muted">On a terminal it would ask for: {p.asks.map((a: any) => a.key).join(", ")}.
                     Fill those fields above and plan again.</p>
@@ -143,12 +142,7 @@ export function OperationView({ op, onNeedToken }: { op: OperationInfo; onNeedTo
       {phase.kind === "done" && (
         <div className={`card result ${phase.ok ? "ok" : "not-ok"}`}>
           <h2>{op.changes ? "Outcome" : "Result"} <span className={`badge ${phase.ok ? "done" : "failed"}`}>{phase.ok ? "ok" : "not ok"}</span></h2>
-          {phase.result.report ? <Report result={phase.result} /> : (
-            <>
-              <Findings issues={phase.result.issues} />
-              <Value value={phase.result} />
-            </>
-          )}
+          <Report result={phase.result} />
         </div>
       )}
 

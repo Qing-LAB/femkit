@@ -57,5 +57,5 @@ safe against their editor.
 
 - The page shows the structure, each part's text, its help and its findings,
   and the templates to copy; it writes nothing of the person's.
-- The benchmarks' and the tests' projects move into the templates when step D
-  rewrites them in the parts' formats (plan § 4, D).
+- The benchmarks' and the tests' projects are templates
+  ([`projects.md`](../contracts/projects.md) § 7).

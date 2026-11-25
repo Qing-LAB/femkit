@@ -1,4 +1,4 @@
-"""scripts/install-env.sh and its control state table (envs.md § 7).
+"""scripts/install-env.sh and the control environment's states (envs.md § 7).
 
 The `manager` fixture (tests/basic/conftest.py) is a stand-in that records each
 call; the real managers run the same forms in the field tier.
@@ -6,6 +6,8 @@ call; the real managers run the same forms in the field tier.
 
 from __future__ import annotations
 
+import itertools
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -13,10 +15,10 @@ import pytest
 
 from femkit.core import dirs
 from femkit.core.errors import UsageError
-from tests.kit import refused
+from tests.kit import refused, run
 from femkit.core.schema import render
 from femkit.core.operations import Context
-from femkit.definitions.catalogue import control_files, load_control, load_managers
+from femkit.definitions.catalogue import control_digest, control_files, load_control, load_managers, load_states
 from femkit.envs.manager import resolve
 
 REPO = Path(__file__).resolve().parents[2]
@@ -86,6 +88,46 @@ def test_a_verb_is_refused_until_control_is_current(manager, state):
         make_outdated(prefix)
     assert install_env("list", "--yes").returncode == 2
     assert calls(manager) == []
+
+
+def stand(prefix: Path, environment: bool, python: int | None, stamp: str | None) -> None:
+    """The control prefix made to stand so: with or without conda-meta/, a bin/python of this
+    mode or none, and a stamp — the one channels.txt and control.txt hash to, or another."""
+    if prefix.exists():
+        shutil.rmtree(prefix)
+    prefix.mkdir(parents=True)
+    if environment:
+        (prefix / "conda-meta").mkdir()
+    if python is not None:
+        (prefix / "bin").mkdir()
+        (prefix / "bin" / "python").write_text("#!/bin/sh\n")
+        (prefix / "bin" / "python").chmod(python)
+    if stamp is not None:
+        (prefix / ".femkit").mkdir()
+        (prefix / ".femkit" / "control.sha256").write_text(control_digest() if stamp == "its own" else stamp)
+
+
+def test_the_script_and_femkit_observe_the_control_environment_by_the_one_declared_table(manager):
+    """Fails if the install script, which runs before femkit can, reads the control environment
+    in another state than femkit/data/states/control.toml gives — the rules doctor reads it by —
+    on any way its prefix can stand, or names another next step than that state allows; or if
+    these ways leave a state of the table unseen (envs.md § 7.2, § 7.3)."""
+    prefix, seen = dirs.control_prefix(), set()
+    ways = [None, *itertools.product((False, True), (None, 0o644, 0o755), (None, "another hash\n", "its own"))]
+    for way in ways:
+        if way is not None:
+            stand(prefix, *way)
+        row = next(r for r in run("doctor").rows if r.subject == "control environment")
+        ran = install_env("list", "--yes")
+        lines = ran.stderr.splitlines()
+        if row.state == "current":
+            assert ran.returncode == 0 and "refused" not in ran.stderr and row.next == [], (way, ran.stderr)
+        else:
+            assert ran.returncode == 2 and f"[femkit] refused: the control environment is {row.state}: {prefix}" \
+                in lines, (way, row.state, ran.stderr)
+            assert lines[lines.index("next -- instead:") + 1:] == [f"    {n}" for n in row.next], (way, ran.stderr)
+        seen.add(row.state)
+    assert seen == set(load_states()["control"].states)
 
 
 def test_plain_bootstrap_rebuilds_an_outdated_or_broken_control(manager):

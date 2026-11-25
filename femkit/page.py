@@ -12,7 +12,7 @@ from pydantic import Field
 from femkit.core.operations import Operation
 from femkit.core.schema import DefinitionError, Model, classes, field_extras, items_of, key_path, load_toml
 from femkit.definitions import catalogue
-from femkit.models.schema import OBJECTS
+from femkit.projects import layout as layouts
 
 Context = Literal["project", "study", "environment"]
 #: The page's own commands, which a key may be bound to (web.md § 8.1). The page changes no file
@@ -62,7 +62,8 @@ class Page(Model):
     app: App
     workspaces: list[Workspace] = Field(min_length=1)
     context: list[ContextPart]
-    kinds: dict[str, str] = Field(description="each object type's icon (models.md § 11.2)")
+    kinds: dict[str, str] = Field(description="each part kind's and object type's icon, as the project layout names "
+                                              "them (web.md § 8.2)")
     shortcuts: list[Shortcut] = Field(default_factory=list)
 
 
@@ -75,8 +76,10 @@ def load(ops: Mapping[str, Operation]) -> Page:
     """The declaration, refused unless all it names exists among ``ops``, the operations the
     page is served with: each workspace's document and each context's choices a read-only
     operation, each context's rows and keys in that operation's result, each dependence a
-    declared context, each object type with its icon, each workspace key once, and each request
-    field's `context` a declared one — a page that loads it never draws a part it cannot fill."""
+    declared context, each part kind and object type of the project layout with its icon — the
+    layout's own refusal when it does not load, as no icon could be checked — each workspace key
+    once, and each request field's `context` a declared one — a page that loads it never draws a
+    part it cannot fill."""
     p = load_toml(path(), Page)
     contexts, problems = {c.key for c in p.context}, []
 
@@ -106,9 +109,10 @@ def load(ops: Mapping[str, Operation]) -> Page:
     problems += [("context", f"{op.name}'s field {name!r} takes the context {taken!r}, which is not declared")
                  for op in ops.values() for name, field in op.request.model_fields.items()
                  if (taken := field_extras(field).get("context")) is not None and taken not in contexts]
-    kinds = {o.kind for o in OBJECTS}
-    problems += [("kinds", f"the object type {k!r} has no icon") for k in sorted(kinds - set(p.kinds))]
-    problems += [("kinds", f"{k!r} is no object type") for k in sorted(set(p.kinds) - kinds)]
+    layout = layouts.read()                                  # refused, the layout's own refusal, when it does not load
+    kinds = {*layout.kinds, *layout.objects}
+    problems += [("kinds", f"the part kind or object type {k!r} has no icon") for k in sorted(kinds - set(p.kinds))]
+    problems += [("kinds", f"{k!r} is no part kind or object type of the layout") for k in sorted(set(p.kinds) - kinds)]
     if problems:
         raise DefinitionError(path(), problems)
     return p

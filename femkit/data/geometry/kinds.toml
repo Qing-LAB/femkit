@@ -1,0 +1,35 @@
+# The kinds of place a group may be (geometry.md § 7): the one vocabulary of places, read by a
+# formulation's `on` and a schema field's `ref` (`group:outer_boundary|group:interface`). Each
+# place states its sentence, its dimension in each geometry it exists in — keyed by the
+# geometry's, 2 or 3 — and, for a face, how many bodies it touches and on which side. Before the
+# geometry exists, a group's place is known as far as its promised dimension tells; once it
+# exists, a face's bodies tell an outer boundary, an interface and an embedded face apart.
+
+[body]
+sentence = "a region of the geometry's own dimension, which one material fills"
+dimension = { 2 = 2, 3 = 3 }
+
+[outer_boundary]
+sentence = "a face on the outside of the geometry, touching one body"
+dimension = { 2 = 1, 3 = 2 }
+bodies = 1
+side = "outside"
+
+[interface]
+sentence = "a face between two bodies"
+dimension = { 2 = 1, 3 = 2 }
+bodies = 2
+
+[embedded]
+sentence = "a face inside one body, the body on both its sides"
+dimension = { 2 = 1, 3 = 2 }
+bodies = 1
+side = "inside"
+
+[edge]
+sentence = "an edge of a three-dimensional geometry"
+dimension = { 3 = 1 }
+
+[point]
+sentence = "a point of the geometry"
+dimension = { 2 = 0, 3 = 0 }

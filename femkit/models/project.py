@@ -1,54 +1,72 @@
-"""A project's files (models.md § 2): where each lives, and the one way each is read."""
+"""The project file, `project.toml` (projects.md §§ 2–3, models.md § 3): what the project is, the
+components and studies it names, and the shared parameters — the `models.project` part schema and
+its check. The parameters themselves are resolved once, by the check frame
+(`femkit/projects/checking.py`).
+
+Its findings, each at the project file's key:
+- `no-such-part` (error): a component or study it names has no file; its right value the list
+  with the closest name there put in its place, or, with none close, its choices the ones there;
+- `not-named` (warning): a component or study is in its folder but the project file does not name
+  it, nor a name close to it — inert, never expanded into a case; right: the list with it named;
+- `named-like-a-unit` (error): a parameter named like a unit symbol, which a value using that unit
+  would read instead.
+"""
 
 from __future__ import annotations
 
-import tomllib
+from typing import Iterator
 
-from pathlib import Path
+from pydantic import Field
 
-from femkit.core.operations import Context
-from femkit.core.schema import load_toml, validate
-from femkit.definitions import catalogue
-from femkit.models.schema import ModelFile, StudyFile
-
-
-def model_file(project: Path) -> Path:
-    return project / "model.toml"
+from femkit.core.issues import Issue
+from femkit.core.schema import as_reference, field_extras
+from femkit.models.parts import cited, missing
+from femkit.projects.checking import Checking
+from femkit.projects.door import Part
+from femkit.projects.schemas import PartFile
 
 
-def study_file(project: Path, study: str) -> Path:
-    return project / "studies" / study / "study.toml"
+class ProjectFile(PartFile):
+    """`project.toml`: what the project is, the components and studies it names, and the shared
+    parameters (projects.md § 3, models.md § 3)."""
+
+    description: str = Field(description="what the project is, in a sentence or two")
+    components: list[str] = as_reference("the project's components, by name: each the folder `components/<name>/`, "
+                                         "holding `component.toml` and `geometry.py`", "component",
+                                         default_factory=list)
+    studies: list[str] = as_reference("the project's studies, by name: each the file `studies/<name>.toml`", "study",
+                                      default_factory=list)
+    parameters: dict[str, str] = Field(default_factory=dict, description="the shared parameters, by name: each a "
+                                       "quantity with its unit, or an expression of other parameters with `+`, `-`, "
+                                       "`*`, `/` and parentheses", json_schema_extra={"quantity": "any",
+                                                                                      "doc": "core.md § 11"})
 
 
-def file_of(project: Path, study: str | None) -> Path:
-    """The file a study's name names in ``project``; none: the model's."""
-    return model_file(project) if study is None else study_file(project, study)
+def check(c: Checking, part: Part) -> Iterator[Issue]:
+    """The project file's own rules (projects.md § 3, models.md § 3). A part the project file does
+    not name, but which a name it holds without a file most likely misspells, is that name's
+    finding alone (`parts.cited`): one mistake, said once, its right value the list with the name
+    put right."""
+    data: ProjectFile = part.data
+    yield from cited(c, part)
+    meant_by = {m.near for m in missing(c, part) if m.near is not None}
+    for name, field in ProjectFile.model_fields.items():
+        kind, key = field_extras(field).get("ref"), field.alias or name
+        if kind not in c.opened.layout.kinds:
+            continue
+        named = getattr(data, name)
+        for other in sorted(p.address.name for p in c.opened.parts.values() if p.address.kind == kind):
+            if other not in named and other not in meant_by:
+                yield c.issue(part, key, code="not-named", severity="warning", label=other, right=[*named, other],
+                              message=f"the {kind} `{other}` is not named in the project file: it is inert, never "
+                                      "expanded into a case")
+    symbols = set(c.units.symbols())
+    for name in data.parameters:
+        if name in symbols:
+            yield c.issue(part, "parameters", name, code="named-like-a-unit", label=name,
+                          message=f"the parameter `{name}` is named like the unit {name}: a value written with that "
+                                  "unit would read the parameter instead")
 
 
-def studies(project: Path) -> list[str]:
-    root = project / "studies"
-    return sorted(p.parent.name for p in root.glob("*/study.toml")) if root.is_dir() else []
-
-
-#: A model or a study before anything is set: what the first edit writes into (models.md § 11.1).
-NEW_FILE = "schema = 1\n"
-
-
-def load_model(project: Path, ctx: Context) -> ModelFile:
-    """`model.toml`, its numbers read exactly; refused whole when it does not load (models.md § 11.1).
-    A folder with none holds the empty model, which `model check` and the graph read like any
-    other (web.md § 8.4)."""
-    path = model_file(project)
-    if not path.exists():
-        return validate(ModelFile, tomllib.loads(NEW_FILE), path, {"units": catalogue.units(ctx)})
-    return load_toml(path, ModelFile, {"units": catalogue.units(ctx)}, exact=True)
-
-
-def load_study(project: Path, study: str, ctx: Context, model: ModelFile) -> StudyFile:
-    """A study, read against its project's model: its references name the model's objects."""
-    return read_study(study_file(project, study), ctx, model)
-
-
-def read_study(path: Path, ctx: Context, model: ModelFile) -> StudyFile:
-    """A study file wherever it lies — a project's, or a benchmark's beside its formulation."""
-    return load_toml(path, StudyFile, {"units": catalogue.units(ctx), "model": model}, exact=True)
+PART_SCHEMAS = {"models.project": ProjectFile}
+PART_CHECKS = {"models.project": check}

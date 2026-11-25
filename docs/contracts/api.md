@@ -47,7 +47,7 @@ class EnvRow(Model):
 
 class ListResult(Result):
     rows: list[EnvRow]
-    def text(self) -> str: ...
+    def report(self) -> Report: ...
 
 ENV_LIST = Verb("env.list", ListRequest)       # beside the request: femkit/envs/requests.py
 
@@ -226,6 +226,7 @@ operation-specific.
 | request field | command line |
 |---|---|
 | `json_schema_extra={"cli": "argument"}` | a positional argument; a `list[...]` field takes one or more |
+| `json_schema_extra={"cli": "--from"}` | an option spelt so, where the field's name cannot be the word — `project new`'s `source` is `--from` |
 | `bool`, default `False` | a flag `--name`; a `bool` field with another default cannot be written as a flag, and is refused when the operation is declared |
 | any other field | an option `--name VALUE`; a `list[...]` field repeats |
 | a field with no default | required |
@@ -275,8 +276,11 @@ Built from `core/text.py`, so every command reads alike:
   command line as a command line (`mpirun -np {ranks}`), a list space-joined,
   `unset` and `none` in words.
 - **Rows are aligned columns**; a note about a row follows it after `#`.
-- **A finding** is one line marked `x` (error), `!` (warning) or `-` (info),
-  with the commands that resolve it indented under it.
+- **A finding** is one line marked `x` (error), `!` (warning) or `-` (info);
+  indented under it, where the person opens it — `<file>: <key>` — then the
+  one value that would be right, `right: <value>`, or the values that would,
+  `one of: <a>, <b>`, each as the file writes it ([`core.md`](core.md) § 10),
+  then the commands that resolve it.
 - **What to do next** is `next -- <sentence>:` and the commands, one a line,
   indented, prose after `#`. A printed command is one a person can paste:
   `python -m femkit …`, run in the control environment from the checkout,
@@ -310,10 +314,13 @@ Its routes, `serve`, and the page are [`web.md`](web.md)'s.
 
 ```python
 DOMAINS = ("femkit.config.operations", "femkit.envs.operations", ...)
-PARTS: tuple[str, ...] = ()                  # the modules that own part schemas; none until step D
+PARTS: tuple[str, ...] = ("femkit.models.project", "femkit.materials.material", ...)
+                                             # the modules that own part schemas
 def operations() -> dict[str, Operation]     # imports DOMAINS and PARTS when called, never at import
 def part_schemas() -> dict[str, type[Model]] # each part schema PARTS declare, by the key a layout names it
                                              # by, each registered with the door
+def part_checks() -> dict[str, tuple[Check, ...]]   # each check PARTS declare, by the key of the schema it
+                                             # checks, each registered with the check frame
 ```
 
 The one list of where operations live, and the one list of where part schemas
@@ -322,15 +329,24 @@ operations module; adding a domain, or a second module to a domain whose
 operations serve another subject (`jobs.setup`: this machine's setup, beside
 the machine records), adds one line here. A module owning part schemas
 declares `PART_SCHEMAS`, each the key a layout names it by
-([`projects.md`](projects.md) § 4) and its model; adding one adds a line to
-`PARTS`.
+([`projects.md`](projects.md) § 4) and its model, and beside it `PART_CHECKS`,
+the key of each schema it checks and its check — possibly another module's
+schema, as the materials package checks a component's assignment
+([`projects.md`](projects.md) § 6); adding one adds a line to `PARTS`.
 
 `operations()` is femkit's start — the command line and the web server call it
 before anything else — and, besides collecting the operations, it
 
 - registers every part schema with the door (`femkit/projects/schemas.py`),
   so a lower layer reads a schema it never imports
-  ([`projects.md`](projects.md) § 6);
+  ([`projects.md`](projects.md) § 6), and every part's check with the check
+  frame (`femkit/projects/checking.py`), refusing, as a defect, a check of a
+  schema no module of `PARTS` declares;
+- hands the server what it loads before it starts (`femkit/server/startup.py`)
+  — the project layout, then the page's declaration against the operations it
+  collected
+  ([`web.md`](web.md) §§ 4, 8.1) — so `serve start` refuses one that does not
+  load with no import above its domain;
 - refuses, as a defect, an operation declared twice, and a `Verb` declared
   over one of femkit's request models that names no registered operation or
   another operation's request: a renamed verb, or a next step written with the

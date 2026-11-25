@@ -46,10 +46,12 @@ class Spelling:
 
 def spelling(name: str, field: FieldInfo) -> Spelling:
     """The table of api.md § 4.1: an argument where the field says so, a flag for a boolean, an
-    option otherwise; underscores become dashes."""
+    option otherwise; underscores become dashes, unless the field spells its option itself
+    (`{"cli": "--from"}`), where its name cannot be the word."""
     element, many = unwrap(field.annotation)
-    flag = "--" + name.replace("_", "-")
-    if field_extras(field).get("cli") == "argument":
+    cli = field_extras(field).get("cli")
+    flag = cli if isinstance(cli, str) and cli.startswith("--") else "--" + name.replace("_", "-")
+    if cli == "argument":
         return Spelling("argument", flag, many, element)
     if element is bool:
         return Spelling("flag", flag, False, element)

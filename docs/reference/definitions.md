@@ -105,7 +105,7 @@ One bounded calculation and the numbers it must produce (definitions.md § 5).
 | key | type | default | meaning |
 |---|---|---|---|
 | `id` | text | required | the check's ID |
-| `kind` | `command` \| `ctest` \| `pytest` | required | how it runs (definitions.md § 5.1) |
+| `kind` | `command` \| `ctest` \| `pytest` | required | how it runs: one of `command`, `ctest`, `pytest` (see definitions.md § 5.1) |
 | `run` | list of text, optional | — | command: the program and its arguments. Placeholders: `{prefix}`, `{ranks}`, `{threads}`, `{work}` |
 | `build` | text, optional | — | ctest: the build whose test tree holds the test |
 | `test` | text, optional | — | ctest: the test's name |
@@ -149,7 +149,7 @@ Checks that must give the same quantity (definitions.md § 5.2).
 | `version` | list of text | required | prints the manager's version. Placeholders: `{exe}` |
 | `version_pattern` | text | required | regular expression whose first group is the version in that output |
 | `root` | [JsonQuery](#jsonquery) | required | where the manager's root (base) prefix is |
-| `platform` | [JsonQuery](#jsonquery), optional | — | the platform an environment built by this manager is for, e.g. linux-64 (jobs.md § 9.1) |
+| `platform` | [JsonQuery](#jsonquery), optional | — | the platform an environment built by this manager is for, e.g. linux-64 (see jobs.md § 9.1) |
 | `run` | list of text | required | runs the command that follows inside {prefix}. Placeholders: `{exe}`, `{prefix}` |
 | `activate` | [Activation](#activation) | required | how a shell enters a prefix: the day-to-day entry line, the run script |
 | `create` | list of text | required | creates {prefix} from constraints, overriding the person's own channels and default packages; `channel` follows once per channel, then the constraints — for the control environment, `--file` and its package list. Placeholders: `{exe}`, `{prefix}` |
@@ -217,6 +217,7 @@ One physical problem, stated without reference to any engine (models.md § 4).
 |---|---|---|---|
 | `description` | text | required | one line: what it solves |
 | `science` | text | required | its science document, from the checkout's root |
+| `kinds` | list of `stationary` | required | the step kinds it supports (models.md § 4.2) |
 | `unknown` | [Unknown](#unknown) | required | what it solves for |
 | `meanings` | table of `2` \| `3` → list of text | required | what each dimension may mean; a model chooses one |
 | `conventions` | list of `phasor` \| `amplitude` | empty | the conventions a model must choose |
@@ -234,7 +235,7 @@ What the formulation solves for.
 | key | type | default | meaning |
 |---|---|---|---|
 | `name` | text | required | its name (`potential`) |
-| `space` | `H1` \| `Hcurl` | required | its function space |
+| `space` | `H1` \| `Hcurl` | required | its function space: one of `H1`, `Hcurl` |
 | `unit` | text | required | its unit |
 
 ## Constant
@@ -266,7 +267,7 @@ A condition or source kind: where it may stand, and its parameters.
 |---|---|---|---|
 | `description` | text | required | one plain sentence: what it is or states |
 | `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
-| `on` | list of `domain` \| `boundary` \| `interface` | required | the region kinds it may be stated on |
+| `on` | list of text | required | the places it may stand on, by their names in the one vocabulary of places, `femkit/data/geometry/kinds.toml` (geometry.md § 7) |
 | `parameters` | table of text → [ParameterSpec](#parameterspec) | empty | each parameter |
 
 ## ParameterSpec
@@ -296,7 +297,7 @@ A problem with a known answer (models.md § 4, § 6.3): a project of its own, an
 |---|---|---|---|
 | `description` | text | required | one plain sentence: what it is or states |
 | `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
-| `project` | text | required | its folder, from femkit/data/formulations/, holding model.toml and study.toml |
+| `project` | text | required | its project: one of femkit's project templates, by its bare name, a folder of `femkit/data/templates/` (projects.md § 7) |
 | `exercises` | list of text | required | the formulation's condition, source and property kinds it exercises |
 | `tolerance` | text | required | the relative difference a run may show from each reference value, a plain number; its basis is in the science document's section |
 | `reference` | table of text → text | required | each observable of its study, and its exact value |
@@ -325,7 +326,7 @@ How close two points must be for the mesher to merge them.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `kind` | `absolute` \| `relative` | required | in the length unit geometry is handed over in, or relative to the model's size |
+| `kind` | `absolute` \| `relative` | required | in the length unit geometry is handed over in, or relative to the model's size: one of `absolute`, `relative` |
 | `value` | text | required | a plain number |
 
 ## Writes
@@ -336,7 +337,111 @@ The mesh file it writes.
 |---|---|---|---|
 | `format` | text | required | the format (`msh`, `vol`) |
 | `version` | text, optional | — | the format's version, where it has several |
-| `encoding` | `ascii` \| `binary`, optional | — | text or binary |
+| `encoding` | `ascii` \| `binary`, optional | — | text or binary: one of `ascii`, `binary` |
+
+## PlaceKind
+
+One kind of place a group may be: what it is, its dimension in each geometry it exists in, and, for a face, the bodies it touches (geometry.md § 7).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `sentence` | text | required | what the place is, in one plain sentence |
+| `dimension` | table of integer → integer | required | its dimension in a geometry of each dimension it exists in, keyed by the geometry's: 2 or 3 |
+| `bodies` | `1` \| `2`, optional | — | for a face — one dimension less than its geometry — how many bodies it touches, observed once the geometry exists; none for another place: one of `1`, `2` |
+| `side` | `outside` \| `inside`, optional | — | for a face touching one body: on the geometry's outside, or inside the body: one of `outside`, `inside` |
+
+## Property
+
+One material property (materials.md § 1).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `description` | text | required | what it is, in one plain sentence |
+| `unit` | text | required | its unit, as the unit table reads it; `1` for a plain number. A unit |
+| `values` | `real` \| `complex` | required | whether its values are real or may be complex: one of `real`, `complex` |
+| `shape` | `scalar` \| `tensor` | required | one value, or a 3 x 3 tensor in the component's frame: one of `scalar`, `tensor` |
+| `depends_on` | list of text | empty | what a dataset of it may vary with, each by its name: `wavelength`, `temperature` |
+| `equivalents` | list of text | empty | the properties of this list convertible to it, each by its name; the science documents state each conversion and its sign |
+| `names` | table of text → text or table of text → text | empty | its name in each engine and each source that has one, by the engine's or source's ID; a table of names where one writes the value as several |
+
+## StateTable
+
+`femkit/data/states/<machine>.toml`: one state machine, a closed table (core.md § 7). Its validation context may hold `predicates`, the fact names its domain gives, `values`, the names a request may take from the subject, `reads`, the states its domain's code reads by name, and `operations`, each registered operation's request model by its name: each, when given, is checked.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `states` | table of text → text | required | each state, in order, with the sentence saying when it is observed |
+| `rules` | list of [RuleRow](#rulerow) | required | the observation rules, in order: the first that holds gives the state; the last is the otherwise |
+| `actions` | table of text → table of text → [ActionRow](#actionrow) | required | for each state, each action it allows by its name; an empty table: none |
+
+## RuleRow
+
+One observation rule: the state it gives, and when.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `state` | text | required | the state it gives, one of `states` |
+| `when` | text | required | the condition on the machine's named facts that gives it — names of facts joined by `and`, `or`, `not` and parentheses; `otherwise` for the last rule, and only for it |
+
+## ActionRow
+
+One action a state allows: an operation with its request, a shell line, or nothing to do.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `describe` | text | required | what a person reads on it |
+| `operation` | text, optional | — | the registered operation it runs, by its name, `env.install` |
+| `request` | table of text → Any | empty | the operation's request values; a text that is one placeholder alone, `{name}`, is the value the subject gives it, and a key whose value the subject leaves unset is left out |
+| `shell` | text, optional | — | a line a person types, for what is no operation |
+
+## Layout
+
+`project/layout.toml`: every part kind, every folder that holds no part, and the object types inside the parts (projects.md § 4). Its validation context may hold `schemas`, the keys the packages registered (projects.md § 6): given, each kind's schema is one of them.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `kinds` | table of text → [PartKind](#partkind) | required | each part kind by the name addresses give it |
+| `folders` | table of text → [Folder](#folder) | empty | each folder that holds no part, by its name at the project's top |
+| `objects` | table of text → [ObjectType](#objecttype) | empty | each type of object inside a part, by the name a graph's node gives it |
+| `editor_files` | list of text | empty | the names of the files an editor keeps beside the one it edits — a backup, a swap file, a lock — each a pattern, `*~`: such a file is no part and no stray, and a copy leaves it out |
+| `listed` | text, optional | — | the part kind whose parts `project list` names beside each project, its studies (web.md § 8.6); none: no part is named |
+
+## PartKind
+
+One part kind: where its parts live, how each is held, what it loads with, who writes it.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `folder` | text | `""` | its folder at the project's top, e.g. `studies`; empty for the project file, which lies at the project's top |
+| `shape` | `file` \| `folder` \| `single` | required | `file`: each part is `&lt;folder&gt;/&lt;name&gt;.toml`; `folder`: each part is a folder `&lt;folder&gt;/&lt;name&gt;/` holding its own file; `single`: the one unnamed part, the project file, `project.toml`: one of `file`, `folder`, `single` |
+| `file` | text, optional | — | a `folder` part's own file: `component.toml` |
+| `files` | list of text | empty | the other files every part of a `folder` kind holds by a fixed name, from its folder: `geometry.py` |
+| `schema` | text | required | the schema it loads with, by the key its owning package registers it with |
+| `rank` | integer | required | its place in the chain's order: what a part is made from comes before it |
+| `library` | boolean | `false` | whether the projects root holds a global library of its kind, in a folder of its folder's name; only its names may open with `GLOBAL/` |
+| `writer` | `person` \| `femkit` \| `run` | `"person"` | who writes its files: one of `person`, `femkit`, `run` |
+| `moves` | `yes` \| `regenerated` \| `local` | `"yes"` | whether it moves with the project, is regenerated, or stays local: one of `yes`, `regenerated`, `local` |
+
+## Folder
+
+A folder that holds no part (projects.md § 4): what femkit or a run writes — cases, runs, results, `.femkit` — or the person's own, `custom`. Its files are never read as parts, and none is a stray finding.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `writer` | `person` \| `femkit` \| `run` | required | who writes it: femkit, a run, or the person: one of `person`, `femkit`, `run` |
+| `moves` | `yes` \| `regenerated` \| `local` | required | whether it moves with the project, is regenerated, or stays local: one of `yes`, `regenerated`, `local` |
+
+## ObjectType
+
+A type of object inside a part (projects.md § 4): a condition of a physics, a promised group of a component, an axis of a study — where it lives, whether it is named, what holds its type, and its place in the chain's order.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `part` | text | required | the part kind whose file holds it |
+| `table` | text | required | the table it lives in, as the part's file writes its keys: `conditions`, `inputs.parameters` |
+| `named` | boolean | required | whether it is a table of entries, each by its name; else the one object at `table` |
+| `typed` | text, optional | — | the key of an entry holding its type: a condition's `kind` |
+| `rank` | integer | required | its place in the chain's order: what it is made from comes before it |
 
 ## Page
 
@@ -344,11 +449,11 @@ The mesh file it writes.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `schema` | `1` | required | this file's shape; raised when it changes |
+| `schema` | `1` | required | this file's shape; raised when it changes: one of `1` |
 | `app` | [App](#app) | required |  |
 | `workspaces` | list of [Workspace](#workspace) | required |  |
 | `context` | list of [ContextPart](#contextpart) | required |  |
-| `kinds` | table of text → text | required | each object type's icon (models.md § 11.2) |
+| `kinds` | table of text → text | required | each part kind's and object type's icon, as the project layout names them (web.md § 8.2) |
 | `shortcuts` | list of [Shortcut](#shortcut) | empty |  |
 
 ## App
@@ -376,7 +481,7 @@ The mesh file it writes.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `key` | `project` \| `study` \| `environment` | required |  |
+| `key` | `project` \| `study` \| `environment` | required | one of `project`, `study`, `environment` |
 | `label` | text | required | what a person reads beside it |
 | `help` | text | required | what it is |
 | `choices` | text | required | the read-only operation that lists its choices |
@@ -390,5 +495,5 @@ The mesh file it writes.
 | key | type | default | meaning |
 |---|---|---|---|
 | `key` | text | required | the key, `Mod` the platform's command key |
-| `command` | `cancel` | required | the page's command it runs |
+| `command` | `cancel` | required | the page's command it runs: one of `cancel` |
 | `help` | text | required | what it does |

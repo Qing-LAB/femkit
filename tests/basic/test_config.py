@@ -9,6 +9,7 @@ from femkit.config import probe, settings
 from femkit.core import dirs
 from femkit.core.operations import Context
 from femkit.core.errors import UsageError
+from femkit.core.persist import key_comments
 from femkit.core.schema import DefinitionError
 from femkit.definitions.catalogue import load_schedulers
 
@@ -18,6 +19,16 @@ GIVEN = {"cuda_architectures": ["80"], "mpi": ["mpirun", "-np", "{ranks}"]}
 
 def init(**fields):
     return apply("config.init", **{**GIVEN, **fields})
+
+
+def test_init_writes_each_key_directly_under_the_line_showing_it():
+    """Fails if config init writes a key away from its help: appended at its table's end, where
+    the next table's help stands (config.md § 3.2)."""
+    init(projects="/data/projects", jobs=4, preamble=["module load x"], activation="source activate")
+    entries = key_comments(settings.config_file().read_text())
+    shown = {e.path: e.line for e in entries if e.shown}
+    written = {e.path: e.line for e in entries if not e.shown and not e.header}
+    assert len(written) == 6 and all(line == shown[path] + 1 for path, line in written.items())
 
 
 def test_init_adds_only_missing_keys_and_never_replaces_a_value():

@@ -1,244 +1,187 @@
-"""The model as a graph (models.md § 11.2): derived from the files and the schemas, never stored.
+"""The project as a graph (models.md § 11.2): derived from the parts as opened, the layout and the
+schemas, never stored.
 
-Nodes are the objects of the model and a study, at their addresses, each with its text as its
-file holds it, the help of every key it may hold, and its ports: the fields that name another
-object, typed by the schema's `ref` annotations — the very ones the loader checks. Edges are
-the references between them, and each parameter an expression uses. The palette comes from
-the table of object types, the schema and the formulation. A surface draws all of it from this
-document and names no field of its own (web.md § 2, § 8.3).
+One node per part, in the chain's order — the layout's ranks — inside the person's grouping
+folders, and one per object inside a loaded part, as the layout's object types declare them; each
+with its text as its file holds it, its state, and the findings that name it. Its ports are its
+fields that name another part or a group, typed by their `ref` annotations — the ones the checks
+read — and the wires are the references between parts: each name a field cites, and each
+parameter a quantity uses. A surface draws it all from this document and changes nothing.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from femkit.core import view
+from femkit.core.errors import UsageError
 from femkit.core.issues import Issue
-from femkit.core.persist import document_text, read_document
-from femkit.core.schema import Model, classes, field_extras, items_of, references
-from femkit.core.units import Units, name_spans
-from femkit.definitions.formulations import FormulationDefinition
-from femkit.models import fields
-from femkit.models.address import Address, parse
-from femkit.models.project import NEW_FILE, model_file, study_file
-from femkit.models.schema import OBJECTS, ModelFile, ObjectType, StudyFile, locate, object_type, quantities
-
+from femkit.core.schema import QUANTITIES, Model, references
+from femkit.core.units import name_spans
+from femkit.models.parts import quantities
+from femkit.projects import door, names
+from femkit.projects.addresses import Address
+from femkit.projects.checking import PARAMETER
+from femkit.projects.door import Opened, Part
+from femkit.projects.layout import held
 
 
 class GraphPort(Model):
-    name: str = Field(description="the field that names another object, from the node")
+    """A field of a node that names another part or a group (models.md § 11.2)."""
+
+    name: str = Field(description="the field, by its dotted path from the node")
     address: str = Field(description="where its names are written")
-    accepts: list[str] = Field(description="the node kinds it takes, as `kind` or `kind:type`: `material`, "
-                                           "`region:boundary`; a port accepts only these (models.md § 11.2)")
-    many: bool = Field(description="a list: a wire adds a name to it; else a wire sets it")
-    names: list[str] = Field(default_factory=list, description="the names it holds now")
-    help: view.Help | None = Field(default=None, description="its sentence, from the schema")
+    accepts: list[str] = Field(description="the types it names, as its `ref` annotation states them: `physics`, "
+                                           "`group:outer_boundary`")
+    many: bool = Field(description="whether it names several: a list, or a table's keys")
+    names: list[str] = Field(default_factory=list, description="the names it holds")
 
 
 class GraphNode(Model):
-    address: str = Field(description="the object's address", json_schema_extra={"doc": "models.md § 11.1"})
-    kind: str = Field(description="its object type, from the table of object types",
-                      json_schema_extra={"doc": "models.md § 11.2"})
-    type: str | None = Field(default=None, description="its type within that: a region's, a condition's")
-    label: str = Field(description="its name, as a person reads it")
-    name: str | None = Field(default=None, description="the name another object refers to it by")
+    """A part, or an object inside one, as the graph shows it."""
+
+    address: str = Field(description="its address", json_schema_extra={"doc": "projects.md § 5"})
+    kind: str = Field(description="its part kind or object type, as the layout names it",
+                      json_schema_extra={"doc": "projects.md § 4"})
+    type: str | None = Field(default=None, description="its type within that, where its object type has one: a "
+                                                       "condition's kind")
+    label: str = Field(description="what a person calls it")
+    name: str | None = Field(default=None, description="the name another refers to it by")
+    part: str | None = Field(default=None, description="for an object, the address of the part holding it")
+    group: str | None = Field(default=None, description="for a part, the grouping folder it lies in")
     rank: int = Field(description="its place in the chain's order: what it is made from comes first",
                       json_schema_extra={"doc": "models.md § 11.2"})
-    help: view.Help | None = Field(default=None, description="what it is")
-    text: str = Field(description="its text as its file holds it, comments kept: its table as a TOML document of "
-                                  "its own, or a value's inline text", json_schema_extra={"doc": "web.md § 8.3"})
-    keys: list[view.Field] = Field(default_factory=list, description="every key it may hold, the help beside its "
-                                                                     "text; required first")
-    ports: list[GraphPort] = Field(default_factory=list, description="its fields that name another object")
-    findings: list[Issue] = Field(default_factory=list, description="`model check`'s findings that name it")
+    state: str | None = Field(default=None, description="for a part, its state", json_schema_extra={"doc": "projects.md § 8"})
+    text: str | None = Field(default=None, description="its text as its file holds it, comments kept; none for a "
+                                                       "part that cannot be read")
+    ports: list[GraphPort] = Field(default_factory=list, description="its fields that name another part or a group")
+    findings: list[Issue] = Field(default_factory=list, description="the findings that name it, in the chain's order")
 
 
 class GraphEdge(Model):
+    """A reference from one node to another."""
+
     source: str = Field(description="the node that refers")
     target: str = Field(description="the node referred to")
-    port: str | None = Field(default=None, description="the source node's port it leaves by; none: from the node "
-                                                        "itself — a key naming it, a name in a text")
-    type: str = Field(description="the reference's type: shape, region:boundary, material, parameter, …")
+    port: str | None = Field(default=None, description="the source's port it leaves by; none for a parameter a "
+                                                       "quantity uses")
+    type: str = Field(description="what it refers to, as the `ref` annotation states it, or `parameter`")
     address: str = Field(description="where the reference is written")
     held: Literal["key", "value", "item", "text"] = Field(
         description="how: a table's key, a value, a list's item, or a name used inside a value's text")
 
 
-def _objects(m: ModelFile, study: str | None, s: StudyFile | None
-             ) -> Iterator[tuple[Address, ObjectType, str | None, str, BaseModel | None]]:
-    """Each object of the model and the study, as the one table of object types says
-    (models.md § 11.2): its address, its type, its type within that, its label, and its
-    instance — None for a value or a table the schema does not model as one."""
-    for o in OBJECTS:
-        root = m if o.file == "model" else s
-        if root is None:
+def _objects(opened: Opened, part: Part) -> list[tuple[Address, str, str | None, int]]:
+    """Each object inside a loaded part: its address, its object type, its type within that, and
+    its rank."""
+    out = []
+    for kind, o in opened.layout.objects.items():
+        if o.part != part.address.kind or part.data is None:
             continue
-        for key, value in o.entries(root).items():
-            if o.typed and not isinstance(value, BaseModel):
-                continue                                   # a note beside the entries: `axes.reason`
-            address = Address(None if o.file == "model" else study, (*o.table, key) if o.many else o.table)
-            type_ = o.type_of(value)
-            yield address, o, type_, o.label_of(key, value), value if isinstance(value, BaseModel) else None
-
-
-def _referring(cls: type[BaseModel], at: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str, ...], str, bool, Any]]:
-    """Each field of ``cls``, and of the one model inside a field, that names another object:
-    its path, its target type, whether it holds a list, and the type of its object it is `for`."""
-    for name, field in cls.model_fields.items():
-        key = field.alias or name
-        extras = field_extras(field)
-        if isinstance(extras.get("ref"), str):
-            yield (*at, key), extras["ref"], items_of(field.annotation) is not None, extras.get("for")
-        elif len(inner := classes(field.annotation)) == 1:
-            yield from _referring(inner[0], (*at, key))
-
-
-def _keyed(cls: type[BaseModel]) -> dict[str, dict]:
-    """The tables of ``cls`` whose keys name one object and whose values another: `assign`."""
-    return {field.alias or name: ref for name, field in cls.model_fields.items()
-            if isinstance(ref := field_extras(field).get("ref"), dict) and "key" in ref and "value" in ref}
-
-
-def _takes(accepts: list[str], kind: str, type_: str | None) -> bool:
-    return kind in accepts or f"{kind}:{type_}" in accepts
-
-
-def _ports(project: Path, address: Address, o: ObjectType, type_: str | None, instance: BaseModel | None,
-           root: BaseModel, schema: dict[str, Any]) -> list[GraphPort]:
-    """The node's ports: each of its fields that names another object — one that belongs to
-    another type of its object left out — and, for a table naming this node by key (`assign`),
-    the value it names."""
-    out = []
-
-    def port(name: str, at: str, accepts: list[str], many: bool, names: list[str], help: view.Help | None) -> None:
-        out.append(GraphPort(name=name, address=at, accepts=accepts, many=many, names=names, help=help))
-
-    if instance is not None:
-        for path, target, many, for_type in _referring(type(instance)):
-            if for_type not in (None, type_):
-                continue
-            held: Any = instance
-            for step in path:
-                held = getattr(held, step, None) if isinstance(held, BaseModel) else None
-            port(".".join(path), str(address.child(*path)), target.split("|"), many,
-                 [h for h in (held if isinstance(held, list) else [held]) if isinstance(h, str)],
-                 fields.help_of(fields.leaf(schema, path)))
-    for key, ref in _keyed(type(root)).items():
-        if _takes(ref["key"].split("|"), o.kind, type_):
-            held = getattr(root, key).get(address.path[-1])
-            port(ref["value"], str(Address(address.study, (key, address.path[-1]))), ref["value"].split("|"), False,
-                 [held] if isinstance(held, str) else [], view.Help.of(type(root).model_fields[key].description))
+        for key, value in o.entries(part.data).items():
+            typed = held(value, o.typed) if o.typed else None
+            path = (*o.keys, key) if o.named else o.keys
+            out.append((Address(part.address.kind, part.address.name, path), kind,
+                        typed if isinstance(typed, str) else None, o.rank))
     return out
 
 
-def ports(project: Path, m: ModelFile, address: Address, f: FormulationDefinition | None, units: Units
-          ) -> list[GraphPort]:
-    """The ports of the model's object at ``address``, as its node carries them: what a finding
-    about a missing relation offers to draw."""
-    o, key = locate("model", address.path)
-    value = o.entries(m).get(key if o.many else o.table[-1])
-    type_ = o.type_of(value)
-    return _ports(project, address, o, type_, value if isinstance(value, BaseModel) else None, m,
-                  fields.entry(o, type_, f, units))
-
-
-def _nodes(m: ModelFile, study: str | None, s: StudyFile | None, docs: dict[str | None, Any],
-           f: FormulationDefinition | None, units: Units, project: Path) -> list[GraphNode]:
-    out = []
-    for address, o, type_, label, instance in _objects(m, study, s):
-        root = m if address.study is None else s
-        schema = fields.entry(o, type_, f, units)
-        here = str(address)
-        out.append(GraphNode(
-            address=here, kind=o.kind, type=type_, label=label, name=address.path[-1] if o.named else None,
-            rank=o.rank, help=fields.help_of(schema), text=document_text(docs[address.study], address.path),
-            keys=fields.keys(schema), ports=_ports(project, address, o, type_, instance, root, schema)))
-    return out
-
-
-def owner(study: str | None, at: tuple) -> str | None:
-    """The address of the object a location lies in, by the table of object types; none for a
-    location in no object — a table itself, or the file's own keys."""
-    found = locate("model" if study is None else "study", at)
-    if found is None:
+def _text(opened: Opened, address: Address) -> str | None:
+    try:
+        return door.text(opened, address)
+    except UsageError:
         return None
-    o, key = found
-    if o.many and key is None:
-        return None
-    return str(Address(study, (*o.table, key) if o.many else o.table))
 
 
-def _edges(m: ModelFile, study: str | None, s: StudyFile | None, nodes: list[GraphNode]) -> list[GraphEdge]:
+def _named(layout, kind: str, name: str) -> str:
+    """The node a name of ``kind`` refers to: a part of that kind; or an object of the project
+    file's — a parameter — the one part whose objects a name reaches without knowing a pairing."""
+    o = layout.objects.get(kind)
+    if o is not None and o.part == layout.project_kind and o.named:
+        return str(Address(o.part, None, (*o.keys, name)))
+    return str(Address(kind, name))
+
+
+def _owner(addresses: list[str], written: str) -> str | None:
+    """The most specific node a value at ``written`` lies in."""
+    inside = [a for a in addresses if written == a or written.startswith(a + ":") or written.startswith(a + ".")]
+    return max(inside, key=len) if inside else None
+
+
+def build(opened: Opened, issues: list[Issue], states: dict[str, str]) -> tuple[list[GraphNode], list[GraphEdge],
+                                                                                list[Issue]]:
+    """The nodes, each with its findings; the wires; and the findings no node holds."""
+    layout = opened.layout
+    parts = sorted(opened.parts.values(), key=lambda p: (layout.kinds[p.address.kind].rank, p.file))
+    nodes: list[GraphNode] = []
+    for part in parts:
+        a, name = part.address, part.address.name
+        nodes.append(GraphNode(address=str(a), kind=a.kind, label=names.last(name) if name else a.kind, name=name,
+                               group=names.group(name) if name else None, rank=layout.kinds[a.kind].rank,
+                               state=states.get(str(a)), text=_text(opened, a)))
+        nodes += [GraphNode(address=str(o), kind=kind, type=typed, label=o.path[-1], name=o.path[-1], part=str(a),
+                            rank=rank, text=_text(opened, o)) for o, kind, typed, rank in _objects(opened, part)]
+    addresses = [n.address for n in nodes]
     by_address = {n.address: n for n in nodes}
-    out: dict[tuple[str, str, str], GraphEdge] = {}           # an expression naming a parameter twice is one wire
-
-    def add(source: str | None, target: str, port: str | None, type_: str, written: str, held: str) -> None:
-        if source in by_address and target in by_address and source != target:
-            out.setdefault((source, target, written), GraphEdge(source=source, target=target, port=port, type=type_,
-                                                               address=written, held=held))
-
-    def port_of(source: str, written: str) -> str | None:
-        return next((p.name for p in by_address[source].ports if written == p.address
-                     or written.startswith(p.address + ".")), None) if source in by_address else None
-
-    for where, instance in [(None, m), *([(study, s)] if s is not None else [])]:
-        keyed = _keyed(type(instance))
-        for at, target, name, held in references(instance):
-            to = str(Address(None, (*object_type(target.split("|")[0].split(":")[0]).table, name)))
-            written = str(Address(where, tuple(str(p) for p in at)))
-            if at[0] in keyed:                                 # a table naming its key's object: that object's port
-                if held == "value":
-                    family = keyed[at[0]]["key"].split("|")[0].split(":")[0]
-                    source = str(Address(where, (*object_type(family).table, str(at[1]))))
-                    add(source, to, keyed[at[0]]["value"], target, written, held)
-                continue
-            source = owner(where, at)
-            add(source, to, port_of(source, written) if source else None, target, written, held)
-        for at, _, value in quantities(instance):
-            if isinstance(value, str):
-                for _, _, name in name_spans(value):
-                    if name in m.parameters:
-                        add(owner(where, at), str(Address(None, ("parameters", name))), None, "parameter",
-                            str(Address(where, tuple(str(p) for p in at))), "text")
-        if where is not None:
-            for key in s.axes:
-                if key.startswith("parameters.") and key.split(".", 1)[1] in m.parameters:
-                    add(str(Address(study, ("axes", key))), str(Address(None, ("parameters", key.split(".", 1)[1]))),
-                        None, "parameter", str(Address(study, ("axes", key))), "key")
-    return list(out.values())
-
-
-def build(m: ModelFile, study: str | None, s: StudyFile | None, issues: list[Issue], project: Path,
-          f: FormulationDefinition | None, units: Units) -> tuple[list[GraphNode], list[GraphEdge], list[Issue]]:
-    """The nodes with their findings, the edges, and the findings no node holds."""
-    docs = {None: read_document(model_file(project), empty=NEW_FILE)}
-    if study is not None:
-        docs[study] = read_document(study_file(project, study), empty=NEW_FILE)
-    nodes = _nodes(m, study, s, docs, f, units, project)
-    held: dict[str, list[Issue]] = {}
-    loose = []
-    shown = {n.address for n in nodes}
+    edges: dict[tuple[str, str, str], GraphEdge] = {}
+    ports: dict[str, dict[str, GraphPort]] = {}
+    project = layout.objects.get(PARAMETER)
+    for part in parts:
+        if part.data is None:
+            continue
+        for location, ref, name, how in references(part.data):
+            keys = tuple(str(p) for p in location if not isinstance(p, int))
+            field = keys[:-1] if how == "key" else keys
+            written = str(Address(part.address.kind, part.address.name, field))
+            source = _owner(addresses, written) or str(part.address)
+            port_name = written[len(source):].lstrip(":.") or field[-1]
+            port = ports.setdefault(source, {}).setdefault(port_name, GraphPort(
+                name=port_name, address=written, accepts=ref.split("|"), many=how != "value"))
+            port.names.append(name)
+            target = next((t for k in ref.split("|") if (t := _named(layout, k, name)) in by_address), None)
+            if target is not None:
+                edges.setdefault((source, target, written), GraphEdge(source=source, target=target, port=port_name,
+                                                                      type=ref, address=written, held=how))
+        for at, kind, value in quantities(part.data) if project is not None else ():
+            if QUANTITIES[kind].reads != "expression":
+                continue                                     # a unit, or a value naming no parameter
+            written = str(Address(part.address.kind, part.address.name, tuple(str(k) for k in at
+                                                                              if not isinstance(k, int))))
+            source = _owner(addresses, written) or str(part.address)
+            for _, _, used in name_spans(value if isinstance(value, str) else ""):
+                target = str(Address(project.part, None, (*project.keys, used)))
+                if target in by_address and target != source:
+                    edges.setdefault((source, target, written), GraphEdge(source=source, target=target, type=PARAMETER,
+                                                                          address=written, held="text"))
+    held_findings: dict[str, list[Issue]] = {}
+    loose: list[Issue] = []
     for issue in issues:
-        subject = parse(issue.subject)
-        holder = owner(subject.study, subject.path)
-        (held.setdefault(holder, []) if holder in shown else loose).append(issue)
-    nodes = [n.model_copy(update={"findings": held.get(n.address, [])})
-             for n in nodes]
-    return nodes, _edges(m, study, s, nodes), loose
+        owner = _owner(addresses, issue.subject)
+        (held_findings.setdefault(owner, []) if owner else loose).append(issue)
+    nodes = [n.model_copy(update={"findings": held_findings.get(n.address, []),
+                                  "ports": list(ports.get(n.address, {}).values())}) for n in nodes]
+    return nodes, list(edges.values()), loose
 
 
 def mermaid(nodes: list[GraphNode], edges: list[GraphEdge]) -> str:
-    """The graph as Mermaid text, for a terminal or a document."""
+    """The graph as Mermaid text, for a terminal or a document: each part a box holding its objects."""
     ids = {n.address: f"n{i}" for i, n in enumerate(nodes)}
     lines = ["flowchart LR"]
-    for n in nodes:
+
+    def box(n: GraphNode) -> str:
         mark = f" ({len(n.findings)} findings)" if n.findings else ""
         what = f"{n.kind}: {n.type}" if n.type else n.kind
-        lines.append(f'    {ids[n.address]}["{n.label}<br/>{what}{mark}"]')
-    lines += [f'    {ids[e.source]} -->{f"|{chr(34)}{e.port}{chr(34)}|" if e.port else ""} {ids[e.target]}'
-              for e in edges if e.source in ids and e.target in ids]
+        return f'{ids[n.address]}["{n.label}<br/>{what}{mark}"]'
+
+    for n in nodes:
+        if n.part is not None:
+            continue
+        inner = [o for o in nodes if o.part == n.address]
+        if inner:
+            lines.append(f'    subgraph {ids[n.address]}box["{n.address}"]')
+            lines += [f"        {box(n)}"] + [f"        {box(o)}" for o in inner] + ["    end"]
+        else:
+            lines.append(f"    {box(n)}")
+    lines += [f'    {ids[e.source]} -->{f"|{e.port}|" if e.port else ""} {ids[e.target]}' for e in edges]
     return "\n".join(lines)

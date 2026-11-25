@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ from femkit.core.errors import UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Ask, Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import inline_text, plain_value
-from femkit.core.schema import Model
+from femkit.core.schema import Model, closed
 from femkit.definitions import catalogue
 from femkit.config.requests import OPTION_KEYS, PathRequest, SetRequest, ShowRequest, option_name
 from femkit.config.requests import CONFIG_INIT, CONFIG_PATH, CONFIG_SET, CONFIG_SHOW
@@ -159,9 +160,10 @@ def stating(verb: view.Verb, dotted: list[str]) -> tuple[view.Action, ...]:
                 view.command(verb, no_preamble=True, note="none is needed here")]
     if COMMAND in dotted:
         command = settings.key(COMMAND)
-        out += [view.command(verb, note="or 'conda activate', 'mamba activate'",
-                             fills=[view.Fill(field=option_name(command), label=command.dotted, example="source activate",
-                                                                    help=view.Help.of(command.description))])]
+        first, *others = closed(command.annotation)
+        out += [view.command(verb, note="or " + ", ".join(shlex.quote(c) for c in others),
+                             fills=[view.Fill(field=option_name(command), label=command.dotted, example=first,
+                                              help=view.Help.of(command.description))])]
     return tuple(out)
 
 class InitRow(Model):
@@ -237,32 +239,21 @@ def _issues(given: dict[str, Any], present: dict[str, Any], adding: dict[str, An
     return issues
 
 
+#: What is measured here and shown beside a key's question (config.md § 3.2).
+BESIDE = {
+    ENVIRONMENTS: lambda ctx: (f"the default here: {where_environments_go(dirs.environments_dir())}",),
+    PREAMBLE: lambda ctx: ("loaded modules: " + (ctx.env.get("LOADEDMODULES", "").replace(":", " ")
+                                                 or "none listed by this shell"),),
+}
+
+
 def _asks(ctx: Context, given: dict[str, Any], present: dict[str, Any]) -> tuple[Ask, ...]:
-    """What config init asks on a terminal: the two values nothing on the machine reveals
-    (config.md § 3.2). Neither is proposed; an empty answer leaves the key unset."""
-    asks = []
-    if ENVIRONMENTS not in present and ENVIRONMENTS not in given:
-        asks.append(Ask(key=settings.key(ENVIRONMENTS).name, question="Where should engine environments go? (empty: the default)",
-                        context=(f"default: {where_environments_go(dirs.environments_dir())}",
-                                 "each takes gigabytes; on a cluster, project storage is usual, not a home quota")))
-    if PREAMBLE not in present and PREAMBLE not in given:
-        modules = ctx.env.get("LOADEDMODULES", "")
-        asks.append(Ask(key=settings.key(PREAMBLE).name,
-                        question="Which shell lines must a job here run before it enters an environment? "
-                                 "One per line, then an empty line (none typed: it stays unset)",
-                        context=(f"loaded modules: {modules.replace(':', ' ')}" if modules else
-                                 "loaded modules: none listed by this shell",
-                                 "a batch job starts a fresh shell: a `module load` that puts the manager on PATH "
-                                 "belongs here; if nothing is needed, give --no-preamble instead")))
-    if COMMAND not in present and COMMAND not in given:
-        asks.append(Ask(key=option_name(settings.key(COMMAND)),
-                        question="How does a shell here enter an environment, after those lines? "
-                                 "source activate, conda activate or mamba activate (empty: it stays unset)",
-                        context=("source activate: the activate script on PATH -- what a cluster's "
-                                 "`module load mamba` provides",
-                                 "conda activate / mamba activate: the manager's shell function; femkit sources "
-                                 "its hook file first (<root>/etc/profile.d/conda.sh or mamba.sh)")))
-    return tuple(asks)
+    """What config init asks on a terminal (config.md § 3.2): each key that declares its question
+    and is neither in the file nor given — its question, and beside it its help, what is measured
+    for it here and what its absence means. Nothing is proposed; an empty answer leaves it unset."""
+    return tuple(Ask(key=option_name(k), question=k.ask,
+                     context=(k.help, *(BESIDE[k.dotted](ctx) if k.dotted in BESIDE else ()), f"when unset: {k.unset}"))
+                 for k in settings.keys() if k.ask and k.dotted not in present and k.dotted not in given)
 
 
 @operation(CONFIG_INIT, result=InitOutcome, changes=True,

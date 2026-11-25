@@ -12,7 +12,10 @@ from femkit.core.markdown import headings
 from femkit.core.schema import Model, refuse
 from femkit.core.units import UnitError
 
-Place = Literal["domain", "boundary", "interface"]
+#: The step kinds (models.md § 4.2): the kinds of calculation a study's step asks of a family. One
+#: list, closed; `femkit/data/step_kinds.toml` holds it as data, each kind with its sentence and what
+#: it supplies and produces, once a second kind is declared (plan § 4, M9).
+StepKind = Literal["stationary"]
 
 
 class Unknown(Model):
@@ -44,7 +47,9 @@ class ParameterSpec(Model):
 
 class KindSpec(Described):
     """A condition or source kind: where it may stand, and its parameters."""
-    on: list[Place] = Field(min_length=1, description="the region kinds it may be stated on")
+    on: list[str] = Field(min_length=1, description="the places it may stand on, by their names in the one "
+                                                    "vocabulary of places, `femkit/data/geometry/kinds.toml` "
+                                                    "(geometry.md § 7)")
     parameters: dict[str, ParameterSpec] = Field(default_factory=dict, description="each parameter")
 
 
@@ -61,8 +66,8 @@ class Constant(Described):
 class Benchmark(Described):
     """A problem with a known answer (models.md § 4, § 6.3): a project of its own, and the
     exact value each of its observables must reproduce."""
-    project: str = Field(description="its folder, from femkit/data/formulations/, holding model.toml and "
-                                     "study.toml")
+    project: str = Field(description="its project: one of femkit's project templates, by its bare name, a "
+                                     "folder of `femkit/data/templates/` (projects.md § 7)")
     exercises: list[str] = Field(min_length=1, description="the formulation's condition, source and property "
                                                            "kinds it exercises")
     tolerance: str = Field(description="the relative difference a run may show from each reference value, a plain "
@@ -74,6 +79,7 @@ class FormulationDefinition(Model):
     """One physical problem, stated without reference to any engine (models.md § 4)."""
     description: str = Field(description="one line: what it solves")
     science: str = Field(description="its science document, from the checkout's root")
+    kinds: list[StepKind] = Field(min_length=1, description="the step kinds it supports (models.md § 4.2)")
     unknown: Unknown = Field(description="what it solves for")
     meanings: dict[Literal["2", "3"], list[str]] = Field(description="what each dimension may mean; a model "
                                                                         "chooses one")
@@ -115,13 +121,18 @@ class FormulationDefinition(Model):
         described = [((t, k), d) for t in ("constants", "properties", "conditions", "sources", "derived",
                                             "benchmarks")
                      for k, d in getattr(self, t).items()]
+        places = (info.context or {}).get("places")
+        problems += [((table, k, "on", i), f"{p!r} is no place: {', '.join(sorted(places))}")
+                     for table in ("conditions", "sources") for k, kind in getattr(self, table).items()
+                     for i, p in enumerate(kind.on) if places is not None and p not in places]
         kinds = set(self.conditions) | set(self.sources) | set(self.properties)
-        root = (info.context or {}).get("root")
+        templates = (info.context or {}).get("templates")
         for name, b in self.benchmarks.items():
             problems += [(("benchmarks", name, "exercises", i), f"{e!r} is none of this formulation's kinds or "
                           "properties") for i, e in enumerate(b.exercises) if e not in kinds]
-            if root is not None and not all((root / b.project / f).is_file() for f in ("model.toml", "study.toml")):
-                problems.append((("benchmarks", name, "project"), f"{b.project} holds no model.toml and study.toml"))
+            if templates is not None and b.project not in templates:
+                problems.append((("benchmarks", name, "project"), f"{b.project!r} is none of femkit's project "
+                                                                  f"templates: {', '.join(sorted(templates))}"))
         for at, d in described if anchors else []:
             if d.section not in anchors:
                 problems.append(((*at, "section"), f"{self.science} has no section #{d.section}"))

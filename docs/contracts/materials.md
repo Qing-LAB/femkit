@@ -2,9 +2,13 @@
 
 **Role:** contract
 **Status:** current, approved by the person
-([ADR 0014](../decisions/0014-materials.md)); nothing of its design is built
-yet (plan § 4, D and E). Today's one-file models check a property
-table's phasor convention, passivity and range (`models.md`, status)
+([ADR 0014](../decisions/0014-materials.md)). Built in `femkit/materials/`:
+the property list's first entry (§ 1), a project's own
+materials with fixed values and their check (§ 3), the assignment and its
+check (§ 5), and a fixed value held exactly by a case (§ 6). Not built:
+dispersion models (§ 2), tables and models as datasets (§ 3), the global
+library (§ 4), the conversions and the checks of § 6 beyond a fixed value,
+importers (§ 7) (plan § 4, E), and translation (§ 8; plan § 4, M6)
 **Authority:** the property list and its names in each engine and source;
 dispersion models; the material format; the global library and a project's
 own, and how a material is found; the material assignment of a component;
@@ -66,6 +70,11 @@ names = { refractiveindex_info = "nk" }
   by the conversion its science document states — never by a translator.
 - Every key of the list is in
   [`../reference/definitions.md`](../reference/definitions.md) once built.
+- **The first entry** is `relative_permittivity`, the one property
+  `electrostatics` reads; `refractive_index` and the others join with the
+  formulations that read them. Built, read by the check frame
+  ([`models.md`](models.md) § 11.1); not built yet: a formulation naming its
+  properties from the list (plan § 7).
 
 ## 2. Dispersion models — `femkit/data/dispersion.toml`
 
@@ -82,7 +91,7 @@ list is refused, naming the list. Not built yet (plan § 4, E).
 schema = 1
 display = "Gold"
 formula = "Au"
-aliases = ["Au"]                                   # for searching a library; never a reference
+aliases = ["Au"]                                   # names a search of a library finds it by
 
 [properties.relative_permittivity.johnson_christy_1972]
 table = "johnson_christy_1972.csv"                 # beside this file: the variable, then the real and imaginary parts
@@ -96,6 +105,11 @@ range = ["188 nm", "1937 nm"]
 [notes]                                            # anything the person keeps beside it; read by no step
 ```
 
+- **The file states its shape**, `schema = 1`, as every part's file does
+  ([`models.md`](models.md) § 2).
+- **`display`, `formula` and `aliases` are for a person and a search**, each
+  optional but `display`: nothing refers to a material by them, since its name
+  is its folder's path.
 - **The material's name is its folder's path in its library** — `gold`,
   `silicon_dioxide`, or grouped, `metals/gold` — under the one name rule of
   [`projects.md`](projects.md) § 3.
@@ -112,23 +126,55 @@ range = ["188 nm", "1937 nm"]
   ([`core.md`](core.md) § 2): a dataset being written may lack them, a finding
   of `project check`; `study expand` refuses a case resting on one that does.
 - A material file starts from one in femkit's project templates or in the
-  library ([`projects.md`](projects.md) § 7).
+  library ([`projects.md`](projects.md) § 7) — a fixed value as the
+  two-material template's `dielectric_2`:
+
+  ```toml
+  schema = 1
+  display = "Dielectric 2"
+
+  [properties.relative_permittivity.benchmark]
+  value = "4"
+  convention = "real"
+  source = "the two-material benchmark's choice (docs/science/electrostatics.md § 9.1)"
+  range = "all"
+  ```
+
+- **Until step E**, a project's own materials are read, each dataset a `value`,
+  and a case holds that value as § 6 says, so the templates are checked and
+  expanded before step E; `table` and `model`, the global library, importers
+  and the conversions of § 6 are step E (plan § 4, E).
 
 ## 4. Where materials live, and how one is found
 
 - **The global library**: `<projects root>/materials/`, the person's, shared by
-  their projects. When the root is first made, femkit's shipped materials
-  (`femkit/data/materials/`, starting with `vacuum`) are copied into it, each
-  with its origin recorded; they are the person's from then on. A later femkit
-  whose shipped material differs says an update is available and shows what
-  changed; it never overwrites the person's copy.
+  their projects — the folder of the one part kind the layout declares with a
+  library ([`projects.md`](projects.md) § 4). When `project new` finds the
+  root without it, it makes it and copies femkit's shipped materials
+  (`femkit/data/materials/`, starting with `vacuum`) into it, each with its
+  origin recorded; they are the person's from then on. A later femkit whose
+  shipped material differs says an update is available and shows what
+  changed; it never overwrites the person's copy. Not built yet (plan § 4,
+  E): today `project new` makes the root alone, and nothing reads the
+  library.
 - **A project's own**: `<project>/materials/`.
 - **Finding a material by name**:
   - `GLOBAL/metals/gold` names the global library's, explicitly — the prefix is
     capitals, and a name never is ([`projects.md`](projects.md) § 3);
   - any other name, `metals/gold`, is the project's own first, then the global
     library's: a project's material takes priority, as the person's
-    customization.
+    customization;
+  - a name in neither is a finding of `project check` on the assignment's
+    `material` key, naming the name and both places it looked in, with the
+    materials each holds as its choices ([`core.md`](core.md) § 10). Until the
+    global library is read (plan § 4, E), a name the project lacks, and every
+    `GLOBAL/` name, is not checked yet — its component is `unchecked`
+    ([`projects.md`](projects.md) § 8), the note saying "the global material
+    library is not read yet" — and `study expand` refuses a case resting on
+    it; but a name the project lacks that is close to one it holds — a
+    misspelling, most likely — is a warning there, `no-such-material`: "no
+    material `vaccum` in this project; did you mean `vacuum`?", the project's
+    materials its choices.
 - **Every load is checked**: each value's type, sign and range rules; every
   value's unit, read by the one unit grammar ([`core.md`](core.md) § 11), so it
   converts to what each engine reads (§ 8); a dataset's missing source,
@@ -154,6 +200,12 @@ material = "GLOBAL/metals/gold"
 datasets = { relative_permittivity = "johnson_christy_1972" }
 ```
 
+- **The table and its check are this package's**: the check is declared
+  beside the table for the component's schema key, as `PART_CHECKS =
+  {"geometry.component": check}` in `femkit/materials/assign.py`, and
+  registered at femkit's start after the component's own check
+  ([`projects.md`](projects.md) § 6; [`api.md`](api.md) § 6); it reads the
+  component's frame and groups through the layout's object types.
 - **Each body gets exactly one material** through the groups assigned; two
   assignments reaching one body are refused, naming the body — the rule's one
   home ([`geometry.md`](geometry.md) § 7 checks it once the geometry exists).

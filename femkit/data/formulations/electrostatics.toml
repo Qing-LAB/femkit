@@ -2,6 +2,7 @@
 # document; each description here is the one sentence a person reads beside the choice —
 # a tooltip, a hint, a line of the reference — and `section` points to where it is defined.
 description = "the electrostatic potential: -div(eps grad phi) = rho"
+kinds = ["stationary"]                           # the step kinds it supports (models.md § 4.2)
 science = "docs/science/electrostatics.md"
 unknown = { name = "potential", space = "H1", unit = "V" }
 meanings = { 2 = ["per unit depth", "axisymmetric"], 3 = ["full"] }
@@ -21,24 +22,24 @@ complex = false
 [conditions.potential]
 description = "the boundary is held at a potential (a Dirichlet condition)"
 section = "3-conditions-on-an-outer-boundary"
-on = ["boundary"]
+on = ["outer_boundary"]
 parameters.value = { unit = "V", description = "the potential the boundary is held at" }
 
 [conditions.insulating]
 description = "no field line crosses the boundary: n . D = 0 (the natural condition)"
 section = "3-conditions-on-an-outer-boundary"
-on = ["boundary"]
+on = ["outer_boundary"]
 
 [conditions.surface_charge]
 description = "the boundary is the surface of a conductor carrying a free charge; femkit writes n . D = -sigma"
 section = "3-conditions-on-an-outer-boundary"
-on = ["boundary"]
+on = ["outer_boundary"]
 parameters.value = { unit = "C/m^2", description = "sigma, the free charge per unit area on the conductor's surface" }
 
 [conditions.normal_flux]
 description = "a known flux crosses the boundary, which is no charged conductor (a cut through a larger problem)"
 section = "3-conditions-on-an-outer-boundary"
-on = ["boundary"]
+on = ["outer_boundary"]
 parameters.value = { unit = "C/m^2", description = "q = n . D, with n pointing out of the domain" }
 
 [conditions.interface]
@@ -49,7 +50,7 @@ on = ["interface"]
 [sources.charge_density]
 description = "free charge spread through a domain"
 section = "5-sources"
-on = ["domain"]
+on = ["body"]
 parameters.value = { unit = "C/m^3", description = "rho, the free charge per unit volume" }
 
 [derived.potential]
@@ -72,12 +73,12 @@ description = "w = E . D / 2, the field's energy per unit volume"
 section = "7-derived-quantities"
 unit = "J/m^3"
 
-# The benchmark set (models.md § 4, § 6.3): problems with known answers, each a project of its
-# own beside this file, and the exact value each observable must reproduce.
+# The benchmark set (models.md § 4, § 6.3): problems with known answers, each one of femkit's
+# project templates by its bare name, and the exact value each observable of its study must reproduce.
 [benchmarks.two_material]
 description = "a layered capacitor: two materials in series between two held potentials, a named interface between them"
 section = "91-two_material-a-layered-capacitor"
-project = "electrostatics/benchmarks/two_material"
+project = "two_material"
 exercises = ["potential", "insulating", "interface", "relative_permittivity"]
 tolerance = "1e-9"   # relative: first-order elements reproduce the piecewise-linear solution (§ 9)
 

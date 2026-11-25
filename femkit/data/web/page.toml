@@ -9,24 +9,24 @@ tagline = "Finite-element results you can inspect and reproduce, from physical i
 mark = "mark.svg"
 
 [[workspaces]]
-key = "model"
-title = "Model"
+key = "project"
+title = "Project"
 icon = "workflow"
-tagline = "The physics as a graph: shapes become regions, regions take materials and conditions."
-help = "Select a node to read its text, the help of each key it may hold and its findings; the next step stays in view until the model is complete."
-document = "model.graph"
-context = ["project", "study"]
-empty = "Open a project to see its model — choose one, or make a new one."
+tagline = "The project as a graph: its parts, what each names, and what is wrong, in the chain's order."
+help = "Select a node to read its text and its findings; the next step stays in view until every part checks."
+document = "project.graph"
+context = ["project"]
+empty = "Open a project to see its parts — choose one, or make a new one from a template."
 
 [[workspaces]]
 key = "runs"
 title = "Runs"
 icon = "list-checks"
-tagline = "A study's cases, and what becomes of them."
+tagline = "A project's cases, and the studies they come from."
 help = "Expand a study to write its cases; each case is one point of its axes."
 document = "case.list"
-context = ["project", "study"]
-empty = "Open a project and choose a study to see its cases."
+context = ["project"]
+empty = "Open a project to see its cases."
 
 [[workspaces]]
 key = "operations"
@@ -40,19 +40,19 @@ empty = "Choose an operation."
 [[context]]
 key = "project"
 label = "project"
-help = "The folder that holds a model and its studies."
+help = "A project under the projects root: its parameters, components, materials, physics, mesh recipes, observable sets and studies."
 choices = "project.list"
 rows = "projects"
-value_key = "path"
-label_key = "name"
+value_key = "name"
 depends = []
 
 [[context]]
 key = "study"
 label = "study"
-help = "A study varies the model's parameters and numerics; its cases are what runs."
+help = "A study pairs a component with its physics, a mesh recipe and observable sets; its cases are what runs."
 choices = "study.list"
 rows = "studies"
+value_key = "name"
 depends = ["project"]
 
 [[context]]
@@ -64,20 +64,31 @@ rows = "rows"
 value_key = "name"
 depends = []
 
+# Each part kind's and object type's icon, as the project layout names them (web.md § 8.2).
 [kinds]
-parameter = "variable"
-frame = "ruler"
-geometry = "shapes"
-conventions = "scale"
-shape = "square"
-region = "map"
+project = "folder"
 material = "layers"
+component = "shapes"
+physics = "atom"
+mesh = "grid-3x3"
+observables = "gauge"
+study = "flask-conical"
+parameter = "variable"
+property = "beaker"
+frame = "ruler"
+input = "log-in"
+input_file = "file"
+group = "map-pin"
+assignment = "paintbrush"
 condition = "shield"
 source = "zap"
 radiation = "radio"
+size = "maximize"
+observable = "crosshair"
+step = "play"
 numerics = "sigma"
 axis = "sliders-horizontal"
-observable = "gauge"
+crossing = "merge"
 binding = "plug"
 
 [[shortcuts]]

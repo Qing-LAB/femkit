@@ -1,0 +1,30 @@
+# The two-material benchmark (docs/science/electrostatics.md § 9.1): a layered capacitor, two
+# materials in series between two held potentials, a named interface between them. Its exact
+# potential is linear in each layer, so first-order elements reproduce it on any mesh; the
+# formulation's reference values follow from the parameters below and the two materials.
+#
+# This is the project file (projects.md § 2). Every key's help is the comment directly above
+# it; a key shown commented out is one you may set.
+
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+schema = 1
+
+# what the project is, in a sentence or two
+description = "A layered capacitor: relative permittivity 1 up to the interface, 4 beyond it, 0 V on the left side and the bias on the right"
+
+# the project's components, by name: each the folder `components/<name>/`, holding `component.toml` and `geometry.py`
+components = ["slab"]
+
+# the project's studies, by name: each the file `studies/<name>.toml`
+studies = ["benchmark"]
+
+# the shared parameters, by name: each a quantity with its unit, or an expression of other parameters with `+`, `-`, `*`, `/` and parentheses (see core.md § 11)
+[parameters]
+# the slab's extent along x, from the frame's origin
+length = "1 m"
+# the slab's extent along y
+height = "1 m"
+# where the two materials meet, along x: between 0 and the length
+interface = "0.5 m"
+# the potential the right side is held at
+bias = "1 V"

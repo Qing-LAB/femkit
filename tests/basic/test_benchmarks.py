@@ -1,60 +1,66 @@
-"""The formulation's benchmark set (models.md § 4, § 6.3; docs/science/electrostatics.md § 9)."""
+"""The formulation's benchmark set (models.md §§ 4.3, 6.3; docs/science/electrostatics.md § 9).
+Protected (testing.md § 3): a science test's design may change, its existence may not."""
 
 from __future__ import annotations
 
-from fractions import Fraction
-
 import pytest
 
-from tests.kit import ctx
-from femkit import registry
-from femkit.core.operations import Context
+from tests import kit
 from femkit.definitions import catalogue
+from femkit.models import parts
+from femkit.models.observables import AtPoint, OverGroup
+from femkit.projects import checking
+from femkit.projects.layout import held
 
 
-def test_the_two_material_reference_follows_from_its_own_model():
-    """Fails if a reference value of `two_material` is not what the physics of its own model
-    gives — a slip in the declaration would make every engine's proof fail, or pass wrongly
-    (docs/science/electrostatics.md § 9.1)."""
-    from femkit.models.project import load_model
-    f = catalogue.formulations(ctx())["electrostatics"]
+def test_the_two_material_reference_follows_from_its_own_template():
+    """Fails if a reference value of `two_material` is not what the physics of its own template
+    gives — the template's parameters `interface`, `length`, `height` and `bias`, the materials its
+    component assigns to each layer, and the points and groups of its observables — so a slip in
+    the declaration, or in the template, would make every engine's proof fail, or pass wrongly
+    (docs/science/electrostatics.md § 9.1; models.md § 2: "a test computes the reference from the
+    template itself")."""
+    ctx = kit.ctx()
+    f = catalogue.formulations(ctx)["electrostatics"]
     bench = f.benchmarks["two_material"]
-    units = catalogue.units(ctx())
-    m = load_model(catalogue.data_root() / "formulations" / bench.project, ctx())
-    a = Fraction(m.geometry.shapes["left_half"].size[0])                     # the interface, in metres
-    e1 = units.parse(m.materials[m.assign["low"]]["relative_permittivity"].value).value
-    e2 = units.parse(m.materials[m.assign["high"]]["relative_permittivity"].value).value
-    v = units.parse(m.parameters["bias"]).value
-    eps0 = units.parse(f.constants["vacuum_permittivity"].value).value
-    d = v / (a / e1 + (1 - a) / e2)                                           # D / eps_0, continuous across
-    phi = lambda x: d * x / e1 if x <= a else d * a / e1 + d * (x - a) / e2   # noqa: E731
-    expected = {"potential_low": phi(Fraction(1, 4)), "potential_middle": phi(a),
-                "potential_high": phi(Fraction(3, 4)),
-                "energy_low": eps0 * e1 * (d / e1) ** 2 / 2 * a,               # (1/2) eps E^2 over the layer's area
-                "energy_high": eps0 * e2 * (d / e2) ** 2 / 2 * (1 - a)}
-    declared = {k: units.parse(t).value for k, t in bench.reference.items()}
+    opened = kit.opened(catalogue.templates(ctx)[bench.project])
+    c = checking.Checking.of(opened, ctx)
+    a, length, height, v = (c.parameters[n].value for n in ("interface", "length", "height", "bias"))
+    (component,) = [p for p in opened.parts.values() if p.address.kind == "component"]
+    contract = parts.contract(opened, component)
+
+    def permittivity(layer: str):
+        (dataset,) = parts.datasets(opened, parts.material(opened, contract.assign[layer].material))[
+            "relative_permittivity"].values()
+        return c.units.parse(held(dataset, "value")).value
+
+    eps = {layer: permittivity(layer) for layer in ("low", "high")}
+    eps0 = c.units.parse(f.constants["vacuum_permittivity"].value).value
+    d = v / (a / eps["low"] + (length - a) / eps["high"])                 # D / eps_0, the same in both layers
+    phi = lambda x: d * x / eps["low"] if x <= a else d * a / eps["low"] + d * (x - a) / eps["high"]  # noqa: E731
+    width = {"low": a, "high": length - a}
+    (observed,) = [p.data for p in opened.parts.values() if p.address.kind == "observables"]
+    expected = {}
+    for name, o in observed.observables.items():
+        if isinstance(o, AtPoint):
+            expected[name] = phi(c.quantity(o.point[0]).value)
+        elif isinstance(o, OverGroup):                                    # (1/2) eps E^2 over the layer's area
+            expected[name] = eps0 * eps[o.group] * (d / eps[o.group]) ** 2 / 2 * width[o.group] * height
+    declared = {k: c.units.parse(t).value for k, t in bench.reference.items()}
     assert declared == expected
+    assert (expected["potential_middle"], phi(length)) == (phi(a), v)     # the bias across, the interface between
 
 
-@pytest.mark.parametrize("old, new", [
-    ('middle = { kind = "interface" }\n', ""),                                   # a named interface left bare
-    ('potential_middle = "4/5 V"', 'potential_middle = "4/5 V"\nnowhere = "1 V"'),  # a reference to no observable
-    ('potential_low = "2/5 V"', 'potential_low = "2/5 m"'),                      # a reference in another dimension
+@pytest.mark.parametrize("file, old, new", [
+    ("templates/two_material/physics/electrostatics.toml", 'kind = "interface"', 'kind = "interfaces"'),  # a fault
+    ("formulations/electrostatics.toml", 'potential_middle = "4/5 V"', 'potential_middle = "4/5 V"\nnowhere = "1 V"'),
+    ("formulations/electrostatics.toml", 'potential_low = "2/5 V"', 'potential_low = "2/5 m"'),  # another dimension
 ])
-def test_schema_check_refuses_a_benchmark_that_is_not_complete_or_misnames_its_reference(definitions,
-                                                                                         old, new):
-    """Fails if a benchmark project `model check` faults, or a reference naming no observable,
-    or in another dimension, passes `schema check` (models.md § 4)."""
-    data = definitions
-    for path in [data / "formulations" / "electrostatics.toml",
-                 *(data / "formulations" / "electrostatics" / "benchmarks").rglob("*.toml")]:
-        text = path.read_text()
-        if old in text:
-            path.write_text(text.replace(old, new))
-            break
-    else:
-        pytest.fail(f"{old!r} is in no file")
-    op = registry.operations()["schema.check"]
-    result = op.run(op.request_from({}), Context.from_process())
+def test_schema_check_refuses_a_benchmark_that_is_not_complete_or_misnames_its_reference(definitions, file, old,
+                                                                                         new):
+    """Fails if a benchmark whose template `project check` faults, or whose reference names no
+    observable of its study, or is in another dimension, passes `schema check` (models.md § 4.3)."""
+    kit.rewrite(definitions / file, old, new)
+    result = kit.run("schema.check")
     assert not result.ok() and any(i.code == "benchmark-invalid" and i.subject.endswith("benchmarks.two_material")
                                    for i in result.issues)

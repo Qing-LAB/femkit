@@ -1,22 +1,35 @@
 # femkit user configuration: choices for this machine.
-# Every key is optional; `python -m femkit config show` prints what an unset key means.
+# Every key is optional, and the comment directly above it is its help; a key shown commented
+# out is one you may set. `python -m femkit config show` prints what an unset key means.
 # The keys and their types: docs/reference/config.md.
 
+# where things go
 [paths]
+# the projects root: the person's global material library and their projects (see projects.md § 1)
+# projects = "/data/projects"
+# where engine environment prefixes are created (the control environment's place is fixed) — on a
+# cluster, typically project storage rather than a small home quota
 # environments = "/project/storage/femkit-environments"
 
+# how builds are made
 [build]
+# GPU architectures the CUDA environments (<name>-cuda) target, e.g. ["80", "90"]
 # cuda_architectures = ["80", "90"]
+# parallel compile jobs
 # jobs = 8
 
+# how processes start
 [launch]
+# how a multi-rank process starts, e.g. ["mpirun", "-np", "{ranks}"]; must pass {ranks}
 # mpi = ["mpirun", "-np", "{ranks}"]
 
+# how a job's shell gets ready
 [activation]
-# How a job's shell gets ready on this machine before it enters an environment.
+# the shell lines a run script runs on this machine before it enters an environment — a batch job
+# starts a fresh shell, so a `module load` that puts the manager on PATH belongs here; [] states
+# that none are needed (see config.md § 3.1)
 # preamble = ["module load mamba"]
-# preamble = []          # states that nothing is needed
-# Then how a shell enters an environment: the activate script on PATH (what a cluster's
-# `module load mamba` provides), or the manager's shell function, its hook sourced first.
+# how a shell on this machine enters an environment after the preamble — by the activate script on
+# PATH, which a cluster's module puts there, or by the manager's shell function, its hook file
+# sourced first: one of `source activate`, `conda activate`, `mamba activate` (see config.md § 3.1)
 # command = "source activate"
-# command = "conda activate"

@@ -1,0 +1,51 @@
+# The states of a web server (web.md § 4), observed from the facts femkit/server/state.py
+# gathers and names: `another_host`, its pidfile was written on another host; `locked`, its lock
+# is held — its supervisor, or a start, runs; `pidfile`, a pidfile is there; `supervisor_alive`,
+# the pidfile names its supervisor, alive with its recorded start time. The first rule that
+# holds gives the state.
+
+[states]
+elsewhere = "the pidfile was written on another host"
+stopped = "the lock is free, and no pidfile"
+stale = "the lock is free, and a pidfile is left"
+running = "the lock is held, and the pidfile names its supervisor, alive"
+starting = "otherwise: the lock is held, and no pidfile names its holder yet"
+
+[[rules]]
+state = "elsewhere"
+when = "another_host"
+
+[[rules]]
+state = "stopped"
+when = "not locked and not pidfile"
+
+[[rules]]
+state = "stale"
+when = "not locked"
+
+[[rules]]
+state = "running"
+when = "supervisor_alive"
+
+[[rules]]
+state = "starting"
+when = "otherwise"
+
+# What each state allows, by the verb (web.md § 4); a request names the server by its port, or
+# its socket. `elsewhere` and `starting` allow nothing, and their refusals say why.
+[actions.elsewhere]
+
+[actions.stopped]
+start = { describe = "start", operation = "serve.start", request = { port = "{port}", socket = "{socket}" } }
+stop = { describe = "nothing to do" }
+
+[actions.stale]
+start = { describe = "remove the stale files, start", operation = "serve.start", request = { port = "{port}", socket = "{socket}" } }
+stop = { describe = "remove the stale files", operation = "serve.stop", request = { port = "{port}", socket = "{socket}" } }
+
+[actions.running]
+stop = { describe = "stop", operation = "serve.stop", request = { port = "{port}", socket = "{socket}" } }
+restart = { describe = "restart", operation = "serve.restart", request = { port = "{port}", socket = "{socket}" } }
+status = { describe = "look", operation = "serve.status", request = { port = "{port}", socket = "{socket}" } }
+
+[actions.starting]

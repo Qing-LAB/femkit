@@ -12,7 +12,8 @@ who writes each, how each is found, and the user configuration
 | Information has **five homes**: shipped definitions, user configuration, machine records, install records, run files. Each has one kind of writer | 1 |
 | Nothing a person sets and nothing a machine reports is in the repository; it lives in the user's own directories | 1, 2 |
 | Each directory is chosen by **the first rule that is set** — its own variable, the XDG variable, the default — and a file is read from that directory only, never from another; files are never merged; `config path` says which rule chose each | 2 |
-| `config.toml` holds **choices**: where environments go, CUDA targets, the MPI launcher, the activation preamble and command | 3 |
+| `config.toml` holds **choices**: the projects root, where environments go, CUDA targets, the MPI launcher, the activation preamble and command | 3 |
+| Each key's **help**, what its **absence** means and the **question** `config init` asks for it are declared once, on its field of `UserConfig`; the template's comments, the questions, `config show` and the reference page read them there | 3.1, 3.2 |
 | How a job's shell gets ready on a machine and enters an environment (`activation.preamble`, `activation.command`) has **no default**: `config init` asks for both on a terminal and proposes nothing; no record is written and no job prepared until both are stated | 3.1, 3.2 |
 | A **default is never written**: `paths.environments` unset means the default, which `config init` shows and asks to change | 3.2 |
 | A **machine record** holds **facts**, written only by `job probe` on that machine; a choice is never measured into it, only copied. Its contents are [`jobs.md`](jobs.md) § 9 | 1 |
@@ -65,24 +66,33 @@ is not a setting. How Python learns the manager without it is
 
 ### 3.1 What it holds
 
-| key | meaning | when unset |
-|---|---|---|
-| `paths.projects` | the projects root: the person's material library and their projects ([`projects.md`](projects.md) § 1); decided by the person ([ADR 0011](../decisions/0011-project-structure.md)) | no project is listed, made or named; each says so, naming this key |
-| `paths.environments` | where engine environment prefixes are created (the control environment's place is fixed, [`envs.md`](envs.md) § 1) — on a cluster, typically project storage rather than a small home quota | `<data>/environments` |
-| `build.cuda_architectures` | GPU architectures the CUDA environments target, e.g. `["80", "90"]` ([`definitions.md`](definitions.md) § 4.5); the default environments never read it | installing an environment with a build compiled for CUDA (both CUDA environments have one) is refused, naming this key |
-| `build.jobs` | parallel compile jobs | the CPUs this process may use (its CPU affinity: on a cluster, the allocation's share, never the whole login node) |
-| `launch.mpi` | how a multi-rank process starts, e.g. `["mpirun", "-np", "{ranks}"]` — the environment's own `mpirun` ([`jobs.md`](jobs.md) § 7). It must pass `{ranks}` and may not be empty: a launcher without it would run every job on the wrong number of processes. The same rule holds for a scheduler kind's `mpi_launch` | a multi-rank check or job, and installing an environment with MPI (its toolchain check runs two ranks, [`envs.md`](envs.md) § 4.1), are refused, naming this key |
-| `activation.preamble` | the shell lines a run script runs on this machine before it enters an environment — `module load` lines that put the manager on `PATH`, for instance; `[]` states that none are needed | `job probe --write` and `job prepare` are refused, naming this key |
-| `activation.command` | how a shell on this machine then enters an environment: `source activate`, the activate script on `PATH` (a cluster's `module load mamba` puts it there); or `conda activate` / `mamba activate`, the manager's shell function, which exists only once the manager's hook file is sourced — femkit sources it first, from the kind's `activate.hook` under the manager's root ([`definitions.md`](definitions.md) § 6) | `job probe --write` and `job prepare` are refused, naming this key |
+**Where each fact lives.** A key's help, what its absence means — its default,
+or what it blocks — and, for a key `config init` asks for, its question are
+declared once, on the key's field of `UserConfig` (`femkit/config/settings.py`):
+its description, its `unset` annotation and its `ask` annotation
+([`core.md`](core.md) § 2). The template's comments (§ 3.2), `config init`'s
+questions, `config show`, the command line's help and
+[`../reference/config.md`](../reference/config.md) read them there; nothing
+restates them. The schema model is the authority for types and allowed values
+too. The table names what reads each key, not its help.
+
+| key | what reads it |
+|---|---|
+| `paths.projects` | every project operation, which finds the projects root by it ([`projects.md`](projects.md) § 1); the person's decision ([ADR 0011](../decisions/0011-project-structure.md)) |
+| `paths.environments` | the installer, which creates each engine environment's prefix there; the control environment's place is fixed ([`envs.md`](envs.md) § 1) |
+| `build.cuda_architectures` | a build compiled for CUDA ([`definitions.md`](definitions.md) § 4.5) — both CUDA environments have one; the default environments never read it |
+| `build.jobs` | every build's compile |
+| `launch.mpi` | a multi-rank check or job — the environment's own `mpirun` ([`jobs.md`](jobs.md) § 7) — and an MPI environment's toolchain check, which runs two ranks ([`envs.md`](envs.md) § 4.1). It must pass `{ranks}` and may not be empty: a launcher without it would run every job on the wrong number of processes. The same rule holds for a scheduler kind's `mpi_launch` |
+| `activation.preamble` | `job probe --write`, which copies it into the machine record ([`jobs.md`](jobs.md) § 9.1), from which a run script runs it before it enters an environment ([`jobs.md`](jobs.md) § 4) |
+| `activation.command` | the same, and a run script enters an environment by it. For `conda activate` and `mamba activate`, the manager's shell function exists only once its hook file is sourced: femkit sources it first, from the kind's `activate.hook` under the manager's root ([`definitions.md`](definitions.md) § 6) |
 
 The web server's keys — `[web.auth]`, `web.tls`, `web.trust_proxy`,
 `web.public_name`, `web.upload_max_mb` — are [`web.md`](web.md) § 5's and
 § 8.6's, not built yet (plan § 4, M7's remainder); `web.projects` became
 `paths.projects`.
 
-Every key is optional in the file, and its absence has the one consequence the
-table states. Unknown keys are refused at load. The schema model is the
-authority for types and allowed values (`docs/reference/`).
+Every key is optional in the file, and its absence has the one consequence its
+field states. Unknown keys are refused at load.
 
 `activation.preamble` and `activation.command` have no default because nothing
 on the machine can reveal them: a login shell may have the manager on `PATH`
@@ -95,8 +105,11 @@ someone said nothing is needed.
 ### 3.2 How it is made
 
 - `config init` writes the file from `femkit/data/templates/config.toml`,
-  a commented template. Like every changing command it first shows its plan
-  ([`api.md`](api.md) § 3): each key it will add and where the value came
+  the settings file's template, under [`projects.md`](projects.md) § 7's
+  rule: the comment directly above each key is its help as its field states
+  it (§ 3.1), and every key the template leaves unset is shown commented out
+  under its help — held so by a test. Like every changing command it first
+  shows its plan ([`api.md`](api.md) § 3): each key it will add and where the value came
   from — given as an option (`--environments`, `--projects`, `--cuda-architectures`,
   `--jobs`, `--mpi`, `--preamble`, `--no-preamble`, `--activation`) or measured here (the GPU
   architectures the driver reports, the scheduler kind's launcher). The person
@@ -108,6 +121,12 @@ someone said nothing is needed.
   space (a quota is not measured; on a cluster the home quota is often too
   small) — and on a terminal `config init` asks for another place; an empty
   answer keeps the default, unwritten.
+- `paths.projects` has no default: it is the person's decision
+  ([ADR 0011](../decisions/0011-project-structure.md)). While it is unset,
+  `config init` asks for it on a terminal, saying what its absence blocks —
+  no project is listed, made or named; an empty answer leaves it unset, and
+  `--projects` states it without the question. The folder need not exist:
+  the first `project new` makes it ([`projects.md`](projects.md) § 1).
 - `activation.preamble` and `activation.command` are never proposed. While
   the preamble is unset, `config init` asks for its lines on a terminal,
   showing beside the question the loaded modules when the shell lists them;
@@ -116,10 +135,16 @@ someone said nothing is needed.
   (repeatable) or `--no-preamble`, and `--activation COMMAND`, state them
   without the questions. Left unset, the report says what that blocks, naming
   the options.
-- Both are asked as [`api.md`](api.md) § 3.1 states: never under `--yes` or
-  `--dry-run`, or without a terminal.
+- Every question is asked as [`api.md`](api.md) § 3.1 states: never under
+  `--yes` or `--dry-run`, or without a terminal. A key is asked for when its
+  field declares its question (§ 3.1), and beside the question stand the
+  key's help, what is measured here for it — where the default puts
+  environments, the loaded modules — and what its absence means.
 - Re-running `config init` adds only keys the file lacks and reports each as
   `added` or `kept`; it never replaces a value.
+- A key `config init` or `config set` adds goes directly under the line that
+  shows it commented out, so it stands under its help; where no line shows
+  it, at its table's end.
 - `config set KEY VALUE` validates and writes one key, keeping the file's
   comments and layout. `VALUE` is TOML text, as the file writes it —
   `config set paths.projects '"/data/projects"'` — and a bare word is refused,

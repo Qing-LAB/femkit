@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import Field
@@ -19,7 +20,7 @@ from femkit.config import settings
 from femkit.config.operations import ConfigInit, stating, where_environments_go
 from femkit.config.probe import place
 from femkit.config.requests import CONFIG_INIT
-from femkit.core import dirs, persist, text, view
+from femkit.core import dirs, persist, states, text, view
 from femkit.core.errors import Refusal
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
@@ -28,7 +29,7 @@ from femkit.definitions import catalogue
 from femkit.envs import layout
 from femkit.envs.manager import resolve
 from femkit.envs.operations import EnvInstall, default_environments
-from femkit.envs.state import MACHINE, EnvState, observe
+from femkit.envs import state as env_state
 from femkit.jobs import record
 from femkit.jobs.operations import JobProbe
 from femkit.jobs.record import LOCAL
@@ -64,21 +65,42 @@ class DoctorResult(Result):
 CONTROL_STAMP = "control.sha256"  # in the control prefix's records; written last by the install script
 
 
-def _control_row() -> DoctorRow:
-    """The control environment, observed by the rules of envs.md § 7.2, with the command § 7.3 allows."""
+@dataclass(frozen=True)
+class ControlFacts:
+    """What is observed of the control environment (envs.md § 7.2)."""
+
+    prefix: bool           # the control prefix is there
+    environment: bool      # it holds conda-meta/
+    python: bool           # its bin/python can be run
+    stamp: str | None      # the stamp's text; None: no stamp
+    digest: str | None     # the SHA-256 of channels.txt then control.txt, read beside a stamp
+
+
+CONTROL_BINDING = states.Binding("control", {
+    "prefix": lambda f: f.prefix,
+    "environment": lambda f: f.environment,
+    "python": lambda f: f.python,
+    "stamp": lambda f: f.stamp is not None,
+    "stamp_matches": lambda f: f.stamp is not None and f.stamp.strip() == f.digest,
+}, reads=frozenset({"current"}))
+
+
+def control_facts() -> ControlFacts:
+    """The control environment's facts, read from its prefix as the install script reads them."""
     prefix = dirs.control_prefix()
     stamp = persist.read_text(layout.records(prefix) / CONTROL_STAMP)   # None: there is none
-    if not prefix.exists():
-        state = "absent"
-    elif not (prefix / "conda-meta").is_dir() or not os.access(prefix / "bin" / "python", os.X_OK) \
-            or stamp is None:
-        state = "broken"
-    elif stamp.strip() != catalogue.control_digest():
-        state = "outdated"
-    else:
-        state = "current"
-    return DoctorRow(subject="control environment", state=state, ready=state == "current",
-                     next=[] if state == "current" else [view.shell("bash scripts/install-env.sh bootstrap")])
+    return ControlFacts(prefix=prefix.exists(), environment=(prefix / "conda-meta").is_dir(),
+                        python=os.access(prefix / "bin" / "python", os.X_OK), stamp=stamp,
+                        digest=catalogue.control_digest() if stamp is not None else None)
+
+
+def _control_row(ctx: Context) -> DoctorRow:
+    """The control environment, observed by the rules `femkit/data/states/control.toml` declares
+    (envs.md § 7.2), with the command its state allows (§ 7.3)."""
+    m = catalogue.machine(ctx, CONTROL_BINDING)
+    state = m.observe(control_facts())
+    return DoctorRow(subject="control environment", state=state.value, ready=state is m.states.current,
+                     next=list(m.next(state, dirs.CONTROL)))
 
 
 def _config_row(loaded: settings.Loaded) -> DoctorRow:
@@ -90,14 +112,16 @@ def _config_row(loaded: settings.Loaded) -> DoctorRow:
         ready=loaded.file is not None and not unset, next=list(stating(CONFIG_INIT, unset)))
 
 
-def _record_row(config: settings.UserConfig) -> DoctorRow:
+def _record_row(ctx: Context, config: settings.UserConfig) -> DoctorRow:
     """This machine's record: present, loads, and not stale (jobs.md § 9.3). The probe that
     writes it is refused while a key a person states is unset, so that comes first."""
-    status, detail = record.status(record.path(LOCAL), config)
-    state = f"{status}: {detail}" if detail else status
+    m = record.machine(ctx)
+    state, detail = record.status(ctx, record.path(LOCAL), config)
+    if state is m.states.current:
+        return DoctorRow(subject="this machine's record", state=state.value, ready=True)
     first = list(stating(CONFIG_INIT, settings.unstated(config)))
-    return DoctorRow(subject="this machine's record", state=state, ready=state == "current",
-                     next=[] if state == "current" else [*first, view.command(JOB_PROBE, write=True)])
+    return DoctorRow(subject="this machine's record", state=f"{state.value}: {detail}" if detail else state.value,
+                     ready=False, next=[*first, *m.next(state, LOCAL)])
 
 
 ENGINES = "engine environments"  # the one row for them all while none can be observed
@@ -106,7 +130,7 @@ ENGINES = "engine environments"  # the one row for them all while none can be ob
 @operation(DOCTOR, result=DoctorResult)
 def doctor(req: DoctorRequest, ctx: Context) -> DoctorResult:
     """Whether this machine is ready: control environment, configuration, this machine's record, every engine environment."""
-    rows = [_control_row()]
+    rows = [_control_row(ctx)]
     try:
         loaded = settings.load(ctx)
     except DefinitionError as exc:  # said as the row's state: doctor always reports (envs.md § 6.1)
@@ -115,18 +139,19 @@ def doctor(req: DoctorRequest, ctx: Context) -> DoctorResult:
                                                    ready=False),
                                   DoctorRow(subject="this machine's record", state=unknown, ready=False),
                                   DoctorRow(subject=ENGINES, state=unknown, ready=False)])
-    rows += [_config_row(loaded), _record_row(loaded.config)]
+    rows += [_config_row(loaded), _record_row(ctx, loaded.config)]
     try:
         resolve(ctx)  # every environment's install fingerprint names the manager's kind
     except Refusal as exc:
         return DoctorResult(rows=[*rows, DoctorRow(subject=ENGINES, state=f"unknown: {exc}", ready=False,
                                                    next=list(exc.next))])
+    m = env_state.machine(ctx)
     for name, env in catalogue.load(ctx).environments.items():
-        _, state = observe(ctx, name)
-        on_request = not env.default and state is EnvState.absent  # never installed: not this machine's lack
+        _, state = env_state.observe(ctx, name)
+        on_request = not env.default and state is m.states.absent  # never installed: not this machine's lack
         rows.append(DoctorRow(subject=name, state=state.value + (", installed on request" if on_request else ""),
-                              ready=state is EnvState.ready or on_request,
-                              next=[] if state is EnvState.ready or on_request else list(MACHINE.next(state, name))))
+                              ready=state is m.states.ready or on_request,
+                              next=[] if state is m.states.ready or on_request else list(m.next(state, name))))
     return DoctorResult(rows=rows)
 
 
@@ -231,17 +256,18 @@ class EnvBootstrap:
                 issues.append(Issue(severity="info", code="ready", subject=name, message=f"{name} is ready; left alone"))
                 continue
             installs[name] = sub.model_dump(mode="json")
-            f, state = observe(planned, name)
+            f, state = env_state.observe(planned, name)
             steps.append(Step(id=f"install:{name}", describe=f"install {name} ({state.value}) into {text.path(f.prefix)}: "
                                                              f"{text.count(len(sub.steps), 'step')}"))
         if installs:
             issues += _login_node(ctx)
         will_be = settings.load(planned).config
         file = record.path(LOCAL)
-        status, detail = record.status(file, will_be)
-        why = {"absent": "a new record", "stale": f"measured again: stale, {detail}",
-               "does not load": "measured again: the file there does not load",
-               "current": "measured again: environments are installed" if installs else ""}[status]
+        m = record.machine(ctx)
+        state, detail = record.status(ctx, file, will_be)
+        why = {m.states.absent: "a new record", m.states.stale: f"measured again: stale, {detail}",
+               m.states.unloadable: "measured again: the file there does not load",
+               m.states.current: "measured again: environments are installed" if installs else ""}[state]
         if not why:
             issues.append(Issue(severity="info", code="record-kept", subject=str(file),
                                 message=f"this machine's record is kept: {file}",
@@ -261,7 +287,7 @@ class EnvBootstrap:
         """What the plan decided on: the keys config.toml holds, each default environment's
         state, and this machine's record — each part's own apply checks its own besides."""
         return {"present": sorted(settings.load(ctx, fresh=True).present()),
-                "environments": {name: observe(ctx, name)[1].value for name in default_environments(ctx)},
+                "environments": {name: env_state.observe(ctx, name)[1].value for name in default_environments(ctx)},
                 "record": record.sha256(record.path(LOCAL))}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> BootstrapOutcome:
@@ -291,7 +317,7 @@ class EnvBootstrap:
                 env = out.environments[0]
                 status = "killed" if any(i.code == "killed" for i in out.issues) else \
                     "done" if out.ok() else "failed"
-                rows.append(BootstrapRow(part=name, status=status, detail=env.state.value if env.state else "",
+                rows.append(BootstrapRow(part=name, status=status, detail=env.state or "",
                                          log=env.validation or env.log))
                 issues.extend(out.issues)
                 if env.status == "failed":

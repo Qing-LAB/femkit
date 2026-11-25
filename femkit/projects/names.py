@@ -12,6 +12,12 @@ STEP = r"[a-z][a-z0-9_]*"
 NAME = re.compile(rf"{STEP}(?:/{STEP})*")
 GLOBAL = "GLOBAL/"   # opens a name that means the global library's (materials.md § 4)
 
+#: A folder part's other file, by its path from the part's folder (projects.md § 6, geometry.md
+#: § 3): steps of letters, digits, `.`, `_` and `-`, none starting with `.` or `-` — so none is
+#: `..` or hidden — joined by `/`.
+FILE_STEP = r"[A-Za-z0-9_][A-Za-z0-9._-]*"
+FILE = re.compile(rf"{FILE_STEP}(?:/{FILE_STEP})*")
+
 
 def valid(name: str) -> bool:
     return bool(NAME.fullmatch(name))

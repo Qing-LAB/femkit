@@ -25,9 +25,9 @@ from femkit.core.persist import open_private, private_dir
 from femkit.core.process import GRACE, TAIL_LINES, Identity, end, start_detached, tail
 from femkit.core.schema import DefinitionError, Model
 from femkit.definitions import catalogue
-from femkit.server import build, health, protocol, supervisor
+from femkit.server import build, health, protocol, startup, supervisor
 from femkit.server.protocol import LOOPBACK, Listen
-from femkit.server.state import MACHINE, ServerState, facts, require
+from femkit.server.state import facts, machine, require
 from femkit.config.requests import CONFIG_SHOW
 from femkit.server.requests import (DEFAULT_PORT, SERVE_FOREGROUND, SERVE_RESTART, SERVE_START, SERVE_STATUS,
                                     SERVE_STOP, ServeRequest, StatusRequest, TargetRequest)
@@ -78,12 +78,20 @@ def web_python(ctx: Context) -> str:
 
 def _preflight(listen: Listen, ctx: Context) -> None:
     """Everything `start` refuses, refused before it detaches (web.md § 4): first what a fresh
-    child meets first, config.toml, which everything after it reads."""
+    child meets first, config.toml, which everything after it reads; then each declared file the
+    child loads before it serves (`startup`) — the project layout, and the page's declaration the
+    registry handed this domain at femkit's start (web.md § 8.1)."""
     try:
         settings.load(ctx, fresh=True)
     except (DefinitionError, OSError) as exc:
         raise Refused(f"config.toml does not load, so the server could not start: {exc}",
                       (view.command(CONFIG_SHOW),), code="config-does-not-load", subject="config.toml") from None
+    for declared in startup.registered():
+        try:
+            declared.load()
+        except DefinitionError as exc:
+            raise Refused(f"{declared.what} does not load, so the server could not start: {exc}", declared.next,
+                          code=declared.code, subject=exc.file) from None
     web_python(ctx)
     private_dir(dirs.runtime_dir(), make=False)   # made by the apply, never by a plan
     if listen.socket and len(listen.socket.encode()) > protocol.SOCKET_PATH_MAX:
@@ -239,18 +247,19 @@ def _start_basis(req: ServeRequest, ctx: Context) -> dict:
     in: what a start rests on."""
     from femkit.envs.state import observe
     listen = _listen(req, ctx)
-    return {"state": MACHINE.observe(facts(listen.name)).value, "listen": listen.as_json(),
+    return {"state": machine(ctx).observe(facts(listen.name)).value, "listen": listen.as_json(),
             build.TOOL: observe(ctx, build.TOOL)[1].value}
 
 
 def _start_plan(req: ServeRequest, ctx: Context, detached: bool) -> Plan:
     listen = _listen(req, ctx)
     f = facts(listen.name)
-    state = MACHINE.observe(f)
-    require(f, state, "start")
+    m = machine(ctx)
+    state = m.observe(f)
+    require(ctx, f, state, "start")
     _preflight(listen, ctx)
     steps = [Step(id="clean", describe="remove the stale server's files, ending a child it left")] \
-        if state is ServerState.stale else []
+        if state is m.states.stale else []
     steps += [Step(id="listen", describe=f"listen on {listen.describe()}"),
               Step(id="token", describe=f"write the access token to {text.path(protocol.token_file(listen.name))}")]
     if detached:
@@ -417,8 +426,8 @@ class ServeRestart:
     def plan(self, req: TargetRequest, ctx: Context) -> Plan:
         name = _target(req).name
         f = facts(name)
-        state = MACHINE.observe(f)
-        require(f, state, "restart")
+        state = machine(ctx).observe(f)
+        require(ctx, f, state, "restart")
         _preflight(f.pidfile.listen, ctx)
         _child_locks(f, req.force, SERVE_RESTART)
         return Plan(steps=(Step(id="signal", describe=f"ask the supervisor, pid {f.pidfile.supervisor.pid}, "
@@ -457,11 +466,12 @@ class ServeStop:
     def plan(self, req: TargetRequest, ctx: Context) -> Plan:
         name = _target(req).name
         f = facts(name)
-        state = MACHINE.observe(f)
-        require(f, state, "stop")
-        if state is ServerState.stopped:
+        m = machine(ctx)
+        state = m.observe(f)
+        require(ctx, f, state, "stop")
+        if state is m.states.stopped:
             steps = ()
-        elif state is ServerState.stale:
+        elif state is m.states.stale:
             return Plan(subjects=(protocol.subject(name),),   # free since its supervisor ended: held while cleaning
                         steps=(Step(id="clean", describe="remove the stale server's files, ending a child it left"),))
         else:
@@ -473,14 +483,14 @@ class ServeStop:
     def observe(self, req: TargetRequest, ctx: Context) -> dict:
         """The server's state: what a stop does depends on it — read under the lock it holds on a
         stale server as under none (core.md § 5)."""
-        return {"state": MACHINE.observe(facts(_target(req).name)).value}
+        return {"state": machine(ctx).observe(facts(_target(req).name)).value}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> ServeOutcome:
         req = TargetRequest.model_validate(plan.request)
         name = _target(req).name
         f = facts(name)
         listen = f.pidfile.listen if f.pidfile else Listen.named(name)
-        if plan.basis["state"] == ServerState.running.value:
+        if plan.basis["state"] == machine(ctx).states.running.value:
             _child_locks(f, req.force, SERVE_STOP)  # again: the page may have started one since the plan
 
         def do(step: Step, where: Path):
@@ -510,7 +520,7 @@ class ServeStop:
 class ServerRow(Model):
     name: str = Field(description="the port, or `sock`")
     host: str = Field(description="the host its pidfile was written on")
-    state: ServerState = Field(description="its state, observed (web.md § 4)", json_schema_extra={"doc": "web.md § 4"})
+    state: str = Field(description="its state, observed (web.md § 4)", json_schema_extra={"doc": "web.md § 4"})
     listen: str | None = Field(default=None, description="where it listens")
     supervisor: int | None = Field(default=None, description="the supervisor's process ID")
     child: int | None = Field(default=None, description="the child's process ID")
@@ -527,8 +537,8 @@ class StatusResult(Result):
     def report(self) -> view.Report:
         if not self.servers:
             return view.Report(blocks=[view.Text(text="no server is running")])
-        rows = [{"server": (s.listen or s.name) + (f" on {s.host}" if s.state is ServerState.elsewhere else ""),
-                 "state": s.state.value + (" (foreground)" if s.foreground else ""),
+        rows = [{"server": s.listen or s.name,
+                 "state": s.state + (" (foreground)" if s.foreground else ""),
                  "pids": f"pid {s.supervisor}" + (f", child {s.child}" if s.child else "") if s.supervisor else "",
                  "answers": "" if s.answers is None else "answers" if s.answers else f"NOT ANSWERING: {s.said}"}
                 for s in self.servers]
@@ -547,16 +557,17 @@ class StatusResult(Result):
         return view.Report(blocks=blocks)
 
 
-def _row(name: str) -> ServerRow:
+def _row(ctx: Context, name: str) -> ServerRow:
     f = facts(name)
-    state = MACHINE.observe(f)
+    m = machine(ctx)
+    state = m.observe(f)
     p = f.pidfile
-    row = ServerRow(name=name, host=p.host if p else dirs.host(), state=state,
-                    listen=p.listen.describe() if p else None,
+    row = ServerRow(name=name, host=p.host if p else dirs.host(), state=state.value,
+                    listen=p.listen.describe() + (f" on {p.host}" if state is m.states.elsewhere else "") if p else None,
                     supervisor=p.supervisor.pid if p else None,
                     child=p.child.pid if p and p.child else None,
                     foreground=bool(p and p.foreground), log=str(protocol.log_file(name)))
-    if state is ServerState.running and p is not None:
+    if state is m.states.running and p is not None:
         token = _read_token(name)
         ok, said = health.ask(p.listen, token or "") if token else (False, "its token file is gone")
         row = row.model_copy(update={"answers": ok, "said": said})
@@ -569,10 +580,10 @@ def serve_status(req: StatusRequest, ctx: Context) -> StatusResult:
     does it answer as itself. The address with its token only for one named server."""
     if req.port is not None or req.socket:
         name = _target(req).name
-        row = _row(name)
+        row = _row(ctx, name)
         token = _read_token(name) if row.answers else None
         p = protocol.read_pidfile(protocol.pidfile(name))
         return StatusResult(servers=[row], address=address(p.listen, token) if token and p else None)
     runtime = dirs.runtime_dir()
     names = sorted(p.name[len("serve-"):-len(".pid")] for p in runtime.glob("serve-*.pid")) if runtime.is_dir() else []
-    return StatusResult(servers=[_row(n) for n in names])
+    return StatusResult(servers=[_row(ctx, n) for n in names])

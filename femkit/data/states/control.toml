@@ -1,0 +1,44 @@
+# The states of the control environment, the one femkit runs in (envs.md § 7.2), observed from
+# the facts femkit/jobs/setup.py gathers and names: `prefix`, the control prefix is there;
+# `environment`, it holds `conda-meta/`; `python`, its `bin/python` can be run; `stamp`, its
+# stamp file is there; `stamp_matches`, the stamp holds the SHA-256 of channels.txt then
+# control.txt. The first rule that holds gives the state.
+#
+# scripts/install-env.sh observes it too, by these rules written in bash, since it runs before
+# femkit can; tests/basic/test_entry.py holds the two equal on every way the prefix can stand.
+
+[states]
+absent = "no control prefix"
+broken = "no conda-meta/, no bin/python, or no stamp file"
+outdated = "the stamp's SHA-256 is not that of channels.txt then control.txt"
+current = "otherwise: python -m femkit runs inside it"
+
+[[rules]]
+state = "absent"
+when = "not prefix"
+
+[[rules]]
+state = "broken"
+when = "not environment or not python or not stamp"
+
+[[rules]]
+state = "outdated"
+when = "not stamp_matches"
+
+[[rules]]
+state = "current"
+when = "otherwise"
+
+# What each state allows (envs.md § 7.3): the install script's bootstrap, which creates or
+# rebuilds it — never with --clean, which rebuilds every default environment too. The script
+# names the same line when it refuses any other verb.
+[actions.absent]
+bootstrap = { describe = "create it", shell = "bash scripts/install-env.sh bootstrap" }
+
+[actions.broken]
+bootstrap = { describe = "remove it, create it", shell = "bash scripts/install-env.sh bootstrap" }
+
+[actions.outdated]
+bootstrap = { describe = "remove it, create it", shell = "bash scripts/install-env.sh bootstrap" }
+
+[actions.current]

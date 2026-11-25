@@ -10,6 +10,7 @@ import pytest
 from tests.kit import planned, refused, run
 from femkit.core.dirs import CONTROL
 from femkit.core.errors import UsageError
+from femkit.core.persist import write_toml
 from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.definitions import catalogue
 from femkit.core.view import RefusalAnswer
@@ -291,7 +292,7 @@ def test_a_manager_command_names_exactly_the_values_femkit_renders_it_with(tmp_p
 
 
 DERIVED = {"description": "d", "section": "7-derived-quantities"}
-KIND = {"description": "d", "section": "3-conditions-on-an-outer-boundary", "on": ["boundary"],
+KIND = {"description": "d", "section": "3-conditions-on-an-outer-boundary", "on": ["outer_boundary"],
         "parameters": {"value": {"unit": "V", "description": "d"}}}
 
 
@@ -300,21 +301,21 @@ KIND = {"description": "d", "section": "3-conditions-on-an-outer-boundary", "on"
     ({"derived": {"potential": DERIVED | {"unit": "V"}, "field": DERIVED | {"unit": "V/mm2"}}},
      "derived.field.unit"),                                                               # a unit the grammar does not read
     ({"derived": {"electric_field": DERIVED | {"unit": "V/m"}}}, "derived"),            # the unknown not observable
-    ({"conditions": {"potential": KIND | {"on": ["edge"]}}}, "conditions.potential.on[0]"),
+    ({"conditions": {"potential": KIND | {"on": ["boundary"]}}}, "conditions.potential.on[0]"),   # no such place
     ({"conditions": {"potential": KIND | {"section": "9-nowhere"}}}, "conditions.potential.section"),
 ])
 def test_a_formulation_that_misstates_itself_does_not_load(change, at):
     """Fails if a formulation loads with a science document that does not exist, a unit the
     grammar does not read, its unknown not among what an observable may name, a condition on
-    a region kind that does not exist, or a description pointing to a section its science
+    a place the vocabulary of places does not name, or a description pointing to a section its science
     document lacks (models.md § 4)."""
     from femkit.core.schema import validate
     from femkit.core.units import Units
-    from femkit.definitions.catalogue import load_units
+    from femkit.definitions.catalogue import load_places, load_units
     from femkit.definitions.formulations import FormulationDefinition
     data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text()) | change
     with pytest.raises(DefinitionError) as caught:
-        validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units())})
+        validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units()), "places": frozenset(load_places())})
     assert at in [path for path, _ in caught.value.problems]
 
 
@@ -322,7 +323,7 @@ def test_schema_check_refuses_a_page_declaration_that_names_what_is_not_served(d
     """Fails if a page declaration whose workspace shows an operation that does not exist
     passes `schema check` (definitions.md § 2.3, web.md § 8.1)."""
     page = definitions / "web" / "page.toml"
-    page.write_text(page.read_text().replace('document = "model.graph"', 'document = "model.nothing"', 1))
+    page.write_text(page.read_text().replace('document = "project.graph"', 'document = "project.nothing"', 1))
     result = run("schema.check")
     assert [(i.code, i.subject) for i in result.issues] == [("definition-invalid", str(page))]
     assert result.issues[0].message.startswith(f"{page}: workspaces[0].document:")    # where in the file, at its key path
@@ -344,7 +345,7 @@ def test_a_mesher_that_misstates_itself_does_not_load(change, at):
 
 @pytest.mark.parametrize("change, at", [
     ({"exercises": ["potential", "tunneling"]}, "benchmarks.two_material.exercises[1]"),   # no such kind
-    ({"project": "electrostatics/benchmarks/none"}, "benchmarks.two_material.project"),     # no such project
+    ({"project": "nowhere"}, "benchmarks.two_material.project"),                          # no such template
     ({"reference": {"potential_low": "2/5 VV"}}, "benchmarks.two_material.reference.potential_low"),
 ])
 def test_a_benchmark_that_misstates_itself_does_not_load(change, at):
@@ -352,12 +353,13 @@ def test_a_benchmark_that_misstates_itself_does_not_load(change, at):
     exist, or a reference value the unit grammar does not read (models.md § 4)."""
     from femkit.core.schema import validate
     from femkit.core.units import Units
-    from femkit.definitions.catalogue import load_units
+    from femkit.definitions.catalogue import load_places, load_templates, load_units
     from femkit.definitions.formulations import FormulationDefinition
     data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text())
     data["benchmarks"]["two_material"] |= change
     with pytest.raises(DefinitionError) as caught:
-        validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units()), "root": data_root() / "formulations"})
+        validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units()), "places": frozenset(load_places()),
+                                                         "templates": load_templates()})
     assert at in [path for path, _ in caught.value.problems]
 
 
@@ -409,3 +411,92 @@ def test_the_definitions_folder_is_read_as_the_directories_are(monkeypatch, tmp_
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv(catalogue.VARIABLE, "~/definitions")
     assert data_root() == tmp_path / "definitions"
+
+
+# ------------------------------------------------------------------ what a part reads (definitions.md § 1)
+
+@pytest.mark.parametrize("change, at", [
+    ({"edge": {"sentence": "s", "dimension": {"4": 1}}}, "edge.dimension.4"),
+    ({"edge": {"sentence": "s", "dimension": {"3": 4}}}, "edge.dimension.3"),
+    ({"body": {"sentence": "s", "dimension": {"2": 2, "3": 2}}}, "body.dimension"),
+    ({"interface": {"sentence": "s", "dimension": {"2": 1, "3": 2}}}, "interface.bodies"),
+    ({"point": {"sentence": "s", "dimension": {"2": 0}, "bodies": 1, "side": "inside"}}, "point.bodies"),
+    ({"interface": {"sentence": "s", "dimension": {"2": 1}, "bodies": 2, "side": "outside"}}, "interface.side"),
+    ({"Outer": {"sentence": "s", "dimension": {"2": 2}}}, "Outer"),
+], ids=["a geometry of no dimension femkit draws", "a place larger than its geometry",
+        "a face in one geometry and not in another", "a face touching no stated body",
+        "a point touching a body", "a side for a face touching two", "a name that is no place's"])
+def test_a_place_kind_that_misstates_itself_does_not_load(definitions, change, at):
+    """Fails if a kind of place loads with a dimension for a geometry femkit does not draw or
+    larger than its geometry's, a face that is one only in some geometries, a face that does not
+    say how many bodies it touches or a place that is no face saying so, a side for a face that
+    does not touch one body, or a name that is no place's (geometry.md § 7)."""
+    path = definitions / "geometry" / "kinds.toml"
+    write_toml(path, tomllib.loads(path.read_text()) | change)
+    with refused(DefinitionError, "definition-invalid", str(path)) as caught:
+        catalogue.load_places()
+    assert at in [where for where, _ in caught.value.problems], caught.value.problems
+
+
+def test_a_place_is_known_from_a_groups_promised_dimension_as_far_as_it_tells():
+    """Fails if, before the geometry exists, a group of a frame's dimension is not a body, one of
+    one less is not any of the three faces, an edge is a place of a 2-D geometry, or a point is
+    not a point in both (geometry.md § 7: "Before the geometry exists")."""
+    from femkit.definitions.places import possible
+    places = catalogue.load_places()
+    faces = ["outer_boundary", "interface", "embedded"]
+    assert [possible(places, 2, d) for d in (2, 1, 0)] == [["body"], faces, ["point"]]
+    assert [possible(places, 3, d) for d in (3, 2, 1, 0)] == [["body"], faces, ["edge"], ["point"]]
+
+
+@pytest.mark.parametrize("change, at", [
+    ({"unit": "furlong"}, "relative_permittivity.unit"),
+    ({"equivalents": ["refractive_index"]}, "relative_permittivity.equivalents[0]"),
+    ({"equivalents": ["relative_permittivity"]}, "relative_permittivity.equivalents[0]"),
+    ({"values": "imaginary"}, "relative_permittivity.values"),
+], ids=["a unit the table does not read", "an equivalent not on the list", "itself as its equivalent",
+        "values neither real nor complex"])
+def test_a_property_that_misstates_itself_does_not_load(definitions, change, at):
+    """Fails if the property list loads with a unit the unit table does not read, an equivalent
+    form that is not on the list or is the property itself, or values neither real nor complex
+    (materials.md § 1)."""
+    path = definitions / "properties.toml"
+    data = tomllib.loads(path.read_text())
+    data["relative_permittivity"] |= change
+    write_toml(path, data)
+    with refused(DefinitionError, "definition-invalid", str(path)) as caught:
+        catalogue.load_properties()
+    assert at in [where for where, _ in caught.value.problems], caught.value.problems
+
+
+@pytest.mark.parametrize("file, old, new, at", [
+    ("states/part.toml", "unloadable = {}", 'unloadable = { fix = { describe = "d", operation = "part.fix" } }',
+     "actions.unloadable.fix.operation"),
+    ("states/part.toml", 'state = "complete"\nwhen = "otherwise"', 'state = "complete"\nwhen = "loads"',
+     "rules[3].when"),
+    ("project/layout.toml", 'folder = "physics"', 'folder = "studies"', "folders"),
+], ids=["an action naming no registered operation", "a machine that could fall through",
+        "a layout putting two kinds in one folder"])
+def test_schema_check_refuses_a_state_table_or_a_layout_breaking_its_rules(definitions, file, old, new, at):
+    """Fails if `schema check` passes a machine's table naming an operation that is not registered
+    or breaking its own rules, or a layout breaking its own — each reported in its file at its key
+    path (core.md § 7; projects.md § 4; definitions.md § 2.3)."""
+    path = definitions / file
+    assert old in path.read_text()
+    path.write_text(path.read_text().replace(old, new, 1))
+    result = run("schema.check")
+    assert [(i.code, i.subject) for i in result.issues] == [("definition-invalid", str(path))]
+    assert result.issues[0].message.startswith(f"{path}: {at}:"), result.issues[0].message
+
+
+@pytest.mark.parametrize("name, holds", [("half_made", {"notes.txt": ""}), ("Big", {"project.toml": "schema = 1\n"})],
+                         ids=["a folder holding no project file", "a name the rule cannot name"])
+def test_schema_check_refuses_a_template_that_is_no_project_named_bare(definitions, name, holds):
+    """Fails if `schema check` passes a template folder that holds no project file, or whose name
+    the name rule cannot name, so `project new --from` could not copy it (projects.md § 7)."""
+    folder = definitions / "templates" / name
+    folder.mkdir()
+    for rel, text in holds.items():
+        (folder / rel).write_text(text)
+    result = run("schema.check")
+    assert [(i.code, i.subject) for i in result.issues] == [("definition-invalid", str(folder))]

@@ -390,5 +390,14 @@ To prepare jobs on a workstation for a cluster:
   `doctor` and `job prepare`; a change in the cluster's partitions or queues is
   not detected this way, which is why every record shows when it was measured.
   A record of another machine cannot be compared from here and is never marked.
+- **A record of this machine has a state**, declared as data in
+  `femkit/data/states/record.toml` ([`core.md`](core.md) § 7) over the facts
+  `jobs/record.py` gathers, the first rule that holds: `absent`, no file;
+  `unloadable`, its file does not load; `stale`, as above; otherwise `current`.
+  Each state but `current` allows `job probe --write` — with `--name` for a
+  record named other than `local` — the one next step `doctor` and `job
+  machines` name for it. `job machines` lists every record with its own words:
+  `does not load`, `stale`, or `ok` for a record that loads and is current or
+  cannot be compared.
 - A calculation keeps a copy of the record it was prepared for, and its runs
   read that copy (§ 3).

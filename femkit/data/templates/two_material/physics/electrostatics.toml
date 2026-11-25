@@ -1,0 +1,40 @@
+# One physics (models.md § 3): the electrostatic potential, stated on the groups it names —
+# never on a component. The face between the two layers is named, so it carries its condition:
+# `interface` states that the potential and the normal displacement are continuous across it.
+
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+schema = 1
+
+# the formulation family it states: one of `electrostatics` (see models.md § 4)
+formulation = "electrostatics"
+
+# what each dimension of the components it serves means for its formulation, keyed by the dimension (see models.md § 3)
+[meaning]
+# for electrostatics in 2-D: `per unit depth`, or `axisymmetric` about the axis the component's `[frame.symmetry]` names; in 3-D: `full`
+2 = "per unit depth"
+
+# the condition on each outer-boundary group, and on each interface group that carries one, keyed by the group
+[conditions]
+
+[conditions.left]
+# which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
+kind = "potential"
+# the potential the boundary is held at, in V
+value = "0 V"
+
+[conditions.right]
+# which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
+kind = "potential"
+# the potential the boundary is held at, in V
+value = "bias"
+
+[conditions.sides]
+# which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
+kind = "insulating"
+
+[conditions.middle]
+# which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
+kind = "interface"
+
+# each source by its name: its kind, the group it acts in or on, and the parameters its kind lists
+# [sources]

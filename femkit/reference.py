@@ -19,17 +19,19 @@ from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from femkit.config.settings import UserConfig
-from femkit.core import dirs, text, view
+from femkit.core import dirs, states, text, view
 from femkit.definitions.requests import CheckRequest, DocsRequest
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import atomic_write_text, inline_text, read_text
 from femkit.core.schema import (QUANTITIES, DefinitionError, Model, allowed, alternatives, classes, described,
                                 field_extras, items_of, keys_of, optional, values_of)
-from femkit.core.units import Units
 from femkit.definitions import catalogue
 from femkit.jobs.record import Record
-from femkit.models.schema import ModelFile, StudyFile
+from femkit.models.cases import Case
+from femkit.projects import layout as layouts
+from femkit.projects import location
+from femkit.projects.project import PROJECT_FILE
 from femkit import page
 from femkit.definitions.requests import DOCS_SUBJECT, SCHEMA_CHECK, SCHEMA_DOCS
 
@@ -41,12 +43,12 @@ def pages() -> dict[str, tuple[str, str, list[type[Model]]]]:
     parts = list(registry.part_schemas().values())
     return {
         "definitions": ("Shipped definitions", "`femkit/data/` (definitions.md)",
-                        [kind.metadata["model"] for kind in fields(catalogue.Catalogue)] + [page.Page]),
+                        [kind.metadata["model"] for kind in fields(catalogue.Catalogue) if kind.metadata["model"]]
+                        + [layouts.Layout, page.Page]),
         "config": ("User configuration", "`<config>/config.toml` (config.md § 3)", [UserConfig]),
         "machines": ("Machine records", "`<config>/machines/<name>.toml` (jobs.md § 9)", [Record]),
-        "models": ("Models and studies", "`<project>/model.toml` and `<project>/studies/<study>/study.toml` "
-                   "(models.md § 3, § 5)", [ModelFile, StudyFile]),
-        **({"parts": ("A project's parts", "each part of a project (projects.md §§ 2–4)", parts)} if parts else {}),
+        "cases": ("Cases", "`<project>/cases/<study>/<id>/case.json` (models.md § 5.3)", [Case]),
+        "parts": ("A project's parts", "each part of a project (projects.md §§ 2–4)", parts),
     }
 
 
@@ -83,17 +85,25 @@ def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
     except catalogue.CatalogueError as exc:
         return SchemaCheckResult(issues=[i for err in exc.errors for i in _issues(err)])
     from femkit import registry               # here: the registry imports this module
-    issues = _benchmark_issues(cat, ctx)
-    try:
-        page.load(registry.operations())
-    except DefinitionError as exc:
-        issues += _issues(exc)
-    if issues:
-        return SchemaCheckResult(issues=issues)
+    ops = registry.operations()
+    issues = _benchmark_issues(cat, ctx) + _template_issues(cat)
+    beside = [(lambda: catalogue.load_states({"operations": {n: op.request for n, op in ops.items()}})),
+              layouts.read, lambda: page.load(ops)]
+    for load in beside:   # what the catalogue's own rules cannot see: the operations, the layout, the page
+        try:
+            load()
+        except catalogue.CatalogueError as exc:
+            issues += [i for err in exc.errors for i in _issues(err)]
+        except DefinitionError as exc:
+            issues += _issues(exc)
+    issues += _machine_issues()
+    if issues:   # a file met twice — a table by its rules and bound, the layout by itself and by the page — said once
+        return SchemaCheckResult(issues=list({(i.subject, i.message): i for i in issues}.values()))
     loaded = [Loaded(type=kind.name, files=kind.metadata["files"],
                      names=list(part) if isinstance(part := getattr(cat, kind.name), dict) else [])
               for kind in fields(catalogue.Catalogue)]
-    return SchemaCheckResult(loaded=loaded + [Loaded(type="page", files=str(page.path().relative_to(catalogue.data_root())))])
+    return SchemaCheckResult(loaded=loaded + [Loaded(type=name, files=str(file().relative_to(catalogue.data_root())))
+                                              for name, file in (("layout", layouts.file), ("page", page.path))])
 
 
 def _issues(err: DefinitionError) -> list[Issue]:
@@ -101,41 +111,81 @@ def _issues(err: DefinitionError) -> list[Issue]:
     return [Issue(severity="error", code="definition-invalid", subject=err.file, message=line) for line in err.lines()]
 
 
-def _benchmark_issues(cat, ctx: Context) -> list[Issue]:
-    """Each benchmark's project loads, is complete for its formulation (`model check`), and
-    its reference names its study's observables, each in its observable's dimension
-    (models.md § 4). Here, above both layers, as the definitions may not import `models`."""
-    from femkit.core.errors import Refusal
-    from femkit.models import check as model_check
-    from femkit.models.project import load_model, read_study
-    units = Units(cat.units)
+def _machine_issues() -> list[Issue]:
+    """Each machine's table bound to what its domain's code gives it — the facts its conditions
+    name, the values its requests take, the states the code reads (core.md § 7) — so a table
+    lacking a state the code reads is refused here, before the code meets it. A binding whose
+    machine femkit ships no table of is not femkit's."""
     out: list[Issue] = []
+    for binding in states.bindings():
+        path = catalogue.state_file(binding.machine)
+        if path.is_file():
+            try:
+                states.load(path, binding)
+            except DefinitionError as exc:
+                out += _issues(exc)
+    return out
+
+
+def _template_issues(cat) -> list[Issue]:
+    """Each template is a project named bare — one step of the name rule — holding its project
+    file (projects.md § 7). Here, above both layers, as the definitions may not import `projects`;
+    each template's own check is `project check`'s."""
+    return [Issue(severity="error", code="definition-invalid", subject=str(folder),
+                  message=f"{folder}: a template is a project named by one step of the name rule, holding "
+                          f"{PROJECT_FILE}")
+            for name, folder in cat.templates.items()
+            if "/" in name or location.project_at(folder.parent, name) is None]
+
+
+def _benchmark_issues(cat, ctx: Context) -> list[Issue]:
+    """Each benchmark's project template passes `project check` where it can check without
+    building its geometry, its one study's steps state the benchmark's formulation, and its
+    reference names an observable of that study, in that observable's dimension (models.md § 4.3).
+    Here, above both layers, as the definitions may not import `models`."""
+    from femkit.models.physics import Physics
+    from femkit.models.study import KEY as STUDY_SCHEMA, cites
+    from femkit.projects import checking, door
+    from femkit.projects.project import Project
+    out: list[Issue] = []
+    try:
+        layouts.read()
+    except DefinitionError:
+        return out                    # no project opens until the layout loads; its own loading says why
     for fid, f in cat.formulations.items():
         for name, b in f.benchmarks.items():
-            where = catalogue.data_root() / "formulations" / b.project
             subject = f"formulations/{fid}.toml: benchmarks.{name}"
 
             def problem(message: str) -> None:
                 out.append(Issue(severity="error", code="benchmark-invalid", subject=subject,
                                  message=f"{subject}: {message}"))
             try:
-                model = load_model(where, ctx)
-                study = read_study(where / "study.toml", ctx, model)
-            except Refusal as exc:
-                problem(str(exc))
+                opened = door.open_project(Project(cat.templates[b.project].parent, b.project), ctx)
+            except DefinitionError as exc:
+                problem(exc.summary())
                 continue
-            if model.formulation != fid:
-                problem(f"its model names the formulation {model.formulation!r}")
-            for finding in model_check.findings(model, cat.formulations, units, where):
-                problem(finding.message)
+            c = checking.Checking.of(opened, ctx)
+            for finding in checking.findings(c):
+                if finding.severity == "error":
+                    problem(f"{finding.file}: {finding.key or '<file>'}: {finding.message}")
+            study_kind = opened.layout.kind_of(STUDY_SCHEMA)
+            studies = [p for p in opened.parts.values() if p.address.kind == study_kind and p.data is not None]
+            if len(studies) != 1:
+                problem(f"its project {b.project} holds {len(studies)} studies that load, not one")
+                continue
+            study = studies[0].data
+            for step in study.steps.values():
+                physics = cites(c, "physics", step.physics, type(step))
+                if physics is not None and isinstance(physics.data, Physics) and physics.data.formulation != fid:
+                    problem(f"its study's step solves {physics.data.formulation}, not {fid}")
+            units = {o: spec.unit for s in study.observables if (held := cites(c, "observables", s)) is not None
+                     for o, spec in held.data.observables.items()}
             for observable, value in b.reference.items():
-                spec = study.observables.get(observable)
-                if spec is None:
-                    problem(f"reference.{observable}: its study has no such observable")
-                elif spec.unit is not None and units.parse(value).dimension != units.parse(spec.unit).dimension:
-                    problem(f"reference.{observable}: {value!r} is not in the dimension of {spec.unit}")
+                if observable not in units:
+                    problem(f"reference.{observable}: its study reports no such observable")
+                elif c.units.parse(value).dimension != c.units.parse(units[observable]).dimension:
+                    problem(f"reference.{observable}: {value!r} is not in the dimension of {units[observable]}")
     return out
-
 
 
 # ------------------------------------------------------------------ rendering
@@ -203,7 +253,7 @@ def render_model(model: type[Model], seen: set) -> list[str]:
             names = target if isinstance(target, str) else ", ".join(f"its {k}s: {v}" for k, v in target.items())
             meaning += f". Refers by name to {_cell(names.replace('|', ' or '))}"
         if "quantity" in extra:
-            meaning += f". {QUANTITIES[extra['quantity']][1].capitalize()}"
+            meaning += f". {QUANTITIES[extra['quantity']].sentence.capitalize()}"
         if "placeholders" in extra:
             meaning += ". Placeholders: " + ", ".join("`{%s}`" % p for p in extra["placeholders"])
         lines.append(f"| `{field.alias or name}` | {_type_name(field.annotation)} | {_default(field)} | {meaning} |")  # the key as written

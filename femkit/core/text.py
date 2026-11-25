@@ -12,7 +12,7 @@ from typing import Any, Iterable, Sequence
 
 from femkit.core.commandline import word
 from femkit.core.issues import Issue
-from femkit.core.view import Action, Next, Report, Table, Text
+from femkit.core.view import Action, Code, Next, Report, Table, Text
 
 PAD = "    "
 MARK = {"error": "x", "warning": "!", "info": "-"}
@@ -68,10 +68,17 @@ def next_block(sentence: str, steps: Sequence[Action]) -> list[str]:
 
 
 def findings(issues: Iterable[Issue]) -> list[str]:
-    """Each finding on its line, indented and marked by severity, its next steps under it."""
+    """Each finding on its line, indented and marked by severity; under it, where the person
+    opens it — its file and key — and what would be right, then its next steps (api.md § 4.4)."""
     out = []
     for issue in issues:
         out.append(f"  {MARK[issue.severity]} {issue.message}")
+        if issue.file is not None:
+            out.append(f"  {PAD}{issue.file}" + (f": {issue.key}" if issue.key else ""))
+        if issue.right is not None:
+            out.append(f"  {PAD}right: {issue.right}")
+        if issue.choices:
+            out.append(f"  {PAD}one of: {', '.join(issue.choices)}")
         out += [f"  {line}" for line in commands(issue.next)]
     return out
 
@@ -82,7 +89,7 @@ def report(shown: Report, issues: Iterable[Issue] = ()) -> str:
     findings."""
     out: list[str] = []
     for block in shown.blocks:
-        if isinstance(block, Text):
+        if isinstance(block, (Text, Code)):
             out.append(block.text)
         elif isinstance(block, Table):
             cells = [[str(row.get(c.key, "")) if not isinstance(row.get(c.key), Action) else str(row[c.key])

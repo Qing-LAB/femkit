@@ -1,25 +1,19 @@
-"""The server state machine (web.md § 4), observed from its lock, its pidfile and the
-processes the pidfile names. Observing starts no process and sends nothing."""
+"""The server's state (web.md § 4): observed, never stored, by the rules
+`femkit/data/states/server.toml` declares over the facts gathered and named here — its lock, its
+pidfile and the processes the pidfile names. Observing starts no process and sends nothing."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
 
-from femkit.core import dirs, locks, view
+from femkit.core import dirs, locks, states, view
 from femkit.core.errors import Busy, Refused
-from femkit.core.states import Action, Machine, Rule
+from femkit.core.operations import Context
+from femkit.definitions import catalogue
 from femkit.server import protocol
 from femkit.server.protocol import Pidfile
-from femkit.server.requests import SERVE_RESTART, SERVE_START, SERVE_STATUS, SERVE_STOP
-
-
-class ServerState(str, Enum):
-    elsewhere = "elsewhere"
-    stopped = "stopped"
-    stale = "stale"
-    running = "running"
-    starting = "starting"
+from femkit.server.requests import SERVE_STATUS
 
 
 @dataclass(frozen=True)
@@ -44,36 +38,20 @@ def facts(name: str) -> ServerFacts:
                        pidfile_exists=path.exists(), pidfile=protocol.read_pidfile(path))
 
 
+BINDING = states.Binding("server", {
+    "another_host": lambda f: f.pidfile is not None and f.pidfile.host != f.here,
+    "locked": lambda f: f.locked,
+    "pidfile": lambda f: f.pidfile_exists,
+    "supervisor_alive": lambda f: f.supervisor_alive,
+}, values={  # how a request names the server: its port, or its socket — the one the name is
+    "port": lambda name: protocol.target(name).get("port"),
+    "socket": lambda name: protocol.target(name).get("socket"),
+}, reads=frozenset({"elsewhere", "stopped", "stale", "running", "starting"}))
 
 
-_start = Action("start", SERVE_START, protocol.target)
-_stop = Action("stop", SERVE_STOP, protocol.target)
-_restart = Action("restart", SERVE_RESTART, protocol.target)
-
-MACHINE: Machine[ServerFacts, ServerState] = Machine(
-    name="server",
-    states=ServerState,
-    rules=(
-        Rule("the pidfile was written on another host", ServerState.elsewhere,
-             lambda f: f.pidfile is not None and f.pidfile.host != f.here),
-        Rule("the lock is free, and no pidfile", ServerState.stopped,
-             lambda f: not f.locked and not f.pidfile_exists),
-        Rule("the lock is free, and a pidfile is left", ServerState.stale,
-             lambda f: not f.locked),
-        Rule("the lock is held, and the pidfile names its supervisor, alive", ServerState.running,
-             lambda f: f.supervisor_alive),
-        Rule("otherwise: the lock is held, and no pidfile names its holder yet", ServerState.starting),
-    ),
-    actions={
-        ServerState.elsewhere: {},
-        ServerState.stopped: {"start": _start, "stop": Action("nothing to do")},
-        ServerState.stale: {"start": Action("remove the stale files, start", SERVE_START, protocol.target),
-                            "stop": Action("remove the stale files", SERVE_STOP, protocol.target)},
-        ServerState.running: {"stop": _stop, "restart": _restart,
-                              "status": Action("look", SERVE_STATUS, protocol.target)},
-        ServerState.starting: {},
-    },
-)
+def machine(ctx: Context) -> states.Machine:
+    """The machine `femkit/data/states/server.toml` declares, bound to these facts (web.md § 4)."""
+    return catalogue.machine(ctx, BINDING)
 
 
 def label(name: str) -> str:
@@ -81,14 +59,15 @@ def label(name: str) -> str:
     return "the server on the socket" if name == protocol.SOCKET_NAME else f"the server on port {name}"
 
 
-def require(f: ServerFacts, state: ServerState, action: str) -> None:
+def require(ctx: Context, f: ServerFacts, state: Enum, action: str) -> None:
     """Refused, with what the state allows; `elsewhere` and `starting` name why."""
-    if state is ServerState.elsewhere and action not in MACHINE.allowed(state):
+    m = machine(ctx)
+    if state is m.states.elsewhere and action not in m.allowed(state):
         raise Refused(f"{label(f.name)} runs on {f.pidfile.host}, not here: act on it there", code="elsewhere",
                       subject=f.name)
-    if state is ServerState.starting and action not in MACHINE.allowed(state):
+    if state is m.states.starting and action not in m.allowed(state):
         holder = locks.holders().get(protocol.subject(f.name))   # as the kernel's lock table names it
         by = f"process {holder}" if holder is not None else "another command"
         raise Busy(f"{label(f.name)} is being started or stopped by {by}; look again in a moment",
                    (view.command(SERVE_STATUS, **protocol.target(f.name)),), code="starting", subject=f.name)
-    MACHINE.require(state, action, f.name, label(f.name))
+    m.require(state, action, f.name, label(f.name))

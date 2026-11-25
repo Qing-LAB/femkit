@@ -1,0 +1,12 @@
+# The property list (materials.md § 1): every material property femkit knows, named once, with
+# its unit, its form, and its name in each engine and each source. A formulation lists the names
+# it reads; a material holds its datasets under them; a translator writes the engine's name from
+# here. A property joins the list with the first formulation that reads it.
+
+[relative_permittivity]
+description = "the material's relative permittivity"
+unit = "1"
+values = "complex"
+shape = "scalar"
+depends_on = ["wavelength", "temperature"]
+names = { elmer = "Relative Permittivity" }

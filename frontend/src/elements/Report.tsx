@@ -13,6 +13,7 @@ export function Report({ result }: { result: { report?: ReportPart | null; issue
     <div className="report">
       {(result.report?.blocks ?? []).map((block, n) => (
         block.kind === "text" ? <p key={n} className="report__text">{block.text}</p>
+          : block.kind === "code" ? <pre key={n} className="report__code">{block.text}</pre>
           : block.kind === "table" ? <Table key={n} table={block} />
           : (
             <div key={n} className="report__next">

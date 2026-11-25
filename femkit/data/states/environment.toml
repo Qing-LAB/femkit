@@ -1,0 +1,83 @@
+# The states of an engine environment (envs.md § 3), observed from the facts
+# femkit/envs/state.py gathers and names: `locked`, another process holds its lock alone;
+# `prefix`, its prefix is there; `environment`, the prefix is a manager environment
+# (`conda-meta/`); `manifest`, its manifest reads; `built_as_now`, the manifest's install
+# fingerprint is the current one; `checked`, there are check results for the current check
+# fingerprint, for every check without device = true; `cpu_failed`, one of those did not pass.
+# The first rule that holds gives the state.
+
+[states]
+busy = "the lock is held"
+absent = "no prefix"
+incomplete = "no readable manifest, or the prefix is not a manager environment"
+outdated = "the manifest's install fingerprint is not the current one"
+unchecked = "no check results for the current check fingerprint, or none for some check without device = true"
+failing = "a check without device = true did not pass"
+ready = "otherwise: usable"
+
+[[rules]]
+state = "busy"
+when = "locked"
+
+[[rules]]
+state = "absent"
+when = "not prefix"
+
+[[rules]]
+state = "incomplete"
+when = "not manifest or not environment"
+
+[[rules]]
+state = "outdated"
+when = "not built_as_now"
+
+[[rules]]
+state = "unchecked"
+when = "not checked"
+
+[[rules]]
+state = "failing"
+when = "cpu_failed"
+
+[[rules]]
+state = "ready"
+when = "otherwise"
+
+# What each state allows (envs.md § 3.3), by the command a person types; any other is refused,
+# offering these. `install` never discards a working build on its own: in `failing` it is not
+# allowed.
+[actions.absent]
+install = { describe = "install", operation = "env.install", request = { names = ["{name}"] } }
+"install --clean" = { describe = "install", operation = "env.install", request = { names = ["{name}"] } }
+clean = { describe = "nothing to do" }
+
+[actions.busy]
+
+[actions.incomplete]
+install = { describe = "resume the install", operation = "env.install", request = { names = ["{name}"] } }
+"install --clean" = { describe = "remove, install, discarding the saved lock", operation = "env.install", request = { names = ["{name}"], clean = true } }
+clean = { describe = "remove", operation = "env.clean", request = { name = "{name}" } }
+
+[actions.outdated]
+install = { describe = "remove, install", operation = "env.install", request = { names = ["{name}"] } }
+"install --clean" = { describe = "remove, install, discarding the saved lock", operation = "env.install", request = { names = ["{name}"], clean = true } }
+clean = { describe = "remove", operation = "env.clean", request = { name = "{name}" } }
+
+[actions.unchecked]
+install = { describe = "validate", operation = "env.validate", request = { name = "{name}" } }
+"install --clean" = { describe = "remove, install, discarding the saved lock", operation = "env.install", request = { names = ["{name}"], clean = true } }
+validate = { describe = "validate", operation = "env.validate", request = { name = "{name}" } }
+clean = { describe = "remove", operation = "env.clean", request = { name = "{name}" } }
+
+[actions.failing]
+"install --clean" = { describe = "remove, install, discarding the saved lock", operation = "env.install", request = { names = ["{name}"], clean = true } }
+validate = { describe = "validate", operation = "env.validate", request = { name = "{name}" } }
+"validate --gpu" = { describe = "validate the GPU checks", operation = "env.validate", request = { name = "{name}", gpu = true } }
+clean = { describe = "remove", operation = "env.clean", request = { name = "{name}" } }
+
+[actions.ready]
+install = { describe = "nothing to do" }
+"install --clean" = { describe = "remove, install, discarding the saved lock", operation = "env.install", request = { names = ["{name}"], clean = true } }
+validate = { describe = "validate", operation = "env.validate", request = { name = "{name}" } }
+"validate --gpu" = { describe = "validate the GPU checks", operation = "env.validate", request = { name = "{name}", gpu = true } }
+clean = { describe = "remove", operation = "env.clean", request = { name = "{name}" } }

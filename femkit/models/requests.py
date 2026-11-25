@@ -3,54 +3,39 @@ that runs them, so a next step can name one without importing that code (web.md 
 
 from __future__ import annotations
 
-from femkit.core.view import Verb
+from pydantic import Field
 
 from femkit.core.commandline import ARGUMENT
-from femkit.core.schema import Model, matching
-from femkit.models.schema import NAME, STUDY
-from pathlib import Path
-from pydantic import Field
+from femkit.core.schema import Model
+from femkit.core.view import Verb
 
 
 class ProjectRequest(Model):
-    """Which project."""
+    """Which project (projects.md § 1): by its path from the projects root, or the one the
+    command runs in."""
 
-    project: Path = Field(Path("."), description="the project's folder, holding model.toml",
-                          json_schema_extra={"context": "project"})
-
-
-class StudyRequest(Model):
-    """Which study of which project."""
-
-    project: Path = Field(Path("."), description="the project's folder, holding model.toml",
-                          json_schema_extra={"context": "project"})
-    study: str = Field(description="the study's name, under studies/", json_schema_extra={"context": "study"})
+    project: str | None = Field(default=None, description="the project, by its path from the projects root; unset, "
+                                                          "the project the command runs in",
+                                json_schema_extra={"context": "project"})
 
 
 class GraphRequest(ProjectRequest):
-    """The model, and optionally one study, as a graph."""
+    """A project as a graph (models.md § 11.2)."""
 
-    study: str | None = Field(default=None, description="a study to show beside the model",
-                              json_schema_extra={"context": "study"})
-    mermaid: bool = Field(default=False, description="also as Mermaid text")
-
-
-class ProjectsRequest(Model):
-    """No inputs."""
+    mermaid: bool = Field(default=False, description="print the graph as Mermaid text instead of the tables, to "
+                                                    "paste into a document that draws Mermaid diagrams")
 
 
-class NewProjectRequest(Model):
-    """A new project, under the projects folder (web.md § 8.6)."""
+class StudyRequest(ProjectRequest):
+    """One study of a project."""
 
-    name: str = matching(NAME, description="its folder's name", json_schema_extra=ARGUMENT)
+    study: str = Field(description="the study, by its name", json_schema_extra={**ARGUMENT, "context": "study"})
 
 
 # ------------------------------------------------------------------ the operations these requests are for
 
-CASE_LIST = Verb("case.list", ProjectRequest)
-MODEL_CHECK = Verb("model.check", ProjectRequest)
-MODEL_GRAPH = Verb("model.graph", GraphRequest)
-PROJECT_LIST = Verb("project.list", ProjectsRequest)
-PROJECT_NEW = Verb("project.new", NewProjectRequest)
-STUDY_EXPAND = Verb("study.expand", StudyRequest)
+PROJECT_CHECK = Verb("project.check", ProjectRequest)
+PROJECT_GRAPH = Verb("project.graph", GraphRequest)
 STUDY_LIST = Verb("study.list", ProjectRequest)
+STUDY_EXPAND = Verb("study.expand", StudyRequest)
+CASE_LIST = Verb("case.list", ProjectRequest)

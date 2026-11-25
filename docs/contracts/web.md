@@ -32,7 +32,7 @@ Python, and the page is built with its Node.js; the control environment holds
 neither. The routes and `serve` are built in token mode, with the first page's
 operation, progress and documents views, and the page's framework in part
 (§ 6 says which parts); TLS, sign-in, `--no-auth`, uploads and the rest of
-§§ 6–12 are not built yet (plan § 4: D, G and M7's remainder), and these
+§§ 6–12 are not built yet (plan § 4: G and M7's remainder), and these
 rules hold when they are. A basic test checks that every registered operation
 can be expressed this way (its request and result models produce a JSON
 schema). The reasons for the page's form are
@@ -263,7 +263,7 @@ progress and the documents are built.
 |---|---|
 | `serve start` | plans the address, the files and the child's command; applying takes the server's lock, opens the listening socket, writes the access token (§ 5) and starts the supervisor detached, which inherits the lock and holds it for as long as it runs; returns once the child answers with that token, printing the address to open, with the token |
 | `serve status` | every server this account runs, each with two answers kept apart: is the process up (the pidfile's checks), and does it answer with this server's token (§ 5); the address with its token only for one named server (`--port`, `--socket`) |
-| `serve restart` | reads the configuration first, as a fresh child would, and refuses with its reason if it does not load — leaving the running server alone; refuses while the child holds an operation's lock (an install started from the page) unless `--force`, naming each; otherwise signals the supervisor (`SIGHUP`), which replaces its child with the same token |
+| `serve restart` | reads the configuration and the page's declaration (§ 8.1) first, as a fresh child would, and refuses with its reason if either does not load — leaving the running server alone; refuses while the child holds an operation's lock (an install started from the page) unless `--force`, naming each; otherwise signals the supervisor (`SIGHUP`), which replaces its child with the same token |
 | `serve stop` | refuses while the child holds an operation's lock unless `--force`, naming each; otherwise stops the supervisor (`SIGTERM`), which sends its child `SIGTERM`, ends its event streams, waits, then sends `SIGKILL`, and removes the pidfile, the socket and the token |
 | `serve foreground` | `start` without detaching: the same lock, checks and files, so `status`, `restart` and `stop` from another terminal act on it; the child's output goes to the terminal as well as the log; Ctrl-C stops them, and is a normal stop, exit 0 |
 
@@ -277,9 +277,12 @@ supervisor imports only the standard library and the core's file and process
 building blocks — never flask, the web package or another domain — so a change
 that breaks the application never breaks the supervisor: it says what its child
 printed, and ends cleanly (below). Everything `start` refuses — a server already
-running, a held address, an unsafe runtime folder, a configuration that does
-not load — it refuses before it detaches, with the listening socket already
-open: after that nothing reaches the terminal. Starting
+running, a held address, an unsafe runtime folder, a configuration, the
+project layout or a page declaration (§ 8.1) that does not load — it refuses before it detaches, with the listening socket already
+open: after that nothing reaches the terminal. The declaration names every
+domain's operations, so the registry hands the server its loading at
+femkit's start ([`api.md`](api.md) § 6), and the `server` domain imports
+nothing above it. Starting
 a detached, supervised process is a core building block
 ([`core.md`](core.md) § 8): the child is spawned
 from the supervisor's main thread, ends when its supervisor ends
@@ -343,8 +346,10 @@ folder above it is writable by others.
   accepts connections, so a slow or silent client can neither stall nor
   exhaust it. No debugger or code-reloading mode is ever served.
 
-The server is a state machine ([`framework.md`](framework.md) § 3), observed
-from its lock, its pidfile and the processes the pidfile names. **The lock is
+The server is a state machine ([`framework.md`](framework.md) § 3), declared as
+data in `femkit/data/states/server.toml` ([`core.md`](core.md) § 7) and observed
+from its lock, its pidfile and the processes the pidfile names, the facts
+`server/state.py` gathers. **The lock is
 the supervisor's liveness**: the subject `server-<host>-<name>`
 ([`core.md`](core.md) § 5), taken by `start` and `foreground` through the
 operation runner, and held by the supervisor from then on — the kernel releases
@@ -546,12 +551,13 @@ never as a document of its own.
 
 ## 6. The page's framework
 
-Built: the vocabulary (§ 7), the page declaration (§ 8.1), § 8.3's fragments
-and keys over today's one-file model, the kernel's client, action hook and
-page state, and the elements of § 9.2 but `Keys`, `Listing`, `Confirm` and
-`Busy`; none of it is wired into the page yet. Not built: the layout (§ 8.2;
-plan § 4, D), the missing elements, the views and the shell (plan § 4, G);
-the page as it stands is the first page they replace. The page is held to the
+Built: the vocabulary (§ 7), the page declaration (§ 8.1), the layout the
+server reads (§ 8.2), a node's text (§ 8.3), the kernel's client, action hook
+and page state, and the elements of § 9.2 but `Keys`, `Listing`, `Confirm`
+and `Busy`; none of it is wired into the page yet. Not built: a node's keys
+and their fragments (§ 8.3), the kinds' colours (§ 8.2), the missing
+elements, the views and the shell (plan § 4, G); the page as it stands is the
+first page they replace. The page is held to the
 web discipline of [`../process/conventions.md`](../process/conventions.md)
 § 2.1, and to one
 doctrine: **a view is a thin consumer of documents and elements; a missing
@@ -646,10 +652,15 @@ A field that names another object is a port of its node
 
 ### 7.4 Finding
 
-`Finding {severity, subject, label, message, next}` — `subject` the address,
-`label` what a person calls it, `message` a whole sentence, `next` its actions.
-**A fix never chooses among alternatives**: where more than one value would
-do, it leaves the value to fill, with its choices.
+`Finding {severity, subject, label, message, file, key, right, choices, next}`
+— `subject` the address, `label` what a person calls it, `message` a whole
+sentence, `file` and `key` where the person opens it in their editor, `right`
+the one value that would be right, `choices` the values that would, `next`
+its actions — operations that exist, never an edit of the person's file
+([`core.md`](core.md) § 10). **A fix never chooses among alternatives**: where
+more than one value would do, it shows the choices and leaves the value to
+the person. The server's findings carry `file`, `key`, `right` and `choices`;
+not built yet: the page showing them (plan § 4, G).
 
 ### 7.5 Table
 
@@ -659,8 +670,10 @@ value, or an `Action` — a row's own next step.
 ### 7.6 Report
 
 `Report {blocks}` — what a result shows a person, as data: each block a
-`Text` (one line a person reads), a `Table` (§ 7.5), or a `Next` (a heading and
-its actions). A result's findings follow its blocks. A result builds its
+`Text` (one line a person reads), a `Code` (text a person copies as it is, a
+diagram's source — the command line prints it untouched, with no tag, the page
+as a block of code), a `Table` (§ 7.5), or a `Next` (a heading and its
+actions). A result's findings follow its blocks. A result builds its
 report from its own fields and decides nothing ([`api.md`](api.md) § 2.3);
 the command line writes it as text, the page draws it — one renderer each, so
 a new operation's result shows on both with no code of its own on either.
@@ -685,16 +698,16 @@ a new operation's result shows on both with no code of its own on either.
   show.
 
 Adding a workspace is an entry here and one view (§ 9.3). Loading the
-declaration refuses an object type without its icon and a workspace whose
-operation does not exist.
+declaration refuses a part kind or object type of the layout without its icon,
+an icon of a kind the layout lacks, and a workspace whose operation does not
+exist.
 
 ### 8.2 Parts and object types, one layout
 
 Each part kind — its folder, its file, its schema — and each object type inside
 a part — its table, whether it is named, its place in the chain's order — is
 declared once, in the project layout ([`projects.md`](projects.md) § 4); the
-door, the graph, the checks and the page all read it. Not built
-yet (plan § 4, D). A kind's
+door, the graph, the checks and the page all read it. A kind's
 colour is the design token of its place in that order (§ 10.2), so no style
 names a kind.
 
@@ -711,9 +724,10 @@ The **templates** are femkit's project templates
 help as a comment. The page shows each template's parts to copy into a file of
 the person's, and `project new` copies one whole
 ([`models.md`](models.md) § 11.1); no value is asked for field by field
-([ADR 0015](../decisions/0015-the-persons-files.md)). Built over today's
-one-file model: the fragments and the keys; not built: the property list's
-part, and the templates (plan § 4, D).
+([ADR 0015](../decisions/0015-the-persons-files.md)). Built: the templates,
+and a node's text (`project graph`); the help of a key a declaration states
+(`declared`, [`core.md`](core.md) § 2). Not built: a node's keys and their
+fragments (plan § 4, G).
 
 ### 8.4 The way through
 

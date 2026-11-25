@@ -21,7 +21,7 @@ from femkit.core.persist import atomic_write_text, write_json
 from femkit.core.process import run
 from femkit.envs import layout
 from femkit.envs.manager import confined, resolve
-from femkit.envs.state import EnvState, observe
+from femkit.envs.state import machine, observe
 from femkit.definitions.requests import DOCS_SUBJECT
 from femkit.server.requests import BuildRequest
 from femkit.envs.requests import ENV_INSTALL
@@ -35,7 +35,7 @@ def ready(ctx: Context) -> Path:
     """The web environment's prefix; refused, offering its install, until it is `ready`: `web
     build` builds the page with it, and `serve` runs the server on it (web.md §§ 3–4)."""
     state = observe(ctx, TOOL)[1]
-    if state is not EnvState.ready:
+    if state is not machine(ctx).states.ready:
         raise Refused(f"the {TOOL} environment, which builds the page and runs the server, is {state.value}",
                       (view.command(ENV_INSTALL, names=[TOOL]),), code="environment-not-ready", subject=TOOL)
     return layout.prefix(ctx, TOOL)

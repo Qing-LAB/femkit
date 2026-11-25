@@ -1,0 +1,65 @@
+# The benchmark's observables (models.md § 5.2; docs/science/electrostatics.md § 9.1): the
+# potential at the middle of each layer and on the interface, and the energy in each layer.
+# Each point is an expression of the project's parameters, measured from the slab's lower-left
+# corner, so the reference values follow from the parameters wherever the interface lies.
+
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+schema = 1
+
+# the set's observables, by name, unique across the sets a study reports (see models.md § 5.2)
+[observables]
+
+# the potential halfway through the first layer
+[observables.potential_low]
+# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
+quantity = "potential"
+# where it is read, as a point: one length per axis of the component's frame, from its origin; or give `line` or `group` instead
+point = ["interface / 2", "height / 2"]
+# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
+reduction = "value"
+# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
+unit = "V"
+
+# the potential on the interface
+[observables.potential_middle]
+# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
+quantity = "potential"
+# where it is read, as a point: one length per axis of the component's frame, from its origin; or give `line` or `group` instead
+point = ["interface", "height / 2"]
+# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
+reduction = "value"
+# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
+unit = "V"
+
+# the potential halfway through the second layer
+[observables.potential_high]
+# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
+quantity = "potential"
+# where it is read, as a point: one length per axis of the component's frame, from its origin; or give `line` or `group` instead
+point = ["(interface + length) / 2", "height / 2"]
+# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
+reduction = "value"
+# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
+unit = "V"
+
+# the field's energy in the first layer, per metre of depth
+[observables.energy_low]
+# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
+quantity = "energy_density"
+# where it is read, as a group: one the paired component promises; or give `point` or `line` instead
+group = "low"
+# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
+reduction = "integral"
+# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
+unit = "J/m"
+
+# the field's energy in the second layer, per metre of depth
+[observables.energy_high]
+# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
+quantity = "energy_density"
+# where it is read, as a group: one the paired component promises; or give `point` or `line` instead
+group = "high"
+# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
+reduction = "integral"
+# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
+unit = "J/m"

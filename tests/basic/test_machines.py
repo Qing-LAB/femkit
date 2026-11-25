@@ -76,6 +76,20 @@ def test_only_a_record_of_this_machine_is_compared_with_its_config(identity):
     assert {r.name: r.status for r in run("job.machines").rows} == {"cluster-a": "ok", "local": "stale"}
 
 
+def test_a_stale_record_of_this_machine_offers_the_probe_that_writes_it_again_under_its_own_name():
+    """Fails if `job machines` offers, for a stale record of this machine, a probe that would write
+    another record than it: `local` is the probe's own default, any other name is given with
+    `--name` (jobs.md § 9.3)."""
+    apply("config.init", no_preamble=True, cuda_architectures=["80"], mpi=["mpirun", "-np", "{ranks}"])
+    here = record.settings_now(settings.load(Context.from_process(), fresh=True).config)
+    for name in ("local", "workstation"):                          # both this machine's, by its identity
+        record.write(record.path(name), a_record(identity="this-host", settings=here.model_dump(exclude_none=True)))
+    apply("config.set", key="activation.preamble", value='["module load y"]')
+    offered = {i.subject: [n.command for n in i.next] for i in run("job.machines").issues if i.code == "stale"}
+    assert offered == {"local": ["python -m femkit job probe --write"],
+                       "workstation": ["python -m femkit job probe --write --name workstation"]}
+
+
 @pytest.mark.parametrize("fields, refusal", [
     ({"write": True, "name": "local"}, (UsageError, "reserved-name", "local")),     # local is this machine's own record
     ({"write": True}, (Unstated, "setting-unset", "activation.preamble, activation.command")),  # the activation unset

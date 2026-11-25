@@ -25,8 +25,8 @@ engine, with the results reduced and compared.
 
 **Built**, with the basic test tier covering it:
 
-- the framework: operations, plan and apply, event logs, locks, state machines
-  declared in Python, the generic command line; every result a report the
+- the framework: operations, plan and apply, event logs, locks, every state
+  machine declared as data, the generic command line; every result a report the
   terminal writes and the page draws ([`../contracts/web.md`](../contracts/web.md)
   § 7.6); every refusal with its kind, code and subject
   ([`../contracts/core.md`](../contracts/core.md) § 9); exact quantities, the
@@ -36,25 +36,28 @@ engine, with the results reduced and compared.
   validated by their checks, the conda and mamba manager kinds (mamba 1.x and
   2.x), every manager command run in femkit's own places; the machine probe,
   its record, `doctor`, per-machine activation settings;
-- the projects framework ([`../contracts/projects.md`](../contracts/projects.md)
-  §§ 1, 3–6): a project found by its path or by the folder a command runs in,
-  the layout read as data, names and addresses, each part opened on its own,
-  part schemas registered by their owners — proven on a layout of the tests'
-  own: no layout is shipped, and no command uses it yet;
+- a project written by hand and checked before anything runs
+  ([`../contracts/projects.md`](../contracts/projects.md),
+  [`../contracts/models.md`](../contracts/models.md),
+  [`../contracts/geometry.md`](../contracts/geometry.md),
+  [`../contracts/materials.md`](../contracts/materials.md)): the shipped
+  layout; every part kind's schema and check — the project file and its
+  parameters, a component's contract and its assignment, materials with fixed
+  values, physics, mesh recipes, observable sets, studies; one set of
+  templates, `laplace_square` and `two_material`, each passing `project check`
+  and its comments held to the schemas' help; `project new --from`, `project
+  list|check|graph`, `study list|expand`, `case list`; cases named by their
+  content;
 - the web server: `serve`, its supervisor and rotated log, the routes in token
   mode; the first page — Operations, progress and the documents — and, not yet
   wired in, part of the page's kernel and elements;
-- the first design of `femkit/models/`, frozen: one `model.toml` per project,
-  `model check`, `model graph`, `study expand`, `study list`, `case list`,
-  `project list`, `project new`. D replaces it.
 
 **Proven** on a workstation: a clean `env bootstrap` with conda, and again with
 mamba 2.9.0, builds and validates `elmer` (seven checks) and `ngsolve` (six),
 writes the machine record, and `doctor` reports the machine ready. The person's
 cluster runs are open (M1, M7.1).
 
-**Not built**: the shipped layout, the part schemas and the project templates;
-materials; running anything from a run folder — geometry, mesh, jobs;
+**Not built**: materials beyond fixed values; running anything from a run folder — geometry, mesh, jobs;
 the match against an environment's abilities; translators; results; the
 rebuilt page; sign-in, TLS and uploads.
 
@@ -66,11 +69,11 @@ chain behind it is [`../contracts/models.md`](../contracts/models.md) § 1.
 | # | the person | femkit | built by |
 |---|---|---|---|
 | 1 | `bash scripts/install-env.sh bootstrap` | builds and proves the control, `elmer` and `ngsolve` environments, writes the machine record; `doctor` says ready | built; the cluster runs, M1 |
-| 2 | `config set paths.projects '"/data/projects"'` | sets the projects root | built; `config init` asking for it, D; making the root and seeding its `materials/`, E |
-| 3 | `project new bowtie --from laplace_square`, a template, or `--from` a project of theirs | copies it whole, never over an existing project | D |
-| 4 | writes each part in their own editor | each key of a template carries its help as its schema states it | D (materials with fixed values); E (tables, the global library, refractiveindex.info files) |
-| 5 | `project check` | each finding names the file, the key, what is wrong and what would be right; the first finding is the next step; what needs the built geometry is "not checked yet" | D; the same in the page, read-only, with templates to copy, G |
-| 6 | `study expand`, `case list` | one case per axis point; refused while findings stand | D |
+| 2 | `config set paths.projects '"/data/projects"'` | sets the projects root | built, and `config init` asks for it; seeding its `materials/`, E |
+| 3 | `project new bowtie --from laplace_square`, a template, or `--from` a project of theirs | copies it whole, never over an existing project | built |
+| 4 | writes each part in their own editor | each key of a template carries its help as its schema states it | built (materials with fixed values); E (tables, the global library, refractiveindex.info files) |
+| 5 | `project check` | each finding names the file, the key, what is wrong and what would be right; the first finding is the next step; what needs the built geometry is "not checked yet" | built; the same in the page, read-only, with templates to copy, G |
+| 6 | `study expand`, `case list` | one case per axis point; refused while findings stand | built |
 | 7 | — | runs the geometry script in a run folder in the `gmsh` environment, checks the promised groups, meshes with the recipe, checks each group's kind and coverage | X |
 | 8 | `study match --environment elmer` | each element exact, approximated or unsupported, proven or not; the person answers open lines in the study | M5 |
 | 9 | `formulation verify`, `--record` | runs the benchmark jobs; records the proofs | M6 (electrostatics), M9 (Maxwell) |
@@ -119,18 +122,18 @@ one line each:
 into D and E; the page's display and use (F, H) into G — are the reviewer's
 proposal, awaiting the person's agreement.*
 
-The current work is the framework a project is written on: D.
+A project is written and checked; next, E, X, M5 and G can each start, X
+first on the bowtie's path.
 Each later step is detailed when it starts; until then it carries its purpose,
 what it needs, its acceptance, and the open items no contract holds — among
 them findings that its start settles. Every step ends as § 3 says.
 
 ```mermaid
 flowchart LR
-    D["D · a project written by hand,<br/>checked before anything runs"]
-    D --> E["E · materials"]
-    D --> X["X · execution"]
-    D --> M5["M5 · matching"]
-    D --> G["G · the page, read-only"]
+    E["E · materials"]
+    X["X · execution"]
+    M5["M5 · matching"]
+    G["G · the page, read-only"]
     X --> M4["M4 · SLURM"]
     M2["M2 · the scheduler<br/>read for real"] --> M4
     X --> M6["M6 · electrostatics<br/>through the chain"]
@@ -144,167 +147,10 @@ flowchart LR
     B --> R7["M7's remainder:<br/>sign-in, TLS, uploads"]
 ```
 
-### D — A project written by hand, checked before anything runs
-
-**Purpose.** The person writes a whole project in their own editor, starting
-from a template, and femkit says exactly what is wrong — the
-file, the key, what would be right — before anything runs.
-
-**First, the contracts.** D's code would otherwise guess at these; each is
-proposed in its contract at D's start and agreed before code
-([`../process/conventions.md`](../process/conventions.md) § 1):
-
-1. **A mesh recipe's fields**, with an example (`geometry.md` § 6), so an axis
-   such as `mesh:coarse:size` names a real key.
-2. **An observable set's file**, with an example (`models.md` § 5.2), and
-   which origin a point is measured from when one set serves several
-   components.
-3. **A geometry's dimension**, a field of the component's contract: the kinds
-   (`geometry.md` § 7) and a physics' `meaning` (`models.md` § 3) depend on it.
-   One physics then serves a 3-D and a 2-D component.
-4. **Crossing axes of different classes**: a study-level `[crossing]` table
-   naming the axes and the reason, in place of `axes.reason` inside a table
-   keyed by address (`models.md` § 5.1).
-5. **Named steps** (§ 6): a later step takes an earlier one's result by its
-   name, and a step runs after the steps it takes from — the file's order
-   means nothing; the positional `steps.1.…` and "in order" leave `models.md`
-   §§ 4.5 and 5.1. Running a step's `takes` stays M9's and after.
-6. **The script's hand-over**: femkit gives the script its inputs as one JSON
-   file and names the file the script writes; `outputs.geometry` goes
-   (`geometry.md` §§ 2–3). D writes the scripts; X runs them.
-7. **Bare numbers only in the component**: the `coordinate` quantity
-   (`core.md` § 2) and the case's "a bare number times the frame's unit"
-   (`models.md` § 5.3) follow `models.md` § 3, where a coordinate outside the
-   script carries its unit.
-8. **One vocabulary of places** — body, outer boundary, interface, embedded,
-   edge, point — declared in `femkit/data/geometry/kinds.toml`
-   (`geometry.md` § 7) and read by a formulation's `on` (`models.md` § 4.3) and
-   a field's `ref` (`core.md` § 2), in place of `boundary` and
-   `group:boundary|group:interface`.
-9. **Which package declares each command**: `project new` and `project list`
-   in `projects`; `project check` and `project graph` in `models`, since the
-   one door cannot import the checks above it; `study list` added to
-   `models.md` § 11.1 (the page's study chooser, `web.md` § 8.6).
-10. **A finding's fix**: an `Issue` gains the file and the key it is about,
-    read through the door, and the right value or the allowed values;
-    `next` holds only operations that exist (`core.md` § 10, `web.md` § 7.4).
-11. **Materials before E**: the property list's first entries, since only the
-    list names a property (`framework.md` § 1, rule 4); a project's own
-    materials with fixed values (`materials.md` § 3); the Laplace template
-    names its project's own `vacuum`, not `GLOBAL/vacuum` (`models.md` § 3).
-12. **A study's `environments` block** holds `resources` only in D; decisions,
-    engine-only options, customizations and truncations join it with the steps
-    that read them.
-13. **The templates as benchmarks and test data**: the two-material slab's
-    interface position is a parameter, so the protected test
-    (`tests/basic/test_benchmarks.py`) computes its reference from the
-    template; a formulation's benchmark names a template (`models.md` § 2);
-    the tests start their projects from the templates.
-14. **The projects root**: `config init` asks for it (`config.md` § 3.2);
-    what makes the root before E seeds its library.
-15. **A template's comments held to the help**: which comment counts as a
-    key's help, how the test compares it with the schema's, and how a key a
-    template leaves unset is shown (`projects.md` § 7).
-16. **What `project new --from` copies**: only what the layout marks as
-    moving with the project — never `.femkit/`, cases, runs or results — and
-    which names are refused: one under `materials/`, in a dot-folder, or
-    inside another project (`projects.md` §§ 1, 7).
-17. **`schema = 1` in a part's file**: whether a part states it, and what a
-    different number is — a finding saying what changed, since femkit never
-    rewrites the person's file (models.md § 2, geometry.md § 3,
-    materials.md § 3).
-18. **The script's name, once**: the tree fixes `components/<c>/geometry.py`,
-    so `component.toml`'s `script` key goes; a component's input files are
-    relative to its folder, formed by the door (`geometry.md` §§ 3, 9).
-19. **A folder part's other files through the door**: how the script, its
-    declared inputs and a material's tables are read — the case's digest of
-    the script and the page's view of it need them (`projects.md` § 6).
-20. **The material library in the layout**: which part kinds have a library,
-    read by `location.py` and the address grammar, so `GLOBAL/` is a
-    material's prefix alone; what `project check` says of a material name the
-    project lacks (`projects.md` §§ 4, 5; `materials.md` § 4).
-
-**Scope.**
-
-- **States as data**, at D's start: a state machine declared as data
-  (`core.md` § 7, `femkit/data/states/`), a part's states (`projects.md` § 8)
-  its first machine; then the environment's, the server's, the machine
-  record's and the control environment's machines moved onto it.
-- **The shipped layout**, `femkit/data/project/layout.toml`, with its object
-  types (`projects.md` § 4), and each part kind's schema, registered when
-  femkit starts: the project file and its parameters; a component's contract
-  and its assignment; a physics; a mesh recipe; an observable set; a study —
-  steps by name, axes by address, the crossing reason, resources — and
-  `case.json`. The analysis's schema is designed with M9.
-- **The templates**, written by hand in `femkit/data/templates/`, one folder
-  each: `laplace_square` and `two_material`, each a whole, working project —
-  its geometry a real script with its contract — the comment above each key
-  its help as its schema states it. They replace the benchmark beside its
-  formulation and the tests' Laplace data. The settings file's template beside
-  them follows the same rule: each configuration key's help, its question,
-  what its absence blocks and its default are declared on `UserConfig`, the
-  template's comments are held equal to them, and `config init`'s questions
-  are derived from them, starting from today's gaps: `paths.projects`
-  missing, `"mamba activate"` missing from the `command` examples, and the
-  activation help written in four places.
-- **Commands**: `project new NAME --from SOURCE`, `project list|check|graph`,
-  `study list|expand`, `case list`. `project check` applies every rule of each part and each
-  study's pairing from the contracts — a group a physics needs that the
-  component does not promise is a finding on the study — says "not checked
-  yet" of what needs the built geometry, and orders its findings by the chain.
-  `case list` shows a study that does not expand, and why.
-- **The page**, until G: it shows a project read-only (§ 6).
-- **The old models retired** in the same change that registers the new
-  commands, since the registry refuses two operations of one name:
-  `femkit/models/`'s first design, `model.*`, its shape kinds and the old
-  Laplace test data go; the protected `two_material` science test is carried
-  over in that change; the models domain's tests, which tell refusals apart by
-  their wording and import another test file, go with the old code. In the
-  same change the page's declaration (`femkit/data/web/page.toml`,
-  `femkit/page.py`) is written against the new commands and the layout — it
-  names `model.graph` and takes its kinds from the old models today — and
-  `serve start` loads the declaration before it detaches; every result builds
-  its `report()`, the text-only path and the page's field-by-field `Value`
-  going with the old results.
-
-**Carried**, what the frozen models and the reviews of B and C taught: axes —
-numerics included — checked against their schema at load; one walk over
-references — fields, keys by address, parameters in expressions — giving
-parsed targets; one resolution of parameters; the study checked by `project
-check`; the graph document over parts, its closed values typed; every refusal
-names its code and subject, the default code going (`core.md` § 9); no schema
-fragment built by hand; what cannot be checked yet said so; each definition
-loader building its folder from the one table of definition types — the
-layout, the templates and the page's declaration among them.
-
-**Acceptance.**
-
-- each template passes `project check`, in a test, and so does a project
-  `project new` copies from it;
-- the comment above each key of every template, the settings file's included,
-  is that key's help as its schema states it, in a test;
-- a broken part is a finding naming its file, its key and what would be right,
-  and every other part is still read;
-- `study expand` writes the Laplace study's cases and refuses a study with
-  findings; `case list` shows a study that does not expand;
-- "500 nm" and "0.5 µm" give one case ID;
-- the protected test computes the two-material reference from the template's
-  own parameters;
-- each part's state is observed from rules declared as data.
-
-**Needs** the person's agreement to items 1–20. **In parallel**, each on its own files: projects (the layout,
-object types, `project new|list`) | geometry (the contract's, the recipe's and
-the kinds' schemas, `kinds.toml`) | materials (the property list's first
-entries, fixed-value materials) | models (physics, observables, study,
-`case.json`, check, graph, expand, the lists) | core (states as data; the
-`Issue`'s file, key and right value) | the settings template. Then on the
-main line: the project templates, `project new` from them, and the
-retirement.
-
 ### E — Materials
 
 **Purpose.** Real material data, with where it came from, reaches a case.
-**Needs** D; a YAML reader for the importer, an environment change, the
+**Needs** a YAML reader for the importer, an environment change, the
 person's.
 
 **Builds** what [`../contracts/materials.md`](../contracts/materials.md) marks
@@ -327,7 +173,7 @@ expansion, the old ones kept and flagged by `case list`.
 
 **Purpose.** Everything femkit runs, it runs from a run folder through a run
 script it writes, inside the step's environment, watched, its outputs in its
-folder (§ 6). **Needs** D; the mesh step's environment, proposed `gmsh`, the
+folder (§ 6). **Needs** the mesh step's environment, proposed `gmsh`, the
 person's.
 
 **Builds** what [`../contracts/jobs.md`](../contracts/jobs.md) §§ 1–6 and
@@ -369,7 +215,6 @@ before M6's translators.
 ### M5 — Matching
 
 **Purpose.** A case matched against an environment, every limitation shown.
-**Needs** D.
 
 **Builds** [`../contracts/models.md`](../contracts/models.md) §§ 6.1–6.3 and
 7 for `electrostatics` in `elmer` and `ngsolve` — abilities, extension points
@@ -389,7 +234,7 @@ reach — `exact`, `approximated`, `unsupported`, `engine-only` — and for
 
 **Purpose.** The person sees their project's structure, each part's text with
 the help of every key, its findings and the templates to copy, by mouse or
-keyboard; the page changes no file they wrote. **Needs** D; a layout library
+keyboard; the page changes no file they wrote. **Needs** a layout library
 for the diagram (dagre or ELK), a new dependency, the person's. Runs beside X,
 off the bowtie's path.
 
@@ -616,8 +461,7 @@ the page can act as the person.
 
 ## 5. Questions for the person
 
-None is open for D beyond agreeing to its items 1–20. Each later step's questions are asked when it
-starts.
+None is open. Each step's questions are asked when it starts.
 
 ## 6. Decisions not yet in a contract
 
@@ -625,12 +469,6 @@ The register of decisions in force is [`../design.md`](../design.md)'s
 settled choices, each line naming the ADR or contract that states it. These
 are the person's, and are not yet written where they belong:
 
-- **A study's steps are named**; a later step takes an earlier one's result by
-  its name — `models.md` §§ 4.5 and 5.1, in D.
-- **In D, a project's own materials with fixed values are read**, so the
-  templates are checked and expanded before E — `materials.md`'s status and
-  § 3, in D.
-- **The page shows a project read-only until G** — `web.md` § 6, in D.
 - **Everything runs from a run folder**, through a run script femkit writes,
   inside the step's environment, watched, its outputs in its folder —
   `jobs.md` and `geometry.md` § 4, in X.
@@ -639,6 +477,16 @@ are the person's, and are not yet written where they belong:
 
 Each makes a likely future change touch generic code; each is fixed when the
 step that first needs it starts, or sooner if cheap.
+
+- **`schema docs` renders a state machine's table schema**, not each machine
+  (`core.md` § 7), so a machine's declaration and its contract can drift.
+- **A formulation names its properties itself** (`materials.md` § 1): its
+  property specs repeat the property list's unit instead of naming the
+  list's entries — first needed by E.
+- **Nothing checks a schema's place names against `kinds.toml`**
+  (`geometry.md` § 7).
+- **A study's expansion is no declared state machine** (`framework.md` § 3) —
+  first needed by X, whose runs a case feeds.
 
 - **The GPU stack is CUDA by name**: the `[cuda]` part and `<name>-cuda`
   environments (ADR 0005), the `nvidia-smi` query, the CUDA architecture
@@ -662,9 +510,6 @@ step that first needs it starts, or sooner if cheap.
   before M7's remainder.
 - **A run copies its inputs** (`jobs.md` § 1), so a large mesh is kept in
   `final/` and again in every run — first met by X.
-- **The control environment caps tomlkit below 1** (`control.txt`) for a
-  rename femkit no longer makes; lifting the cap changes the control
-  environment, the person's decision.
 - **`doctor` prints the preamble's two commands under both the configuration
   and the record row**: said once, with X's machine facts.
 - **Two rules no test reaches through femkit's own doors**: `web build`

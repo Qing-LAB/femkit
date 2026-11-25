@@ -210,9 +210,9 @@ def job_machines(req: MachinesRequest, ctx: Context) -> MachinesResult:
         mine = name == LOCAL or (local is not None and isinstance(r.identity, str) and r.identity == local.identity)  # two unknowns name no machine
         drift = record.stale(r, config) if mine else []
         if drift:
+            m = record.machine(ctx)
             issues.append(Issue(severity="warning", code="stale", subject=name, message="; ".join(drift),
-                                next=(view.command(JOB_PROBE, write=True,
-                                                   **({} if name == LOCAL else {"name": name})),)))
+                                next=m.next(m.states.stale, name)))
         groups = sum(len(p.node_groups) for p in r.partitions.values()) if isinstance(r.partitions, dict) else 0
         queues = len(r.queues) if isinstance(r.queues, list) else 0
         rows.append(MachineRow(name=name, path=str(file), status="stale" if drift else "ok",

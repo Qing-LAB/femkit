@@ -110,6 +110,11 @@ flowchart LR
 
 ## 3. Engine environment state machine
 
+The machine is data, `femkit/data/states/environment.toml` ([`core.md`](core.md)
+§ 7): its states, the rules below as conditions over the facts
+`envs/state.py` gathers and names, and the action table of § 3.3. The tables
+here say what it holds.
+
 ### 3.1 Facts
 
 All are read from disk; observing starts no process, needs no network and no
@@ -703,6 +708,13 @@ or `CONDA_EXE` the manager's own activation set. Python never searches.
 
 ### 7.2 Control state — observed by the script
 
+The machine is data, `femkit/data/states/control.toml` ([`core.md`](core.md)
+§ 7), which `doctor` observes it by, from the facts `jobs/setup.py` gathers.
+The script runs before femkit can, so it holds the same rules in bash
+(`control_state`); a basic test stands the control prefix in every way its
+facts can combine and holds the script's state, and the next step its refusal
+names, to the table's.
+
 | # | when | state |
 |---|---|---|
 | 1 | no control prefix | `absent` |
@@ -789,7 +801,7 @@ flowchart TD
     cli --> ops["envs/operations.py<br/>list, install, validate, clean, log"]
     cli --> setup["jobs/setup.py<br/>doctor, bootstrap"]
     setup --> ops
-    ops --> state["envs/state.py<br/>facts, MACHINE, observe"]
+    ops --> state["envs/state.py<br/>facts, BINDING, observe"]
     ops --> inst["envs/install.py<br/>plan_steps, STEP_KINDS, run_step"]
     state --> fp["envs/fingerprints.py"]
     state --> rec["envs/records.py<br/>Manifest, ChecksRecord"]

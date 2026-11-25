@@ -6,13 +6,15 @@ import copy
 import json
 import hashlib
 import os
+import re
 import shutil
 import stat
 import tarfile
 import tempfile
 import tomllib
-from pathlib import Path
-from typing import IO, Any, Callable
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from typing import IO, Any, Callable, Iterable
 
 import tomlkit
 
@@ -117,16 +119,26 @@ def empty_folder(path: Path) -> Path:
     return Path(path)
 
 
-def copy_tree(source: Path, path: Path) -> Path:
+def copy_tree(source: Path, path: Path, only: Iterable[str] | None = None) -> Path:
     """A copy of the folder ``source`` at ``path``, which is not there yet: copied beside it and
-    renamed in, whole — an interrupted copy leaves nothing at ``path`` (core.md § 4)."""
+    renamed in, whole — an interrupted copy leaves nothing at ``path`` (core.md § 4). ``only``:
+    just these files, each by its POSIX path from ``source``, in the folders that hold them."""
     path = Path(path)
     if path.exists() or path.is_symlink():
         raise FileExistsError(f"{path} is there already")
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".{path.name}.", dir=path.parent) as scratch:
         fresh = Path(scratch) / path.name
-        shutil.copytree(source, fresh)
+        if only is None:
+            shutil.copytree(source, fresh)
+        else:
+            fresh.mkdir()
+            for rel in only:
+                steps = PurePosixPath(rel).parts
+                if PurePosixPath(rel).is_absolute() or ".." in steps or not steps:
+                    raise ValueError(f"{rel!r} is no path inside {source}")
+                (fresh.joinpath(*steps[:-1])).mkdir(parents=True, exist_ok=True)
+                shutil.copy2(Path(source).joinpath(*steps), fresh.joinpath(*steps))
         os.rename(fresh, path)
     return path
 
@@ -244,7 +256,8 @@ def open_private(path: Path, mode: str) -> IO:
 #
 # `config.toml` keeps its comments, its order and its layout through every edit `config set`
 # makes: read as a document, changed key by key, written whole and atomically. A project's
-# files are only read so: a part's text as its file holds it (projects.md § 6).
+# files are only read so: a part's text as its file holds it (projects.md § 6). A template's
+# keys are read with the comments above them, their help (projects.md § 7).
 
 Key = tuple[str, ...]
 
@@ -295,13 +308,31 @@ def document_has(doc: Any, key: Key) -> bool:
 def document_set(doc: Any, key: Key, value: Any) -> None:
     """``key`` set to ``value``, every table on the way made when absent. A table set over a
     table already there is changed in place, key by key — a key the value leaves out removed —
-    so its form, its order and its comments stay (config.md § 3.2)."""
+    so its form, its order and its comments stay; a key not there yet goes directly under the
+    line that shows it commented out, so it stands under its help (config.md § 3.2)."""
     parent = _parent(doc, key, create=True)
     held = parent.get(key[-1]) if hasattr(parent, "get") else None
     if isinstance(value, dict) and isinstance(held, (tomlkit.items.Table, tomlkit.items.InlineTable)):
         _merge(held, value)
+    elif held is None and (at := _shown_at(parent, key[-1])) is not None:
+        _body(parent)._insert_at(at + 1, key[-1], value)   # tomlkit's own insertion: its index kept whole
     else:
         parent[key[-1]] = value
+
+
+def _body(table: Any) -> Any:
+    return table if isinstance(table, tomlkit.TOMLDocument) else table.value
+
+
+def _shown_at(table: Any, name: str) -> int | None:
+    """Where in ``table`` the last comment line showing the key ``name`` stands, when a line
+    follows it; None otherwise, where an appended key lands as well."""
+    if not isinstance(table, (tomlkit.TOMLDocument, tomlkit.items.Table)):
+        return None
+    body = _body(table).body
+    shows = [i for i, (k, item) in enumerate(body) if k is None and isinstance(item, tomlkit.items.Comment)
+             and [(c.path, c.header) for c in key_comments(item.as_string())] == [((name,), False)]]
+    return shows[-1] if shows and shows[-1] < len(body) - 1 else None
 
 
 def _merge(table: Any, value: dict) -> None:
@@ -312,6 +343,87 @@ def _merge(table: Any, value: dict) -> None:
             _merge(table[k], v)
         elif k not in table or table[k] != v:
             table[k] = v
+
+
+@dataclass(frozen=True)
+class KeyComment:
+    """A key or table header a TOML text writes, or shows commented out, and the comment lines
+    directly above it (projects.md § 7)."""
+
+    path: Key        # its keys from the text's root, as TOML reads them: `("numerics", "solver", "kind")`
+    line: int        # its line, from 1
+    header: bool     # a table header, `[numerics.solver]`, rather than a key
+    shown: bool      # commented out: a key the text leaves unset, shown under its help
+    value: Any       # what it sets or shows, as TOML reads it; None for a header
+    comment: str     # the comment lines directly above it that are no key, read without their `#`
+                     # and joined by single spaces; "" when there are none
+
+
+BARE = re.compile(r"[A-Za-z0-9_-]+")   # a key TOML writes bare; any other it quotes (core.md § 2)
+_PART = rf'{BARE.pattern}|"(?:[^"\\\n]|\\.)*"|\'[^\'\n]*\''
+_WRITES = re.compile(rf'\s*(\[\[?)?\s*((?:{_PART})(?:\s*\.\s*(?:{_PART}))*)\s*(?:\]\]?|=)')
+
+
+def key_comments(text: str) -> list[KeyComment]:
+    """Every key and table header ``text`` writes or shows commented out, in order, each with
+    the comment above it — the one reader of a template's help (projects.md § 7). The comment
+    lines directly above a key, with no blank line between, are its help; a comment line that
+    reads as a TOML key or table header is itself a key, shown — on one line — under its help;
+    a comment followed by a blank line is the text's prose. A shown header heads the shown keys
+    after it, until a key is set; a key's path is the table it stands in and its own keys."""
+    lines = text.splitlines()
+    found: list[KeyComment] = []
+    table: Key = ()
+    shown_table: Key = ()
+    above: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        start, i = i, i + 1
+        if not line:
+            above = []
+            continue
+        shown = line.startswith("#")
+        if shown:
+            written = _written(line[1:].strip())
+        else:                                   # a statement: the fewest lines that read as TOML
+            end = next((j for j in range(i, len(lines) + 1) if _written("\n".join(lines[start:j]))), i)
+            written, i = _written("\n".join(lines[start:end])), end
+        if written is None:
+            above = above + [line[1:].strip()] if shown else []
+            continue
+        keys, header, value = written
+        path = keys if header else (shown_table if shown else table) + keys
+        if header:
+            shown_table = path
+            table = table if shown else path
+        elif not shown:
+            shown_table = table
+        found.append(KeyComment(path=path, line=start + 1, header=header, shown=shown, value=value,
+                                comment=" ".join(a for a in above if a)))
+        above = []
+    return found
+
+
+def _written(statement: str) -> tuple[Key, bool, Any] | None:
+    """The keys ``statement`` writes, whether it is a table header, and its value; None when
+    it is no TOML key or header."""
+    try:
+        data = tomllib.loads(statement)
+    except tomllib.TOMLDecodeError:
+        return None
+    match = _WRITES.match(statement)
+    if not data or not match:
+        return None
+    keys: Any = tomllib.loads(f"{match.group(2)} = 0")     # its keys as TOML reads them, quotes undone
+    path: list[str] = []
+    while isinstance(keys, dict):
+        (key, keys), = keys.items()
+        path.append(key)
+    value: Any = None if match.group(1) else data
+    for key in path if not match.group(1) else ():
+        value = value[key]
+    return tuple(path), bool(match.group(1)), value
 
 
 def document_text(doc: Any, key: Key) -> str:

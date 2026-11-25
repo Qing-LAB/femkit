@@ -1,21 +1,20 @@
 # Models — one calculation, described once, solved in a chosen environment
 
 **Role:** contract
-**Status:** current; nothing of the project structure this contract states —
-parameters in the project file; components, physics, mesh recipes, observable
-sets, studies and analyses as parts of their own; materials and geometry under
-their own contracts — is built yet (plan § 4, D and E; the analysis part,
-M9); running steps is plan § 4, X; the rest is
-[`../plans/plan.md`](../plans/plan.md) § 4, M5, M6, M8, M9.
-**Today** `femkit/models/` holds an earlier design, frozen until step D
-replaces it whole (plan § 4, D): one `model.toml` and `studies/<s>/study.toml` per
-project, with the units ([`core.md`](core.md) § 11), the formulation type with
-`electrostatics` and its first benchmark, `model check`, `model graph`,
-`study expand`/`list`,
-`case list` and case IDs, `project list` and `project new`, and the mesher
-definition type (`definitions/meshers.py`). Its fields are documented by
-[`../reference/models.md`](../reference/models.md); where its code cites a
-section here, the section states the design that replaces it
+**Status:** current. Built in `femkit/models/`: the part kinds
+this contract owns — the project file and its parameters, physics, observable
+sets and studies — each with its schema and its check, registered at femkit's
+start; each study's pairing read from the contracts (§§ 3, 5); axes by
+address and their crossing; named steps and what one takes from another
+(§ 4.5); `case.json`, its exact form and its ID, `study expand` (§ 5.3);
+`project check`, `project graph`, `study list`, `case list` (§ 11); the
+formulation type with `electrostatics` and its benchmark, the template
+`two_material` (§ 4.3); the units ([`core.md`](core.md) § 11); the mesher
+definition type (`definitions/meshers.py`). Their fields are documented by
+[`../reference/parts.md`](../reference/parts.md) and
+[`../reference/cases.md`](../reference/cases.md). Not built: analyses (M9);
+running steps (plan § 4, X); the rest is [`../plans/plan.md`](../plans/plan.md)
+§ 4, M5, M6, M8, M9
 **Authority:** how a calculation is described independently of any engine — its
 parameters, its physics, its studies, its observables and analyses; how a study
 is expanded into cases; how a case is matched against an engine environment's
@@ -36,7 +35,7 @@ the geometry, its contract and its meshes [`geometry.md`](geometry.md)'s; materi
 | A project's parts, their files and the one door through which they are read and written are [`projects.md`](projects.md); the geometry and its meshes [`geometry.md`](geometry.md); materials [`materials.md`](materials.md) | 2 |
 | The physics a project may state is a closed list of **formulations**, solver-neutral, each with its benchmark set | 4 |
 | **Observables** are sets of their own, on named groups, which studies name; **analyses** compare and report across runs | 5.2, 10.2 |
-| A **case** is the component, the physics, the materials' data, the mesh recipe, the numerics and one axis point — nothing about an environment, a study or its observables; its ID is the hash of that, canonical and unit-exact | 5.3 |
+| A **case** is the component, the physics, the materials' data, the mesh recipe, the numerics and one axis point — nothing about an environment or the study's observables; each study's cases are its own, never shared or compared with another's; its ID is the hash of its content, canonical and unit-exact | 5.3 |
 | Each **engine environment declares its abilities** as data; matching a case gives a **match report**: for each element, how exactly the environment translates it and whether that is proven | 6 |
 | An ability counts only once **proven** in that environment by benchmark runs, recorded beside the environment and keyed to everything it rests on | 6.3 |
 | Nothing is approximated silently: an approximation or an unproven ability needs a **decision**, an unsupported element a **customization** or another environment; both are bound per environment in a study and go stale when what they answered changes | 7, 8 |
@@ -87,26 +86,37 @@ What this contract adds:
   edited; what a person wants changed is a customization (§ 8), applied into
   `final/`. A file whose hash differs from its manifest makes the preparation
   `stale` (§ 9.5), and the job refuses it ([`jobs.md`](jobs.md)).
-- **Preparations belong to their study.** Two studies that produce the same
-  case — a copy, or a convergence study and a sweep sharing a point — share
-  its `case.json` and prepare it separately, each with its own bindings and
-  runs, in the project's run folders (designed with execution, plan § 4, X).
+- **Cases and preparations belong to their study.** Each study's cases are its
+  own, in its own folder, `cases/<study>/<id>/case.json`; femkit never shares a
+  case between studies or compares them, so two studies of the same content
+  each write their own cases, and each prepares its own, with its own bindings
+  and runs, in the project's run folders (designed with execution, plan § 4, X).
 - **Intent is never read back from input.** Prepared input is evidence, never
   the source of intent ([`../design.md`](../design.md), scientific data).
-- **Every JSON file carries `schema`**, an integer raised when its shape
-  changes: `case.json`, `manifest.json`, `result.json`, a geometry's
-  record, a mesh's manifest, the proof record (§ 6.3).
-- **A case is named by its content**, its ID (§ 5.3): "500 nm" and "0.5 µm"
-  give the same ID, and renaming a group or a material changes the case and
-  its ID — the old preparations become `orphaned` and keep their runs.
+- **Every file carries its shape.** A JSON file femkit writes carries
+  `schema`, an integer raised when its shape changes: `case.json`,
+  `manifest.json`, `result.json`, a geometry's record, a mesh's manifest, the
+  proof record (§ 6.3), the script's inputs ([`geometry.md`](geometry.md)
+  § 2). Every part's file the person writes states it too, as its first key,
+  `schema = 1`, the number of its part kind's shape. A file stating another
+  number does not load: it is a finding naming the shape the file states, the
+  shape femkit reads, and what changed between them, which each part schema
+  declares for every shape after its first — femkit never rewrites the file,
+  and the person brings it to the new shape in their editor, the templates
+  showing it whole. Built: a file stating another number does not load; not
+  built yet: the finding saying what changed, with a part kind's second shape.
+- **A case is named by its content**, its ID (§ 5.3), within its study:
+  "500 nm" and "0.5 µm" give the same ID, and renaming a group or a material
+  changes the case and its ID — the old preparations become `orphaned` and keep
+  their runs.
 - **Benchmarks** (§ 4, § 6.3) are femkit's project templates
   ([`projects.md`](projects.md) § 7) that a formulation names, each holding its
   materials as its own so a proof never depends on a person's library;
   `formulation verify` copies them to
   `<data>/benchmarks/<environment>/<formulation>/<benchmark>/` to prepare and
-  run them there. Not built yet: today's benchmark sits beside its
-  formulation, under `femkit/data/formulations/<formulation>/benchmarks/`,
-  until step D rewrites it as a template (plan § 4, D).
+  run them there. What a benchmark's reference rests on is a parameter of its
+  template — the two-material slab's interface position is `interface` in its
+  project file — so a test computes the reference from the template itself.
 
 ## 3. Parameters and physics
 
@@ -116,7 +126,14 @@ of them with `+`, `−`, `×`, `÷` and parentheses (`gap / 2`). They are what a
 component's script, a physics, a mesh recipe and an observable set may use,
 and, besides
 a mesh recipe's values, numerics and a material's dataset, the only things a
-study's axes vary (§ 5). A parameter may not be named like a unit.
+study's axes vary (§ 5). A parameter may not be named like a unit. An
+expression may use any other parameter, in any order in the file; parameters
+that use each other in a circle are a finding naming the circle. The project's
+parameters are resolved once, for every check, by the check frame (§ 11.1):
+each by name, exactly; a circle is one finding, `parameter-circle`, on the
+parameter where it was met; a text that does not read is a finding,
+`bad-quantity`, on its parameter; one using a parameter that does not resolve
+does not resolve either, and has no finding of its own.
 
 **A physics** is one file of the project, `physics/<p>.toml`. It states, on
 named groups — never naming a component, so it serves every component whose
@@ -125,11 +142,11 @@ contract promises the groups it names ([`geometry.md`](geometry.md) § 3):
 | part | holds | rule |
 |---|---|---|
 | `formulation` | one formulation family (§ 4) | the family supports the step kind each study asks of it |
-| `meaning` | what the geometry's dimension means for the formulation (§ 4): per unit depth or axisymmetric, TE or TM | chosen, never assumed |
+| `meaning` | for each dimension of the components it serves, keyed by the dimension, what it means for the formulation (§ 4): in 2-D per unit depth or axisymmetric, TE or TM | chosen, never assumed: a study pairing it with a component of a dimension it does not state is a finding, so one physics serves a 3-D and a 2-D component by stating both |
 | `conventions` | what the formulation requires chosen — for a frequency-domain problem, `phasor` (`"exp(-iwt)"` or `"exp(+iwt)"`: the sign s of [`electromagnetics.md`](../science/electromagnetics.md)) and `amplitude` (`"peak"` or `"rms"`) | never defaulted |
-| `conditions` | for every outer-boundary group, one condition of a kind the formulation allows; for an interface group that carries one, `interface` (continuity, stated) or a sheet condition the formulation allows | a natural condition on an outer boundary is stated, never implied |
+| `conditions` | keyed by the group: for every outer-boundary group, one condition of a kind the formulation allows; for an interface group that carries one, `interface` (continuity, stated) or a sheet condition the formulation allows — each its `kind` and the parameters its kind lists (`value`) | a natural condition on an outer boundary is stated, never implied; a kind stands only on the places its `on` names ([`geometry.md`](geometry.md) § 7) |
 | `radiation` | for an open problem: the outer-boundary groups through which waves leave to infinity, and the material beyond them | how the domain is truncated there is each environment's numerics (§ 5) |
-| `sources` | excitations of the kinds the formulation allows, on groups, with every parameter the formulation lists — for a plane wave: total or scattered field, amplitude, polarization, direction, the background medium, the phase reference point | — |
+| `sources` | each by its name: its `kind`, one the formulation allows; the group it is `on`; and every parameter the formulation lists for it — for a plane wave: total or scattered field, amplitude, polarization, direction, the background medium, the phase reference point | — |
 
 Which material fills each body is the component's, never a physics'
 ([`materials.md`](materials.md) § 5): every physics a component is paired with
@@ -137,7 +154,8 @@ uses it.
 
 - **Units.** Every dimensional value is written with its unit (`"1 nm"`) or as
   an expression of parameters (`"gap / 2"`). A physics, a mesh recipe and an
-  observable set serve any component, so a coordinate in them carries its unit;
+  observable set serve any component, so a coordinate in them is a length with
+  its unit, measured from the origin of the component a study pairs it with;
   only the geometry script's own numbers are bare, in its contract's unit
   ([`geometry.md`](geometry.md) § 3).
   Internally each quantity has a canonical unit — SI, and degrees for angles,
@@ -154,52 +172,40 @@ uses it.
   exists, the kinds and coverage of [`geometry.md`](geometry.md) § 7; it
   changes nothing.
 
-The Laplace check, as a project:
+The Laplace check is the template `laplace_square`
+(`femkit/data/templates/laplace_square/`, [`projects.md`](projects.md) § 7):
+a square of side `side`, its left side held at 0 V and its right side at
+`bias`, its top and bottom insulating, filled with the project's own
+`vacuum`. Its project file and its physics, in short:
 
 ```toml
 # project.toml
 schema = 1
-description = "Laplace on the unit square: 0 V on the left, the bias on the right, insulated top and bottom"
+description = "Laplace on a square: 0 V on the left, the bias on the right, insulated top and bottom"
 components = ["square"]
 studies = ["check"]
 
 [parameters]
+side = "1 m"
 bias = "1 V"
-```
-
-```toml
-# components/square/component.toml — geometry.py is the rectangle example: a unit square, its sides named
-schema = 1
-script = "geometry.py"
-
-[frame]
-unit = "m"                                  # the script's unit
-
-[outputs]
-geometry = "geometry.<format>"              # chosen by measurement (geometry.md § 10)
-
-[outputs.groups]
-domain = { dimension = 2 }
-left   = { dimension = 1 }
-right  = { dimension = 1 }
-sides  = { dimension = 1 }
-
-[assign.domain]
-material = "GLOBAL/vacuum"
-datasets = { relative_permittivity = "definition" }
 ```
 
 ```toml
 # physics/electrostatics.toml
 schema = 1
 formulation = "electrostatics"
-meaning = "per unit depth"                  # what 2-D means for electrostatics (§ 4)
+meaning = { 2 = "per unit depth" }          # what 2-D means for electrostatics (§ 4)
 
 [conditions]
 left  = { kind = "potential", value = "0 V" }
 right = { kind = "potential", value = "bias" }
 sides = { kind = "insulating" }
 ```
+
+Its component's contract is [`geometry.md`](geometry.md) § 3's, with
+`dimension = 2`, `unit = "m"`, `side` its one input, the groups `domain = 2`,
+`left`, `right` and `sides` each `1`, and `[assign.domain]` naming
+`material = "vacuum"`.
 
 ## 4. Formulations: families and step kinds
 
@@ -278,7 +284,9 @@ Each family states:
   (§ 4.2), so a dataset that varies with what the step does not supply is
   refused ([`materials.md`](materials.md) § 6);
 - the condition, source and truncation kinds it allows, each with its
-  parameters and their units;
+  parameters and their units, and its `on`: the places it may stand on, by
+  their names in the one vocabulary of places ([`geometry.md`](geometry.md)
+  § 7) — `outer_boundary`, `interface`, `body`;
 - the conventions a physics must choose;
 - the derived quantities an observable may name — **E**, **D**, energy
   density, Poynting flux, absorbed power — and expressions of them (plan § 4,
@@ -330,7 +338,7 @@ complex = false
 [conditions.surface_charge]
 description = "the boundary is the surface of a conductor carrying a free charge; femkit writes n . D = -sigma"
 section = "3-conditions-on-an-outer-boundary"
-on = ["boundary"]
+on = ["outer_boundary"]                     # the places it may stand on (geometry.md § 7)
 parameters.value = { unit = "C/m^2", description = "sigma, the free charge per unit area on the conductor's surface" }
 
 [derived.electric_field]
@@ -352,10 +360,11 @@ energy_low = "5.666680204032e-12 J/m"
 
 - **`constants`**: each physical constant the equation uses — `vacuum_permittivity`
   — given to every engine as stated there, never an engine's own value.
-- **A benchmark** names one of femkit's project templates
-  ([`projects.md`](projects.md) § 7) — its project file, its component with its
-  geometry script, its physics, its observable sets and its study — with the
-  kinds and properties it exercises, a
+- **A benchmark** names one of femkit's project templates by its bare name
+  (`project = "two_material"`, [`projects.md`](projects.md) § 7) — its project
+  file, its component with its geometry script, its materials, its physics, its
+  observable sets and its one study — with the kinds and properties it
+  exercises, a
   relative tolerance whose basis is in its section of the science document,
   and the exact value each observable of its study must reproduce.
   `schema check` loads each project and refuses one that `project check`
@@ -383,24 +392,28 @@ energy_low = "5.666680204032e-12 J/m"
 
 Several physics are solved in one of two ways, each declared as data:
 
-- **In turn.** A study's steps run in order, each solving one physics, and a
-  step takes what an earlier one produced, as its kind declares it (§ 4.2) and
-  its family declares it can accept: the heat step takes the optics step's
-  absorbed power density as its heat source.
+- **In turn.** A study's steps are named, each solving one physics, and a
+  step takes what another produced by that step's name, as its kind declares
+  it (§ 4.2) and its family declares it can accept: the `thermal` step takes
+  the `optics` step's absorbed power density as its heat source. A step runs
+  after every step it takes from; the order the file writes them in means
+  nothing, and steps that take nothing from each other may run in any order.
 
   ```toml
-  [[steps]]
+  [steps.optics]
   physics = "optics"                          # family maxwell
   kind = "frequency"
 
-  [[steps]]
+  [steps.thermal]
   physics = "thermal"                         # family heat
   kind = "stationary"
-  takes = { heat_source = "steps.1.absorbed_power_density" }
+  takes = { heat_source = "optics.absorbed_power_density" }   # a step's name, then what its kind produces
   ```
 
-  femkit checks each hand-off before anything runs: the earlier step's kind
-  produces the quantity, and its dimension is what the later family accepts.
+  femkit checks each hand-off before anything runs: the step taken from
+  exists, its kind produces the quantity, and its dimension is what the later
+  family accepts. Steps that take from each other in a circle are refused
+  unless the study repeats them (next sentence).
   Where the later result must feed back — the temperature changing the metal's
   permittivity — the study repeats its steps in turn until the change between
   two rounds is below the tolerance it states, and says how many rounds it
@@ -413,7 +426,7 @@ Several physics are solved in one of two ways, each declared as data:
   for, and the section of the science document that states it.
 
   ```toml
-  [[steps]]
+  [steps.heating]
   physics = ["electric", "thermal"]           # two physics, on the same component's groups
   couplings = ["joule_heating"]
   kind = "stationary"
@@ -426,9 +439,12 @@ Several physics are solved in one of two ways, each declared as data:
 - **Engines** declare which couplings they support, as they declare families
   and step kinds (§ 6.1); a study asking for one an environment lacks is a
   match line.
-- **Not built yet**: couplings, repeated steps and a step's `takes` (plan
-  § 4, after M9); the first couplings declared are electromagnetic heating
-  and Joule heating, each with its science document and benchmarks.
+- **Built**: named steps, and each hand-off checked — the step taken from is
+  another of the study's, its formulation derives the quantity, and no steps
+  take from each other in a circle. **Not built yet**: what a family accepts
+  from another, couplings and repeated steps (plan § 4, after M9); the
+  first couplings declared are electromagnetic heating and Joule heating, each
+  with its science document and benchmarks.
 
 **Scope.** Symmetry planes and periodicity are conditions a family lists when
 it allows them; until then a component is solved whole.
@@ -448,40 +464,88 @@ physics:
 | part | holds |
 |---|---|
 | `component` | the component it solves |
-| `steps` | each step: one physics, or several joined by couplings, and the kind of calculation (§ 4); in order, a later step taking what an earlier one produced, repeated until it settles where the study says so (§ 4.5); one step today |
+| `steps` | each step by its name: one physics, or several joined by couplings, and the kind of calculation (§ 4); a step taking what another produced runs after it, the file's order meaning nothing, repeated until it settles where the study says so (§ 4.5); one step until M9 |
 | `mesh` | the mesh recipe it uses ([`geometry.md`](geometry.md) § 6) |
 | `observables` | the observable sets it reports (§ 5.2) |
 | `numerics` | the element family and its degree (common fields, each mapped per environment with a match status, § 6.4); the linear solver and its tolerance; the adaptivity block — error limit, smallest element, depth — when the mesh adapts |
 | `axes` | what varies — a parameter, a mesh recipe's value, a numerics field, a material assignment's dataset — each axis keyed by the address of what it varies ([`projects.md`](projects.md) § 5), with its values and one class: **numerical convergence** (mesh, degree, tolerance, the open domain's padding and layer thickness), **geometry convergence** (lengths of the modeled structure that stand for a longer one, such as an electrode's), **physical sweep** (wavelength, material dataset, gap) |
-| `environments.<environment>` | per engine environment, the study's bindings: its truncation of each radiation boundary — an absorbing condition, or a perfectly matched layer with its profile, its parameters and the condition on its outer face ([`geometry.md`](geometry.md) § 8) — its engine-only options (§ 6.4), its decisions (§ 7), its customizations (§ 8), and its job's resources ([`jobs.md`](jobs.md) § 2), each of which may be limited to cases by their axis values |
+| `crossing` | when the axes are of more than one class: `axes`, the address of every axis, and `reason`, why their full product is needed |
+| `environments.<environment>` | per engine environment, the study's bindings: its job's resources ([`jobs.md`](jobs.md) § 2); its truncation of each radiation boundary — an absorbing condition, or a perfectly matched layer with its profile, its parameters and the condition on its outer face ([`geometry.md`](geometry.md) § 8) — its engine-only options (§ 6.4), its decisions (§ 7) and its customizations (§ 8), each of which may be limited to cases by their axis values. Built: `resources` alone; decisions and engine-only options join with the match (M5, M6), customizations with M8, truncations with M9 |
 | `display` | a list of units: a value shows in the first listed unit of its dimension, else in its canonical unit (`["nm"]` for a nanogap) |
 
-- Several axes are crossed. Axes of different classes are never crossed
-  silently: the study says why the full product is needed, in `axes.reason`.
+- **Several axes are crossed**: every value of each with every value of the
+  others. Axes of different classes are never crossed silently: a study whose
+  axes are of more than one class states `[crossing]`, naming every one of
+  its axes and why the full product is needed. An axis added later that the
+  crossing does not name is a finding, so a reason given for some axes never
+  covers another.
 
-The Laplace check's study:
+  ```toml
+  [crossing]
+  axes = ["mesh:fine:sizes.gap", "project:parameters.wavelength"]
+  reason = "the gap's resolution must be shown converged at every wavelength of the resonance"
+  ```
+
+- **An axis's values are checked in their key's place**: a parameter's value
+  with every parameter computed again from it, in its dimension; a recipe's
+  or a numerics value put in place and its part loaded again by its schema —
+  a recipe's checked again by its own rules at that key, and compared with
+  the dimension of what the key holds now only where that holds no finding of
+  its own; a dataset, one its material holds, whose datasets are the
+  finding's choices. What the varied part finds wrong of its own — its file
+  does not load, another of its keys or the value it holds now does not
+  read — is that part's finding, never the axis's. An axis keyed by no
+  address of what it may vary names, as its right value, the address it most
+  likely means: `[axes.bias]`, `project:parameters.bias`.
+
+- **The pairing is checked before anything runs, and said once, in the file
+  that needs changing**, at the key that names what is wrong: a group the
+  component does not promise, or one that cannot be the place a condition or
+  source stands on, at the physics', the recipe's or the observable's key
+  naming it, the groups that would do its choices and the closest offered
+  ("did you mean `sides`?"); a dimension the physics states no meaning for,
+  at its `meaning.<d>`; an axisymmetric physics paired with a frame stating
+  no axis of revolution, at the component's `frame.symmetry`
+  ([`geometry.md`](geometry.md) § 3); an observable's quantity, point, side or
+  unit its study cannot read, at the observable's key; a property a material
+  lacks, at the material's. The step kind is the step's own, checked whether
+  or not its component is there. A part the study uses that does not load is
+  one note on the study, at the key naming it — what is paired with it is
+  checked once it loads — so the study is `unchecked`, never `complete`
+  ([`projects.md`](projects.md) § 8); and what only the built geometry tells —
+  whether its faces are outer boundaries or interfaces — is one note on the
+  study, at `component`, in the person's words: "whether `left`, `right` and
+  `sides` are each an outer boundary is checked once the geometry of `square`
+  is built".
+
+The Laplace check's study, in short — the whole file, each key with its help,
+is the template's `studies/check.toml` ([`projects.md`](projects.md) § 7):
 
 ```toml
 schema = 1
 component = "square"
-steps = [{ physics = "electrostatics", kind = "stationary" }]   # a physics and its step kind (§ 4.2)
-mesh = "coarse"
+mesh = "uniform"
 observables = ["midpoint"]
 display = ["m", "V", "V/m"]
 
+[steps.solve]                           # a step, by its name
+physics = "electrostatics"
+kind = "stationary"                     # its step kind (§ 4.2)
+
 [numerics]
 element = { family = "lagrange", degree = 1 }
-solver = { kind = "direct" }            # or { kind = "iterative", tolerance = "1e-10" }
+solver = { kind = "direct" }            # or { kind = "iterative", tolerance = 1e-10 }
 
-[axes."mesh:coarse:size"]               # keyed by the address it varies
+[axes."mesh:uniform:size"]              # keyed by the address it varies
 class = "numerical convergence"         # | "geometry convergence" | "physical sweep"
 values = ["0.1 m", "0.05 m", "0.025 m"]
 
-[environments.elmer]
-resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G" }   # jobs.md § 2
-
-[environments.ngsolve]
-resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G" }
+[environments.elmer.resources]          # jobs.md § 2
+ranks = 1
+threads = 1
+gpus = 0
+wall = "00:10:00"
+memory = "2G"
 ```
 
 - **Truncation is an environment's choice**, recorded in its manifest and
@@ -493,12 +557,47 @@ resources = { ranks = 1, threads = 1, gpus = 0, wall = "00:10:00", memory = "2G"
 
 An observable set is a file of the project, `observables/<o>.toml`, written on
 named groups and on points, lines and planes given with their units; a study
-names the sets it reports, and analyses read their results (§ 10.2). Each observable has a name, the quantity (a
-derived quantity of the formulation, or an expression of them and of
-coordinates — `|φ − x|`), its support — a named group, or a point, line or
-plane written with its units; on an interface, the side it is
-read from — its reduction — value, average, integral, maximum, norm — the
-source it is normalized by, total or scattered field, unit and complex part.
+names the sets it reports, and analyses read their results (§ 10.2). Its
+observables are a table, `[observables.<name>]`, each holding:
+
+| key | holds |
+|---|---|
+| `quantity` | what it reads: a derived quantity of the formulation of the physics a study pairs it with (§ 4.3) — or, from M6, an expression of them and of coordinates, `\|φ − x\|` |
+| `point`, `line`, `group`, `plane` | where it is read — exactly one: a point, one length per axis of the component's frame; a line, its two end points; a group the paired component promises; a plane, a point on it and its normal (from M9) |
+| `side` | on an interface group, the body group it is read from |
+| `reduction` | `value` at a point; over a line or a group, `average`, `integral`, `maximum` or `norm` |
+| `unit` | the unit it is reported in: its quantity's dimension, times its support's measure for an integral — `J/m` for an energy density integrated over a body of a 2-D component per unit depth |
+| the source it is normalized by, total or scattered field, the complex part | for a frequency-domain physics (plan § 4, M9) |
+
+```toml
+schema = 1
+
+[observables.potential_middle]
+quantity = "potential"
+point = ["interface", "height / 2"]           # lengths, from the component's origin
+reduction = "value"
+unit = "V"
+
+[observables.energy_low]
+quantity = "energy_density"
+group = "low"
+reduction = "integral"
+unit = "J/m"
+```
+
+- **A point is measured from the frame's origin** of the component a study
+  pairs the set with ([`geometry.md`](geometry.md) § 3), its lengths
+  converted to the frame's unit. One set serves several components when their
+  scripts put the origin at the same place in the structure — the gap's
+  centre, for each bowtie; a point given with fewer or more lengths than the
+  frame has axes is a finding at the observable's key (§ 5.1), and once the geometry exists a
+  point or line outside it is a finding naming the point and the component
+  (plan § 4, X).
+- **Names are unique across a study's sets**, so a benchmark's reference and
+  an analysis name an observable by its name alone; two sets of one study that
+  share a name are a finding on the study.
+- Not built yet: expressions (M6); planes and what a frequency-domain
+  physics adds (M9).
 
 An observable set can change what a preparation computes — Elmer's region-wise
 absorbed power is computed inside the solver input, a probe line becomes a
@@ -511,24 +610,32 @@ changes a case or its ID.
 - **A case is the component, the steps' physics, the materials' data, the mesh
   recipe, the numerics and one axis point.** Nothing bound to an environment or
   a study's observables enters a case: recording a decision changes no case ID,
-  two environments prepare the same case, and two studies share it.
-- `study expand` writes one `case.json` per point it lacks. A case is complete:
+  and two environments prepare the same case.
+- **Each study's cases are its own.** `study expand` writes them in the
+  study's folder, `cases/<study>/<id>/case.json`; femkit never shares a case
+  between studies or compares them, so two studies of the same content each
+  write their own.
+- `study expand` writes one `case.json` per point the study lacks. A case is complete:
   every default the schema has is written into it, and every material's data
   worked out for it ([`materials.md`](materials.md) § 6), so nothing about a
-  case depends on femkit's version or a person's settings. It is refused while
-  `project check` has a finding on a part the study uses, and for axes of
-  different classes crossed without a reason.
+  case depends on femkit's version or a person's settings. It is refused,
+  naming the part, while a part the study uses does not load or `project
+  check` has a finding on one, and for axes of different classes crossed
+  without a `[crossing]` naming them all (§ 5.1).
 - **`case.json`** holds `schema`, `component`, `steps`, `mesh`, `numerics` and
-  `point`, each resolved — content only, never a part's file name:
-  - `component`: its geometry script's SHA-256 and the values of the inputs its
-    contract declares ([`geometry.md`](geometry.md) § 3), its frame, its
-    promised groups, and its assignment with each dataset's name and content
-    ([`materials.md`](materials.md) § 6);
-  - `steps`: each step's kind and physics; `mesh`: the recipe; `numerics`;
+  `point`, each resolved:
+  - `component`: its geometry script's SHA-256, the values of the inputs its
+    contract declares and each declared file's SHA-256
+    ([`geometry.md`](geometry.md) § 3), its frame — its dimension and unit —
+    its promised groups, and its assignment with each dataset's name and
+    content ([`materials.md`](materials.md) § 6);
+  - `steps`: each step by its name, with its kind, its physics — of its
+    `meaning`, the component's dimension's alone — and what it takes; `mesh`: the
+    recipe; `numerics`;
   - `point`: each axis's address and its value — the axis point applied, a
     parameter's value replaced and every parameter computed again from it.
 - **Every value in exact form.** Every quantity — a parameter, a coordinate (a
-  bare number times the frame's unit, so the frame's unit is resolved away), a
+  length, since no file but the script writes a bare one, § 3), a
   condition's or source's parameter, a material's value or range, a mesh size —
   is written as `{"value": "<p/q>", "dimension": {"<base>": <power>}}`, its exact
   value in its dimension's canonical units ([`core.md`](core.md) § 11); every
@@ -536,13 +643,14 @@ changes a case or its ID.
   (`"2"`, `"-1/2"`), so `-1` and `-1.0` are one value; every schema default is
   written.
 - **The case ID** is the SHA-256 of `case.json`'s canonical JSON — keys sorted,
-  no whitespace, UTF-8 — so two spellings of one value give one ID, and two
-  studies producing the same point share one case. Its plan lists the cases it
-  adds, those it keeps, and the study's preparations of cases it no longer
-  produces, which become `orphaned` (§ 9.5) and are never deleted by it.
-- `case list` shows every case with its axis values and, per study and
-  environment, its match and preparation state; a case may be named by a
-  unique prefix of its ID.
+  no whitespace, UTF-8 — so two spellings of one value give one ID. It serves
+  `study expand` of the same study alone, to know a case it wrote already. Its
+  plan lists the cases it adds, those it keeps, and the study's preparations
+  of cases it no longer produces, which become `orphaned` (§ 9.5) and are
+  never deleted by it.
+- `case list` shows each study's cases under it, with their axis values,
+  whether the study makes each now and, per environment, its match and
+  preparation state; a case may be named by a unique prefix of its ID.
 - Execution benchmarks — ranks, threads — are job requests, not cases: the
   same case run on different resources must give the same answer.
 
@@ -912,20 +1020,33 @@ command changes a file the person wrote (§ 7 there): they write every part in
 their own editor, and these read it, check it, start it from a template, or
 write femkit's own outputs.
 
-| command | does | changes |
-|---|---|---|
-| `project new NAME --from SOURCE`, `project list` | a new project, a copy of one of femkit's templates or of one of the person's projects ([`projects.md`](projects.md) § 7); the projects under the root | the new project; nothing |
-| `project check` | every rule of § 3 and the formulation's; each study's pairing; kinds and coverage ([`geometry.md`](geometry.md) § 7) once a geometry exists | nothing |
-| `project graph [--study S] [--environment E] [--mermaid]` | the project as a graph (§ 11.2), with findings and, with an environment, the worst match line per node | nothing |
-| `project view` | remembers where the page draws nodes, when the person asks; no project data ([`projects.md`](projects.md) § 2) | `.femkit/view.json` |
-| `material add NAME [--from ENTRY]`, `material import SOURCE FILE --into library\|project [--as NAME]` | a material copied from the library; another source's data ([`materials.md`](materials.md) §§ 3, 7) | `materials/` |
-| `study expand` | write a study's cases | `cases/` |
-| `case list` | every case, its axis values, its match and preparation state per study and environment | nothing |
-| `case match`, `study match` | the match report (§ 6.2) | nothing |
-| `case prepare`, `study prepare` | prepare (§ 9.3); how its steps run is designed with execution (plan § 4, X) | `runs/` |
-| `formulation verify`, `--record` | prepare a benchmark set; record proofs from its finished runs (§ 6.3) | the benchmark projects; the proof record |
-| `run reduce`, `analysis run` | a finished run's results; an analysis (§ 10) | the run's `result.json`; `results/` |
-| `result show`, `result compare` | a run's observables; one comparison (§ 10.1) | nothing |
+| command | does | changes | declared in |
+|---|---|---|---|
+| `project new NAME --from SOURCE`, `project list` | a new project, a copy of one of femkit's templates or of one of the person's projects ([`projects.md`](projects.md) § 7); the projects under the root | the new project, and the root when it does not exist yet; nothing | `projects` |
+| `project check` | every rule of § 3 and the formulation's; each study's pairing; kinds and coverage ([`geometry.md`](geometry.md) § 7) once a geometry exists; each finding with its file, its key and what would be right ([`core.md`](core.md) § 10) | nothing | `models` |
+| `project graph [--study S] [--environment E] [--mermaid]` | the project as a graph (§ 11.2), with findings and, with an environment, the worst match line per node | nothing | `models` |
+| `project view` | remembers where the page draws nodes, when the person asks; no project data ([`projects.md`](projects.md) § 2) | `.femkit/view.json` | `projects` |
+| `material add NAME [--from ENTRY]`, `material import SOURCE FILE --into library\|project [--as NAME]` | a material copied from the library; another source's data ([`materials.md`](materials.md) §§ 3, 7) | `materials/` | `materials` |
+| `study list` | a project's studies, each with whether it expands and, if not, why — the page's study chooser ([`web.md`](web.md) § 8.6) | nothing | `models` |
+| `study expand` | write a study's cases, in its own folder | `cases/<study>/` | `models` |
+| `case list` | each study's cases under it, their axis values, their match and preparation state per environment; a study that does not expand, and why | nothing | `models` |
+| `case match`, `study match` | the match report (§ 6.2) | nothing | `models` |
+| `case prepare`, `study prepare` | prepare (§ 9.3); how its steps run is designed with execution (plan § 4, X) | `runs/` | `models` |
+| `formulation verify`, `--record` | prepare a benchmark set; record proofs from its finished runs (§ 6.3) | the benchmark projects; the proof record | `results` |
+| `run reduce`, `analysis run` | a finished run's results; an analysis (§ 10) | the run's `result.json`; `results/` | `results` |
+| `result show`, `result compare` | a run's observables; one comparison (§ 10.1) | nothing | `results` |
+
+- **Each command is declared in the lowest package that can do it**
+  ([`api.md`](api.md) § 6): `project new`, `project list` and `project view`
+  need nothing above the door, so `projects` declares them; `project check`
+  and `project graph` read every part's rules, which live above the door —
+  the door cannot import them — so `models` declares them.
+
+- **The check frame** every part kind's check is handed, and the run over a
+  project's parts in the chain's order, are [`projects.md`](projects.md) § 6
+  (`femkit/projects/checking.py`); the rules each part kind's check applies
+  are its owner's — this contract's for the project file, physics, observable
+  sets and studies.
 
 - **Two tiers of validity.** A part that does not load — a wrong type, a
   reference to a part or group that does not exist — is a finding on it, and
@@ -955,16 +1076,16 @@ never stored, and no surface draws it from a list of its own.
   support.
 - **Ports are typed by the schema.** A field that refers to another part or a
   group carries its target type as a schema annotation
-  ([`core.md`](core.md) § 2) — `group:boundary`, `material`, `parameter` —
+  ([`core.md`](core.md) § 2) — `group:outer_boundary`, `material`, `parameter` —
   and becomes a port of that type; the loader reads the same annotation, so the
   graph and the check cannot disagree.
 - **Each node shows its part's text** — or a component's script — beside the
   help of every key it may hold ([`web.md`](web.md) § 8.3); a wire whose
   group's kind cannot be checked before the geometry exists is shown out of
   date, never hidden.
-- **The next step.** `project check` orders its findings by the chain, each a
-  whole sentence with its subject's name, and the first is the project's next
-  step; a new project is checked as any other. Each finding's fixes follow the
+- **The next step.** `project check` gives errors first, then warnings, then
+  notes, each group in the chain's order, each a whole sentence, its file and
+  key on the line under it, and the first is the project's next step; a new project is checked as any other. Each finding's fixes follow the
   vocabulary's rule ([`web.md`](web.md) § 7.4).
 - **Status.** Each node carries the findings that name it; with an
   environment, the worst match line across the study's cases.
@@ -999,13 +1120,16 @@ these operations, and changes no file the person wrote ([`web.md`](web.md)).
 | refused | names | what resolves it |
 |---|---|---|
 | an unknown key; a dimensional value without its unit | the key | the schema's key; the value with its unit |
+| a part's file stating another shape than femkit reads (§ 2) | the file | the file in the shape femkit reads, as what changed says |
+| a physics whose `meaning` states nothing for the dimension of the component a study pairs it with; a point with more or fewer lengths than the frame has axes; an axisymmetric physics paired with a frame stating no axis of revolution | the physics; the observable; the component's frame | a meaning for that dimension; one length per axis; `[frame.symmetry]` |
+| expanding a study while a part it uses does not load | the part | the part's file, as its finding says |
 | a body with no material or two, an outer boundary with no condition or two ([`geometry.md`](geometry.md) § 7); a group a physics, a recipe or an observable names that the paired component does not promise | the piece; the group | an assignment, a condition; the group promised, or another pairing |
 | an interface group that needs a condition without one; an open problem without `radiation`, or a radiation boundary without a truncation in an environment's bindings | the group | a condition, a `radiation` entry, a truncation |
 | a material property without source, convention or range; a passive material made active by its convention; a case outside a property's range | the material and property | the missing field; the source's convention; a case inside the range |
 | a formulation, condition, source or truncation kind not declared | the ID and the declared ones | a declared kind |
 | a declared ability no benchmark exercises | the ability | a benchmark that exercises it |
 | a convention the formulation requires, left unchosen | the convention | `conventions` |
-| axes of different classes crossed without a stated reason; an axis varying anything but a parameter, a mesh recipe's value, numerics or a material dataset | the axes | a reason; a parameter |
+| axes of different classes crossed without a `[crossing]` naming every axis and its reason; an axis varying anything but a parameter, a mesh recipe's value, numerics or a material dataset | the axes | a `[crossing]`; a parameter |
 | preparing with an open match line | each line | a decision, a customization, another environment |
 | a stale decision | the decision, what it accepted and what is declared now | answering it again |
 | a customization: missing file, changed hash, undeclared point, engine version or interface outside its range, covering nothing, overriding a project's value without `physics = true`, a name outside the rule of § 8.2 | the customization and the reason | the file, the range, the declaration |

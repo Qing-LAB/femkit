@@ -1,4 +1,5 @@
-"""The engine environment state machine (envs.md § 3).
+"""The engine environment's state (envs.md § 3): observed, never stored, by the rules
+`femkit/data/states/environment.toml` declares over the facts gathered and named here.
 
 Facts are read from disk; observing starts no process and needs no network.
 """
@@ -11,27 +12,16 @@ from pathlib import Path
 from typing import Literal
 
 from femkit.config import settings
-from femkit.core import locks, view
+from femkit.core import locks, states, view
 from femkit.core.errors import UsageError
 from femkit.core.operations import Context
-from femkit.core.states import Action, Machine, Rule
 from femkit.definitions import catalogue
 from femkit.definitions.models import EnvironmentDefinition
 from femkit.engines import package_dir
 from femkit.envs import checks, fingerprints, layout, manager
 
 from femkit.envs.records import ChecksRecord, Manifest, read
-from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_VALIDATE
-
-
-class EnvState(str, Enum):
-    busy = "busy"
-    absent = "absent"
-    incomplete = "incomplete"
-    outdated = "outdated"
-    unchecked = "unchecked"
-    failing = "failing"
-    ready = "ready"
+from femkit.envs.requests import ENV_LIST
 
 
 @dataclass(frozen=True)
@@ -78,52 +68,20 @@ class EnvFacts:
         return "passed" if all(o.outcome == "passed" for o in device) else "failed"
 
 
-def _names(name: str) -> dict:
-    return {"names": [name]}
+BINDING = states.Binding("environment", {
+    "locked": lambda f: f.locked,
+    "prefix": lambda f: f.prefix_kind != "absent",
+    "environment": lambda f: f.prefix_kind == "environment",
+    "manifest": lambda f: f.manifest is not None,
+    "built_as_now": lambda f: f.manifest is not None and f.manifest.install_fingerprint == f.install_fingerprint,
+    "checked": lambda f: f.current_checks is not None,
+    "cpu_failed": lambda f: f.cpu_failed,
+}, reads=frozenset({"absent", "incomplete", "unchecked", "failing", "ready"}))   # read by envs, jobs and server
 
 
-def _named(name: str) -> dict:
-    return {"name": name}
-
-
-_install = Action("install", ENV_INSTALL, _names)
-_resume = Action("resume the install", ENV_INSTALL, _names)
-_replace = Action("remove, install", ENV_INSTALL, _names)
-_rebuild = Action("remove, install, discarding the saved lock", ENV_INSTALL,
-                  lambda name: {"names": [name], "clean": True})
-_validate = Action("validate", ENV_VALIDATE, _named)
-_validate_gpu = Action("validate the GPU checks", ENV_VALIDATE,
-                       lambda name: {"name": name, "gpu": True})
-_remove = Action("remove", ENV_CLEAN, _named)
-_nothing = Action("nothing to do")
-
-MACHINE: Machine[EnvFacts, EnvState] = Machine(
-    "environment",
-    EnvState,
-    (
-        Rule("the lock is held", EnvState.busy, lambda f: f.locked),
-        Rule("no prefix", EnvState.absent, lambda f: f.prefix_kind == "absent"),
-        Rule("no readable manifest, or the prefix is not a manager environment", EnvState.incomplete,
-             lambda f: f.manifest is None or f.prefix_kind != "environment"),
-        Rule("the manifest's install fingerprint is not the current one", EnvState.outdated,
-             lambda f: f.manifest.install_fingerprint != f.install_fingerprint),
-        Rule("no check results for the current check fingerprint", EnvState.unchecked,
-             lambda f: f.current_checks is None),
-        Rule("a check without device = true did not pass", EnvState.failing, lambda f: f.cpu_failed),
-        Rule("otherwise", EnvState.ready),
-    ),
-    {   # envs.md § 3.3: the actions each state allows
-        EnvState.absent: {"install": _install, "install --clean": _install, "clean": _nothing},
-        EnvState.busy: {},
-        EnvState.incomplete: {"install": _resume, "install --clean": _rebuild, "clean": _remove},
-        EnvState.outdated: {"install": _replace, "install --clean": _rebuild, "clean": _remove},
-        EnvState.unchecked: {"install": _validate, "install --clean": _rebuild, "validate": _validate, "clean": _remove},
-        EnvState.failing: {"install --clean": _rebuild, "validate": _validate, "validate --gpu": _validate_gpu,
-                           "clean": _remove},
-        EnvState.ready: {"install": _nothing, "install --clean": _rebuild, "validate": _validate,
-                         "validate --gpu": _validate_gpu, "clean": _remove},
-    },
-)
+def machine(ctx: Context) -> states.Machine:
+    """The machine `femkit/data/states/environment.toml` declares, bound to these facts (envs.md § 3)."""
+    return catalogue.machine(ctx, BINDING)
 
 
 def definition(ctx: Context, name: str) -> EnvironmentDefinition:
@@ -175,9 +133,13 @@ def facts(ctx: Context, name: str) -> EnvFacts:
     )
 
 
-def observe(ctx: Context, name: str) -> tuple[EnvFacts, EnvState]:
+def observe(ctx: Context, name: str) -> tuple[EnvFacts, Enum]:
+    """The environment's facts, and its state by the machine's rules."""
     f = facts(ctx, name)
-    return f, MACHINE.observe(f)
+    return f, machine(ctx).observe(f)
 
 
-INSTALLED = (EnvState.failing, EnvState.ready)  # the states that report a GPU qualification
+def gpu(ctx: Context, f: EnvFacts, state: Enum) -> str | None:
+    """The GPU qualification an environment reports: only while it is `failing` or `ready` (envs.md § 3.2)."""
+    m = machine(ctx)
+    return f.gpu if state in (m.states.failing, m.states.ready) else None

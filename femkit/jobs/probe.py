@@ -24,7 +24,7 @@ from femkit.core.operations import Context
 from femkit.definitions import catalogue
 from femkit.definitions.models import SchedulerKind
 from femkit.envs.manager import confined, resolve
-from femkit.envs.state import INSTALLED, observe
+from femkit.envs.state import gpu, observe
 from femkit import schedulers
 from femkit.jobs.record import SCHEMA, Record, settings_now
 from femkit.jobs.requests import JOB_PROBE
@@ -124,7 +124,7 @@ def _environments(ctx: Context) -> Any:
         out = {}
         for name in sorted(catalogue.load(ctx).environments):
             f, state = observe(ctx, name)
-            out[name] = {"state": state.value, "gpu": f.gpu if state in INSTALLED else None,
+            out[name] = {"state": state.value, "gpu": gpu(ctx, f, state),
                          "install_fingerprint": f.manifest.install_fingerprint if f.manifest else None,
                          "solver_version": f.manifest.solver_version if f.manifest else None}
         return {k: {kk: vv for kk, vv in v.items() if vv is not None} for k, v in out.items()}

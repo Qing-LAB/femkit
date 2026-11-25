@@ -1,0 +1,34 @@
+# The states of a part of a project (projects.md § 8), observed from the facts
+# femkit/projects/state.py gathers and names: `loads`, its file loads; `findings`, a finding on
+# it besides what cannot be checked yet; `unchecked`, something it names that cannot be checked
+# yet. The first rule that holds gives the state.
+
+[states]
+unloadable = "its file does not load"
+findings = "it loads, and `project check` has findings on it"
+unchecked = "it loads with no findings, but what it names cannot be checked yet"
+complete = "it loads with no findings, and all it names is checked"
+
+[[rules]]
+state = "unloadable"
+when = "not loads"
+
+[[rules]]
+state = "findings"
+when = "findings"
+
+[[rules]]
+state = "unchecked"
+when = "unchecked"
+
+[[rules]]
+state = "complete"
+when = "otherwise"
+
+# What each state allows: nothing yet. The person changes a part in their own editor
+# (projects.md § 7), and the operations that read one come with `project check`.
+[actions]
+unloadable = {}
+findings = {}
+unchecked = {}
+complete = {}

@@ -209,6 +209,14 @@ class Text(Model):
     text: str
 
 
+class Code(Model):
+    """Text a person copies as it is — a diagram's source, a file's lines (web.md § 7.6): the
+    command line prints it untouched, the page shows it as a block of code."""
+
+    kind: Literal["code"] = "code"
+    text: str
+
+
 class Next(Model):
     """A heading and the actions under it: what a person may do next (web.md § 7.6)."""
 
@@ -220,7 +228,7 @@ class Next(Model):
 class Report(Model):
     """What a result shows a person, as data; its findings follow its blocks (web.md § 7.6)."""
 
-    blocks: list[Annotated[Text | Table | Next, Discriminator("kind")]] = Describe(default_factory=list)
+    blocks: list[Annotated[Text | Code | Table | Next, Discriminator("kind")]] = Describe(default_factory=list)
 
 
 # ------------------------------------------------------------------ the routes' answers (web.md § 1)

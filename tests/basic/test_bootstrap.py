@@ -16,6 +16,7 @@ import pytest
 from tests.kit import a_record, apply, ctx, installed, planned, refused, run
 from femkit.envs.records import CheckOutcome
 from femkit.config import settings
+from femkit.config.requests import option_name
 from femkit.core import dirs
 from femkit.core.errors import PlanStale
 from femkit.definitions.catalogue import load_catalogue
@@ -132,13 +133,17 @@ def test_bootstrap_names_its_own_command_for_config_init_s_options():
 
 def test_init_asks_for_what_nothing_reveals_and_never_writes_a_default():
     """Fails if config init proposes or writes a default paths.environments — an unattended
-    run would fix builds in a home directory for good — or does not ask for the preamble, the
-    activation and the environments' place while they are unset (config.md § 3.2)."""
+    run would fix builds in a home directory for good — or does not ask for the projects root,
+    the preamble, the activation and the environments' place while they are unset, each beside
+    its help and what its absence blocks (config.md § 3.2)."""
     op, plan, c = planned("config.init", **GIVEN)
-    assert {a.key for a in plan.asks} == {"environments", "preamble", "activation"}
+    asks = {a.key: a for a in plan.asks}
+    assert set(asks) == {"projects", "environments", "preamble", "activation"}
+    for k in map(settings.key, ("paths.projects", "paths.environments", "activation.preamble", "activation.command")):
+        assert {k.help, f"when unset: {k.unset}"} <= set(asks[option_name(k)].context)
     op.apply(plan, c)
     assert "paths.environments" not in settings.load(ctx(), fresh=True).present()
-    assert planned("config.init", **GIVEN, environments="/x", **STATED)[1].asks == ()
+    assert planned("config.init", **GIVEN, environments="/x", projects="/p", **STATED)[1].asks == ()
 
 
 def _row(subject: str):
@@ -249,7 +254,7 @@ def test_bootstrap_measures_the_record_again_unless_it_stays_current_and_nothing
         apply("config.set", key=key, value=value)
     now = record.settings_now(settings.load(ctx()).config).model_dump(exclude_none=True)
     record.write(record.path(record.LOCAL), a_record(settings=now))      # measured under these settings
-    assert record.status(record.path(record.LOCAL), settings.load(ctx()).config)[0] == "current"  # until bootstrap
+    assert record.status(ctx(), record.path(record.LOCAL), settings.load(ctx()).config)[0] == "current"  # until bootstrap
     if not installs:                                     # every default environment ready: nothing to install
         for name, env in load_catalogue().environments.items():
             if env.default:

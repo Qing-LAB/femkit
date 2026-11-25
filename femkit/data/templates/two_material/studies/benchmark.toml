@@ -1,0 +1,93 @@
+# The benchmark's study (models.md § 5.1): the slab, its physics, one mesh and the benchmark's
+# observables, with no axis — one case, whose observables the formulation's reference values
+# must match to a relative 1e-9 (docs/science/electrostatics.md § 9.1).
+
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+schema = 1
+
+# the component it solves, by name
+component = "slab"
+
+# the mesh recipe it meshes with, by name
+mesh = "uniform"
+
+# the observable sets it reports, by name
+observables = ["benchmark"]
+
+# the units values are shown in: each value in the first listed unit of its dimension, else in SI units, angles in degrees
+display = ["m", "V", "J/m"]
+
+# its steps, by name: each solves its physics as a kind of calculation, after any step it takes from; the order they are written in means nothing (see models.md § 4.5)
+[steps]
+
+[steps.solve]
+# the physics it solves, by name
+physics = "electrostatics"
+# the kind of calculation, which the physics' formulation must support: one of `stationary` (see models.md § 4.2)
+kind = "stationary"
+# when several physics are solved in turn, what it takes from a step that runs before it — a heat step taking an optics step's absorbed power, say: each by what it is to its own physics, then the step's name and a quantity that step derives
+# takes = { heat_source = "optics.absorbed_power_density" }
+
+# how the equations are discretized and solved — the finite element and the linear solver — the same in every environment (see models.md § 6.4)
+[numerics]
+
+# the finite element
+[numerics.element]
+# the element family: one of `lagrange`, `nedelec`
+family = "lagrange"
+# its polynomial degree: a whole number, 1 or more
+degree = 1
+
+# the linear solver
+[numerics.solver]
+# how the linear system is solved, exactly or to a tolerance: one of `direct`, `iterative`
+kind = "direct"
+# the relative tolerance an iterative solver stops at: a plain number; required with `iterative`
+# tolerance = 1e-10
+
+# what varies, each axis keyed by the address of what it varies — a parameter, `project:parameters.side`; a value of the mesh recipe, `mesh:uniform:size`; a numerics field; or a material's dataset — every axis crossed with every other (see models.md § 5.1)
+# [axes]
+
+# when the axes are of more than one class: every axis, and why their full product is needed
+# [crossing]
+# the address of every axis of the study
+# axes = ["project:parameters.interface", "mesh:uniform:size"]
+# why the full product is needed, in a sentence
+# reason = "the potential on the interface must be shown converged wherever the interface lies"
+
+# each engine environment's settings for this study, by the environment's name (see models.md § 5.1)
+[environments]
+
+# the job's resources in this environment (see jobs.md § 2)
+[environments.elmer.resources]
+# MPI ranks
+ranks = 1
+# threads per rank
+threads = 1
+# GPUs per node, a count; 0 states that none is used
+gpus = 0
+# wall time, `[D-]HH:MM:SS`; read on a machine with a scheduler
+wall = "00:10:00"
+# memory per node, a whole number with `K`, `M`, `G` or `T`; read on a machine with a scheduler
+memory = "2G"
+# the queue, on a machine with a scheduler
+# partition = "batch"
+# the quality of service, where the record lists one
+# qos = "normal"
+
+# the job's resources in this environment (see jobs.md § 2)
+[environments.ngsolve.resources]
+# MPI ranks
+ranks = 1
+# threads per rank
+threads = 1
+# GPUs per node, a count; 0 states that none is used
+gpus = 0
+# wall time, `[D-]HH:MM:SS`; read on a machine with a scheduler
+wall = "00:10:00"
+# memory per node, a whole number with `K`, `M`, `G` or `T`; read on a machine with a scheduler
+memory = "2G"
+# the queue, on a machine with a scheduler
+# partition = "batch"
+# the quality of service, where the record lists one
+# qos = "normal"

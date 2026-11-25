@@ -128,9 +128,13 @@ it ends, and a difference fails the run, naming what changed:
   terminal through a pseudo-terminal — never by calling or replacing a private
   name of femkit's (one with a leading underscore). What tests share — a
   context, an operation called as a surface calls it, a lock held by another
-  process, an environment left as an install leaves it, a machine record — is
-  written once, in `tests/kit.py`; a test file takes it from there, never from
-  another test file.
+  process, an environment left as an install leaves it, a machine record, part
+  schemas and checks of a test's own registered as a package's are, a projects
+  root, a copy of a template and a file of it changed, each fixture more than
+  one file uses — is written once, in `tests/kit.py`; a test file takes it
+  from there, never from another test file nor a second copy of its own, and
+  never replaces a name of femkit's (the registry's list of part modules
+  among them) to change what femkit reads.
 - **The code's discipline is the review's.** Rules about the code itself — the
   one-way rules and the layers ([`framework.md`](framework.md) § 1), no
   duplicated or hand-made code, the page naming no field

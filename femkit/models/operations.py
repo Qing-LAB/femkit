@@ -1,276 +1,292 @@
-"""The `model` verbs (models.md § 11.1)."""
+"""The verbs of a project's parts above the door (models.md § 11.1): `project check`, `project
+graph`, `study list`, `study expand` and `case list`. Each opens the project once, by its path
+from the projects root or by the folder the command runs in (projects.md § 1), and runs every
+check once; only `study expand` writes, and only femkit's own cases, each study's in its own
+folder (models.md § 5.3). The rules each applies: `project check`, models.md § 11.1 and
+projects.md § 8; `project graph`, models.md § 11.2; the studies and their cases, models.md § 5.3.
+An operation's docstring is its command's help, in the person's words."""
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field
 
 from femkit.core import text, view
-from femkit.core.errors import PlanStale, Refusal, Refused, UsageError
+from femkit.core.errors import Refusal, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.persist import inline_text, write_json
-from femkit.core.schema import Model, field_extras
-from femkit.config import settings
-from femkit.definitions import catalogue
-from femkit.models import cases, check, graph
-from femkit.models.schema import ModelFile
-from femkit.models.project import load_model, load_study, studies, study_file
-from femkit.models.requests import GraphRequest, NewProjectRequest, ProjectRequest, ProjectsRequest, StudyRequest
-from femkit.config.requests import CONFIG_SET
-from femkit.models.requests import CASE_LIST, MODEL_CHECK, MODEL_GRAPH, PROJECT_LIST, PROJECT_NEW, STUDY_EXPAND, STUDY_LIST
+from femkit.core.schema import Model
+from femkit.models import cases, graph, study
+from femkit.models.requests import (CASE_LIST, PROJECT_CHECK, PROJECT_GRAPH, STUDY_EXPAND, STUDY_LIST, GraphRequest,
+                                    ProjectRequest, StudyRequest)
+from femkit.projects import checking, door, location
+from femkit.projects import state as part_state
+from femkit.projects.addresses import Address
+from femkit.projects.door import Opened
+
+
+
+def _opened(req: ProjectRequest, ctx: Context) -> Opened:
+    """The project the request names, or the one the command runs in, opened once."""
+    return door.open_project(location.locate(ctx, req.project, Path.cwd()), ctx)
+
+
+def _checked(req: ProjectRequest, ctx: Context) -> tuple[Opened, checking.Checking, list[Issue]]:
+    """The project opened, its check frame, and every finding, in the chain's order."""
+    opened = _opened(req, ctx)
+    c = checking.Checking.of(opened, ctx)
+    return opened, c, checking.findings(c)
+
+
+# ------------------------------------------------------------------ project check
+
+class PartRow(Model):
+    part: str = Field(description="the part, by its address")
+    file: str = Field(description="its file, from the project's folder")
+    state: str = Field(description="its state", json_schema_extra={"doc": "projects.md § 8"})
 
 
 class CheckResult(Result):
-    project: str = Field(description="the project checked")
+    project: str = Field(description="the project checked, by its path from the projects root")
+    parts: list[PartRow] = Field(default_factory=list, description="each part, with its state; what a part rests "
+                                                                   "on comes before it")
 
-    def text(self) -> str:
-        if not self.issues:
-            return f"{self.project}: the model is complete; nothing its formulation refuses"
-        lines = [f"{self.project}: {text.count(len(self.issues), 'finding')}"]
-        return "\n".join(lines + text.findings(self.issues))
-
-
-@operation(MODEL_CHECK, result=CheckResult)
-def model_check(req: ProjectRequest, ctx: Context) -> CheckResult:
-    """Every rule of the model and its formulation but region coverage, which needs the
-    geometry built; changes nothing (models.md § 3, § 11.1)."""
-    project = _project(req)
-    model = load_model(project, ctx)
-    issues: list[Issue] = check.findings(model, catalogue.formulations(ctx), catalogue.units(ctx), project)
-    return CheckResult(project=str(project), issues=issues)
-
-
-# ------------------------------------------------------------------ studies and cases
-
-def _project(req) -> Path:
-    return req.project.expanduser().resolve()
+    def report(self) -> view.Report:
+        """Its first line says what the findings are — errors, warnings, notes, as many as stand,
+        the first the next step (models.md § 11.2) — and claims no more."""
+        counts = {s: sum(i.severity == s for i in self.issues) for s in checking.SEVERITIES}
+        said = ", ".join(text.count(n, word) for (s, n), word in zip(counts.items(), ("error", "warning", "note")) if n)
+        if counts["error"] or counts["warning"]:
+            head = f"{self.project}: {'' if counts['error'] else 'no errors; '}{said}; the first is the next step"
+        else:
+            head = f"{self.project}: every part loads and checks" + (f"; {said}" if said else "")
+        return view.Report(blocks=[view.Text(text=head), view.Table(
+            columns=view.columns("part", "file", "state", part="part", file="file", state="state"),
+            rows=[{"part": p.part, "file": p.file, "state": p.state} for p in self.parts])])
 
 
-def _subject(project: Path) -> str:
-    """One lock per project: its writers never overlap (core.md § 5)."""
-    return "project-" + hashlib.sha256(str(project).encode()).hexdigest()[:16]
+@operation(PROJECT_CHECK, result=CheckResult)
+def project_check(req: ProjectRequest, ctx: Context) -> CheckResult:
+    """Check every file of the project before anything runs, and say what is wrong: each finding
+    with its file, its key and what would be right, the first being what to do next. What needs
+    the geometry built is said to be checked later. Changes nothing."""
+    opened, _, found = _checked(req, ctx)
+    states = part_state.observe(ctx, opened, found)
+    rank = {k: v.rank for k, v in opened.layout.kinds.items()}
+    rows = [PartRow(part=a, file=p.file, state=states[a])
+            for a, p in sorted(opened.parts.items(), key=lambda i: (rank[i[1].address.kind], i[1].file))]
+    return CheckResult(project=opened.project.name, parts=rows, issues=found)
 
 
-def _expanded(project: Path, study: str, ctx: Context) -> list[cases.Case]:
-    model = load_model(project, ctx)
-    if not study_file(project, study).is_file():
-        raise UsageError(f"{project} has no study {study!r} (it has: {', '.join(studies(project)) or 'none'})")
-    s = load_study(project, study, ctx, model)
-    return cases.expand(model, s, catalogue.formulations(ctx), catalogue.units(ctx), project)
-
-
-class ExpandOutcome(Outcome):
-    added: list[str] = Field(default_factory=list, description="cases written")
-    kept: list[str] = Field(default_factory=list, description="cases already there")
-
-    def text(self) -> str:
-        lines = [f"{text.count(len(self.added), 'case')} added, {len(self.kept)} kept"]
-        return "\n".join(lines + text.findings(self.issues))
-
-
-@operation(STUDY_EXPAND, result=ExpandOutcome, changes=True,
-           subject=lambda req: [_subject(_project(req))])
-class StudyExpand:
-    """Write one case.json for each point of the study that lacks one (models.md § 5)."""
-
-    def plan(self, req: StudyRequest, ctx: Context) -> Plan:
-        project = _project(req)
-        produced = _expanded(project, req.study, ctx)
-        written = cases.written_cases(project)
-        ids = {c.id for c in produced}
-        steps = tuple(Step(id=c.id, describe=f"write cases/{c.id[:12]}…/case.json — "
-                                             + ", ".join(f"{k} = {v}" for k, v in c.point.items()) or "the one case")
-                      for c in produced if c.id not in written)
-        return Plan(steps=steps, basis={"produced": sorted(ids), "kept": sorted(ids & set(written))})
-
-    def apply(self, plan: Plan, ctx: Context, observer) -> ExpandOutcome:
-        req = StudyRequest.model_validate(plan.request)
-        project = _project(req)
-        produced = {c.id: c for c in _expanded(project, req.study, ctx)}
-        if sorted(produced) != plan.basis["produced"]:
-            raise PlanStale("the model or the study changed since the plan; plan again",
-                            (view.command(STUDY_EXPAND, project=str(project), study=req.study),))
-
-        def do(step: Step, where: Path):
-            write_json(cases.case_dir(project, step.id) / "case.json", produced[step.id].data)
-            return "done", None
-
-        status, where = run_steps(plan, ctx, observer, do)
-        return ExpandOutcome(plan=plan, status=status, log=str(where), added=[s.id for s in plan.steps],
-                             kept=plan.basis["kept"], issues=plan.issues)
-
-
-class CaseRow(Model):
-    id: str = Field(description="the case's ID")
-    studies: list[str] = Field(description="the studies that produce it")
-    point: dict[str, str] = Field(description="its axis values, as a study writes them")
-
-
-class CaseListResult(Result):
-    cases: list[CaseRow] = Field(default_factory=list)
-    expand: list[view.Action] = Field(default_factory=list, description="what writes each study's cases")
-
-    def text(self) -> str:
-        if not self.cases:
-            return "no case is written: study expand writes them"
-        return "\n".join(text.table([(c.id[:12], ", ".join(c.studies) or "(no study)",
-                                      ", ".join(f"{k} = {v}" for k, v in c.point.items()) or "—")
-                                     for c in self.cases]))
-
-
-@operation(CASE_LIST, result=CaseListResult)
-def case_list(req: ProjectRequest, ctx: Context) -> CaseListResult:
-    """Every written case, with the studies that produce it and its axis values (models.md § 5)."""
-    project = _project(req)
-    written = cases.written_cases(project)
-    by_case: dict[str, tuple[list[str], dict[str, str]]] = {cid: ([], {}) for cid in written}
-    for name in studies(project):
-        try:
-            produced = _expanded(project, name, ctx)
-        except Refusal:
-            continue  # a study that does not expand now produces nothing listed
-        for c in produced:
-            if c.id in by_case:
-                by_case[c.id][0].append(name)
-                by_case[c.id][1].update({k: str(v) for k, v in c.point.items()})
-    return CaseListResult(cases=[CaseRow(id=cid, studies=s, point=p) for cid, (s, p) in sorted(by_case.items())],
-                          expand=[view.command(STUDY_EXPAND, label=f"expand {name}", project=str(project),
-                                               study=name) for name in studies(project)])
-
-
-# ------------------------------------------------------------------ edits
+# ------------------------------------------------------------------ project graph
 
 class GraphResult(Result):
-    project: str = Field(description="the project")
-    study: str | None = Field(default=None, description="the study shown")
-    formulation: str | None = Field(default=None, description="the model's formulation")
-    choices: list[view.Field] = Field(default_factory=list, description="the model's fields that take one of a list")
-    nodes: list[graph.GraphNode] = Field(default_factory=list)
-    edges: list[graph.GraphEdge] = Field(default_factory=list)
-    next: Issue | None = Field(default=None, description="the model's next step: the first finding, in the chain's order")
+    project: str = Field(description="the project, by its path from the projects root")
+    nodes: list[graph.GraphNode] = Field(default_factory=list, description="each part, then the objects inside it; "
+                                                                           "what a part rests on comes before it")
+    edges: list[graph.GraphEdge] = Field(default_factory=list, description="each reference between them")
     mermaid: str | None = Field(default=None, description="the graph as Mermaid text, when asked")
 
-    def text(self) -> str:
+    def report(self) -> view.Report:
         if self.mermaid is not None:
-            return self.mermaid
-        lines = [f"{text.count(len(self.nodes), 'node')}, {text.count(len(self.edges), 'reference')}"]
-        lines += text.table([(n.address, n.kind + (f": {n.type}" if n.type else ""),
-                              f"{len(n.findings)} findings" if n.findings else "") for n in self.nodes])
-        return "\n".join(lines + text.findings(self.issues))
+            return view.Report(blocks=[view.Code(text=self.mermaid)])
+        return view.Report(blocks=[
+            view.Text(text=f"{self.project}: {text.count(len(self.nodes), 'node')}, "
+                           f"{text.count(len(self.edges), 'wire')}"),
+            view.Table(columns=view.columns("node", "kind", "state", "findings", node="node", kind="kind",
+                                            state="state", findings="findings"),
+                       rows=[{"node": n.address, "kind": n.kind + (f": {n.type}" if n.type else ""),
+                              "state": n.state or "", "findings": len(n.findings) or ""} for n in self.nodes]),
+            view.Table(columns=view.columns("source", "target", "where", source="from", target="to",
+                                            where="written at"),
+                       rows=[{"source": e.source, "target": e.target, "where": e.address} for e in self.edges])])
 
 
-@operation(MODEL_GRAPH, result=GraphResult)
-def model_graph(req: GraphRequest, ctx: Context) -> GraphResult:
-    """The model and a study as nodes and typed wires, with `model check`'s findings on each
-    node and the formulation's palette (models.md § 11.2); `--mermaid` for a terminal."""
-    project = _project(req)
-    formulations, units = catalogue.formulations(ctx), catalogue.units(ctx)
-    model = load_model(project, ctx)
-    s = load_study(project, req.study, ctx, model) if req.study else None
-    issues = check.findings(model, formulations, units, project)
-    f = formulations.get(model.formulation or "")
-    nodes, edges, loose = graph.build(model, req.study, s, issues, project, f, units)
-    formulation = ModelFile.model_fields["formulation"]
-    choice = check.formulation_choice(formulations)
-    return GraphResult(
-        project=str(project), study=req.study, formulation=model.formulation,
-        choices=[view.Field(label="formulation", value=inline_text(model.formulation) if model.formulation else None,
-                            json_schema=choice, help=view.Help.of(formulation.description,
-                                                                  field_extras(formulation).get("doc")))],
-        nodes=nodes, edges=edges, issues=loose,
-        next=issues[0] if issues else None,
-        mermaid=graph.mermaid(nodes, edges) if req.mermaid else None)
+@operation(PROJECT_GRAPH, result=GraphResult)
+def project_graph(req: GraphRequest, ctx: Context) -> GraphResult:
+    """Show the project as a graph: each file and what is inside it, the findings on each, and
+    every wire — where one file names another, or uses a parameter. Changes nothing."""
+    opened, _, found = _checked(req, ctx)
+    nodes, edges, loose = graph.build(opened, found, part_state.observe(ctx, opened, found))
+    return GraphResult(project=opened.project.name, nodes=nodes, edges=edges, issues=loose,
+                       mermaid=graph.mermaid(nodes, edges) if req.mermaid else None)
 
 
-# ------------------------------------------------------------------ projects and studies (web.md § 8.6)
+# ------------------------------------------------------------------ studies
 
-class ProjectRow(Model):
-    name: str = Field(description="its folder's name")
-    path: str = Field(description="its folder")
-    studies: list[str] = Field(default_factory=list, description="its studies")
-
-
-class ProjectList(Result):
-    root: str | None = Field(default=None, description="the projects folder, paths.projects; none while it is unset")
-    projects: list[ProjectRow] = Field(default_factory=list)
-
-    def text(self) -> str:
-        if self.root is None:
-            return "\n".join(["no projects folder"] + text.findings(self.issues))
-        rows = [(p.name, ", ".join(p.studies) or "no study") for p in self.projects]
-        return "\n".join([f"{text.count(len(rows), 'project')} in {text.path(self.root)}"] + text.table(rows))
+class StudyRow(Model):
+    name: str = Field(description="the study, by its name")
+    expands: bool = Field(description="whether it expands into cases now")
+    cases: int = Field(default=0, description="how many cases it makes")
+    why: str | None = Field(default=None, description="why it does not expand")
 
 
-def _projects_folder(ctx: Context) -> Path | None:
-    return settings.load(ctx).config.paths.projects
+STUDY_COLUMNS = dict(study="study", expands="expands", cases="cases", why="why it does not expand")
 
 
-def _state_the_folder() -> view.Action:
-    return view.command(CONFIG_SET, key="paths.projects", label="choose the projects folder",
-                        fills=[view.Fill(field="value", label="the projects folder", example='"/path/to/projects"')])
-
-
-@operation(PROJECT_LIST, result=ProjectList)
-def project_list(req: ProjectsRequest, ctx: Context) -> ProjectList:
-    """The projects under paths.projects, each with its studies (web.md § 8.6)."""
-    root = _projects_folder(ctx)
-    if root is None:
-        return ProjectList(issues=[Issue(severity="info", code="projects-unset", subject="paths.projects",
-                                         label="the projects folder",
-                                         message="paths.projects is unset, so no project is listed; a project is named "
-                                                 "by its folder.", next=(_state_the_folder(),))])
-    folders = sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")) if root.is_dir() else []
-    return ProjectList(root=str(root), projects=[ProjectRow(name=p.name, path=str(p), studies=studies(p))
-                                                 for p in folders])
+def _studies(opened: Opened, c: checking.Checking, found: list[Issue]
+             ) -> list[tuple[StudyRow, list[cases.Expanded]]]:
+    """Each study of the project, whether it expands — its cases, or why not."""
+    out = []
+    kind = opened.layout.kind_of(study.KEY)
+    for part in sorted((p for p in opened.parts.values() if p.address.kind == kind), key=lambda p: p.file):
+        if part.data is None:
+            out.append((StudyRow(name=part.address.name, expands=False, why="its file does not load"), []))
+            continue
+        try:
+            made = cases.expand(c, part, found)
+        except Refusal as exc:
+            out.append((StudyRow(name=part.address.name, expands=False, why=str(exc)), []))
+            continue
+        out.append((StudyRow(name=part.address.name, expands=True, cases=len(made)), made))
+    return out
 
 
 class StudyList(Result):
-    studies: list[str] = Field(default_factory=list, description="the project's studies")
+    project: str = Field(description="the project, by its path from the projects root")
+    studies: list[StudyRow] = Field(default_factory=list, description="each study, whether it expands and, if not, "
+                                                                      "why")
 
-    def text(self) -> str:
-        return "\n".join(self.studies) or "no study"
+    def report(self) -> view.Report:
+        return view.Report(blocks=[
+            view.Text(text=f"{self.project}: {text.count(len(self.studies), 'study')}"),
+            view.Table(columns=view.columns(*STUDY_COLUMNS, **STUDY_COLUMNS),
+                       rows=[{"study": s.name, "expands": "yes" if s.expands else "no", "cases": s.cases,
+                              "why": s.why or ""} for s in self.studies])])
 
 
 @operation(STUDY_LIST, result=StudyList)
 def study_list(req: ProjectRequest, ctx: Context) -> StudyList:
-    """A project's studies, under studies/ (models.md § 2)."""
-    return StudyList(studies=studies(_project(req)))
+    """List the project's studies: whether each expands into cases now and, if not, why. Changes
+    nothing."""
+    opened, c, found = _checked(req, ctx)
+    return StudyList(project=opened.project.name, studies=[row for row, _ in _studies(opened, c, found)])
 
 
-class NewProjectOutcome(Outcome):
-    path: str | None = Field(default=None, description="the new project's folder")
+class ExpandOutcome(Outcome):
+    study: str = Field(description="the study, by its name")
+    added: list[str] = Field(default_factory=list, description="each case written, by its ID")
+    kept: list[str] = Field(default_factory=list, description="each case it makes that was written already")
 
-    def text(self) -> str:
-        return f"made {text.path(self.path)}" if self.path else "nothing made"
+    def report(self) -> view.Report:
+        return view.Report(blocks=[
+            view.Text(text=f"{self.study}: {text.count(len(self.added), 'case')} written, {len(self.kept)} kept"),
+            view.Table(columns=view.columns("case", "written", case="case", written="written"),
+                       rows=[{"case": i, "written": "now"} for i in self.added]
+                       + [{"case": i, "written": "before"} for i in self.kept])])
 
 
-@operation(PROJECT_NEW, result=NewProjectOutcome, changes=True,
-           subject=lambda req: ["projects"])
-class ProjectNew:
-    """Make a new, empty project under paths.projects (web.md § 8.6)."""
+def _expansion(req: StudyRequest, ctx: Context) -> tuple[Opened, list[cases.Expanded]]:
+    """The study's cases; refused for a study the project lacks, or one that does not expand."""
+    opened, c, found = _checked(req, ctx)
+    asked = Address(opened.layout.kind_of(study.KEY), req.study)
+    part = opened.parts.get(str(asked))
+    if part is None:
+        raise UsageError(f"the project {opened.project.name} has no study `{req.study}`",
+                         (view.command(STUDY_LIST, project=opened.project.name),), code="no-such-part",
+                         subject=str(asked))
+    if part.data is None:
+        raise UsageError(f"the study `{req.study}` does not load; `project check` says why",
+                         (view.command(PROJECT_CHECK, project=opened.project.name),), code="unloadable",
+                         subject=str(part.address))
+    return opened, cases.expand(c, part, found)
 
-    def plan(self, req: NewProjectRequest, ctx: Context) -> Plan:
-        root = _projects_folder(ctx)
-        if root is None:
-            raise Refused("paths.projects is unset: there is no projects folder to make a project in",
-                          (_state_the_folder(),))
-        target = root / req.name
-        if target.exists():
-            raise Refused(f"{text.path(target)} is there already")
-        return Plan(basis={"path": str(target)},
-                    steps=(Step(id="make", describe=f"make {text.path(target)}"),))
 
-    def apply(self, plan: Plan, ctx: Context, observer) -> NewProjectOutcome:
-        target = Path(plan.basis["path"])
-        if target.exists():
-            raise PlanStale(f"{text.path(target)} appeared since the plan")
+@operation(STUDY_EXPAND, result=ExpandOutcome, changes=True, subject="plan")
+class StudyExpand:
+    """Write the study's cases: one `case.json` for each point of its axes it has not written yet,
+    in the study's own folder of `cases/`. Refused while a file it uses does not load or has a
+    finding to resolve."""
+
+    def observe(self, req: StudyRequest, ctx: Context) -> dict:
+        """The cases the study makes, and those it wrote already."""
+        opened, made = _expansion(req, ctx)
+        return {"cases": sorted(m.id for m in made), "written": sorted(cases.written(opened).get(req.study, {}))}
+
+    def plan(self, req: StudyRequest, ctx: Context) -> Plan:
+        opened, made = _expansion(req, ctx)
+        there = cases.written(opened).get(req.study, {})
+        steps = tuple(Step(id=m.id, describe=f"write {cases.path(req.study, m.id[:12] + '…')}: "
+                                             + (", ".join(f"{k} = {_shown(v)}" for k, v in m.point.items())
+                                                or "the one case"))
+                      for m in made if m.id not in there)
+        return Plan(subjects=(opened.project.subject,), steps=steps,
+                    holds={"project": opened.project.name, "cases": {m.id: m.data for m in made if m.id not in there},
+                           "kept": sorted(m.id for m in made if m.id in there)})
+
+    def apply(self, plan: Plan, ctx: Context, observer) -> ExpandOutcome:
+        req = StudyRequest.model_validate(plan.request)
+        opened = _opened(req, ctx)
 
         def do(step: Step, where: Path):
-            target.mkdir(parents=True)
+            cases.write(opened, req.study, cases.Expanded(step.id, {}, plan.holds["cases"][step.id]))
             return "done", None
 
-        status, where = run_steps(plan, ctx, observer, do)
-        return NewProjectOutcome(plan=plan, status=status, log=str(where), path=str(target))
+        status, log = run_steps(plan, ctx, observer, do)
+        return ExpandOutcome(plan=plan, status=status, log=str(log), study=req.study,
+                             added=[s.id for s in plan.steps] if status == "done" else [], kept=plan.holds["kept"])
+
+
+def _shown(value: Any) -> str:
+    """An axis value as the study writes it."""
+    return value if isinstance(value, str) else str(value)
+
+
+# ------------------------------------------------------------------ case list
+
+class CaseRow(Model):
+    id: str = Field(description="the case's ID: the SHA-256 of its content", json_schema_extra={"doc": "models.md § 5.3"})
+    point: dict[str, str] = Field(default_factory=dict, description="its axis values, as its study writes them — as "
+                                                                    "its file holds them for a case the study no "
+                                                                    "longer makes")
+    made: bool = Field(default=False, description="whether its study makes it now; one it no longer makes is kept")
+    why: str | None = Field(default=None, description="why its file does not load")
+
+
+class StudyCases(StudyRow):
+    written: list[CaseRow] = Field(default_factory=list, description="every case of the study written, by its ID")
+
+
+class CaseList(Result):
+    project: str = Field(description="the project, by its path from the projects root")
+    studies: list[StudyCases] = Field(default_factory=list, description="each study, whether it expands and, if "
+                                                                        "not, why, with the cases written for it")
+
+    def report(self) -> view.Report:
+        blocks: list[Any] = [view.Text(text=f"{self.project}: "
+                                            f"{text.count(sum(len(s.written) for s in self.studies), 'case')} written")]
+        for s in self.studies:
+            state = f"makes {text.count(s.cases, 'case')}" if s.expands else f"does not expand: {s.why}"
+            blocks.append(view.Text(text=f"{s.name}: {text.count(len(s.written), 'case')} written; {state}"))
+            if s.written:
+                blocks.append(view.Table(
+                    columns=view.columns("case", "point", "now", case="case", point="point", now="made now"),
+                    rows=[{"case": w.id[:12], "now": "yes" if w.made else "no",
+                           "point": w.why or ", ".join(f"{k} = {v}" for k, v in w.point.items()) or "the one point"}
+                          for w in s.written]))
+        return view.Report(blocks=blocks)
+
+
+@operation(CASE_LIST, result=CaseList)
+def case_list(req: ProjectRequest, ctx: Context) -> CaseList:
+    """List each study's cases: those written for it, with their axis values and whether the study
+    still makes them; and whether it expands now and, if not, why. Changes nothing."""
+    opened, c, found = _checked(req, ctx)
+    on_disk = cases.written(opened)
+    out: list[StudyCases] = []
+    studies = {row.name: (row, made) for row, made in _studies(opened, c, found)}
+    for name in sorted({*studies, *on_disk}):
+        row, made = studies.get(name, (StudyRow(name=name, expands=False, why="no such study"), []))
+        now = {m.id: m for m in made}
+        rows = []
+        for case_id, held in sorted(on_disk.get(name, {}).items()):
+            if isinstance(held, str):
+                rows.append(CaseRow(id=case_id, why=held))
+            elif case_id in now:
+                rows.append(CaseRow(id=case_id, made=True, point={k: _shown(v) for k, v in now[case_id].point.items()}))
+            else:
+                rows.append(CaseRow(id=case_id, point={k: cases.shown(v, c.units) for k, v in held.point.items()}))
+        out.append(StudyCases(**row.model_dump(), written=rows))
+    return CaseList(project=opened.project.name, studies=out)

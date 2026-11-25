@@ -15,19 +15,21 @@ from pathlib import Path
 
 import pytest
 
-from tests.kit import apply, hold, planned, refused, run
+from tests.kit import apply, ctx, hold, planned, refused, run
 from femkit import registry
 from femkit.core import clock, dirs, locks
 from femkit.core.eventlog import EventLog
 from femkit.core.errors import Busy, PlanStale, Refused, UsageError
 from femkit.core.operations import Context, OperationAddress, operations_root
+from femkit.core import view
+from femkit.core.operations import Outcome
 from femkit.core.view import Verb
 from femkit.core.process import GRACE, Identity, end, identify
 from femkit.server import health, protocol
 from femkit.server.protocol import Listen, LogRoll, Pidfile
 from femkit.core.schema import Model
 from pydantic import model_validator
-from femkit.server.state import MACHINE, ServerFacts, ServerState, facts
+from femkit.server.state import ServerFacts, facts, machine
 
 HERE = socket.gethostname()
 
@@ -75,20 +77,20 @@ def _pidfile(alive: bool, host: str = HERE) -> Pidfile:
 
 
 @pytest.mark.parametrize("locked, exists, pidfile, state", [
-    (False, False, None, ServerState.stopped),
-    (False, True, "alive", ServerState.stale),           # the lock is free: its supervisor is gone, whatever the pid says
-    (False, True, None, ServerState.stale),              # an unreadable pidfile left behind
-    (True, True, "alive", ServerState.running),
-    (True, True, "recycled", ServerState.starting),      # the pid runs, but not with the start time recorded
-    (True, False, None, ServerState.starting),
-    (False, True, "elsewhere", ServerState.elsewhere),
+    (False, False, None, "stopped"),
+    (False, True, "alive", "stale"),           # the lock is free: its supervisor is gone, whatever the pid says
+    (False, True, None, "stale"),              # an unreadable pidfile left behind
+    (True, True, "alive", "running"),
+    (True, True, "recycled", "starting"),      # the pid runs, but not with the start time recorded
+    (True, False, None, "starting"),
+    (False, True, "elsewhere", "elsewhere"),
 ])
 def test_the_server_state_is_observed_from_its_lock_and_pidfile(locked, exists, pidfile, state):
     """Fails if a server's state is guessed from a process ID alone, or the rules of web.md
     § 4 apply out of their order: the lock is the supervisor's liveness."""
     p = {"alive": _pidfile(True), "recycled": _pidfile(False), "elsewhere": _pidfile(True, host="other-host"),
          None: None}[pidfile]
-    assert MACHINE.observe(ServerFacts("8000", HERE, locked, exists, p)) is state
+    assert machine(ctx()).observe(ServerFacts("8000", HERE, locked, exists, p)) == state
 
 
 # ------------------------------------------------------------------ the verbs, live
@@ -98,7 +100,7 @@ def test_start_serves_with_its_token_and_a_second_start_is_refused(server):
     free, or lets a second server start on the same address (web.md § 4)."""
     name = str(server)
     f = facts(name)
-    assert MACHINE.observe(f) is ServerState.running and f.locked
+    assert machine(ctx()).observe(f) == "running" and f.locked
     token = protocol.token_file(name).read_text().strip()
     assert health.ask(Listen(port=server), token)[0]
     assert not health.ask(Listen(port=server), "another token")[0]  # an impostor's proof would not match
@@ -126,7 +128,7 @@ def test_stop_ends_both_processes_and_removes_its_files(server):
     assert apply("serve.stop", port=server).ok()
     assert not p.supervisor.alive() and not p.child.alive()
     assert not protocol.pidfile(name).exists() and not protocol.token_file(name).exists()
-    assert MACHINE.observe(facts(name)) is ServerState.stopped
+    assert machine(ctx()).observe(facts(name)) == "stopped"
 
 
 def test_restart_replaces_the_child_and_keeps_the_token(server):
@@ -166,7 +168,7 @@ def test_a_child_that_exits_by_itself_ends_the_supervisor_and_the_server_is_stop
     (dirs.config_dir() / "config.toml").write_text("[no_such_section]\nx = 1\n")
     os.kill(p.child.pid, signal.SIGKILL)  # the respawned child meets the broken file
     assert wait_until(lambda: not p.supervisor.alive())
-    assert MACHINE.observe(facts(name)) is ServerState.stopped
+    assert machine(ctx()).observe(facts(name)) == "stopped"
     assert not protocol.pidfile(name).exists() and not protocol.token_file(name).exists()
     log = protocol.log_file(name).read_text()
     assert "config.toml does not load" in log and "not respawned" in log
@@ -180,9 +182,9 @@ def test_a_supervisor_killed_outright_leaves_a_stale_server_its_child_ends_with(
     p = protocol.read_pidfile(protocol.pidfile(name))
     os.kill(p.supervisor.pid, signal.SIGKILL)
     assert wait_until(lambda: not p.child.alive())
-    assert MACHINE.observe(facts(name)) is ServerState.stale
+    assert machine(ctx()).observe(facts(name)) == "stale"
     assert apply("serve.start", port=server, tcp=True).ok()
-    assert MACHINE.observe(facts(name)) is ServerState.running
+    assert machine(ctx()).observe(facts(name)) == "running"
 
 
 @pytest.mark.parametrize("request_", [{"port": 9000}, {"port": 9000, "socket": True}], ids=["login node", "--socket"])
@@ -255,7 +257,7 @@ def test_stop_holds_a_stale_servers_lock_while_it_cleans(server):
         holder.stdin.close()
         holder.wait()
     assert op.apply(plan, c).ok()                                        # the start gone: stop cleans under its lock
-    assert not protocol.pidfile(name).exists() and MACHINE.observe(facts(name)) is ServerState.stopped
+    assert not protocol.pidfile(name).exists() and machine(ctx()).observe(facts(name)) == "stopped"
 
 
 def test_a_token_file_an_ended_server_left_does_not_stop_the_next_start():
@@ -282,6 +284,18 @@ def test_an_address_held_by_another_program_is_refused_before_anything_detaches(
         port = holder.getsockname()[1]
         with refused(Refused, "address-held"):
             apply("serve.start", port=port, tcp=True)
+    assert not protocol.pidfile(str(port)).exists() and not protocol.token_file(str(port)).exists()
+
+
+def test_a_page_declaration_that_does_not_load_is_refused_before_anything_detaches(definitions):
+    """Fails if `start` detaches a supervisor whose child would end at once, unable to load the
+    page's declaration, instead of refusing in the terminal (web.md § 4: "it refuses before it
+    detaches")."""
+    declaration = definitions / "web" / "page.toml"   # the test's own copy, by the path it was given
+    declaration.write_text("")                         # it declares no app and no workspace
+    port = free_port()
+    with refused(Refused, "page-does-not-load", str(declaration)):
+        apply("serve.start", port=port, tcp=True)
     assert not protocol.pidfile(str(port)).exists() and not protocol.token_file(str(port)).exists()
 
 
@@ -529,6 +543,13 @@ class _NoInputs(Model):
     it is the same declaration (a verb's name has one request, api.md § 2.2)."""
 
 
+class _Done(Outcome):
+    """A test operation's outcome: every result builds its report (api.md § 2.3)."""
+
+    def report(self) -> view.Report:
+        return view.Report(blocks=[view.Text(text=f"{self.status}")])
+
+
 class _BrokenRequest(Model):
     """A request that fails in reading, with an error femkit did not expect."""
 
@@ -543,7 +564,6 @@ def fake_operation(runs: int, step_log: bool = False):
     does; with ``step_log``, its step reports a log to the apply's own observer and waits."""
     import threading as _t
     from femkit.core.operations import Operation, Plan, Step, run_steps
-    from femkit.core.operations import Outcome
     release = _t.Event()
 
     class Impl:
@@ -560,9 +580,9 @@ def fake_operation(runs: int, step_log: bool = False):
                         release.wait(20)
                     return "done", None
                 run_steps(plan.model_copy(update={"subjects": (f"demo-{i}",)}), ctx, observer, do)
-            return Outcome(plan=plan, status="done")
+            return _Done(plan=plan, status="done")
 
-    return Operation(Verb("demo.multi", _NoInputs), Outcome, True, "a test operation", Impl()), release
+    return Operation(Verb("demo.multi", _NoInputs), _Done, True, "a test operation", Impl()), release
 
 
 def test_an_apply_over_several_runs_reports_each_and_ends():

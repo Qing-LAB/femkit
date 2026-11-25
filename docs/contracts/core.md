@@ -31,11 +31,11 @@ module reads no file, probes nothing and starts nothing.
 | `dirs` | the user's directories and the variables that name them, the control prefix, and the checkout femkit runs from | 3 |
 | `clock` | how femkit writes a moment: UTC, ISO 8601, to the second — in every record, event log and server log line | 6 |
 | `paths` | `inside(path, root)`: the one test that a path resolves within a prefix or tree; `nearest_existing(path)`: where a place not made yet would be made | 3 |
-| `schema` | `Model`, the loader, `DefinitionError`, the placeholder grammar | 2 |
-| `persist` | every write: atomic files and streams, appends, copies, removal, a folder emptied or replaced whole, an archive unpacked; TOML and JSON reads and writes | 4 |
+| `schema` | `Model`, the loader, `DefinitionError` and each `Problem` in plain words with what would be right, the placeholder grammar; a field's help, and a template held to it | 2 |
+| `persist` | every write: atomic files and streams, appends, copies, removal, a folder emptied or replaced whole, an archive unpacked; TOML and JSON reads and writes; a TOML text's keys with the comments above them | 4 |
 | `locks` | `subject_lock`, and the grammar of a subject's name | 5 |
 | `eventlog` | `EventLog`, its file's name, the record kinds, the step outcomes, and its fold | 6 |
-| `states` | `Machine`, `Rule`, `Action` | 7 |
+| `states` | `StateTable`, a machine's table as data; `Binding`, what code gives it; `load`; `Machine`, `Rule`, `Action` | 7 |
 | `process` | `run`, `ProcessResult`, `tail` (a log's last lines), a process's `Identity`, the one stop grace | 8 |
 | `errors` | `Refusal` and its seven kinds | 9 |
 | `issues` | `Issue` | 10 |
@@ -57,6 +57,10 @@ def load_text(text: str, model: type[M], file: Path | str, context: dict | None 
 def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact: bool = False) -> M
                                                         # persist.read_text, then load_text; no file is a problem too
 def validate(model: type[M], data: Any, file: Path | str, context: dict | None = None) -> M
+def problems(model, data, errors) -> list[Problem]       # pydantic's errors as a person reads them, at their keys
+def not_toml(text, exc) -> Problem                      # why a text is not TOML, plainly, at its line
+class Problem(tuple):                                   # (path, reason), what every reader unpacks; and what would
+    path: str; reason: str; right: str | None; choices: tuple[str, ...]   # be right there, as the file writes it
 def refuse(model: str, problems: list[tuple[location, reason]]) -> None
                                                         # in a model validator: every cross-reference problem at once
 def field_extras(field: FieldInfo) -> dict              # a field's annotations, its Annotated type's included
@@ -64,35 +68,78 @@ def alternatives(annotation) -> list                    # what it may hold, thro
 def classes(annotation), keys_of(annotation), values_of(annotation), items_of(annotation), closed(annotation)
                                                         # its models; a table's keys, values; a list's items; a Literal's texts
 def optional(annotation) -> bool                        # whether it allows None, through Annotated and unions
-def described(field) -> str                             # its description, and its `doc` reference after it
+def described(field) -> str                             # its help: its description, `: one of` its closed values,
+                                                        # and its `doc` reference after it
+def help_text(sentence, values=(), doc=None, *, unit=None) -> str
+                                                        # the one builder of a help: `described`'s, and a
+                                                        # declared key's — its sentence, `, in` and its unit
+def help_findings(text, model, declared=lambda path: None) -> list[HelpFinding]
+                                                        # where a template of a file `model` reads breaks the rule
+                                                        # that the comment above each key is its help
+class HelpFinding: line: int | None, key: str, problem: str   # its line from 1 (None: the text), its key path, why
 def field_named(cls, key) -> tuple[str, FieldInfo] | None   # the field a file writes as `key`, alias or name
-def key_path(loc) -> str                                # a problem's place: `builds[1].options`, in a file or a request
+def key_path(loc) -> str                                # a problem's place: `builds[1].options`, in a file or a request,
+                                                        # a key TOML quotes quoted: `axes."mesh:fine:size"`
+def problem_path(model, loc) -> str                     # a validation error's place as the file writes it: the
+                                                        # keys alone, pydantic's own marks left out
 def matching(pattern, **field), whole(pattern) -> str   # a text field its pattern holds whole; the pattern tied to both ends
 def references(instance) -> Iterator[tuple[location, type, name, held]]   # every name its `ref` fields hold;
                                                         # held: `key`, `value` or `item` — how the location holds it
-QUANTITIES: dict[kind, tuple[dimension | None, sentence]]   # each `quantity` kind: its fixed dimension, what it takes
+QUANTITIES: dict[kind, QuantityKind]                    # each `quantity` kind: QuantityKind(reads, dimension, sentence)
 DIMENSIONS: dict[kind, dimension]                         # the kinds with a fixed one; LENGTH, a length's
-def as_quantity(description, kind="any", **field) -> Field    # a field written as a quantity of `kind`
+def as_quantity(description, kind="any", *, extra=None, **field) -> Field   # a field written as a quantity of `kind`
 def as_reference(description, target, *, extra=None, **field) -> Field   # a field naming `target`'s objects (`ref`)
 
-class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[key_path, reason]]
+class DefinitionError(Refusal):           # .file: str, .problems: list[Problem]
 ```
 
 - **One home per field.** A field's type, default, allowed values and
   description are written once, on its model, with `pydantic.Field(...,
   description=...)`. Help text, `docs/reference/` and the web form read that
-  description; nothing restates it.
+  description; nothing restates it. A field's **help** is what `described`
+  makes of it, one text: its description; then, when its value — or a table's
+  values — is a closed list, `: one of` and each allowed value in backticks,
+  joined by `, `; then its `doc` reference in parentheses. An element's
+  `family`, described as "the element family", has the help "the element
+  family: one of \`lagrange\`, \`nedelec\`". A description therefore never
+  lists the allowed values itself. A value is a closed list when every
+  alternative it allows is a `Literal`'s: a number or `unlimited` is not.
+  `help_text` is the one builder of a help: `described` makes a field's with
+  it, and each `declared` (below) a declared key's — its sentence, then `, in`
+  and its unit.
+- **A template's comment above a key is that text**
+  ([`projects.md`](projects.md) § 7). `persist.key_comments` reads a
+  template's keys with the comments above them (§ 4), and `help_findings`
+  holds them to the schema — given a template's text and the model of the file
+  it is (the settings file's `UserConfig`, a part kind's schema), one finding
+  for each key the schema names whose comment is not its help, each key the
+  schema does not allow, each table the schema names that has no header of its
+  own or holds keys it names inline, and each key of a table the text writes
+  that it neither sets nor shows commented out. A key whose name the person
+  chooses is not compared. `declared(path)` gives the help of a key a
+  declaration outside the schema states — a formulation's parameter, the
+  property list's property ([`web.md`](web.md) § 8.3) — and None for every
+  other key; one test holds every template file to it, each part of every
+  project template and the settings file's (`tests/basic/test_templates.py`).
 - **Extra facts on a field** go in `json_schema_extra` under these names only:
   `unset` (what an unset optional key means, [`config.md`](config.md) § 3),
-  `cli` (how the command line spells it, [`api.md`](api.md) § 4),
+  `ask` (the question `config init` asks for a setting while it is unset,
+  [`config.md`](config.md) § 3.2),
+  `cli` (how the command line spells it, [`api.md`](api.md) § 4.1: `argument`, or an
+  option's own spelling where the field's name cannot be it, `--from`),
   `placeholders` (the names a templated field accepts, § 2.1), `ref` (the type of
   object a field refers to by name, read by both the cross-reference check and
   the project graph, [`models.md`](models.md) § 11.2; made with
-  `as_reference`), `quantity` (a value written as a quantity, § 11: `any`,
-  `length`, `coordinate` — a bare number in the frame's unit, or a length — or
-  `unit`, a unit text alone; made with `as_quantity`, and `QUANTITIES` the one
-  table of the kinds the loaders, the forms' units and the reference pages
-  read), `toml` (a
+  `as_reference`), `quantity` (a value written as a quantity, § 11: `any`, a
+  quantity or an expression of a project's parameters; `length`, one in a
+  length's dimension — a coordinate is one, since only a geometry script
+  writes a bare number ([`geometry.md`](geometry.md) § 3); `constant`, a
+  quantity naming no parameter — a material's value, since a material cites
+  nothing ([`projects.md`](projects.md) § 3); or `unit`, a unit text alone;
+  made with `as_quantity`, and `QUANTITIES` the one table of the kinds — what
+  each value reads as, its fixed dimension and its sentence — the loaders,
+  the cases, the forms' units and the reference pages read),
+  `toml` (a
   field that takes a value as its TOML text, `whole` — `config set`'s
   `value`, `whole`; a surface writes the text from the value a
   person gives), `doc` (where the field is defined: a document and its
@@ -113,7 +160,10 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   finds a field by the key a file writes with `field_named`.
 - **`ref`** on a text or a list of texts names the type its values refer to; on
   a table it is `{"key": type, "value": type}`, either part optional. A type may
-  offer alternatives, `group:boundary|group:interface`. `references` walks a
+  offer alternatives, `group:outer_boundary|group:interface`; a group's place
+  is one of the names `femkit/data/geometry/kinds.toml` declares
+  ([`geometry.md`](geometry.md) § 7). The type `file` names a file in a folder part's own
+  folder, by its path from it, which the door reads ([`projects.md`](projects.md) § 6). `references` walks a
   loaded file's fields and yields every name with its location, its type and
   how the location holds it — a table's key, a text value, a list's item; the
   domain that owns the file says which names exist.
@@ -121,14 +171,35 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   definition, a setting, a record, a project's part — and `load_toml` is
   `persist.read_text` then `load_text`: a text that is not TOML, a file that is
   not UTF-8 and a file that is not there are each a `DefinitionError` at the
-  file, like a field's problem.
+  file, like a field's problem. Why a text is not TOML is said in plain words
+  at its line (`not_toml`): tomllib's errors each read as a sentence — "line
+  23: a quoted text is not closed before the line ends" — a key or table set
+  twice at that key, with both its lines — "`side` is set twice (lines 23 and
+  27)" — and tomllib's own words kept, after the line, only where no sentence
+  fits.
 - **`exact=True`** reads every TOML float from its decimal text as a
   `Decimal`, never a binary float: a model's numbers enter a case ID exactly
   (§ 11).
 - **Loading fails whole.** Every field problem in a file is reported at once,
-  each as `(key path, reason)`; the key path uses dots and `[index]`, e.g.
-  `builds[1].options.NETGEN_DIR`. Cross-reference problems (next point) are
+  each as `(key path, reason)`; the key path is the one the file writes
+  (`problem_path`): dots and `[index]`, e.g. `builds[1].options.NETGEN_DIR`,
+  a key TOML quotes quoted, and none of pydantic's own marks — a validator's
+  kind, the member of a union it tried, `[key]` — so the problems of a
+  union's members at one key are one problem there, their reasons joined. Cross-reference problems (next point) are
   checked once every field is valid, and are then reported together.
+- **Each problem in plain words, with what would be right** (`problems`;
+  [`models.md`](models.md) § 13). A problem's reason is a sentence for a
+  person, never pydantic's words, and a `Problem` carries what would be right
+  at its key as a finding does (§ 10): an unknown key is one problem at it —
+  "`szie` is no key here; did you mean `size`?" — its choices the keys its
+  table may still take, the closest first, and a required key it most nearly
+  spells is not said missing besides; a value outside a closed list says so,
+  its choices those values, the closest first, or its `right` the one value
+  when there is one; a value of the wrong kind says what it should be — a
+  whole number, a text in quotes, a table — each member of a union what it
+  takes; a missing key is said at its table — "`solver` is missing". Built
+  once, here, every declared file gets it: each part kind, each definition,
+  the settings file.
 - **Cross-references** (a build's source, a registered engine) are checked by
   a model validator, which raises them together with `refuse`; outside facts a
   validator needs, such as the registered engine IDs or the unit table, arrive
@@ -194,17 +265,24 @@ def read_bytes(path) -> bytes | None                   # a file's bytes; None wh
 def sha256(path) -> str | None                         # the one digest of a file, read in blocks — a download
                                                         # may be large; None when no file is there
 def empty_folder(path) -> Path                         # an empty folder, whatever was there
-def copy_tree(source, path) -> Path                    # a folder copied to a place not there yet: copied beside
-                                                        # it and renamed in, whole — an interrupted copy leaves nothing
+def copy_tree(source, path, only=None) -> Path         # a folder copied to a place not there yet: copied beside
+                                                        # it and renamed in, whole — an interrupted copy leaves nothing;
+                                                        # `only`: just these files, by their POSIX paths from source
 def replace_folder(fresh, path) -> None                # fresh takes path's place whole: old moved aside, fresh
                                                         # renamed in, old removed — never a half of either
 def unpack_single(archive, path) -> bool               # a gzipped tar's one top folder becomes path, whole
+BARE                                                   # a key TOML writes bare; any other it quotes — what a key path
+                                                       # (§ 2), an address and a template's keys read
 def plain_value(text) -> Any                           # a TOML inline value as a person types it, as plain Python
 def read_toml(path: Path) -> dict
 def read_json(path: Path) -> Any
 def read_document(path, empty="") -> TOMLDocument     # a TOML file to edit, its comments and order kept
 def write_document(path, doc) -> Path                  # atomic
 def document_has(doc, key) -> bool; document_set(doc, key, value)
+                                                       # a key not there yet: directly under the line showing it
+def key_comments(text) -> list[KeyComment]             # every key and table header a TOML text writes or shows
+                                                       # commented out, with the comment lines directly above it
+class KeyComment: path, line, header, shown, value, comment
 def document_text(doc, key) -> str                     # an entry's text as its file holds it: a table as its own document
 def inline_text(value) -> str                          # a plain value as TOML text on one line
 def private_dir(path: Path, *, make=True) -> Path   # 0700; refused when another account could enter it or
@@ -215,8 +293,20 @@ def open_private(path: Path, mode: str) -> IO   # 0600 from its first byte, neve
 
 `config.toml` keeps its comments, its order and its layout through every edit
 `config set` makes — read as a document, changed key by key, and written whole
-and atomically; no command edits a project's files ([`projects.md`](projects.md)
-§ 7).
+and atomically; a key not there yet goes directly under the line that shows it
+commented out, so it stands under its help ([`config.md`](config.md) § 3.2); no
+command edits a project's files ([`projects.md`](projects.md) § 7). tomlkit
+inserts a key at a place only through its own `Container._insert_at`, held to
+it by tomlkit's version range in `control.txt` and a test.
+
+`key_comments` is the one reader of a template's help
+([`projects.md`](projects.md) § 7): for each key, its path from the text's
+root, its line, whether it is a table header, whether it is shown commented
+out, its value, and the comment lines directly above it with no blank line
+between that are no key, read without their `#` and joined by single spaces. A
+comment line that reads as a TOML key or table header is a key shown, on one
+line; a shown header heads the shown keys after it until a key is set; a
+statement's value may span lines.
 
 `atomic_write_text` and `write_json` take `private=True` for a file only this
 account may read (a pidfile). `private_dir` makes each folder it creates
@@ -330,28 +420,70 @@ becomes visible only through its commit write (§ 4), never through the log.
 ## 7. State machines — `core/states.py`
 
 A state machine says what state a subject is in and what may be done in each
-state. Built: each machine declared in Python, beside its facts function —
-rules as functions of the facts, actions as `Action`s of `core/view.py`
-([`web.md`](web.md) § 7.2). Decided by the
-person, not built yet (plan § 4, D): the machine itself is data.
+state. Decided by the person: the machine itself is data, one table per machine,
+and code gives it only its facts. Every machine observed from facts is built so,
+its table in `femkit/data/states/` and its facts and predicates in its domain
+(an install's steps are a fold over its event log instead, § 6):
+
+| table | subject | facts and predicates | contract |
+|---|---|---|---|
+| `part.toml` | a part of a project | `projects/state.py` | [`projects.md`](projects.md) § 8 |
+| `environment.toml` | an engine or tool environment | `envs/state.py` | [`envs.md`](envs.md) § 3 |
+| `control.toml` | the control environment | `jobs/setup.py`; the install script holds the same rules in bash, held equal by a test | [`envs.md`](envs.md) § 7.2 |
+| `server.toml` | a web server | `server/state.py` | [`web.md`](web.md) § 4 |
+| `record.toml` | a record of this machine | `jobs/record.py` | [`jobs.md`](jobs.md) § 9.3 |
 
 ```text
 femkit/data/states/<machine>.toml      one machine, declared:
-  states       its states, each with its sentence
-  rules        in order: a state and the condition on named facts that gives it;
-               the last rule is the otherwise
-  actions      per state: each allowed operation, by its name, and how its
-               request is filled from the subject
+  [states]          its states, in order, each with the sentence saying when it is observed
+  [[rules]]         in order: `state`, and `when`, the condition on the machine's named facts that
+                    gives it — names joined by `and`, `or`, `not` and parentheses; the last rule's
+                    `when` is `otherwise`, and only its
+  [actions.<state>] each action the state allows, by its name; an empty table: none. An action has
+                    `describe`, and `operation`, a registered operation by its name, with `request`,
+                    its values — a text that is one placeholder alone, `{name}`, is the value the
+                    subject gives it, and a key the subject leaves unset is left out; or `shell`, a
+                    line that is no operation (the control environment's install script); or
+                    neither: allowed, with nothing to do
+```
+
+```python
+class StateTable(Model)                    # the schema of a machine's file
+@dataclass(frozen=True)
+class Binding(Generic[F]):                 # what code gives a machine:
+    machine: str                           #   its name, its file's stem
+    predicates: Mapping[str, Callable[[F], bool]]   # each fact a condition may name, over the facts
+    values: Mapping[str, Callable[[str], Any]]      # each value a request takes from the subject's name;
+                                                    # by default `name`, the name itself
+    reads: frozenset[str]                           # each state code reads by name, `m.states.ready`, anywhere
+def bindings() -> list[Binding]            # every binding made so far: what `schema check` loads each table to
+def load(path: Path, binding: Binding[F]) -> Machine[F, Enum]   # the one loader: the table bound;
+                                           # its states an enumeration of texts, named after the machine
+class Machine:                             # observe(facts) -> state; allowed(state); next(state, name)
+                                           # -> each next step; require(state, action, name) -> or Refused
 ```
 
 - **Facts** are gathered by one function per machine, in its domain module,
   which reads durable things — directories, records, event logs, a scheduler's
   answer, file hashes — into named values. Nothing else is code: a condition
   is written over those names in one small grammar, read by `core/states.py`.
-- **Closed and total**, checked when the machine loads: the last rule is the
-  otherwise and only it; every state is produced by some rule; every state has
-  an action row (possibly empty); every action names a registered operation
-  whose request the row fills.
+- **Closed and total**, checked when the machine loads, each refusal a
+  `DefinitionError` at its key path: the last rule is the otherwise and only it;
+  every state is produced by some rule; every state has an action row (possibly
+  empty); a condition stays inside its grammar and names only the facts the
+  binding names; a request names only values the subject gives; every action
+  names a registered operation whose request has each field the row fills;
+  every state the binding's code reads is declared. The catalogue loads each
+  table by its own rules (`definitions.md` § 2); `schema check` checks every
+  table's operations against the registry, and loads every table femkit ships
+  bound to its binding, so a table lacking a fact or a state the code reads is
+  refused there, never first met while the code runs; a domain's `load` checks
+  the rest it gives, once per invocation (`catalogue.machine(ctx, binding)`).
+- **A state is the loaded enumeration's member.** Code that acts on a state
+  compares it with the member of the machine it observed by, `state is
+  m.states.ready`, `m` from the same invocation — never with a state's name
+  as text — and its binding lists each state it so reads (`reads`); a result
+  holds the state's name, a text, as its JSON does.
 - **Never stored.** No module writes a state label to disk; every state is
   observed from the facts, each time.
 - **One source of "next".** Refusals, findings, `doctor` and every next step
@@ -362,7 +494,8 @@ femkit/data/states/<machine>.toml      one machine, declared:
   A count over subjects — a project's parts, a study's cases — is a summary,
   never a machine.
 - `schema docs` renders each machine into `docs/reference/`, so its contract and
-  its declaration cannot drift.
+  its declaration cannot drift. Not built yet: today it renders the table's
+  schema, not each machine (plan § 7).
 
 ## 8. Processes — `core/process.py`
 
@@ -445,8 +578,7 @@ domain keeps for itself is answered as the kind it is of; the kind tells a
 surface or a script what sort of problem it is, its code and subject which one
 and about what — as a finding's do (§ 10) — and its next steps say what to do.
 A script, a surface or a test tells two refusals apart by kind, code and
-subject, never by their wording. Every refusal outside `femkit/models/` names
-its code and subject; the models domain gains them when step D rebuilds it. `Unstated` is the missing statement [`framework.md`](framework.md) § 4
+subject, never by their wording. Every refusal names its code and subject. `Unstated` is the missing statement [`framework.md`](framework.md) § 4
 refuses: a setting, the package manager, a scheduler's kind or command. A
 request naming what does not exist is a `UsageError`; one making what exists
 already is `Refused`, as the state of the thing it names does not allow it.
@@ -467,10 +599,34 @@ class Issue(Model):
     subject: str                 # what it is about: an environment, a key, a file, an address
     label: str | None = None     # what a person calls the subject, where its address is not that
     message: str                 # one whole sentence for a person
-    next: tuple[Action, ...] = ()  # what would resolve it (core/view.py)
+    file: str | None = None      # the file it is about, as the person opens it: a project's, from the project's folder
+    key: str | None = None       # the key in that file, its dotted path: `conditions.left.kind`
+    right: str | None = None     # the one value that would be right, as the file would write it (TOML text)
+    choices: tuple[str, ...] = ()  # the values that would be right, when more than one would do
+    next: tuple[Action, ...] = ()  # what would resolve it (core/view.py): operations that exist
 ```
 
 `code` is what tests and programs match on; `message` is free to change.
+
+- **A finding says where and what would be right.** A finding about a
+  project's part carries the file and the key the person opens in their
+  editor, read through the door from its subject's address
+  ([`projects.md`](projects.md) § 6), never formed by the domain that found
+  it. Where one value would be right — the digest a declared file has now, a
+  group's dimension in its promise — it is `right`; where several would do —
+  the condition kinds a formulation allows, the groups a component promises —
+  they are `choices`, and the fix chooses none ([`web.md`](web.md) § 7.4).
+  Its message is a plain sentence that leaves the file and the key to the
+  finding, which shows them once.
+- **`next` holds only operations that exist** — `study expand`, `project new`,
+  `config set` — never an edit of a file the person wrote, which femkit does
+  not make ([`projects.md`](projects.md) § 7).
+- **One value, or the choices — never both**: a finding holding both is refused
+  where it is made.
+- In a project, a finding is made through the door: `door.finding(opened,
+  address, …)` reads the file from the address and writes the key from its
+  path; a part's check makes one with `Checking.issue`
+  ([`models.md`](models.md) § 11.1).
 
 ## 11. Units — `core/units.py`
 

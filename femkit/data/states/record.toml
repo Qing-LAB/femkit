@@ -1,0 +1,40 @@
+# The states of a machine's record against this machine's config.toml (jobs.md § 9.3),
+# observed from the facts femkit/jobs/record.py gathers and names: `there`, its file is there;
+# `loads`, the file loads; `drifted`, its settings differ from this machine's config.toml. The
+# first rule that holds gives the state. A record of another machine is never compared, so
+# never observed by these rules.
+
+[states]
+absent = "no record is there"
+unloadable = "its file does not load"
+stale = "its settings differ from this machine's config.toml"
+current = "otherwise: it loads, and its settings are this machine's"
+
+[[rules]]
+state = "absent"
+when = "not there"
+
+[[rules]]
+state = "unloadable"
+when = "not loads"
+
+[[rules]]
+state = "stale"
+when = "drifted"
+
+[[rules]]
+state = "current"
+when = "otherwise"
+
+# What each state allows (jobs.md § 9.2): measuring this machine again, written under the
+# record's name — `local`, this machine's own, is the probe's default and is not named.
+[actions.absent]
+probe = { describe = "measure this machine, and write its record", operation = "job.probe", request = { write = true, name = "{name}" } }
+
+[actions.unloadable]
+probe = { describe = "measure this machine again, and write its record over the file", operation = "job.probe", request = { write = true, name = "{name}" } }
+
+[actions.stale]
+probe = { describe = "measure this machine again, and write its record", operation = "job.probe", request = { write = true, name = "{name}" } }
+
+[actions.current]

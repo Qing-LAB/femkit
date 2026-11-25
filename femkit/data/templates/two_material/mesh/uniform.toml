@@ -1,0 +1,25 @@
+# One mesh recipe (geometry.md § 6): an even size over the whole slab. The interface is a face
+# of the geometry, so every mesh has a line of nodes on it, and first-order elements hold the
+# benchmark's piecewise-linear potential exactly.
+
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+schema = 1
+
+# the largest element size anywhere: a length
+size = "0.25 m"
+
+# the geometry order — how closely elements follow a curved surface, 2 bending them to it: one of `1`, `2`
+order = 1
+
+# how far each group's measure in the mesh may differ from its measure in the geometry, relative: a plain number
+tolerance = 1e-9
+
+# how fast the size grows away from a group of `sizes`: the size added per unit of distance, a plain number above 0; required with `sizes`
+# growth = 0.5
+
+# the smallest quality an element may have, by Gmsh's signed inverse condition number, at most 1; unset, only an inverted element, below 0, is refused
+# quality = 0.3
+
+# a finer size on and near named groups, keyed by the group: each a length
+# [sizes]
+# middle = "0.05 m"

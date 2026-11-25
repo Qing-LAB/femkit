@@ -15,7 +15,7 @@ from femkit.definitions.catalogue import CUDA_SUFFIX
 from femkit.envs import layout, manager
 from femkit.envs.manager import resolve
 from femkit.envs.records import CheckOutcome
-from femkit.envs.state import MACHINE, EnvState, facts, observe
+from femkit.envs.state import facts, machine, observe
 
 NAME = "ngsolve"
 CUDA = NAME + CUDA_SUFFIX   # the environment the device check belongs to
@@ -30,8 +30,8 @@ def with_checks(give_checks):
     give_checks(NAME, [CPU, GPU])
 
 
-def state(name: str = NAME) -> EnvState:
-    return observe(ctx(), name)[1]
+def state(name: str = NAME) -> str:
+    return observe(ctx(), name)[1].value
 
 
 def passed(id_: str) -> CheckOutcome:
@@ -41,40 +41,40 @@ def passed(id_: str) -> CheckOutcome:
 def test_absent_and_incomplete_are_observed_from_disk():
     """Fails if a missing prefix, wreckage, or a prefix without a readable manifest reads
     as anything but absent or incomplete (envs.md § 3.2 rules 2–3)."""
-    assert state() is EnvState.absent
+    assert state() == "absent"
     prefix = facts(ctx(), NAME).prefix
     prefix.mkdir(parents=True)
-    assert state() is EnvState.incomplete
+    assert state() == "incomplete"
     (prefix / "conda-meta").mkdir()
-    assert state() is EnvState.incomplete
+    assert state() == "incomplete"
     write_json(layout.manifest_file(prefix), {"not": "a manifest"})
-    assert state() is EnvState.incomplete
+    assert state() == "incomplete"
 
 
 def test_a_manifest_in_a_folder_that_is_not_a_manager_environment_is_incomplete():
     """Fails if a manifest alone makes wreckage look installed (envs.md § 3.2 rule 3)."""
     f = installed(NAME, outcomes=[passed("cpu")])
     (f.prefix / "conda-meta").rmdir()
-    assert state() is EnvState.incomplete
+    assert state() == "incomplete"
 
 
 @pytest.mark.parametrize("setup, expected, gpu", [
-    (dict(fingerprint="old"), EnvState.outdated, None),
-    (dict(), EnvState.unchecked, None),
-    (dict(outcomes=[passed("cpu"), passed("gpu")], stale_checks=True), EnvState.unchecked, None),
-    (dict(outcomes=[passed("gpu")]), EnvState.unchecked, None),                       # a declared check never ran
-    (dict(outcomes=[CheckOutcome(id="cpu", outcome="failed"), passed("gpu")]), EnvState.failing, "passed"),
-    (dict(outcomes=[passed("cpu"), CheckOutcome(id="gpu", outcome="failed")]), EnvState.ready, "failed"),
-    (dict(outcomes=[passed("cpu")]), EnvState.ready, "not-run"),                      # no GPU asked for yet
-    (dict(outcomes=[passed("cpu"), passed("gpu")]), EnvState.ready, "passed"),
+    (dict(fingerprint="old"), "outdated", None),
+    (dict(), "unchecked", None),
+    (dict(outcomes=[passed("cpu"), passed("gpu")], stale_checks=True), "unchecked", None),
+    (dict(outcomes=[passed("gpu")]), "unchecked", None),                       # a declared check never ran
+    (dict(outcomes=[CheckOutcome(id="cpu", outcome="failed"), passed("gpu")]), "failing", "passed"),
+    (dict(outcomes=[passed("cpu"), CheckOutcome(id="gpu", outcome="failed")]), "ready", "failed"),
+    (dict(outcomes=[passed("cpu")]), "ready", "not-run"),                      # no GPU asked for yet
+    (dict(outcomes=[passed("cpu"), passed("gpu")]), "ready", "passed"),
 ], ids=["outdated", "unchecked", "stale-checks", "cpu-never-ran", "failing", "gpu-failed", "gpu-not-run", "ready"])
 def test_installed_states_follow_the_fingerprints_and_every_cpu_check(setup, expected, gpu):
     """Fails if a changed definition, missing, stale or partial CPU check results, or a failed
     CPU check do not decide the state as envs.md § 3.2 rules 4–7 say, or a device check —
     failed or never asked for — makes an environment unusable (§ 5)."""
     installed(CUDA, **setup)
-    assert state(CUDA) is expected
-    if expected in (EnvState.failing, EnvState.ready):
+    assert state(CUDA) == expected
+    if expected in ("failing", "ready"):
         assert facts(ctx(), CUDA).gpu == gpu
 
 
@@ -84,17 +84,17 @@ def test_an_environment_is_looked_at_with_no_manager_named_and_as_the_manager_th
     installed(NAME, outcomes=[passed("cpu")])
     for variable in (*manager.ACTIVATION_VARIABLES, manager.VARIABLE):
         monkeypatch.delenv(variable, raising=False)
-    assert state() is EnvState.ready
+    assert state() == "ready"
     assert not any(dirs.cache_dir().iterdir())                    # no manager folder made by looking
     monkeypatch.setenv(manager.VARIABLE, "/opt/mamba/bin/mamba")
-    assert state() is EnvState.ready
+    assert state() == "ready"
 
 
 def test_a_held_lock_reads_busy_and_refuses_every_action():
     """Fails if a second command can act on an environment another holds (envs.md § 3.2 rule 1, § 3.3)."""
     other = hold(layout.subject(NAME), "alone")                     # another command, changing it
     try:
-        assert state() is EnvState.busy
+        assert state() == "busy"
         with refused(Refused, "not-allowed", NAME):
             planned("env.clean", name=NAME)
     finally:
@@ -113,7 +113,7 @@ def test_an_environment_in_use_stays_ready_and_refuses_what_needs_it_alone(manag
             planned("env.install", names=[NAME])[1]
         assert [n.command for n in caught.value.next] == ["end it"]
         installed(NAME, outcomes=[passed("cpu")])
-        assert state() is EnvState.ready
+        assert state() == "ready"
         for name in ("env.clean", "env.validate"):
             with refused(Busy, "held", layout.subject(NAME)):
                 planned(name, name=NAME)
@@ -129,14 +129,15 @@ def test_changing_the_cuda_targets_makes_a_cuda_build_outdated():
     installed(NAME, outcomes=[passed("cpu")])
     c = ctx()
     apply("config.set", key="build.cuda_architectures", value='["90"]')
-    assert state(CUDA) is EnvState.outdated and state() is EnvState.ready
+    assert state(CUDA) == "outdated" and state() == "ready"
 
 
 def test_install_never_discards_a_failing_build_on_its_own():
     """Fails if `install` is allowed on a failing environment instead of offering validate
     and install --clean (envs.md § 3.3)."""
     with refused(Refused, "not-allowed", NAME) as caught:
-        MACHINE.require(EnvState.failing, "install", NAME)
+        m = machine(ctx())
+        m.require(m.states.failing, "install", NAME)
     offered = {n.command for n in caught.value.next}
     assert {"python -m femkit env validate ngsolve", "python -m femkit env install ngsolve --clean"} <= offered
     assert "python -m femkit env install ngsolve" not in offered
@@ -155,7 +156,7 @@ def test_a_result_carries_its_report_as_the_blocks_a_page_draws():
     (table,) = [b for b in result.model_dump(mode="json")["report"]["blocks"] if b["kind"] == "table"]
     assert {"name", "state"} <= {c["key"] for c in table["columns"]}
     shown = {row["name"]: row["state"] for row in table["rows"]}
-    assert shown == {r.name: r.state.value for r in result.rows} and shown[NAME] == "absent"
+    assert shown == {r.name: r.state for r in result.rows} and shown[NAME] == "absent"
 
 
 def test_clean_removes_the_prefix_through_the_manager_while_holding_its_lock(manager):

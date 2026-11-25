@@ -6,14 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.kit import apply, ctx, refused
+from tests.kit import ctx, refused, rewrite, set_root
 from femkit.core.errors import Refused, Unstated, UsageError
 from femkit.projects import location
 from femkit.projects.project import PROJECT_FILE, Project
-
-
-def set_root(folder: Path) -> None:
-    apply("config.set", key="paths.projects", value=f'"{folder}"')
 
 
 def make(folder: Path, files: dict[str, str] | None = None) -> Path:
@@ -55,14 +51,18 @@ def test_an_unset_root_is_refused_naming_the_setting_and_how_to_state_it(tmp_pat
             [("config.set", {"key": "paths.projects"})]
 
 
-def test_a_root_that_is_no_folder_is_refused(tmp_path):
+def test_a_root_that_is_no_folder_is_refused_naming_project_new(tmp_path):
     """Fails if a projects root that does not exist, or is a file, is taken as a root with no
-    projects instead of refused (projects.md § 1)."""
+    projects instead of refused, or the refusal does not name `project new`, which makes the root,
+    before the `config set` that states another (projects.md § 1: "every other command refuses a
+    root that is no folder, naming `project new`")."""
     (tmp_path / "a-file").write_text("")
     for stated in (tmp_path / "absent", tmp_path / "a-file"):
         set_root(stated)
-        with refused(Refused, "no-root", str(stated)):
+        with refused(Refused, "no-root", str(stated)) as caught:
             location.projects(ctx())
+        assert [(a.call.operation, a.call.request, [f.field for f in a.fills]) for a in caught.value.next] == [
+            ("project.new", {}, ["name", "source"]), ("config.set", {"key": "paths.projects"}, ["value"])]
 
 
 def test_the_projects_are_listed_by_name_with_grouped_ones_and_nothing_else(root):
@@ -74,6 +74,16 @@ def test_the_projects_are_listed_by_name_with_grouped_ones_and_nothing_else(root
     listed = location.projects(ctx())
     assert [p.name for p in listed] == ["bowtie", "groups/deep/er", "groups/dimer"]
     assert [p.folder for p in listed] == [root / "bowtie", root / "groups/deep/er", root / "groups/dimer"]
+
+
+def test_the_folders_holding_a_global_library_are_the_layouts(root, definitions):
+    """Fails if which folder at the root holds a global library — and so no project — is known
+    otherwise than from the layout's kinds declared with a library: a library's folder renamed in
+    the layout is passed by under its new name, and the old one is a folder like any other
+    (projects.md §§ 1, 4: "the root's search for projects passes it by")."""
+    rewrite(definitions / "project" / "layout.toml", 'folder = "materials"', 'folder = "library"')
+    make(root / "library" / "kept")
+    assert [p.name for p in location.projects(ctx())] == ["bowtie", "groups/deep/er", "groups/dimer", "materials/old"]
 
 
 def test_a_project_is_named_by_its_path_from_the_root(root, tmp_path):

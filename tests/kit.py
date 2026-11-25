@@ -1,8 +1,11 @@
 """What tests share, written once (testing.md § 3): a context for one command, an operation called
-through the registry as a surface calls it, a refusal told apart by its code, a lock held by another process, an environment left as
-an install leaves it, a machine record, and the tripwires the basic and web tiers stand behind. Each
-test file takes these from here, never from another test file; a tier's conftest.py takes the
-tripwire fixtures it applies."""
+through the registry as a surface calls it, a refusal told apart by its code, a lock held by
+another process, an environment left as an install leaves it, a machine record, part schemas and
+checks of a test's own, a project opened as femkit's start leaves the door, a projects root
+stated, a copy of a project template — the Laplace and the two-material one as fixtures — a
+folder's files, a file of a test's own changed, and the tripwires the basic and web tiers stand
+behind. Each test file takes these from here, never from another test file; a tier's conftest.py
+takes the tripwire fixtures it applies."""
 
 from __future__ import annotations
 
@@ -15,17 +18,22 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from pydantic import ConfigDict
 
 from femkit import registry
 from femkit.config.probe import GPU_QUERY, place
 from femkit.core.errors import Refusal
 from femkit.core.operations import Context
 from femkit.core.persist import write_json
+from femkit.core.schema import Model
 from femkit.definitions.catalogue import load_environments, load_managers, load_schedulers
 from femkit.envs import layout
 from femkit.envs.records import CheckOutcome, ChecksRecord, Manifest
 from femkit.envs.state import EnvFacts, facts
 from femkit.jobs.record import Record
+from femkit.projects import checking, door
+from femkit.projects import schemas as part_schemas
+from femkit.projects.project import Project
 
 
 def ctx() -> Context:
@@ -123,6 +131,82 @@ def a_record(**changes) -> Record:
     }
     data.update(changes)
     return Record.model_validate(data)
+
+
+class StandIn(Model):
+    """A part schema of a test's own, for a kind no package of femkit's declares: it takes any key,
+    as written."""
+
+    model_config = ConfigDict(extra="allow", frozen=True)
+
+
+@contextmanager
+def own_parts(schemas: dict[str, type[Model]] | None = None, checks: dict[str, checking.Check] | None = None):
+    """Part schemas and checks of a test's own, each by its key, registered with the door and the
+    check frame as the registry registers a package's at femkit's start (api.md § 6) — a check
+    beside those registered for its key — and taken back after, those held before kept."""
+    held = part_schemas.registered(), checking.registered()
+    for key, model in (schemas or {}).items():
+        part_schemas.register(key, model)
+    for key, check in (checks or {}).items():
+        checking.register(key, check)
+    try:
+        yield
+    finally:
+        for key in schemas or {}:
+            part_schemas.unregister(key)
+            if key in held[0]:
+                part_schemas.register(key, held[0][key])
+        for key in checks or {}:
+            checking.unregister(key)
+            for check in held[1].get(key, ()):
+                checking.register(key, check)
+
+
+def opened(folder: Path) -> door.Opened:
+    """The project at ``folder`` — a template in place, or a test's own — opened through the one
+    door as an operation opens it after femkit's start: every part schema and check registered
+    (api.md § 6)."""
+    registry.operations()
+    return door.open_project(Project(folder.parent, folder.name), ctx())
+
+
+def set_root(folder: Path) -> None:
+    """``folder`` stated as the projects root, `paths.projects`, as `config set` states it (projects.md § 1)."""
+    apply("config.set", key="paths.projects", value=f'"{folder}"')
+
+
+def copy_template(root: Path, template: str, name: str | None = None) -> Path:
+    """A copy of one of femkit's project templates, made by `project new` under ``root``, the
+    projects root this states: what a test that needs a project starts from (projects.md § 7)."""
+    set_root(root)
+    apply("project.new", name=name or template, source=template)
+    return root / (name or template)
+
+
+@pytest.fixture
+def laplace(tmp_path) -> Path:
+    """A copy of the Laplace template, `laplace_square`, under a projects root of the test's own."""
+    return copy_template(tmp_path / "projects", "laplace_square")
+
+
+@pytest.fixture
+def slab(tmp_path) -> Path:
+    """A copy of the two-material template, as the project `slab`, under a projects root of the test's own."""
+    return copy_template(tmp_path / "projects", "two_material", "slab")
+
+
+def tree(folder: Path) -> dict[str, bytes]:
+    """Every file of a folder, by its path from it, with its bytes."""
+    return {p.relative_to(folder).as_posix(): p.read_bytes() for p in sorted(folder.rglob("*")) if p.is_file()}
+
+
+def rewrite(path: Path, old: str, new: str) -> None:
+    """A file of a test's own — of its project, or its copy of the definitions — changed as its
+    person would change it: ``old`` there, once, made ``new``."""
+    text = path.read_text(encoding="utf-8")
+    assert text.count(old) == 1, f"{old!r} is in {path} {text.count(old)} times"
+    path.write_text(text.replace(old, new), encoding="utf-8")
 
 
 # ------------------------------------------------------------------ the tripwires (testing.md § 2.1)

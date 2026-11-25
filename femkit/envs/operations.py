@@ -20,7 +20,7 @@ from femkit.definitions import catalogue
 from femkit.envs import checks, layout, manager, toolchain
 from femkit.envs.manager import resolve
 from femkit.envs.records import CheckOutcome
-from femkit.envs.state import INSTALLED, MACHINE, EnvState, definition, install_fingerprint, observe
+from femkit.envs.state import definition, gpu, install_fingerprint, machine, observe
 from femkit.envs.requests import ListRequest, CleanRequest, LogRequest, InstallRequest, ValidateRequest
 from femkit.config.requests import CONFIG_SET
 from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_LOG, ENV_VALIDATE
@@ -31,15 +31,11 @@ def _names(ctx: Context) -> list[str]:
     return sorted(catalogue.load(ctx).environments)
 
 
-def _next(state: EnvState, name: str) -> list[view.Action]:
-    return list(MACHINE.next(state, name))
-
-
 # ------------------------------------------------------------------ env list
 
 class EnvRow(Model):
     name: str = Field(description="the environment")
-    state: EnvState = Field(description="its observed state", json_schema_extra={"doc": "envs.md § 3.2"})
+    state: str = Field(description="its observed state", json_schema_extra={"doc": "envs.md § 3.2"})
     gpu: str | None = Field(description="GPU qualification; absent unless ready or failing")
     description: str = Field(description="what it holds")
     default: bool = Field(description="part of `env install --all`")
@@ -52,7 +48,7 @@ class ListResult(Result):
     def report(self) -> view.Report:
         return view.Report(blocks=[view.Text(text="environments"), view.Table(
             columns=view.columns("name", "state", "gpu", "description"),
-            rows=[{"name": r.name, "state": r.state.value, "gpu": f"gpu {r.gpu}" if r.gpu else "",
+            rows=[{"name": r.name, "state": r.state, "gpu": f"gpu {r.gpu}" if r.gpu else "",
                    "description": r.description} for r in self.rows])])
 
 
@@ -63,7 +59,7 @@ def env_list(req: ListRequest, ctx: Context) -> ListResult:
     rows = []
     for name in _names(ctx):
         f, state = observe(ctx, name)
-        rows.append(EnvRow(name=name, state=state, gpu=f.gpu if state in INSTALLED else None,
+        rows.append(EnvRow(name=name, state=state.value, gpu=gpu(ctx, f, state),
                            description=defs[name].description,
                            default=defs[name].default, prefix=str(f.prefix)))
     return ListResult(rows=rows)
@@ -87,7 +83,7 @@ class EnvClean:
 
     def plan(self, req: CleanRequest, ctx: Context) -> Plan:
         f, state = observe(ctx, req.name)
-        if MACHINE.require(state, "clean", req.name).verb is None:
+        if machine(ctx).require(state, "clean", req.name).verb is None:
             return Plan()
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         m = resolve(ctx)
@@ -181,7 +177,8 @@ def _requested(req, ctx: Context) -> list[str]:
 class EnvResult(Model):
     name: str = Field(description="the environment")
     status: str = Field(description="done, failed, nothing to do, or not reached")
-    state: EnvState | None = Field(default=None, description="its state afterwards; none when not reached")
+    state: str | None = Field(default=None, description="its state afterwards; none when not reached",
+                              json_schema_extra={"doc": "envs.md § 3.2"})
     log: str | None = Field(default=None, description="its install's operation directory")
     validation: str | None = Field(default=None, description="its validate's operation directory, when one ran")
 
@@ -194,7 +191,7 @@ class InstallOutcome(Outcome):
             else "installed; not every environment is ready"
         blocks = [view.Text(text=said), view.Table(
             columns=view.columns("name", "status", "state", "log"),
-            rows=[{"name": e.name, "status": e.status, "state": e.state.value if e.state else "",
+            rows=[{"name": e.name, "status": e.status, "state": e.state or "",
                    "log": e.validation or e.log or ""} for e in self.environments])]
         failed = [view.command(ENV_LOG, name=e.name) for e in self.environments if e.status == "failed"]
         return view.Report(blocks=blocks + ([view.Next(label="read what failed", actions=failed)] if failed else []))
@@ -223,11 +220,11 @@ def _killed(ctx: Context, name: str, steps: list[str]) -> Issue:
                  next=next_)
 
 
-def _not_ready(f, state: EnvState, outcomes) -> Issue:
+def _not_ready(ctx: Context, f, state, outcomes) -> Issue:
     """Why an environment a command finished is not ready: each CPU check that failed."""
     message = f"{f.name} is {state.value}" + _failures(outcomes, f.declared_checks - f.device_checks)
     return Issue(severity="error", code="not-ready", subject=f.name, message=message,
-                 next=tuple(_next(state, f.name)))
+                 next=machine(ctx).next(state, f.name))
 
 
 def _install_basis(ctx: Context, name: str) -> dict:
@@ -245,7 +242,8 @@ def _install_basis(ctx: Context, name: str) -> dict:
 def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
     from femkit.envs.install import plan_steps, target
     f, state = observe(ctx, name)
-    if MACHINE.require(state, "install --clean" if clean else "install", name).verb is None:
+    m = machine(ctx)
+    if m.require(state, "install --clean" if clean else "install", name).verb is None:
         return []
     locks.require_free(layout.subject(name))              # a program using it — a web server — holds it shared
     env = definition(ctx, name)
@@ -253,7 +251,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
     validate = Step(id="validate", describe=f"validate: run its {text.count(len(cpu), 'CPU check')} (env validate)"
                     if cpu else "validate: it has no checks; record that (env validate)")
     checks.refusals(ctx, cpu)
-    if state is EnvState.unchecked and not clean:
+    if state is m.states.unchecked and not clean:
         return [validate]
     t = target(ctx, name)
     if t.env.proven_toolchain and t.env.proven_toolchain.mpi:
@@ -265,7 +263,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
                                     fills=[view.Fill(field="value", label="the GPUs' architectures", example='["80"]')]),),
                       code="setting-unset", subject="build.cuda_architectures")
     fingerprint, finished = last_install(name)
-    resume = state is EnvState.incomplete and not clean and fingerprint == t.install_fingerprint
+    resume = state is m.states.incomplete and not clean and fingerprint == t.install_fingerprint
     remove_first = f.prefix_kind != "absent" and not resume
     steps = plan_steps(t, remove_first=remove_first, discard_lock=clean)
     if resume:  # the toolchain check proves this machine, which a resume may not be on: it runs again
@@ -321,11 +319,11 @@ class EnvInstall:
                 if killed:
                     issues.append(_killed(ctx, name, killed))
             after, state = observe(ctx, name)
-            results.append(EnvResult(name=name, status=env_status if mine else "nothing to do", state=state,
+            results.append(EnvResult(name=name, status=env_status if mine else "nothing to do", state=state.value,
                                      log=str(where) if where else None,
                                      validation=str(validated) if validated else None))
-            if env_status == "done" and state is not EnvState.ready:
-                issues.append(_not_ready(after, state, outcomes))
+            if env_status == "done" and state is not machine(ctx).states.ready:
+                issues.append(_not_ready(ctx, after, state, outcomes))
             status = "failed" if env_status == "failed" else status
         return InstallOutcome(plan=plan, status=status, environments=results, issues=issues)
 
@@ -334,12 +332,12 @@ class EnvInstall:
 
 class ValidateOutcome(Outcome):
     name: str = Field(default="", description="the environment")
-    state: EnvState | None = Field(default=None, description="its state afterwards")
+    state: str | None = Field(default=None, description="its state afterwards", json_schema_extra={"doc": "envs.md § 3.2"})
     gpu: str | None = Field(default=None, description="its GPU qualification afterwards")
     outcomes: list[CheckOutcome] = Field(default_factory=list, description="every recorded check outcome")
 
     def report(self) -> view.Report:
-        head = f"{self.name}: {self.state.value if self.state else 'not validated'}"
+        head = f"{self.name}: {self.state or 'not validated'}"
         return view.Report(blocks=[view.Text(text=head + (f", GPU {self.gpu}" if self.gpu else "")), view.Table(
             columns=view.columns("outcome", "id", "reason", "log"),
             rows=[{"outcome": o.outcome, "id": o.id, "reason": o.reason,
@@ -369,7 +367,7 @@ class EnvValidate:
                                  subject=req.name)
             raise UsageError(f"{req.name} declares no GPU check", (view.command(ENV_VALIDATE, name=req.name),),
                              code="no-gpu-check", subject=req.name)
-        MACHINE.require(state, "validate --gpu" if req.gpu else "validate", req.name)  # envs.md § 3.3
+        machine(ctx).require(state, "validate --gpu" if req.gpu else "validate", req.name)  # envs.md § 3.3
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         checks.refusals(ctx, chosen)
         return Plan(steps=tuple(checks.steps(checks.runner(ctx, req.name), chosen)))
@@ -383,10 +381,10 @@ class EnvValidate:
         status, where, outcomes = checks.run_validation(ctx, req.name, req.gpu, plan.steps, observer)
         f, state = observe(ctx, req.name)
         issues = []
-        if state is not EnvState.ready:  # with --gpu too: a CPU partner it ran again may fail
-            issues.append(_not_ready(f, state, outcomes))
+        if state is not machine(ctx).states.ready:  # with --gpu too: a CPU partner it ran again may fail
+            issues.append(_not_ready(ctx, f, state, outcomes))
         if req.gpu and f.gpu != "passed":
             issues.append(Issue(severity="error", code="gpu-not-qualified", subject=req.name,
                                 message=f"the GPU path is {f.gpu}" + _failures(outcomes, f.device_checks)))
-        return ValidateOutcome(plan=plan, status=status, log=str(where), name=req.name, state=state,
-                               gpu=f.gpu if state in INSTALLED else None, outcomes=outcomes, issues=issues)
+        return ValidateOutcome(plan=plan, status=status, log=str(where), name=req.name, state=state.value,
+                               gpu=gpu(ctx, f, state), outcomes=outcomes, issues=issues)

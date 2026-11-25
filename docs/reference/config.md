@@ -19,8 +19,8 @@
 
 | key | type | default | meaning |
 |---|---|---|---|
+| `projects` | path, optional | — | the projects root: the person's global material library and their projects (see projects.md § 1). When unset: no project is listed, made or named; each says so, naming this key |
 | `environments` | path, optional | — | where engine environment prefixes are created (the control environment's place is fixed) — on a cluster, typically project storage rather than a small home quota. When unset: &lt;data&gt;/environments |
-| `projects` | path, optional | — | the projects root: the person's global material library and their projects (projects.md § 1). When unset: no project is listed, made or named; each says so, naming this key |
 
 ## BuildChoices
 
@@ -39,5 +39,5 @@
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `preamble` | list of text, optional | — | shell lines a run script runs on this machine before it enters an environment (module load lines, for instance); [] states that none are needed. When unset: `job probe --write` and `job prepare` are refused, naming this key |
-| `command` | `source activate` \| `conda activate` \| `mamba activate`, optional | — | how a shell on this machine enters an environment, after the preamble: `source activate`, the activate script on PATH (a cluster's module puts it there); or `conda activate` / `mamba activate`, the manager's shell function, its hook file sourced first. When unset: `job probe --write` and `job prepare` are refused, naming this key |
+| `preamble` | list of text, optional | — | the shell lines a run script runs on this machine before it enters an environment — a batch job starts a fresh shell, so a `module load` that puts the manager on PATH belongs here; [] states that none are needed (see config.md § 3.1). When unset: `job probe --write` and `job prepare` are refused, naming this key |
+| `command` | `source activate` \| `conda activate` \| `mamba activate`, optional | — | how a shell on this machine enters an environment after the preamble — by the activate script on PATH, which a cluster's module puts there, or by the manager's shell function, its hook file sourced first: one of `source activate`, `conda activate`, `mamba activate` (see config.md § 3.1). When unset: `job probe --write` and `job prepare` are refused, naming this key |

@@ -1,8 +1,9 @@
 """User configuration — `<config>/config.toml` (config.md § 3).
 
 Choices for this machine, set by the person. The model below is the one home
-of every key, its type and what its absence means; `config show`, `config
-init`, the command-line options and the reference page all read it.
+of every key, its type, its help, what its absence means and the question
+`config init` asks for it; `config show`, `config init`, the command-line
+options, the reference page and the template's comments all read it.
 """
 
 from __future__ import annotations
@@ -15,21 +16,24 @@ from typing import Any, Literal
 
 import tomlkit
 from pydantic import AfterValidator, ConfigDict, Field, PositiveInt
+from pydantic.fields import FieldInfo
 from typing import Annotated
 
 from femkit.core import dirs, paths, view
 from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import document_set, read_document, write_document
-from femkit.core.schema import DefinitionError, Model, classes, field_extras, load_toml, validate
+from femkit.core.schema import DefinitionError, Model, classes, described, field_extras, load_toml, validate
 from femkit.definitions.catalogue import data_root, shipped
 from femkit.definitions.models import Launcher
 
 FILE_NAME = "config.toml"
 
 
-def _unset(text: str) -> dict:
-    return {"unset": text}
+def _unset(text: str, **more: str) -> dict:
+    """A key's annotations (config.md § 3.1): ``text``, what its absence means — its default, or
+    what it blocks; ``ask``, the question `config init` asks while it is unset; ``doc``."""
+    return {"unset": text, **more}
 
 
 def _absolute(path: Path) -> Path:
@@ -51,19 +55,20 @@ class Section(Model):
 
 
 class Paths(Section):
+    projects: AbsolutePath | None = Field(
+        default=None,
+        strict=False,  # TOML has no path type: the text becomes a path
+        description="the projects root: the person's global material library and their projects",
+        json_schema_extra=_unset("no project is listed, made or named; each says so, naming this key",
+                                 ask="Which folder holds your projects and your material library?",
+                                 doc="projects.md § 1"),
+    )
     environments: AbsolutePath | None = Field(
         default=None,
         strict=False,  # TOML has no path type: the text becomes a path
         description="where engine environment prefixes are created (the control environment's place is "
         "fixed) — on a cluster, typically project storage rather than a small home quota",
-        json_schema_extra=_unset("<data>/environments"),
-    )
-    projects: AbsolutePath | None = Field(
-        default=None,
-        strict=False,  # TOML has no path type: the text becomes a path
-        description="the projects root: the person's global material library and their projects",
-        json_schema_extra={**_unset("no project is listed, made or named; each says so, naming this key"),
-                           "doc": "projects.md § 1"},
+        json_schema_extra=_unset("<data>/environments", ask="Where should engine environments go?"),
     )
 
 
@@ -92,16 +97,22 @@ class Launch(Section):
 class Activation(Section):
     preamble: list[str] | None = Field(
         default=None,
-        description="shell lines a run script runs on this machine before it enters an environment "
-        "(module load lines, for instance); [] states that none are needed",
-        json_schema_extra=_unset("`job probe --write` and `job prepare` are refused, naming this key"),
+        description="the shell lines a run script runs on this machine before it enters an environment — a batch "
+        "job starts a fresh shell, so a `module load` that puts the manager on PATH belongs here; [] states that "
+        "none are needed",
+        json_schema_extra=_unset("`job probe --write` and `job prepare` are refused, naming this key",
+                                 ask="Which shell lines must a job here run before it enters an environment? "
+                                     "If none, give --no-preamble instead",
+                                 doc="config.md § 3.1"),
     )
     command: Literal["source activate", "conda activate", "mamba activate"] | None = Field(
         default=None,
-        description="how a shell on this machine enters an environment, after the preamble: `source activate`, "
-        "the activate script on PATH (a cluster's module puts it there); or `conda activate` / `mamba activate`, "
-        "the manager's shell function, its hook file sourced first",
-        json_schema_extra=_unset("`job probe --write` and `job prepare` are refused, naming this key"),
+        description="how a shell on this machine enters an environment after the preamble — by the activate "
+        "script on PATH, which a cluster's module puts there, or by the manager's shell function, its hook file "
+        "sourced first",
+        json_schema_extra=_unset("`job probe --write` and `job prepare` are refused, naming this key",
+                                 ask="How does a shell here enter an environment, after those lines?",
+                                 doc="config.md § 3.1"),
     )
 
 
@@ -118,15 +129,39 @@ class UserConfig(Model):
 
 @dataclass(frozen=True)
 class Key:
+    """One key of config.toml and its field: the one home of its help, of what its absence
+    means and of the question `config init` asks for it (config.md § 3.1)."""
+
     section: str
     name: str
-    annotation: Any
-    description: str
-    unset: str
+    field: FieldInfo
 
     @property
     def dotted(self) -> str:
         return f"{self.section}.{self.name}"
+
+    @property
+    def annotation(self) -> Any:
+        return self.field.annotation
+
+    @property
+    def description(self) -> str:
+        return self.field.description or ""
+
+    @property
+    def help(self) -> str:
+        """Its help, as the template's comment above it reads (core.md § 2)."""
+        return described(self.field)
+
+    @property
+    def unset(self) -> str:
+        """What its absence means: its default, or what it blocks."""
+        return field_extras(self.field)["unset"]
+
+    @property
+    def ask(self) -> str | None:
+        """The question `config init` asks while it is unset; None for a key it does not ask for."""
+        return field_extras(self.field).get("ask")
 
 
 def keys() -> list[Key]:
@@ -134,7 +169,7 @@ def keys() -> list[Key]:
     out = []
     for section, field in UserConfig.model_fields.items():
         for name, sub in classes(field.annotation)[0].model_fields.items():
-            out.append(Key(section, name, sub.annotation, sub.description or "", field_extras(sub)["unset"]))
+            out.append(Key(section, name, sub))
     return out
 
 

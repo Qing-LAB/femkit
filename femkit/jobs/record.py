@@ -1,11 +1,14 @@
 """Machine records — `<config>/machines/<name>.toml` (jobs.md § 9).
 
-The one model of a record, and its one reader and writer. Reading a record never probes.
+The one model of a record, its one reader and writer, and its state against this machine's
+config.toml, by the rules `femkit/data/states/record.toml` declares. Reading a record never probes.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
@@ -13,9 +16,11 @@ from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.probe import Where
-from femkit.core import dirs, persist, text
+from femkit.core import dirs, persist, states, text
 from femkit.core.errors import UsageError
+from femkit.core.operations import Context
 from femkit.core.schema import DefinitionError, Model, key_path, load_toml
+from femkit.definitions import catalogue
 from femkit.jobs.requests import MACHINE_NAME
 
 SCHEMA = 1
@@ -194,16 +199,43 @@ def stale(record: Record, config: settings.UserConfig) -> list[str]:
             for k in Settings.model_fields if getattr(record.settings, k) != getattr(now, k)]
 
 
-def status(file: Path, config: settings.UserConfig) -> tuple[str, str]:
-    """A machine's record against this config.toml (jobs.md § 9.3): `absent`, `current`,
-    `stale` or `does not load`, and the detail — what drifted, or what is wrong."""
+@dataclass(frozen=True)
+class RecordFacts:
+    """What is observed of a record of this machine."""
+
+    there: bool           # its file is there
+    problem: str | None   # why the file does not load; None when it loads, or is not there
+    drift: list[str]      # the settings it no longer shares with this machine's config.toml
+
+
+BINDING = states.Binding("record", {
+    "there": lambda f: f.there,
+    "loads": lambda f: f.problem is None,
+    "drifted": lambda f: bool(f.drift),
+}, values={"name": lambda name: None if name == LOCAL else name},   # `local` is the probe's own default
+   reads=frozenset({"absent", "unloadable", "stale", "current"}))
+
+
+def machine(ctx: Context) -> states.Machine:
+    """The machine `femkit/data/states/record.toml` declares, bound to these facts (jobs.md § 9.3)."""
+    return catalogue.machine(ctx, BINDING)
+
+
+def facts(file: Path, config: settings.UserConfig) -> RecordFacts:
+    """What is observed of the record ``file``, a record of this machine, against this config.toml."""
     if not file.exists():
-        return "absent", ""
+        return RecordFacts(there=False, problem=None, drift=[])
     try:
-        drift = stale(read(file), config)
+        return RecordFacts(there=True, problem=None, drift=stale(read(file), config))
     except DefinitionError as exc:
-        return "does not load", exc.summary()
-    return ("stale", "; ".join(drift)) if drift else ("current", "")
+        return RecordFacts(there=True, problem=exc.summary(), drift=[])
+
+
+def status(ctx: Context, file: Path, config: settings.UserConfig) -> tuple[Enum, str]:
+    """A record of this machine against this config.toml (jobs.md § 9.3): its state by the
+    machine's rules, and the detail — what drifted, or what is wrong."""
+    f = facts(file, config)
+    return machine(ctx).observe(f), f.problem or "; ".join(f.drift)
 
 
 def unknowns(record: Record) -> list[tuple[str, str]]:

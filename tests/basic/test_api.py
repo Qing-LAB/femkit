@@ -43,8 +43,8 @@ class EchoResult(Result):
     def ok(self) -> bool:
         return self.said != "FAIL"
 
-    def text(self) -> str:
-        return self.said
+    def report(self) -> view.Report:
+        return view.Report(blocks=[view.Text(text=self.said)])
 
 
 @operation(view.Verb("toy.echo", EchoRequest), result=EchoResult)
@@ -65,8 +65,8 @@ class WriteRequest(Model):
 
 
 class WriteOutcome(Outcome):
-    def text(self) -> str:
-        return "written"
+    def report(self) -> view.Report:
+        return view.Report(blocks=[view.Text(text="written")])
 
 
 @operation(view.Verb("toy.write", WriteRequest), result=WriteOutcome, changes=True, subject=lambda r: ["toy"])
@@ -323,16 +323,25 @@ def test_every_registered_operation_is_expressible_on_the_web():
         op.result.model_json_schema()
 
 
-def test_an_operation_whose_result_writes_no_text_is_refused():
-    """Fails if an operation could be declared with a result a terminal cannot read (api.md § 2.3)."""
+def test_an_operation_whose_result_builds_no_report_or_a_text_of_its_own_is_refused():
+    """Fails if an operation could be declared with a result a terminal cannot read, or one whose
+    text is not its report's — a second path the page would not draw (api.md § 2.3: every result
+    builds its `report()`)."""
     class Bare(Result):
-        """A result with no text of its own."""
+        """A result with no report."""
 
-    with pytest.raises(TypeError, match="builds no report"):
-        @operation(view.Verb("toy.bare", EchoRequest), result=Bare)
-        def bare(req, ctx):
-            """Answers with nothing a person can read."""
-            return Bare()
+    class Own(EchoResult):
+        """A result writing a text of its own beside its report."""
+
+        def text(self) -> str:
+            return self.said
+
+    for result, match in ((Bare, "builds no report"), (Own, "text of its own")):
+        with pytest.raises(TypeError, match=match):
+            @operation(view.Verb("toy.bare", EchoRequest), result=result)
+            def bare(req, ctx):
+                """Answers with nothing a person can read on the page."""
+                return result()
 
 
 def test_a_changing_operation_must_have_plan_and_apply():
@@ -475,3 +484,13 @@ def test_an_apply_inside_another_records_each_step_log_once_and_in_its_own_run()
     kinds = lambda where: [(r["kind"], r.get("step")) for r in EventLog.of(Path(where)).events() if r["kind"] == "step-log"]
     assert kinds(inner) == [("step-log", "log")]
     assert kinds(outer) == [("step-log", "after")]
+
+
+def test_every_command_group_says_in_one_sentence_what_it_holds():
+    """Fails if a command group of femkit's has no sentence in `femkit --help`, or a sentence is
+    kept for a group no operation has (api.md § 6: the registry's one list of command groups)."""
+    from femkit import registry
+    groups = {name.rpartition(".")[0] for name in registry.operations()} - {""}
+    assert groups == set(registry.GROUPS) and all(registry.GROUPS.values())
+    listing = CliRunner().invoke(build(), ["--help"]).output
+    assert all(sentence[:40] in " ".join(listing.split()) for sentence in registry.GROUPS.values())
