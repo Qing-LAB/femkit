@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Literal, get_args
 
-from femkit.core import clock
+from femkit.core import clock, persist
 from femkit.core.process import Identity
 from pydantic import Field
 
@@ -32,27 +31,22 @@ class EventLog:
         return cls(Path(folder) / FILE, now)
 
     def append(self, kind: str, **fields) -> None:
+        """One record, one JSON line, by the one appender: flushed and fsynced (core.md §§ 4, 6)."""
         if kind not in KINDS:
             raise ValueError(f"unknown event kind {kind!r}")
         record = {"kind": kind, "time": clock.stamp(self._now()), **fields}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, sort_keys=True, default=str) + "\n")
-            fh.flush()
-            os.fsync(fh.fileno())
+        persist.append_text(self.path, json.dumps(record, sort_keys=True, default=str) + "\n")
 
     def events(self) -> list[dict]:
-        if not self.path.exists():
-            return []
+        """Every complete record, in order; a torn last line — its writer died mid-write — ends them."""
+        held = persist.read_bytes(self.path) or b""
+        *lines, _torn = held.decode("utf-8", errors="replace").split("\n")   # after the last newline: torn, or nothing
         out = []
-        with open(self.path, encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                if not line.endswith("\n"):
-                    break  # a torn last line: the writer died mid-write
-                try:
-                    out.append(json.loads(line))
-                except json.JSONDecodeError:
-                    break
+        for line in lines:
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                break
         return out
 
 

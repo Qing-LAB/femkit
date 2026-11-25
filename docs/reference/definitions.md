@@ -146,24 +146,24 @@ Checks that must give the same quantity (definitions.md § 5.2).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `version` | list of text | required | prints the manager's version. Placeholders: `{exe}`, `{file}`, `{prefix}` |
+| `version` | list of text | required | prints the manager's version. Placeholders: `{exe}` |
 | `version_pattern` | text | required | regular expression whose first group is the version in that output |
 | `root` | [JsonQuery](#jsonquery) | required | where the manager's root (base) prefix is |
 | `platform` | [JsonQuery](#jsonquery), optional | — | the platform an environment built by this manager is for, e.g. linux-64 (jobs.md § 9.1) |
-| `run` | list of text | required | runs the command that follows inside {prefix}. Placeholders: `{exe}`, `{file}`, `{prefix}` |
+| `run` | list of text | required | runs the command that follows inside {prefix}. Placeholders: `{exe}`, `{prefix}` |
 | `activate` | [Activation](#activation) | required | how a shell enters a prefix: the day-to-day entry line, the run script |
-| `create` | list of text | required | creates {prefix} from constraints, overriding the person's own channels and default packages; `channel` follows once per channel, then the constraints — for the control environment, `--file` and its package list. Placeholders: `{exe}`, `{file}`, `{prefix}` |
-| `channel` | list of text | required | the arguments that add one channel, e.g. ["-c", "{channel}"] |
+| `create` | list of text | required | creates {prefix} from constraints, overriding the person's own channels and default packages; `channel` follows once per channel, then the constraints — for the control environment, `--file` and its package list. Placeholders: `{exe}`, `{prefix}` |
+| `channel` | list of text | required | the arguments that add one channel, e.g. ["-c", "{channel}"]. Placeholders: `{channel}` |
 | `create_from_lock` | list of text | required | creates {prefix} from the exact package list in {file}. Placeholders: `{exe}`, `{file}`, `{prefix}` |
-| `export_lock` | list of text | required | prints the exact package list of {prefix}, one URL a line. Placeholders: `{exe}`, `{file}`, `{prefix}` |
-| `remove` | list of text | required | removes {prefix}. Placeholders: `{exe}`, `{file}`, `{prefix}` |
+| `export_lock` | list of text | required | prints the exact package list of {prefix}, one URL a line. Placeholders: `{exe}`, `{prefix}` |
+| `remove` | list of text | required | removes {prefix}. Placeholders: `{exe}`, `{prefix}` |
 | `channels_named` | list of `create_from_lock` \| `remove` | empty | the commands beside `create` that name the declared channels, `channel` once per channel after the command: conda 26 otherwise checks the terms of its base configuration's defaults and stops; mamba 2.9.0 refuses channels on a removal (both measured, envs.md § 4.4) |
 
 ## JsonQuery
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `argv` | list of text | required | the command; it prints one JSON object. Placeholders: `{exe}`, `{file}`, `{prefix}` |
+| `argv` | list of text | required | the command; it prints one JSON object. Placeholders: `{exe}` |
 | `key` | text or list of text | required | the key of the object that holds the answer; a list: the first of them the object has, where versions of a manager differ |
 
 ## Activation
@@ -390,5 +390,5 @@ The mesh file it writes.
 | key | type | default | meaning |
 |---|---|---|---|
 | `key` | text | required | the key, `Mod` the platform's command key |
-| `command` | `undo` \| `redo` \| `remove` \| `commit` \| `cancel` | required | the page's command it runs |
+| `command` | `cancel` | required | the page's command it runs |
 | `help` | text | required | what it does |

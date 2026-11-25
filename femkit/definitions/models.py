@@ -512,20 +512,39 @@ Launcher = Annotated[list[str], AfterValidator(_launcher),
 
 # ----------------------------------------------------------------------- kinds
 
-MANAGER_PLACEHOLDERS = frozenset({"exe", "prefix", "file"})
+def _manager_argv(*passes: str) -> Any:
+    """The type of a manager command that femkit renders with ``passes``: it starts with
+    {exe}, passes each of them and names no other placeholder — so a command loads only when
+    every value it needs is one femkit gives it (definitions.md § 6)."""
+    own = frozenset({"exe", *passes})
+
+    def check(argv: list[str]) -> list[str]:
+        if not argv or argv[0] != "{exe}":
+            raise ValueError("a manager command starts with {exe}")
+        for arg in argv:
+            check_placeholders(arg, own)
+        missing = [p for p in passes if not any("{%s}" % p in a for a in argv)]
+        if missing:
+            raise ValueError("must pass " + ", ".join("{%s}" % p for p in missing))
+        return argv
+
+    return Annotated[list[str], AfterValidator(check), Field(json_schema_extra={"placeholders": sorted(own)})]
 
 
-def _manager_argv(argv: list[str]) -> list[str]:
-    if not argv or argv[0] != "{exe}":
-        raise ValueError("a manager command starts with {exe}")
+ManagerArgv = _manager_argv()                    # the version and the queries: the manager alone
+PrefixArgv = _manager_argv("prefix")             # a command on one prefix
+LockArgv = _manager_argv("prefix", "file")       # a create from a saved lock
+
+
+def _channel(argv: list[str]) -> list[str]:
     for arg in argv:
-        check_placeholders(arg, MANAGER_PLACEHOLDERS)
+        check_placeholders(arg, frozenset({"channel"}))
+    if not any("{channel}" in a for a in argv):
+        raise ValueError("must pass {channel}")
     return argv
 
 
-ManagerArgv = Annotated[
-    list[str], AfterValidator(_manager_argv), Field(json_schema_extra={"placeholders": sorted(MANAGER_PLACEHOLDERS)})
-]
+ChannelArgs = Annotated[list[str], AfterValidator(_channel), Field(json_schema_extra={"placeholders": ["channel"]})]
 
 
 class JsonQuery(Model):
@@ -577,31 +596,22 @@ class ManagerKind(Model):
     platform: JsonQuery | None = Field(
         default=None, description="the platform an environment built by this manager is for, e.g. linux-64", json_schema_extra={"doc": "jobs.md § 9.1"}
     )
-    run: ManagerArgv = Field(description="runs the command that follows inside {prefix}")
+    run: PrefixArgv = Field(description="runs the command that follows inside {prefix}")
     activate: Activation = Field(description="how a shell enters a prefix: the day-to-day entry line, the run script")
-    create: ManagerArgv = Field(
+    create: PrefixArgv = Field(
         description="creates {prefix} from constraints, overriding the person's own channels and default "
                     "packages; `channel` follows once per channel, then the constraints — for the control "
                     "environment, `--file` and its package list"
     )
-    channel: list[str] = Field(description="the arguments that add one channel, e.g. [\"-c\", \"{channel}\"]")
-    create_from_lock: ManagerArgv = Field(description="creates {prefix} from the exact package list in {file}")
-    export_lock: ManagerArgv = Field(description="prints the exact package list of {prefix}, one URL a line")
-    remove: ManagerArgv = Field(description="removes {prefix}")
+    channel: ChannelArgs = Field(description="the arguments that add one channel, e.g. [\"-c\", \"{channel}\"]")
+    create_from_lock: LockArgv = Field(description="creates {prefix} from the exact package list in {file}")
+    export_lock: PrefixArgv = Field(description="prints the exact package list of {prefix}, one URL a line")
+    remove: PrefixArgv = Field(description="removes {prefix}")
     channels_named: list[Literal["create_from_lock", "remove"]] = Field(
         default_factory=list,
         description="the commands beside `create` that name the declared channels, `channel` once per channel after "
                     "the command: conda 26 otherwise checks the terms of its base configuration's defaults and stops; "
                     "mamba 2.9.0 refuses channels on a removal (both measured, envs.md § 4.4)")
-
-    @field_validator("channel")
-    @classmethod
-    def _channel(cls, argv: list[str]) -> list[str]:
-        for arg in argv:
-            check_placeholders(arg, frozenset({"channel"}))
-        if not any("{channel}" in a for a in argv):
-            raise ValueError("must pass {channel}")
-        return argv
 
     @field_validator("version_pattern")
     @classmethod

@@ -1,7 +1,7 @@
 """The job request's resources (jobs.md § 2): what one calculation asks of a machine.
 
 A prepared case's study binds them per environment (models.md § 5); the job request
-`job.toml` that holds them is built with local jobs (plan § 3, M3).
+`job.toml` that holds them is built with local jobs (plan § 4, X).
 """
 
 from __future__ import annotations

@@ -87,6 +87,8 @@ def require(f: ServerFacts, state: ServerState, action: str) -> None:
         raise Refused(f"{label(f.name)} runs on {f.pidfile.host}, not here: act on it there", code="elsewhere",
                       subject=f.name)
     if state is ServerState.starting and action not in MACHINE.allowed(state):
-        raise Busy(f"{label(f.name)} is being started or stopped by another command; look again in a moment",
+        holder = locks.holders().get(protocol.subject(f.name))   # as the kernel's lock table names it
+        by = f"process {holder}" if holder is not None else "another command"
+        raise Busy(f"{label(f.name)} is being started or stopped by {by}; look again in a moment",
                    (view.command(SERVE_STATUS, **protocol.target(f.name)),), code="starting", subject=f.name)
     MACHINE.require(state, action, f.name, label(f.name))

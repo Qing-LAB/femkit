@@ -41,7 +41,8 @@ module reads no file, probes nothing and starts nothing.
 | `issues` | `Issue` | 10 |
 | `units` | the unit table's schema, `Quantity`, `Units`: one grammar for a quantity, a unit and an expression of named quantities; conversion | 11 |
 | `text` | how a value, a path (from `~`), a count (`1 step`, `16 steps`), a table, a finding and a "next" block are shown | [`api.md`](api.md) § 4.4 |
-| `view` | the one vocabulary of what a person may read and do: `Help`, `Action`, `Field`, `Table` — every next step an `Action` | [`web.md`](web.md) § 7 |
+| `markdown` | `headings(text)`: a Markdown document's headings and their link anchors, by GitHub's rule — read by a formulation's section check and the document viewer, so a section named in data and its anchor agree | [`web.md`](web.md) § 2.3 |
+| `view` | the one vocabulary of what a person may read and do: `Help`, `Action`, `Field`, `Table` — every next step an `Action`; and `Verb`, an operation's name with its request model, one per name ([`api.md`](api.md) § 2) | [`web.md`](web.md) § 7 |
 | `commandline` | the one mapping between a request's fields and a command's arguments, both ways: the command line parses by it, and an `Action` is written as a command by it | [`api.md`](api.md) § 4.1 |
 | `operations` | `Context`, `Plan`, `Step`, `Result`, `Outcome`, `Observer`, `operation`, `run_steps`; an operation's address and its folder | [`api.md`](api.md), § 6 |
 
@@ -51,8 +52,13 @@ module reads no file, probes nothing and starts nothing.
 class Model(pydantic.BaseModel):          # extra="forbid", frozen=True
     ...
 
+def load_text(text: str, model: type[M], file: Path | str, context: dict | None = None, *, exact: bool = False) -> M
+                                                        # TOML text, as a file named `file` holds it: the one reader
 def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact: bool = False) -> M
+                                                        # persist.read_text, then load_text; no file is a problem too
 def validate(model: type[M], data: Any, file: Path | str, context: dict | None = None) -> M
+def refuse(model: str, problems: list[tuple[location, reason]]) -> None
+                                                        # in a model validator: every cross-reference problem at once
 def field_extras(field: FieldInfo) -> dict              # a field's annotations, its Annotated type's included
 def alternatives(annotation) -> list                    # what it may hold, through Annotated, Optional, unions
 def classes(annotation), keys_of(annotation), values_of(annotation), items_of(annotation), closed(annotation)
@@ -62,7 +68,12 @@ def described(field) -> str                             # its description, and i
 def field_named(cls, key) -> tuple[str, FieldInfo] | None   # the field a file writes as `key`, alias or name
 def key_path(loc) -> str                                # a problem's place: `builds[1].options`, in a file or a request
 def matching(pattern, **field), whole(pattern) -> str   # a text field its pattern holds whole; the pattern tied to both ends
-def references(instance) -> Iterator[tuple[location, type, name]]   # every name its `ref` fields hold
+def references(instance) -> Iterator[tuple[location, type, name, held]]   # every name its `ref` fields hold;
+                                                        # held: `key`, `value` or `item` — how the location holds it
+QUANTITIES: dict[kind, tuple[dimension | None, sentence]]   # each `quantity` kind: its fixed dimension, what it takes
+DIMENSIONS: dict[kind, dimension]                         # the kinds with a fixed one; LENGTH, a length's
+def as_quantity(description, kind="any", **field) -> Field    # a field written as a quantity of `kind`
+def as_reference(description, target, *, extra=None, **field) -> Field   # a field naming `target`'s objects (`ref`)
 
 class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[key_path, reason]]
 ```
@@ -76,9 +87,12 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   `cli` (how the command line spells it, [`api.md`](api.md) § 4),
   `placeholders` (the names a templated field accepts, § 2.1), `ref` (the type of
   object a field refers to by name, read by both the cross-reference check and
-  the model graph, [`models.md`](models.md) § 11.2), `quantity` (a value
-  written as a quantity, § 11: `any`, `length`, `coordinate` — a bare number in
-  the frame's unit, or a length — or `unit`, a unit text alone), `toml` (a
+  the project graph, [`models.md`](models.md) § 11.2; made with
+  `as_reference`), `quantity` (a value written as a quantity, § 11: `any`,
+  `length`, `coordinate` — a bare number in the frame's unit, or a length — or
+  `unit`, a unit text alone; made with `as_quantity`, and `QUANTITIES` the one
+  table of the kinds the loaders, the forms' units and the reference pages
+  read), `toml` (a
   field that takes a value as its TOML text, `whole` — `config set`'s
   `value`, `whole`; a surface writes the text from the value a
   person gives), `doc` (where the field is defined: a document and its
@@ -100,8 +114,14 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
 - **`ref`** on a text or a list of texts names the type its values refer to; on
   a table it is `{"key": type, "value": type}`, either part optional. A type may
   offer alternatives, `group:boundary|group:interface`. `references` walks a
-  loaded file's fields and yields every name with its location and type; the
+  loaded file's fields and yields every name with its location, its type and
+  how the location holds it — a table's key, a text value, a list's item; the
   domain that owns the file says which names exist.
+- **One TOML reader.** `load_text` reads every declared file's text — a
+  definition, a setting, a record, a project's part — and `load_toml` is
+  `persist.read_text` then `load_text`: a text that is not TOML, a file that is
+  not UTF-8 and a file that is not there are each a `DefinitionError` at the
+  file, like a field's problem.
 - **`exact=True`** reads every TOML float from its decimal text as a
   `Decimal`, never a binary float: a model's numbers enter a case ID exactly
   (§ 11).
@@ -110,8 +130,9 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[tuple[ke
   `builds[1].options.NETGEN_DIR`. Cross-reference problems (next point) are
   checked once every field is valid, and are then reported together.
 - **Cross-references** (a build's source, a registered engine) are checked by
-  a model validator; outside facts a validator needs, such as the registered
-  engine IDs, arrive in `context`, never from a global.
+  a model validator, which raises them together with `refuse`; outside facts a
+  validator needs, such as the registered engine IDs or the unit table, arrive
+  in `context`, never from a global.
 
 ### 2.1 Placeholders
 
@@ -163,26 +184,28 @@ def write_toml(path: Path, data: dict) -> Path         # atomic
 def write_stream(path, source, accept=None) -> bool     # a stream written whole, or not at all: in place only
                                                         # when accept takes the written file (a download's digest)
 def copy_file(source, path) -> Path                    # atomic, as write_stream
-def append_text(path, text) -> None                    # a log's lines added at its end
+def append_text(path, text) -> None                    # a log's lines added at its end, flushed and fsynced:
+                                                        # the one appender, an event log's records too
 def touch(path) -> Path                                # made empty if absent; its time now
 def remove(path) -> None                               # a file, or a folder with all it holds; absent is no error
 def make_folder(path) -> Path                          # a folder, with the folders above it; there already is no error
 def read_text(path) -> str | None                      # a file's text as its bytes hold it; None when no file is there
+def read_bytes(path) -> bytes | None                   # a file's bytes; None when no file is there
+def sha256(path) -> str | None                         # the one digest of a file, read in blocks — a download
+                                                        # may be large; None when no file is there
 def empty_folder(path) -> Path                         # an empty folder, whatever was there
-def copy_tree(source, path) -> Path                    # a folder copied to a place not there yet
+def copy_tree(source, path) -> Path                    # a folder copied to a place not there yet: copied beside
+                                                        # it and renamed in, whole — an interrupted copy leaves nothing
 def replace_folder(fresh, path) -> None                # fresh takes path's place whole: old moved aside, fresh
                                                         # renamed in, old removed — never a half of either
 def unpack_single(archive, path) -> bool               # a gzipped tar's one top folder becomes path, whole
-def plain_value(text) -> Any                           # parse_value's value as plain Python
+def plain_value(text) -> Any                           # a TOML inline value as a person types it, as plain Python
 def read_toml(path: Path) -> dict
 def read_json(path: Path) -> Any
 def read_document(path, empty="") -> TOMLDocument     # a TOML file to edit, its comments and order kept
 def write_document(path, doc) -> Path                  # atomic
-def parse_value(text) -> Any                           # a TOML inline value as a person types it
-def document_has(doc, key) -> bool; document_set(doc, key, value); document_unset(doc, key)
-def document_rename(doc, key, new)                     # in place, its comment kept; headers rewritten from keys
-def document_text(doc, key) -> str                     # an entry as a person edits it: a table as its own document
-def document_write(doc, key, text)                     # an entry made what that text writes, its comments kept
+def document_has(doc, key) -> bool; document_set(doc, key, value)
+def document_text(doc, key) -> str                     # an entry's text as its file holds it: a table as its own document
 def inline_text(value) -> str                          # a plain value as TOML text on one line
 def private_dir(path: Path, *, make=True) -> Path   # 0700; refused when another account could enter it or
                                                    # replace it; make=False only refuses — what a plan checks
@@ -193,9 +216,7 @@ def open_private(path: Path, mode: str) -> IO   # 0600 from its first byte, neve
 `config.toml` keeps its comments, its order and its layout through every edit
 `config set` makes — read as a document, changed key by key, and written whole
 and atomically; no command edits a project's files ([`projects.md`](projects.md)
-§ 7). tomlkit renames a key in place
-only through `Container._replace`, held to it by tomlkit's version range in
-`control.txt` and a test.
+§ 7).
 
 `atomic_write_text` and `write_json` take `private=True` for a file only this
 account may read (a pidfile). `private_dir` makes each folder it creates
@@ -210,7 +231,10 @@ every folder.
   written **last**, by one of these calls: that write is the commit point. The
   install script's control stamp follows the same rule in bash
   ([`envs.md`](envs.md) § 7.2).
-- Appending to an event log is the one non-atomic write (§ 6).
+- Appending — a log's lines, an event log's records (§ 6) — is the one
+  non-atomic write; each append is flushed and fsynced before it returns.
+- Every read of a file femkit declares or writes goes through these too:
+  `read_text`, `read_bytes`, `read_toml`, `read_json`, `sha256`.
 
 ## 5. Locks — `core/locks.py`
 
@@ -265,11 +289,13 @@ StepOutcome = Literal["done", "failed", "killed"]      # how a step ends; OUTCOM
 class EventLog:
     @classmethod
     def of(cls, folder: Path, now=clock.now) -> EventLog  # the log of the operation in folder; its moments from now
-    def append(self, kind: str, **fields) -> None     # one JSON line, flushed and fsynced
-    def events(self) -> list[dict]                     # every complete line; a torn last line is ignored
+    def append(self, kind: str, **fields) -> None     # one JSON line, by persist.append_text: flushed and fsynced
+    def events(self) -> list[dict]                     # every complete line, read by persist; a torn last line is ignored
 
 def fold(events: list[dict]) -> LogState
 class LogState(Model):
+    operation: str | None          # the operation that wrote it, as its start record names it
+    basis: dict                    # the facts its plan rested on, as its start record holds them
     started: bool
     ended: bool                    # an operation-end record exists
     outcome: str | None            # its outcome: done | failed
@@ -307,7 +333,7 @@ A state machine says what state a subject is in and what may be done in each
 state. Built: each machine declared in Python, beside its facts function —
 rules as functions of the facts, actions as `Action`s of `core/view.py`
 ([`web.md`](web.md) § 7.2). Decided by the
-person, not built yet (plan § 3, R step C): the machine itself is data.
+person, not built yet (plan § 4, D): the machine itself is data.
 
 ```text
 femkit/data/states/<machine>.toml      one machine, declared:
@@ -365,7 +391,10 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
   system part, under the manager's activation ([`envs.md`](envs.md) § 4.4).
 - With `log`, stdout and stderr go together to that file (for builds and
   checks); without it, both are captured whole (for short answers a reader
-  parses).
+  parses). `run` opens its log itself, with the standard library alone: a
+  check program running inside an environment imports `process`, and nothing
+  else of femkit's ([`framework.md`](framework.md) § 1), so `process` cannot
+  import `persist`, whose TOML library the environment does not hold.
 - Each command runs in its own process group. A timeout or an interrupt stops
   the whole group (`SIGTERM`, then `SIGKILL` after `GRACE`, 5 s — the one grace for
   every process femkit stops).
@@ -392,7 +421,7 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
   ID alone: a signal goes only to an `Identity` that is `alive()`. A child that
   must not outlive its parent sets `PR_SET_PDEATHSIG` and checks `getppid`
   after, which `start_detached` does not do — the child that needs it sets it
-  itself (`web.md` § 4). Jobs will use the same block (plan § 3, M3).
+  itself (`web.md` § 4). Jobs will use the same block (plan § 4, X).
 
 ## 9. Errors — `core/errors.py`
 
@@ -434,7 +463,7 @@ the operation's log path and exits 1.
 ```python
 class Issue(Model):
     severity: Literal["error", "warning", "info"]
-    code: str                    # stable, kebab-case, e.g. "preamble-unset"
+    code: str                    # stable, kebab-case, e.g. "preamble-unset"; another is refused when made
     subject: str                 # what it is about: an environment, a key, a file, an address
     label: str | None = None     # what a person calls the subject, where its address is not that
     message: str                 # one whole sentence for a person
@@ -462,6 +491,9 @@ class Units:
     def canonical(self, dimension) -> str | None                   # a base dimension's canonical unit: `m`
     def of(self, dimension) -> list[str]                           # every symbol of it, prefixed ones included
 
+def name_spans(text: str) -> list[tuple[int, int, str]]   # each name a quantity text uses — a parameter or a
+                                                          # unit symbol — with its span; empty when the grammar
+                                                          # cannot read the text: what a graph draws a wire from
 class UnitError(ValueError)                    # names the text and what in it is wrong
 ```
 

@@ -1,8 +1,9 @@
 # Materials contract — the property list, the material format, libraries and importers
 
 **Role:** contract
-**Status:** current, approved by the person (plan § 6); nothing of its design
-is built yet (plan § 3, R step E). Today's one-file models check a property
+**Status:** current, approved by the person
+([ADR 0014](../decisions/0014-materials.md)); nothing of its design is built
+yet (plan § 4, D and E). Today's one-file models check a property
 table's phasor convention, passivity and range (`models.md`, status)
 **Authority:** the property list and its names in each engine and source;
 dispersion models; the material format; the global library and a project's
@@ -72,8 +73,8 @@ A dataset may give a property as a named model of how it varies with
 wavelength or frequency, from a closed list declared as data: each model's
 name, its parameters with their units, the property it gives, and the section
 of the science document that states its formula and sign convention. The first
-models are those the bowtie's materials need (plan § 5); a model not on the
-list is refused, naming the list. Not built yet (plan § 3, R step E).
+models are those the bowtie's materials need (plan § 8); a model not on the
+list is refused, naming the list. Not built yet (plan § 4, E).
 
 ## 3. A material — `<name>/material.toml` and its tables
 
@@ -110,8 +111,8 @@ range = ["188 nm", "1937 nm"]
   `uncertainty` where the source gives one. These are `stated` fields
   ([`core.md`](core.md) § 2): a dataset being written may lack them, a finding
   of `project check`; `study expand` refuses a case resting on one that does.
-- A material file starts from its template, generated from the property list
-  ([`web.md`](web.md) § 8.3).
+- A material file starts from one in femkit's project templates or in the
+  library ([`projects.md`](projects.md) § 7).
 
 ## 4. Where materials live, and how one is found
 
@@ -142,8 +143,8 @@ range = ["188 nm", "1937 nm"]
   `GLOBAL/` materials in that root's library; one missing there is a finding
   naming it.
 - **Writes** go through the door ([`projects.md`](projects.md) § 6). A write to
-  the global library holds the library's lock — its one home — and asks for
-  confirmation ([`projects.md`](projects.md) § 7).
+  the global library holds the library's lock and asks for confirmation; this
+  is the rule's one home.
 
 ## 5. The assignment — a component's `[assign]`
 
@@ -202,7 +203,7 @@ The first importer is for refractiveindex.info's files (one YAML file per
 material and source; tabulated `n`, tabulated `nk`, or one of nine formulas;
 its range in micrometres). Reading YAML needs a library the control environment
 does not hold (measured); adding it is an environment change, the
-person's decision. Not built yet (plan § 3, R step E).
+person's decision. Not built yet (plan § 4, E).
 
 ## 8. Translation
 

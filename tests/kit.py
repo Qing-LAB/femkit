@@ -1,20 +1,27 @@
 """What tests share, written once (testing.md § 3): a context for one command, an operation called
 through the registry as a surface calls it, a refusal told apart by its code, a lock held by another process, an environment left as
-an install leaves it, and a machine record. Each test file takes these from here, never from
-another test file."""
+an install leaves it, a machine record, and the tripwires the basic and web tiers stand behind. Each
+test file takes these from here, never from another test file; a tier's conftest.py takes the
+tripwire fixtures it applies."""
 
 from __future__ import annotations
 
+import os
+import shlex
+import stat
 import subprocess
 import sys
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
 from femkit import registry
+from femkit.config.probe import GPU_QUERY, place
 from femkit.core.errors import Refusal
 from femkit.core.operations import Context
 from femkit.core.persist import write_json
+from femkit.definitions.catalogue import load_environments, load_managers, load_schedulers
 from femkit.envs import layout
 from femkit.envs.records import CheckOutcome, ChecksRecord, Manifest
 from femkit.envs.state import EnvFacts, facts
@@ -116,3 +123,64 @@ def a_record(**changes) -> Record:
     }
     data.update(changes)
     return Record.model_validate(data)
+
+
+# ------------------------------------------------------------------ the tripwires (testing.md § 2.1)
+#
+# PATH starts with a directory holding a tripwire for every outside program femkit can start; a
+# test that reaches one fails, naming the call.
+
+# Programs the tests' own process needs; never tripwired.
+NEEDED_BY_THE_TEST_PROCESS = frozenset({"python", "bash", "git"})
+# Named by testing.md § 2.1 or started by code, but listed in no definition file:
+# the GPU query, and CTest (the `ctest` check kind, definitions.md § 5.1).
+NAMED_IN_CODE = frozenset({GPU_QUERY[0], "ctest"})
+
+
+def tripwire_names() -> frozenset[str]:
+    names = set(load_managers()) | NAMED_IN_CODE
+    for kind in load_schedulers().values():
+        names |= set(kind.commands.values()) | set(kind.probe.values()) | {kind.mpi_launch[0]}
+    for env in load_environments().values():
+        names |= set(env.provides.executables) | set(env.toolchain.mpi.values() if env.toolchain else ())
+    return frozenset(names - NEEDED_BY_THE_TEST_PROCESS)
+
+
+#: The machine the basic and web tiers stand on (testing.md § 2.1): the tripwires put every scheduler
+#: kind's commands on PATH and clear its job variables, so femkit finds SLURM's submit command and no
+#: job. A test that needs another place says so in its own environment, for its own run.
+MACHINE = "login node"
+
+REACHED = "reached.log"  # in the tripwire directory: every call a tripwire took during the current test
+
+
+def tripwire_text(log: Path) -> str:
+    """A tripwire's text. The log's path is written into it, not passed in a variable: a command
+    run in a prefix sees only the confined variables (envs.md § 4.4)."""
+    return f'#!/bin/sh\necho "$0 $*" >> {shlex.quote(str(log))}\nexit 97\n'
+
+
+@pytest.fixture(scope="session")
+def tripwire_dir(tmp_path_factory) -> Path:
+    d = tmp_path_factory.mktemp("tripwires")
+    for name in tripwire_names():
+        script = d / name
+        script.write_text(tripwire_text(d / REACHED))
+        script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return d
+
+
+@pytest.fixture(autouse=True)
+def tripwires(tripwire_dir, monkeypatch):
+    log = tripwire_dir / REACHED
+    log.unlink(missing_ok=True)
+    for kind in load_schedulers().values():  # run inside an allocation, a test still sees none of its job
+        for variable in kind.job_variables.values():
+            monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("PATH", f"{tripwire_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setenv("FEMKIT_ENV_MANAGER", str(tripwire_dir / sorted(load_managers())[0]))
+    stood_on = place(load_schedulers(), os.environ).where
+    assert stood_on == MACHINE, f"the tests stand on a {stood_on}, not the stated {MACHINE} (testing.md § 2.1)"
+    yield log
+    if log.exists() and log.read_text().strip():
+        pytest.fail("a test reached an outside program: " + log.read_text().strip())

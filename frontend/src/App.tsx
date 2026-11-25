@@ -5,7 +5,7 @@ import { Registry } from "./kernel/action";
 import { OperationView } from "./OperationView";
 
 // The first page: the Operations workspace and the documents, until the page is rebuilt on the
-// kernel and elements (web.md § 2.2; plan § 3, R step G).
+// kernel and elements (web.md § 2.2; plan § 4, G).
 
 function group(name: string): string {
   return name.includes(".") ? name.split(".")[0] : "femkit";

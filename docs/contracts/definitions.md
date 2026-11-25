@@ -24,8 +24,8 @@ What is configured per user or per machine is not here: it is
 
 ## 1. What a shipped definition is
 
-femkit ships these definitions under `femkit/data/`, beside the templates
-for user configuration:
+femkit ships these definitions under `femkit/data/`, beside its templates
+([`projects.md`](projects.md) § 7):
 
 ```text
 femkit/data/
@@ -39,12 +39,13 @@ femkit/data/
 ├── schedulers/<kind>.toml     how to talk to a scheduler (local, slurm)
 ├── units.toml                 the units a value may be written in, with exact factors (core.md § 11)
 ├── web/page.toml              the web page's own structure (web.md § 8.1)
-└── templates/                 starting text for user configuration files
+└── templates/                 the settings file's template, and the project templates (projects.md § 7)
 ```
 
-The data the new parts are driven by, decided by the person (plan § 6) and not
-built yet (plan § 3, R; the mesh step's environment, X, where it is still
-open):
+The data the new parts are driven by, decided by the person (ADRs
+[0011](../decisions/0011-project-structure.md)–[0014](../decisions/0014-materials.md))
+and not built yet (plan § 4, D and E; couplings after M9; the mesh step's
+environment, X, where it is still open):
 
 ```text
 femkit/data/
@@ -55,7 +56,7 @@ femkit/data/
 ├── dispersion.toml            the dispersion models (materials.md § 2)
 ├── materials/<name>/          the shipped materials, seeding the global library (materials.md § 4)
 ├── importers/<source>.toml    how another library's files map onto femkit's (materials.md § 7)
-├── geometry/                  the example scripts with their contracts, and the kinds table (geometry.md §§ 2, 7)
+├── geometry/kinds.toml         the kinds of place a group may be (geometry.md § 7)
 ├── project/layout.toml        a project's parts and folders (projects.md § 4)
 └── states/<machine>.toml      each state machine (core.md § 7)
 ```
@@ -76,12 +77,12 @@ Engine code lives in `femkit/engines/<engine>/` and provides only:
 - **version probe** — report the installed solver version;
 - **check programs** — small numerical problems that run inside the engine's
   environment and write the common summary (§ 5.3).
-- **translators, parsers and finalizers** — not built yet (plan § 3, M6): per formulation
+- **translators, parsers and finalizers** — not built yet (plan § 4, M6): per formulation
   the engine declares, turn a case into input files, a run's output into
   observations, and apply each kind of customization
   ([`models.md`](models.md) § 9.1). An environment definition also declares
   its abilities, extension points and engine-only options —
-  not built yet (plan § 3, M5) ([`models.md`](models.md) § 6.1).
+  not built yet (plan § 4, M5) ([`models.md`](models.md) § 6.1).
 
 ## 2. Schemas
 
@@ -217,7 +218,7 @@ has one source:
 | libraries, MPI, Python and its packages | `[packages] conda` | the package manager, in the same solve | conda-forge |
 | the GPU compilers and libraries of the CUDA environment | `[cuda] packages` (§ 4.5) | the package manager, in the same solve | conda-forge |
 | each engine, and anything femkit needs at a version, option or patch conda-forge does not offer | `[[sources]]`, `[[builds]]` (§ 4.2) | femkit's build steps, inside the prefix, with its toolchain | an archive pinned by its commit and SHA-256 |
-| a Python package conda-forge does not have | `[packages] pip` | not built yet: an environment that lists one is refused; designed with how a script's imports are provided (plan § 3, X) | — |
+| a Python package conda-forge does not have | `[packages] pip` | not built yet: an environment that lists one is refused; designed with how a script's imports are provided (plan § 4, X) | — |
 
 The rule: everything comes from conda-forge, solved once and together, unless
 femkit must build it. pip itself is in every environment with Python, but
@@ -253,7 +254,9 @@ One grammar everywhere, `{name}` or `{name:argument}` ([`core.md`](core.md)
 § 2.1). Each templated field declares the names it accepts on its schema model
 (`placeholders`), and `docs/reference/` lists them per field — build options
 take `{prefix}`, `{source:<id>}` and `{build:<id>}`, for example. Any other
-name fails at load, and an `<id>` must name a declared source or build.
+name fails at load, and an `<id>` must name a declared source or build. A
+manager command must also pass each name it is rendered with — `{prefix}` on
+a prefix, `{file}` for a create from a lock — or it fails at load.
 
 ### 4.4 Threads
 
@@ -463,7 +466,7 @@ by ID and named in the kind.
 
 | directory | one file per | declares |
 |---|---|---|
-| `managers/` | conda; mamba, 1.x and 2.x (every form measured on 1.5.9 and 2.9.0); micromamba once measured (plan) | create from constraints (the control environment's: `--file control.txt`), overriding the person's own conda channels and, where the manager can, default packages / from a lock; run in a prefix (and, not built yet, the text its `run` prints when it cannot start a command, [`envs.md`](envs.md) § 4.4); export the lock; create from a lock and remove, each naming the declared channels as a create does where the kind needs them (`channels_named`: conda does, mamba refuses them on a removal) ([`envs.md`](envs.md) § 4.4); report version, root and platform; `activate`: the kind's two ways a shell enters a prefix, between which this machine's `activation.command` chooses ([`config.md`](config.md) § 3.1) — the shell function, with the hook file under `{root}` that defines it (for conda `{root}/etc/profile.d/conda.sh`, checked on disk, never derived from the binary's path, which on a cluster may be a module's wrapper), and the activate script (`source activate {prefix}`) ([`envs.md`](envs.md) § 6.2) |
+| `managers/` | conda; mamba, 1.x and 2.x (every form measured on 1.5.9 and 2.9.0); micromamba once measured (plan § 4, M1) | create from constraints (the control environment's: `--file control.txt`), overriding the person's own conda channels and, where the manager can, default packages / from a lock; run in a prefix (and, not built yet, the text its `run` prints when it cannot start a command, [`envs.md`](envs.md) § 4.4); export the lock; create from a lock and remove, each naming the declared channels as a create does where the kind needs them (`channels_named`: conda does, mamba refuses them on a removal) ([`envs.md`](envs.md) § 4.4); report version, root and platform; `activate`: the kind's two ways a shell enters a prefix, between which this machine's `activation.command` chooses ([`config.md`](config.md) § 3.1) — the shell function, with the hook file under `{root}` that defines it (for conda `{root}/etc/profile.d/conda.sh`, checked on disk, never derived from the binary's path, which on a cluster may be a module's wrapper), and the activate script (`source activate {prefix}`) ([`envs.md`](envs.md) § 6.2) |
 | `schedulers/` | local, slurm | the parts of the `SchedulerKind` model (`docs/reference/`); [`jobs.md`](jobs.md) § 7 says what each is for |
 
 The manager in use and the scheduler a machine has are facts of that machine

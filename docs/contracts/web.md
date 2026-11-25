@@ -16,7 +16,7 @@ the page, and the page's layers, state machines, elements, styles and help
 | The page is built by `web build` in the `web` environment and shipped, with its hashes | 3 |
 | `serve` is a state machine observed from its lock and pidfile; a supervisor runs the application | 4 |
 | Every request carries the token; the page holds nothing the server did not give it | 5 |
-| The page shows the project's structure and edits its relations; each part's detail is its text — TOML, or a geometry script — edited beside the help of every key it may hold ([ADR 0010](../decisions/0010-describe-the-system.md)) | 2.2, 8.3 |
+| The page shows the project's structure; each part's detail is its text — TOML, or a geometry script — shown beside the help of every key it may hold, with its findings and the templates to copy; it changes no file the person wrote ([ADR 0015](../decisions/0015-the-persons-files.md)) | 2.2, 8.3 |
 | A view is a thin consumer of documents and elements; a missing capability is work on the document or the element | 6 |
 | Everything the page shows is written in one vocabulary: help, action, field, finding, table | 7 |
 | The server declares the page's structure, the part kinds and object types, what may be added, the next step | 8 |
@@ -32,10 +32,11 @@ Python, and the page is built with its Node.js; the control environment holds
 neither. The routes and `serve` are built in token mode, with the first page's
 operation, progress and documents views, and the page's framework in part
 (§ 6 says which parts); TLS, sign-in, `--no-auth`, uploads and the rest of
-§§ 6–12 are not built yet (plan § 3, R and M7), and these rules hold when they
-are. A basic test checks that every registered operation can be expressed this
-way (its request and result models produce a JSON schema). The reasons for the
-page's form are [ADR 0009](../decisions/0009-web-front-end.md).
+§§ 6–12 are not built yet (plan § 4: D, G and M7's remainder), and these
+rules hold when they are. A basic test checks that every registered operation
+can be expressed this way (its request and result models produce a JSON
+schema). The reasons for the page's form are
+[ADR 0009](../decisions/0009-web-front-end.md).
 
 ## 1. Routes
 
@@ -59,11 +60,11 @@ HTTP status follows [`api.md`](api.md) § 4.3: 200 for a result, exit 0 or 1 (th
 409 for a refusal; 500 for a defect, with the log path. A request body is the
 request model and nothing else: no field takes executable text, a shell
 fragment, an environment variable or a path outside the folders the operation
-names. One exception, the person's decision (plan § 6;
-[ADR 0013](../decisions/0013-geometry-scripts.md)): a component's geometry
-script is the person's own file in the project, and is run only as the first
-step of a pipeline, in a run folder, its contract checked
-before and after ([`geometry.md`](geometry.md) §§ 3–4).
+names. A component's geometry script is the person's own file in the
+project, written in their own editor, and is run only as the first step of a
+pipeline, in a run folder, its contract checked before and after
+([`geometry.md`](geometry.md) §§ 3–4;
+[ADR 0013](../decisions/0013-geometry-scripts.md)).
 
 ## 2. The front end
 
@@ -73,17 +74,20 @@ before and after ([`geometry.md`](geometry.md) §§ 3–4).
   port types and the statuses come from that document. Adding a
   field, an operation or a node kind changes no front-end code.
 - **Writes only through plan and apply, and never a file the person wrote.**
-  The person writes a project's files in their own editor (plan § 6); what the
-  page does — a decision, preparing a case — is an operation, shown as its plan
-  first and applied with its plan's digest (§ 9.1). Where a node is drawn is no project
-  data at all (§ 2.2). The page holds no state the files do not. The one
-  exception is an upload, which writes only
-  into a project's upload area, which nothing reads until an operation names
-  the file (§ 5).
-- **Code is a file.** A customization is uploaded as a file into the project
-  (§ 5) and named by an operation that records its hash; the page shows it
-  and never runs or edits code typed into a form. A geometry script is a file
-  of its component: the page edits its text as any part's and never runs it
+  The person writes a project's files in their own editor
+  ([ADR 0015](../decisions/0015-the-persons-files.md)); what the page does —
+  expanding a study, preparing a case — is an operation, shown as its plan
+  first and applied with its plan's digest (§ 9.1). How a decision reaches the
+  study is settled at M5's start (plan § 4, M5), never by femkit writing the
+  person's file. Where a node is drawn is no project data at all (§ 2.2). The
+  page holds no state the files do not. The one exception is an upload, which
+  writes only into a project's upload area, which nothing reads until an
+  operation names the file (§ 5).
+- **Code is a file.** A customization is a file of the person's under
+  `custom/`, recorded by its hash in each preparation's manifest
+  ([`models.md`](models.md) § 8.2); the page shows it and never runs code
+  typed into a form. A geometry script is a file of its component: the page
+  shows its text as any part's and never runs it
   ([ADR 0013](../decisions/0013-geometry-scripts.md)).
 - **Fields are viewed in ParaView**
   ([ADR 0002](../decisions/0002-paraview-visualization-boundary.md)); the page
@@ -129,13 +133,9 @@ under one top bar, and the documents in a tab of their own (§ 2.3):
   ([`models.md`](models.md) § 6.2); with none chosen, the graph shows the
   description alone.
 - **Project** is the palette, the canvas and the inspector:
-  - **the palette** lists the templates a part's text starts from, generated
-    from the schemas and the formulation (§ 8.3): a component from an example
-    script; a physics, and its condition and source kinds grouped by where they
-    may stand; a mesh recipe; an observable set; a study and an analysis; a
-    material from its template or from the library — each shown to copy into a
-    file of the person's. Each entry's tooltip is its sentence, linked to its
-    section in the document viewer;
+  - **the palette** lists femkit's project templates and their parts
+    (§ 8.3), each shown to copy into a file of the person's. Each entry's
+    tooltip is its sentence, linked to its section in the document viewer;
   - **the canvas** shows the overview — one node per part, in the chain's
     order, wires the references between parts; the person's grouping folders
     as boxes that open and close ([`projects.md`](projects.md) § 3) — and,
@@ -144,17 +144,17 @@ under one top bar, and the documents in a tab of their own (§ 2.3):
     assigned to them; a physics' groups and the conditions and sources on them;
     a study's pairing and its axes
     and environments ([`models.md`](models.md) § 11.2). A component's named
-    groups are its ports; a port accepts only its own type. **Where nodes
+    groups are its ports, each of its own type. **Where nodes
     stand is the page's alone**, never
     the project's: the canvas arranges them by itself in the chain's order —
     parameters, components, physics, mesh recipes and observable sets,
     studies, analyses — and **Tidy** arranges them so again. When the person
     chooses to remember where they dragged nodes, the page keeps it in the
     project's view file, `.femkit/view.json`, by `project view` — no project
-    data: never an edit, never undone, never read by a case, a run or a check
+    data, never read by a case, a run or a check
     ([`projects.md`](projects.md) § 2). React Flow arranges no nodes itself; the arrangement comes
     from a layout library — dagre or ELK, as its documentation shows — a new
-    dependency of the page, the person's to approve (plan § 3, R step G);
+    dependency of the page, the person's to approve (plan § 4, G);
   - **the inspector** is the selected part's text, as its file holds it with
     its comments — a component's geometry script included; beside it the help
     of every key the part may hold — its sentence, its unit or choices, whether
@@ -164,7 +164,7 @@ under one top bar, and the documents in a tab of their own (§ 2.3):
     Below are the part's findings, each saying what is wrong and what would be
     right, and, for an open match line, the decisions and customizations that
     resolve it. The page edits nothing: the person writes the files
-    ([ADR 0010](../decisions/0010-describe-the-system.md)).
+    ([ADR 0015](../decisions/0015-the-persons-files.md)).
 - **Every canvas action is also a keyboard action**: moving through the
   nodes, opening a part, a finding or a template.
 - **The bottom panel** holds the findings of `project check`, each leading to
@@ -186,7 +186,7 @@ flowchart LR
     E["new project"] --> C["a component: its script,<br/>its contract's groups,<br/>its materials"]
     C --> P["a physics: conditions<br/>and sources on groups"]
     P --> F{"findings?"}
-    F -->|"each fix in the inspector"| C
+    F -->|"each fix written in the person's editor"| C
     F -->|"none"| S["a mesh recipe, observables,<br/>a study: study expand → cases"]
     S --> X["environment chosen:<br/>match lines on the nodes"]
     X -->|"a decision, a customization"| X
@@ -195,16 +195,16 @@ flowchart LR
     J --> A["results and analyses;<br/>fields in ParaView"]
 ```
 
-The Project workspace is rebuilt by plan § 3, R step G; the environment's
-overlay waits on abilities and the match report (M5 step 3, M7 item 4); Runs,
-past its cases and `study expand`, on run folders, preparation and jobs (X,
-M3, M4, M6, M7 item 5). Operations, progress and the documents are built.
+The Project workspace is rebuilt by plan § 4, G; the environment's overlay
+waits on abilities and the match report (M5); Runs, past its cases and
+`study expand`, on run folders, preparation and jobs (X, M4, M6). Operations,
+progress and the documents are built.
 
 ### 2.3 The document viewer
 
 - **The document viewer** opens in its own tab at `/docs`, its token handed
   over in the address's fragment as the page's own is (§ 5). It shows every
-  Markdown file under `docs/` and `examples/`, and the root documents
+  Markdown file under `docs/`, and the root documents
   `PROJECT_CONTRACT.md` § 2 names — by name, so a local file beside them is
   never shown — as a tree of folders that expand, and renders each as GitHub does: tables, code,
   math (KaTeX), Mermaid diagrams. Links work as in the repository: a link to
@@ -308,7 +308,7 @@ line in the server's log.
 | `<runtime>/serve-<name>.pid` | the supervisor's and the child's process IDs and start times, the host and its boot ID, and where it listens | by `start`, rewritten by the supervisor at each respawn, `0600` |
 | `<runtime>/serve-<name>.token` | the access token (§ 5) | by `start`, before the child runs: created exclusively, never following a link, `0600` |
 | `<runtime>/serve-<name>.sock` | the Unix socket, when it listens on one; its path at most 108 bytes, or `start` refuses, naming it; never an abstract socket, which has no permissions | by the supervisor, `0600` |
-| `<state>/logs/serve-<name>.log` | every event the supervisor and the server report, one line each, `[serve-<source>] <moment> <message>` (`protocol.event_line`, its moment as `core/clock.py` writes one): child start, respawn, give-up, stop; each request's method, path without its query (control characters escaped), status, time and, with sign-in, the account — never a header, a token or a body | by the supervisor alone, `0600` |
+| `<state>/logs/serve-<name>.log` | every event the supervisor and the server report, one line each, `[serve-<source>] <moment> <message>` (`protocol.event_line`, its moment as `core/clock.py` writes one): child start, respawn, give-up, stop; each request's — but an answered `GET /api/health`, which `start` and `status` ask — method, path without its query (control characters escaped), status, time and, with sign-in, the account — never a header, a token or a body | by the supervisor alone, `0600` |
 | `<state>/logs/serve-<name>.supervisor.log` | what the detached supervisor itself prints before or outside the server's log — a traceback, an import that failed; `start` shows its last lines when the child never answers | by the supervisor's own output, `0600` |
 | `<state>/logs/serve-<name>.stacks.log` | every thread's stack, appended each time the child receives `SIGUSR1` | by the child, `0600` |
 
@@ -410,9 +410,13 @@ out.
   process's account (`SO_PEERCRED`) is its owner's. A request without the
   token gets 401 in JSON; the page then asks for it. A refusal at the door is
   the one refusal answer: `Refused` for who may not ask (401, 403), a
-  `UsageError` for a request the door cannot take, each with its code —
-  `token`, `host`, `origin`, `content-type`, `size`, `route`, `method`, `body`,
-  `nonce`; too many event streams open is `Busy`, code `streams`.
+  `UsageError` for a request the door cannot take, each with its code and
+  subject — `token` (`Authorization`), `host` (`Host`), `origin` (`Origin`),
+  `content-type` (`Content-Type`), `nonce` (`nonce`); `size`, `route`,
+  `method`, `body` and `range` (a `Range` past the file's end), each about the
+  request's path; too many event streams open is `Busy`, code `streams`,
+  about the stream's path. An HTTP error the door has no code for is a
+  defect.
 - The event stream is read with `fetch`, which sends the header; a browser's
   `EventSource` cannot.
 - Tokens are compared in constant time. A restart keeps the token; `serve
@@ -443,7 +447,8 @@ out.
   logged, never delayed or locked out: a 256-bit token cannot be guessed, a
   delay would hold one of the bounded threads, and every local client arrives
   from the same address, so a lockout would let any page or account lock the
-  owner out. The cap on event streams stays below the thread pool's size.
+  owner out. The cap on event streams stays below the thread pool's size,
+  checked when the server starts.
 - **Errors** answer with the reason and nothing else: no path outside the
   project, stack trace or version string reaches a response. The
   full detail is in the server's log.
@@ -463,7 +468,7 @@ Strict-Transport-Security: max-age=31536000   (over HTTPS only)
 ```
 
 The bundle contains no inline script or style element: the built page loaded
-headlessly under this policy would not run with one (plan § 3, M7 item 2);
+headlessly under this policy would not run with one (plan § 4, M7's remainder);
 styles a script sets through the page's object model are allowed by
 this policy. The browser validates nothing a schema could forbid: a value is
 checked by the plan route, so the policy needs no `unsafe-eval`.
@@ -492,8 +497,8 @@ plain HTTP. Any other address (`--host`), and any server with a
   provider alone admits anyone with an account there, and an address alone is
   trusted from any provider that will assert it. Everyone on the list acts
   with the server owner's account on this machine — reading the projects,
-  preparing and running work, adding customizations whose code runs in a
-  reviewed job — so the list names only people the owner trusts that far.
+  preparing and running work, uploading files whose code runs in a reviewed
+  job — so the list names only people the owner trusts that far.
 - The flow is the authorization code flow with PKCE. Each provider has its own
   redirect address, and the provider is bound to the `state`; the `state`, the
   `nonce` and the PKCE verifier live, for the round trip only, in a cookie of
@@ -532,23 +537,23 @@ it.
 under its own size limit and the project's total quota (`web.upload_max_mb`),
 to a temporary file renamed to `<project>/.femkit/uploads/<sha256>`, and
 answers with the hash. While `paths.projects` or `web.upload_max_mb` is unset,
-uploads are refused, naming the key. The operation
-that adds a customization names that hash and a name under `custom/` that
-follows [`models.md`](models.md) § 8.2's rule, and opens the path without
-following links. Nothing uploaded runs except in a job the person reviewed
+uploads are refused, naming the key. How an uploaded file reaches the study
+as a customization is settled at M8's start (plan § 4, M8), never by femkit
+writing the person's file ([ADR 0015](../decisions/0015-the-persons-files.md)).
+Nothing uploaded runs except in a job the person reviewed
 ([`models.md`](models.md) § 8.4). The page shows code as text inside JSON,
 never as a document of its own.
 
 ## 6. The page's framework
 
 Built: the vocabulary (§ 7), the page declaration (§ 8.1), § 8.3's fragments
-and templates over today's one-file model, the kernel's client, action hook
-and page state, and the elements of § 9.2 but `Form`, `TextEditor`, `Keys`,
-`Confirm` and `Busy`; none of it is wired into the page yet. Not built: the
-layout (§ 8.2, plan § 3, R step C), the
-missing elements, the views and the shell (R step G); the page as it stands is
-the first page they replace. The page is held to the web discipline of
-[`../process/conventions.md`](../process/conventions.md) § 2.1, and to one
+and keys over today's one-file model, the kernel's client, action hook and
+page state, and the elements of § 9.2 but `Keys`, `Listing`, `Confirm` and
+`Busy`; none of it is wired into the page yet. Not built: the layout (§ 8.2;
+plan § 4, D), the missing elements, the views and the shell (plan § 4, G);
+the page as it stands is the first page they replace. The page is held to the
+web discipline of [`../process/conventions.md`](../process/conventions.md)
+§ 2.1, and to one
 doctrine: **a view is a thin consumer of documents and elements; a missing
 capability is work on the document or the element, never a workaround in the
 view.**
@@ -600,8 +605,9 @@ and the page each render their own way.
 - `call` is an operation with its request, or `shell` a line for what is no
   operation: a shell's activation line, a scheduler's interactive command. It
   holds no command text: each surface writes its own from the call.
-- `fills` — each value the request still needs, by its path: a `Field` (§ 7.3)
-  to type or choose it, or the node kinds whose names may fill it.
+- `fills` — each request field the action still needs, whole: a `Fill`
+  {field, label, help, json_schema, accepts, example, toml}, to type or
+  choose it.
 - Whether it reads, changes or removes, and whether it asks for confirmation,
   comes from its operation's declaration ([`api.md`](api.md) § 2), never from
   the action.
@@ -616,7 +622,7 @@ without importing the operation that runs it.
 
 ### 7.3 Field
 
-`Field {label, key, value, schema, help, set}` — one value as a person sees
+`Field {label, required, value, json_schema, help, set}` — one value as a person sees
 it: a request's field in an operation's form, or a key an object may hold, in
 the help beside its text. The page shows a part's detail as text (§ 8.3); the
 person writes it.
@@ -624,7 +630,8 @@ person writes it.
 - `value` is the TOML text the file holds — the one convention of every value
   a person writes, `config set` and the command line alike — so
   a decimal stays the text it was typed as.
-- `schema` is a self-contained JSON schema fragment of what it may hold: a
+- `required`: whether what holds it must state it.
+- `json_schema` is a self-contained JSON schema fragment of what it may hold: a
   quantity's carries its dimension and the unit table's symbols for it
   ([`core.md`](core.md) § 11); a closed list carries `enum`, so a choice is no
   separate part.
@@ -686,8 +693,8 @@ operation does not exist.
 Each part kind — its folder, its file, its schema — and each object type inside
 a part — its table, whether it is named, its place in the chain's order — is
 declared once, in the project layout ([`projects.md`](projects.md) § 4); the
-door, the graph, the checks, the templates and the page all read it. Not built
-yet (plan § 3, R step C). A kind's
+door, the graph, the checks and the page all read it. Not built
+yet (plan § 4, D). A kind's
 colour is the design token of its place in that order (§ 10.2), so no style
 names a kind.
 
@@ -699,20 +706,14 @@ hold, built from the schema and, for what a formulation or the property list
 declares, from those, by one builder of fragments — the very fragments the
 loader's schema states.
 
-A **template** is generated from the same fragments for each kind of part and
-object: the object's type held, its required keys written to fill, and every
-optional key written as a comment with its sentence and its unit or choices,
-ready to uncomment. A template is where a part's text starts: the page shows
-it to copy into a new file, and `project new` writes a new project's from them
-([`models.md`](models.md) § 11.1) — a template that leaves a required value
-open does not load until the person fills it. A component
-starts from one of femkit's example scripts with its contract
-([`geometry.md`](geometry.md) § 2): geometry is the person's, and its examples
-are real scripts, not generated text. No other template text is written by
-hand, and no value is asked for field by field
-([ADR 0010](../decisions/0010-describe-the-system.md)). Built over today's
-one-file model: the fragments, the keys and the templates; not built: the
-property list's part (plan § 3, R step F).
+The **templates** are femkit's project templates
+([`projects.md`](projects.md) § 7): whole, working projects, each key with its
+help as a comment. The page shows each template's parts to copy into a file of
+the person's, and `project new` copies one whole
+([`models.md`](models.md) § 11.1); no value is asked for field by field
+([ADR 0015](../decisions/0015-the-persons-files.md)). Built over today's
+one-file model: the fragments and the keys; not built: the property list's
+part, and the templates (plan § 4, D).
 
 ### 8.4 The way through
 
@@ -721,8 +722,9 @@ order ([`models.md`](models.md) § 11.2) — stays in view with its actions.
 
 ### 8.5 What the page writes
 
-No file the person wrote (plan § 6): only what an operation produces — cases,
-runs, results — each shown as its plan first, and the view file (§ 2.2).
+No file the person wrote ([`projects.md`](projects.md) § 7): only what an
+operation produces — cases, runs, results — each shown as its plan first, and
+the view file (§ 2.2).
 
 ### 8.6 Projects
 
@@ -784,8 +786,8 @@ holds it ([`testing.md`](testing.md) § 3).
 ### 9.2 Elements — the design system
 
 One component for each, each with its stylesheet, its classes prefixed with
-its name; every view uses these and nothing else. `Form`, `TextEditor`, `Keys`,
-`Confirm` and `Busy` are not built yet (plan § 3, R step G):
+its name; every view uses these and nothing else. `Keys`, `Listing`, `Confirm`
+and `Busy` are not built yet (plan § 4, G):
 
 | element | is |
 |---|---|
@@ -794,15 +796,14 @@ its name; every view uses these and nothing else. `Form`, `TextEditor`, `Keys`,
 | `Button` | a press: primary, quiet or danger |
 | `Help` | a sentence on hover and on focus, and `?` to its document's section; never an element's name |
 | `Field` | one request field from its schema fragment, in an operation's form: text, number, quantity with its unit, choice, boolean, list, record |
-| `Form` | a request's fields edited together, committed as one action — Save or Enter; Esc puts them back |
-| `TextEditor` | an object's text: one edit committed with Save, its lines marked where a refusal or a finding points |
+| `Listing` | a part's text, read-only, its lines marked where a finding points |
 | `Keys` | the help of every key an object may hold: its sentence, unit or choices, whether required, its section |
 | `ActionButton` | any action: its fills asked, then the action machine |
 | `Finding` | a finding with its next steps |
 | `Table` | a table, its columns' help on their heads |
 | `Tabs` | one tab strip, one tab stop, the arrow keys |
 | `Dialog`, `Confirm` | the one dialog; never the browser's own |
-| `Notifications` | the one stack: what applied, with its Undo; what failed |
+| `Notifications` | the one stack: what applied; what failed |
 | `Busy` | one cover for a long action |
 | `Drawer`, `Card`, `Badge`, `Empty` | a side panel on a narrow screen; a surface; a state; what to do first |
 | `Plan`, `Progress` | a plan's steps; a run's steps as they go, and the running step's last lines |
@@ -857,7 +858,7 @@ page's icon.
 ## 12. Tests
 
 - The vocabulary round-trips; every action a document offers plans against its
-  operation; every template parses and names every key its schema allows; the
+  operation; every template passes `project check`, and its comments are its schemas' help; the
   generated schemas are fresh.
 - The page works on any project the server describes: served a project whose
   fields and kinds are renamed, it still shows them — the API's test
@@ -867,8 +868,7 @@ page's icon.
   the views' arrangement, no raw colour outside `tokens.css`, no hand-written
   type of server data — is held by review, which reads the page's source
   ([`testing.md`](testing.md) § 3); no test reads it.
-- At each step of plan § 3, R, every element is exercised in a browser
-  and the Laplace project's structure is built in the page from a new project,
-  its detail written as text, and the step
-  is reviewed independently against [`../process/conventions.md`](../process/conventions.md)
-  § 2.1.
+- At each step of the page's work (plan § 4, G), every element is exercised
+  in a browser, the Laplace project is shown in the page — every part, its
+  help, its findings, its templates — and the step is reviewed independently
+  against [`../process/conventions.md`](../process/conventions.md) § 2.1.

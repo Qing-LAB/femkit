@@ -22,33 +22,16 @@ from typing import Annotated, Any, ClassVar, Iterator, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 from pydantic.fields import FieldInfo
 
-from femkit.core.schema import (SHA256, Model, classes, closed, field_extras, field_named, matching, references, refuse,
-                                values_of)
+from femkit.core.schema import (DIMENSIONS, LENGTH, SHA256, Model, as_quantity, as_reference, classes, closed,
+                                field_extras, field_named, matching, references, refuse, values_of)
 from femkit.core.units import Quantity, UnitError, Units
 from femkit.jobs.request import Resources
 
 NAME = re.compile(r"[a-z][a-z0-9_]*")
 STUDY = re.compile(r"[a-z][a-z0-9_-]*")  # a study's name: its folder's
-LENGTH = (("length", 1),)
-
-#: Each `quantity` annotation: its dimension, when fixed, and what a reader is told it takes —
-#: the one table the loader, the forms' units and the reference pages read.
-QUANTITIES = {"any": (None, "a quantity with its unit, or an expression of parameters"),
-              "length": (LENGTH, "a length"),
-              "coordinate": (LENGTH, "a bare number in the frame's unit, or a length"),
-              "unit": (None, "a unit")}
-DIMENSIONS = {kind: dimension for kind, (dimension, _) in QUANTITIES.items() if dimension}
 
 Number = Union[int, Decimal]
 Coordinate = Union[int, Decimal, str]  # a bare number, in the frame's unit; or a length, or an expression
-
-
-def as_quantity(description: str, kind: str = "any", **kw: Any) -> Any:
-    return Field(description=description, json_schema_extra={"quantity": kind}, **kw)
-
-
-def as_reference(description: str, target: str | dict, *, extra: dict | None = None, **kw: Any) -> Any:
-    return Field(description=description, json_schema_extra={"ref": target, **(extra or {})}, **kw)
 
 
 # ------------------------------------------------------------------ geometry

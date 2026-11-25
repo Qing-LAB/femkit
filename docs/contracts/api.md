@@ -49,7 +49,9 @@ class ListResult(Result):
     rows: list[EnvRow]
     def text(self) -> str: ...
 
-@operation("env.list", request=ListRequest, result=ListResult)
+ENV_LIST = Verb("env.list", ListRequest)       # beside the request: femkit/envs/requests.py
+
+@operation(ENV_LIST, result=ListResult)
 def env_list(req: ListRequest, ctx: Context) -> ListResult:
     """Every environment with its definition, state and GPU qualification."""
 ```
@@ -57,7 +59,7 @@ def env_list(req: ListRequest, ctx: Context) -> ListResult:
 ### 2.2 A changing operation
 
 ```python
-@operation("env.install", request=InstallRequest, result=InstallOutcome,
+@operation(ENV_INSTALL, result=InstallOutcome,
            changes=True, subject=lambda req: [f"env-{n}" for n in req.names])
 class EnvInstall:
     """Install environments from their definitions (envs.md § 4)."""
@@ -68,14 +70,17 @@ class EnvInstall:
 
 | declaration part | meaning |
 |---|---|
+| verb | a `Verb` (`core/view.py`): the name and the request model, declared once beside the request; the declaration and every next step that names the operation read it |
 | name | `group.verb` (`env.install`), or one word for a top-level verb (`doctor`). It is the command `python -m femkit env install` and the route `/api/env/install` |
-| `request` | a `Model`; its fields are every input the operation takes |
+| request | a `Model`; its fields are every input the operation takes; a `bool` field defaults to `False`, or the declaration is refused (§ 4.1) |
 | `result` | a `Result` subclass (§ 2.3) |
 | `changes` | `False` (default): one function `(req, ctx) -> result`. `True`: a class with `plan` and `apply` (§ 3) |
 | `subject` | for a changing operation: the lock subjects it holds while applying (core.md § 5), from the request; or `"plan"` when they depend on what the plan observes — the plan names them (`serve start`: a login node listens on a socket unless asked otherwise, [`web.md`](web.md) § 4) |
 | docstring | the command's help and the route's description |
 
-The name is unique; the registry refuses a duplicate at start.
+The name is unique: a second `Verb` of one name with another request is
+refused where it is made, and the registry refuses a duplicate operation at
+start (§ 6).
 
 ### 2.3 Results
 
@@ -108,6 +113,8 @@ class Context:
     env: Mapping[str, str]                          # the process environment, read once
     now: Callable[[], datetime]
     def cached(self, key: str, factory: Callable[[], T]) -> T    # loaded once per context
+    def fresh(self) -> "Context"                    # the same variables and clock, nothing read yet: what
+                                                    # apply observes again with, never a read cached since the plan
     @classmethod
     def from_process(cls) -> "Context"
 ```
@@ -219,15 +226,19 @@ operation-specific.
 | request field | command line |
 |---|---|
 | `json_schema_extra={"cli": "argument"}` | a positional argument; a `list[...]` field takes one or more |
-| `bool`, default `False` | a flag `--name` |
+| `bool`, default `False` | a flag `--name`; a `bool` field with another default cannot be written as a flag, and is refused when the operation is declared |
 | any other field | an option `--name VALUE`; a `list[...]` field repeats |
 | a field with no default | required |
 
 - Underscores become dashes (`cuda_architectures` → `--cuda-architectures`).
-- A value is validated by the request model; its errors are reported by key,
-  exit 2.
+- A value is validated by the request model alone: the adapter passes the
+  words as they are typed, with no type or presence check of its own, so a
+  missing argument and a word that is no number are the request's problems
+  like any other — a `UsageError` naming each by its key path, exit 2, and the
+  refusal's JSON under `--json`.
 - Help is the operation's docstring and each field's description, with its
-  `doc` reference ([`core.md`](core.md) § 2).
+  `doc` reference ([`core.md`](core.md) § 2); an argument's, which a
+  positional argument cannot carry, is listed under the command's help.
 - **One mapping, both ways.** This table is `core/commandline.py`: the command
   line parses a command by it, and an `Action` ([`web.md`](web.md) § 7.2) is
   written as the command a person types by it — so a refusal's or a finding's
@@ -237,7 +248,7 @@ operation-specific.
 
 | option | on | meaning |
 |---|---|---|
-| `--json` | all | print exactly one JSON document on stdout: the result (for a changing operation, its outcome, even when there was nothing to do), or for `--dry-run` the plan, or for a refusal `{"refused": …, "code": …, "subject": …, "message": …, "next": […]}` (core.md § 9) |
+| `--json` | all | print exactly one JSON document on stdout: the result (for a changing operation, its outcome, even when there was nothing to do), or for `--dry-run` the plan, or for a refusal `{"refused": …, "code": …, "subject": …, "message": …, "next": […]}`, or for a defect `{"defect": …, "message": …, "log": …}` (core.md § 9) — the traceback goes to stderr |
 | `--dry-run` | changing | print the plan and stop; never asks or writes, and starts nothing but the plan's read-only probes |
 | `--yes`, `-y` | changing | consent given in advance |
 
@@ -299,10 +310,29 @@ Its routes, `serve`, and the page are [`web.md`](web.md)'s.
 
 ```python
 DOMAINS = ("femkit.config.operations", "femkit.envs.operations", ...)
-def operations() -> dict[str, Operation]     # imports DOMAINS when called, never at import
+PARTS: tuple[str, ...] = ()                  # the modules that own part schemas; none until step D
+def operations() -> dict[str, Operation]     # imports DOMAINS and PARTS when called, never at import
+def part_schemas() -> dict[str, type[Model]] # each part schema PARTS declare, by the key a layout names it
+                                             # by, each registered with the door
 ```
 
-The one list of where operations live. Adding a verb to an existing domain
-changes only that domain's operations module; adding a domain, or a second
-module to a domain whose operations serve another subject (`jobs.setup`: this
-machine's setup, beside the machine records), adds one line here.
+The one list of where operations live, and the one list of where part schemas
+live. Adding a verb to an existing domain changes only that domain's
+operations module; adding a domain, or a second module to a domain whose
+operations serve another subject (`jobs.setup`: this machine's setup, beside
+the machine records), adds one line here. A module owning part schemas
+declares `PART_SCHEMAS`, each the key a layout names it by
+([`projects.md`](projects.md) § 4) and its model; adding one adds a line to
+`PARTS`.
+
+`operations()` is femkit's start — the command line and the web server call it
+before anything else — and, besides collecting the operations, it
+
+- registers every part schema with the door (`femkit/projects/schemas.py`),
+  so a lower layer reads a schema it never imports
+  ([`projects.md`](projects.md) § 6);
+- refuses, as a defect, an operation declared twice, and a `Verb` declared
+  over one of femkit's request models that names no registered operation or
+  another operation's request: a renamed verb, or a next step written with the
+  wrong request, fails at start, wherever the step is made. A test's own
+  operations, over models of its own, are the test's.

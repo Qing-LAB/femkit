@@ -1,6 +1,6 @@
 """The name rule (projects.md § 3): a part's name is its path inside its kind's folder, each
 step matching `[a-z][a-z0-9_]*`, the steps joined by `/`; a global material's opens with
-`GLOBAL/`. One rule for every request, set, rename and new."""
+`GLOBAL/`. One rule for every name a request takes, a folder holds or `new` makes."""
 
 from __future__ import annotations
 

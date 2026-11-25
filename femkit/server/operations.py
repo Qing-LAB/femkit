@@ -25,11 +25,10 @@ from femkit.core.persist import open_private, private_dir
 from femkit.core.process import GRACE, TAIL_LINES, Identity, end, start_detached, tail
 from femkit.core.schema import DefinitionError, Model
 from femkit.definitions import catalogue
-from femkit.server import health, protocol, supervisor
+from femkit.server import build, health, protocol, supervisor
 from femkit.server.protocol import LOOPBACK, Listen
 from femkit.server.state import MACHINE, ServerState, facts, require
 from femkit.config.requests import CONFIG_SHOW
-from femkit.envs.requests import ENV_INSTALL
 from femkit.server.requests import (DEFAULT_PORT, SERVE_FOREGROUND, SERVE_RESTART, SERVE_START, SERVE_STATUS,
                                     SERVE_STOP, ServeRequest, StatusRequest, TargetRequest)
 
@@ -65,25 +64,16 @@ def _listen(req: ServeRequest, ctx: Context) -> Listen:
 
 # ------------------------------------------------------------------ what start refuses
 
-WEB = "web"  # the environment the server runs in (envs.md § 1)
-
-
 def _web_subject() -> str:
     """The web environment's lock subject: a running server holds it shared (web.md § 4)."""
     from femkit.envs import layout
-    return layout.subject(WEB)
+    return layout.subject(build.TOOL)
 
 
 def web_python(ctx: Context) -> str:
     """The web environment's Python, which runs the server's child; refused until that
     environment is `ready` (web.md § 4)."""
-    from femkit.envs import layout
-    from femkit.envs.state import EnvState, observe
-    state = observe(ctx, WEB)[1]
-    if state is not EnvState.ready:
-        raise Refused(f"the {WEB} environment, which runs the server, is {state.value}",
-                      (view.command(ENV_INSTALL, names=[WEB]),), code="environment-not-ready", subject=WEB)
-    return str(layout.prefix(ctx, WEB) / "bin" / "python")
+    return str(build.ready(ctx) / "bin" / "python")
 
 
 def _preflight(listen: Listen, ctx: Context) -> None:
@@ -167,10 +157,12 @@ def _write_token(listen: Listen) -> str:
 
 
 def _read_token(name: str) -> str | None:
+    """The server's token; None when its file is gone — a stop may remove it as this reads."""
     try:
-        return protocol.token_file(name).read_text(encoding="utf-8").strip()
+        held = persist.read_text(protocol.token_file(name))
     except OSError:
         return None
+    return held.strip() if held is not None else None
 
 
 def address(listen: Listen, token: str) -> str:
@@ -248,7 +240,7 @@ def _start_basis(req: ServeRequest, ctx: Context) -> dict:
     from femkit.envs.state import observe
     listen = _listen(req, ctx)
     return {"state": MACHINE.observe(facts(listen.name)).value, "listen": listen.as_json(),
-            WEB: observe(ctx, WEB)[1].value}
+            build.TOOL: observe(ctx, build.TOOL)[1].value}
 
 
 def _start_plan(req: ServeRequest, ctx: Context, detached: bool) -> Plan:
@@ -518,7 +510,7 @@ class ServeStop:
 class ServerRow(Model):
     name: str = Field(description="the port, or `sock`")
     host: str = Field(description="the host its pidfile was written on")
-    state: str = Field(description="stopped | stale | running | starting | elsewhere", json_schema_extra={"doc": "web.md § 4"})
+    state: ServerState = Field(description="its state, observed (web.md § 4)", json_schema_extra={"doc": "web.md § 4"})
     listen: str | None = Field(default=None, description="where it listens")
     supervisor: int | None = Field(default=None, description="the supervisor's process ID")
     child: int | None = Field(default=None, description="the child's process ID")
@@ -535,8 +527,8 @@ class StatusResult(Result):
     def report(self) -> view.Report:
         if not self.servers:
             return view.Report(blocks=[view.Text(text="no server is running")])
-        rows = [{"server": (s.listen or s.name) + (f" on {s.host}" if s.state == "elsewhere" else ""),
-                 "state": s.state + (" (foreground)" if s.foreground else ""),
+        rows = [{"server": (s.listen or s.name) + (f" on {s.host}" if s.state is ServerState.elsewhere else ""),
+                 "state": s.state.value + (" (foreground)" if s.foreground else ""),
                  "pids": f"pid {s.supervisor}" + (f", child {s.child}" if s.child else "") if s.supervisor else "",
                  "answers": "" if s.answers is None else "answers" if s.answers else f"NOT ANSWERING: {s.said}"}
                 for s in self.servers]
@@ -559,7 +551,7 @@ def _row(name: str) -> ServerRow:
     f = facts(name)
     state = MACHINE.observe(f)
     p = f.pidfile
-    row = ServerRow(name=name, host=p.host if p else dirs.host(), state=state.value,
+    row = ServerRow(name=name, host=p.host if p else dirs.host(), state=state,
                     listen=p.listen.describe() if p else None,
                     supervisor=p.supervisor.pid if p else None,
                     child=p.child.pid if p and p.child else None,

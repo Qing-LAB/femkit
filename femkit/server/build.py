@@ -31,6 +31,16 @@ TOOL = "web"                       # the environment that builds and serves the 
 PROXIES = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy")
 
 
+def ready(ctx: Context) -> Path:
+    """The web environment's prefix; refused, offering its install, until it is `ready`: `web
+    build` builds the page with it, and `serve` runs the server on it (web.md §§ 3–4)."""
+    state = observe(ctx, TOOL)[1]
+    if state is not EnvState.ready:
+        raise Refused(f"the {TOOL} environment, which builds the page and runs the server, is {state.value}",
+                      (view.command(ENV_INSTALL, names=[TOOL]),), code="environment-not-ready", subject=TOOL)
+    return layout.prefix(ctx, TOOL)
+
+
 def source_dir() -> Path:
     return dirs.checkout() / "frontend"
 
@@ -45,7 +55,7 @@ def work_root() -> Path:
 
 def declared_sources(root: Path) -> list[Path]:
     """Every file `package.json` declares the bundle is built from, relative to ``root``."""
-    patterns = json.loads((root / "package.json").read_text(encoding="utf-8"))["femkit"]["sources"]
+    patterns = persist.read_json(root / "package.json")["femkit"]["sources"]
     found: set[Path] = set()
     for pattern in patterns:
         path = root / pattern
@@ -57,13 +67,13 @@ def declared_sources(root: Path) -> list[Path]:
 
 
 def sources_hash(root: Path) -> dict:
-    files = {str(p): hashlib.sha256((root / p).read_bytes()).hexdigest() for p in declared_sources(root)}
+    files = {str(p): persist.sha256(root / p) for p in declared_sources(root)}
     whole = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
     return {"files": files, "sha256": whole}
 
 
 def bundle_hashes(static: Path) -> dict[str, str]:
-    return {str(p.relative_to(static)): hashlib.sha256(p.read_bytes()).hexdigest()
+    return {str(p.relative_to(static)): persist.sha256(p)
             for p in sorted(static.rglob("*")) if p.is_file() and p.name != "build.json"}
 
 
@@ -80,7 +90,7 @@ def npm_environment(base: dict[str, str]) -> dict[str, str]:
 
 def licenses(work: Path) -> str:
     """Each package the lock file installs for the page (not for building it), with its license text."""
-    lock = json.loads((work / "package-lock.json").read_text(encoding="utf-8"))
+    lock = persist.read_json(work / "package-lock.json")
     parts = ["Third-party software in this bundle, from frontend/package-lock.json.", ""]
     for key, meta in sorted(lock.get("packages", {}).items()):
         if not key.startswith("node_modules/") or meta.get("dev"):
@@ -88,7 +98,7 @@ def licenses(work: Path) -> str:
         folder = work / key
         texts = [p for p in sorted(folder.glob("*")) if p.is_file() and p.name.upper().startswith(("LICENSE", "LICENCE"))]
         parts += [f"== {key[len('node_modules/'):]} {meta.get('version', '')} ({meta.get('license', 'license not stated')})",
-                  *(t.read_text(encoding="utf-8", errors="replace").strip() for t in texts), ""]
+                  *(persist.read_bytes(t).decode("utf-8", errors="replace").strip() for t in texts), ""]
     return "\n".join(parts) + "\n"
 
 
@@ -110,11 +120,8 @@ class WebBuild:
     femkit/web/static/ with its build.json and third-party licenses."""
 
     def plan(self, req: BuildRequest, ctx: Context) -> Plan:
-        state = observe(ctx, TOOL)[1]
-        if state is not EnvState.ready:
-            raise Refused(f"the {TOOL} tool environment, which builds the page, is {state.value}",
-                          (view.command(ENV_INSTALL, names=[TOOL]),), code="environment-not-ready", subject=TOOL)
-        m, prefix, work = resolve(ctx), layout.prefix(ctx, TOOL), work_root() / "work"
+        prefix = ready(ctx)
+        m, work = resolve(ctx), work_root() / "work"
         steps = [Step(id="copy", describe=f"copy the declared sources of frontend/ to {text.path(work)}")]
         if req.relock:
             steps.append(Step(id="relock", describe="solve package-lock.json again from package.json",

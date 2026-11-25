@@ -18,7 +18,7 @@ from typing import Any
 
 from femkit.config import probe as config_probe
 from femkit.config import settings
-from femkit.core import clock, dirs, process, view
+from femkit.core import clock, dirs, persist, process, view
 from femkit.core.errors import Refusal, Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.definitions import catalogue
@@ -26,10 +26,12 @@ from femkit.definitions.models import SchedulerKind
 from femkit.envs.manager import confined, resolve
 from femkit.envs.state import INSTALLED, observe
 from femkit import schedulers
-from femkit.jobs.record import Record, settings_now
+from femkit.jobs.record import SCHEMA, Record, settings_now
 from femkit.jobs.requests import JOB_PROBE
 
-HOST_GPU_QUERY = ("nvidia-smi", "--query-gpu=name,compute_cap,memory.total", "--format=csv,noheader,nounits")
+MEMINFO = Path("/proc/meminfo")
+
+
 def unknown(reason: str) -> dict:
     return {"unknown": reason}
 
@@ -72,30 +74,23 @@ def locate(roles: dict[str, str], part: str, declared: dict[str, str], sources: 
     return out
 
 
-def _host() -> dict:
-    memory: Any = unknown("/proc/meminfo not readable")
+def _memory() -> Any:
+    """This machine's memory in MiB, from the kernel's MemTotal; unknown, with why, otherwise."""
     try:
-        m = re.search(r"^MemTotal:\s+(\d+)\s+kB", Path("/proc/meminfo").read_text(), re.M)
-        if m:
-            memory = int(m.group(1)) // 1024
-    except OSError:
-        pass
-    gpus: Any
-    if shutil.which(HOST_GPU_QUERY[0]) is None:
-        gpus = unknown(f"{HOST_GPU_QUERY[0]} not found on PATH")
-    else:
-        result = process.run(HOST_GPU_QUERY, timeout=30)
-        if not result.ok:
-            said = (result.stderr or result.stdout).strip().splitlines()
-            gpus = unknown(f"{HOST_GPU_QUERY[0]} failed" + (f": {said[0][:200]}" if said else ""))
-        else:
-            gpus = []
-            for line in result.stdout.splitlines():
-                parts = [p.strip() for p in line.split(",")]
-                if len(parts) == 3 and parts[2].isdigit():
-                    gpus.append({"model": parts[0], "compute_capability": parts[1], "memory_mib": int(parts[2])})
+        held = persist.read_text(MEMINFO)
+    except OSError as exc:
+        return unknown(f"{MEMINFO} does not read: {exc.strerror}")
+    if held is None:
+        return unknown(f"no {MEMINFO}")
+    m = re.search(r"^MemTotal:\s+(\d+)\s+kB", held, re.M)
+    return int(m.group(1)) // 1024 if m else unknown(f"{MEMINFO} has no MemTotal line in kB")
+
+
+def _host() -> dict:
+    found, why = config_probe.gpus()
     return {"os": f"{platform.system()} {platform.release()}", "architecture": platform.machine(),
-            "cores": os.cpu_count() or unknown("os.cpu_count() gave nothing"), "memory_mib": memory, "gpus": gpus}
+            "cores": os.cpu_count() or unknown("os.cpu_count() gave nothing"), "memory_mib": _memory(),
+            "gpus": unknown(why) if found is None else found}
 
 
 def _manager(ctx: Context) -> dict:
@@ -104,16 +99,15 @@ def _manager(ctx: Context) -> dict:
     except Refusal as exc:
         why = unknown(str(exc))
         return {"kind": why, "path": why, "version": why, "root": why, "platform": why, "run_enters": why}
-    result = process.run(m.argv(m.kind.version), env=m.environment, timeout=60)
-    match = re.search(m.kind.version_pattern, result.stdout) if result.ok else None
-    version = match.group(1) if match else unknown("its version did not read")
 
-    def answer(q) -> Any:
-        value, why = m.query(q)
+    def answer(found: tuple[Any, str | None]) -> Any:
+        value, why = found
         return unknown(why) if why else value
 
-    root = answer(m.kind.root)
-    plat = answer(m.kind.platform) if m.kind.platform else unknown(f"the {m.kind_name} kind declares no platform query")
+    version = answer(m.version())
+    root = answer(m.query(m.kind.root))
+    plat = answer(m.query(m.kind.platform)) if m.kind.platform else \
+        unknown(f"the {m.kind_name} kind declares no platform query")
     control = dirs.control_prefix()
     if not (control / "conda-meta").is_dir():
         enters: Any = unknown(f"no control environment at {control}")
@@ -146,7 +140,7 @@ def measure(ctx: Context, scheduler: str | None, declared: dict[str, str]) -> Re
         if role not in getattr(kind, part):
             raise UsageError(f"{key}: the {kind_name} kind has no {part} role {role!r}; "
                              f"it has {', '.join(getattr(kind, part)) or 'none'}", code="no-such-role", subject=key)
-    sources: dict[str, str] = {"scheduler.kind": why, "host": "platform, /proc/meminfo, " + HOST_GPU_QUERY[0],
+    sources: dict[str, str] = {"scheduler.kind": why, "host": f"platform, {MEMINFO}, {config_probe.GPU_QUERY[0]}",
                                "manager": "the manager kind's queries", "environments": "env list",
                                "settings": "config.toml"}
     commands = locate(kind.commands, "commands", declared, sources)
@@ -170,7 +164,7 @@ def measure(ctx: Context, scheduler: str | None, declared: dict[str, str]) -> Re
         sources["identity"] = "the host name"
 
     data = {
-        "schema": 1,
+        "schema": SCHEMA,
         "measured": {"time": clock.stamp(ctx.now()), "where": where},
         "identity": identity,
         "host": _host(),

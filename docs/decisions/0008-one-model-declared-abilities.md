@@ -57,6 +57,9 @@ input — without losing track of what was solved.
    of femkit.
    *Amended 2026-11-23:* the page edits a part's text beside its help, not
    forms ([ADR 0010](0010-describe-the-system.md)).
+   *Superseded 2026-11-24:* the person writes each part in their own editor;
+   the page shows its text beside its help and changes no file of theirs
+   ([ADR 0015](0015-the-persons-files.md)).
 
 ## Alternatives not chosen
 
@@ -100,6 +103,9 @@ input — without losing track of what was solved.
   *Amended 2026-11-23:* a geometry script is written in the page as the text
   of its file, and run only under review
   ([ADR 0013](0013-geometry-scripts.md)).
+  *Superseded 2026-11-24:* the person writes a geometry script in their own
+  editor and the page only shows it; it still runs only under review
+  ([ADR 0015](0015-the-persons-files.md)).
 
 ## Consequences
 
@@ -120,4 +126,4 @@ input — without losing track of what was solved.
   translators and parsers; nothing in the model, the study, the matching or
   the surfaces changes.
 - The first formulation built end to end is `electrostatics`, proven by its
-  benchmark set, before `maxwell` at a frequency (plan § 3, M6, M9).
+  benchmark set, before `maxwell` at a frequency (plan § 4, M6, M9).

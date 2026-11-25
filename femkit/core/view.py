@@ -15,7 +15,7 @@ from typing import Annotated, Any, Iterable, Literal
 
 from pydantic import BaseModel, Discriminator, Field as Describe
 
-from femkit.core import commandline, dirs
+from femkit.core import commandline, dirs, persist
 from femkit.core.markdown import headings
 from femkit.core.errors import Refusal
 from femkit.core.schema import Model, field_extras
@@ -25,16 +25,27 @@ from femkit.core.schema import Model, field_extras
 class Verb:
     """An operation by its name, with its request model: declared once, beside the request,
     and read both by the operation's declaration and by every next step that names it. Each
-    is known here as it is declared, so a surface writes an action from its call alone."""
+    is known here as it is declared, so a surface writes an action from its call alone; a
+    second of one name with another request is a defect, refused where it is made (api.md § 2)."""
 
     name: str
     request: type[BaseModel]
 
     def __post_init__(self) -> None:
+        held = _VERBS.get(self.name)
+        if held is not None and held.request is not self.request:
+            raise TypeError(f"the verb {self.name!r} is declared twice: with {held.request.__name__} "
+                            f"and with {self.request.__name__}")
         _VERBS[self.name] = self
 
 
 _VERBS: dict[str, Verb] = {}
+
+
+def verbs() -> list[Verb]:
+    """Every verb declared so far: what the registry checks against the operations at start
+    (api.md § 6)."""
+    return list(_VERBS.values())
 
 
 class DocRef(Model):
@@ -55,8 +66,8 @@ class DocRef(Model):
 @functools.lru_cache(maxsize=None)
 def _anchors(document: str) -> tuple[tuple[str, str], ...]:
     """Each heading of a document of the checkout — its text, its anchor — read once."""
-    path = dirs.checkout() / document
-    return tuple((h.text, h.anchor) for h in headings(path.read_text(encoding="utf-8"))) if path.is_file() else ()
+    held = persist.read_text(dirs.checkout() / document)
+    return tuple((h.text, h.anchor) for h in headings(held)) if held is not None else ()
 
 
 def _anchor(document: str, section: str) -> str | None:
@@ -90,11 +101,9 @@ class Help(Model):
 
 class Fill(Model):
     """A value an action still needs, asked of the person before it runs: a request field's
-    whole value, or a hole in its text — the `<name>` of `model:regions.<name>`."""
+    whole value."""
 
     field: str = Describe(description="the request field it fills")
-    hole: str | None = Describe(default=None, description="the text in the field's value it replaces; "
-                                                          "none: the whole value")
     toml: Literal["whole"] | None = Describe(
         default=None, description="the request takes the value as its TOML text, which the surface writes from "
                                   "what the person gives")
@@ -104,14 +113,12 @@ class Fill(Model):
     accepts: list[str] = Describe(default_factory=list,
                                   description="the node kinds whose names may fill it, as `kind` or `kind:type`")
     example: str | None = Describe(default=None, description="a value that would do, as a command line writes it")
-    template: str | None = Describe(default=None, description="for an object's text, the text it starts from: its "
-                                                              "template, every key it may hold written or commented")
 
 
 class Call(Model):
     """An operation and its request — the values a fill leaves out are asked for."""
 
-    operation: str = Describe(description="the operation's name, `model.set`")
+    operation: str = Describe(description="the operation's name, `study.expand`")
     request: dict[str, Any] = Describe(default_factory=dict, description="the request's values, as JSON")
 
 
@@ -132,7 +139,7 @@ class Action(Model):
         if self.call is None:
             return self.shell or ""
         verb = _VERBS[self.call.operation]
-        filled = {f.field: f.example or f.field.upper() for f in self.fills if f.hole is None}
+        filled = {f.field: f.example or f.field.upper() for f in self.fills}
         return commandline.typed(commandline.words(verb.name, verb.request, self.call.request, filled))
 
     def __str__(self) -> str:
@@ -142,8 +149,8 @@ class Action(Model):
 def command(verb: Verb, *, label: str | None = None, note: str | None = None,
             fills: Iterable[Fill] = (), **values: Any) -> Action:
     """The action that runs ``operation`` with ``values``: its command written once, by the
-    command line's own mapping, a whole value still to fill shown as its example or its name,
-    a hole as the text it stands in. A fill of a field the request takes as TOML text says so."""
+    command line's own mapping, a value still to fill shown as its example or its name. A fill
+    of a field the request takes as TOML text says so."""
     operation, request = verb.name, verb.request
     fields = request.model_fields
     unknown = (set(values) | {f.field for f in fills}) - set(fields)
@@ -151,11 +158,10 @@ def command(verb: Verb, *, label: str | None = None, note: str | None = None,
         raise ValueError(f"{operation}: {request.__name__} has no field {sorted(unknown)}")
     properties = request.model_json_schema()["properties"]
     fills = [f.model_copy(update={
-        "toml": None if f.hole else field_extras(fields[f.field]).get("toml"),   # a hole is text in a text
-        "json_schema": f.json_schema or ({"type": "string"} if f.hole else properties[fields[f.field].alias or f.field]),
+        "toml": field_extras(fields[f.field]).get("toml"),
+        "json_schema": f.json_schema or properties[fields[f.field].alias or f.field],
     }) for f in fills]
-    words = commandline.words(operation, request, values,
-                              {f.field: f.example or f.field.upper() for f in fills if f.hole is None})
+    words = commandline.words(operation, request, values, {f.field: f.example or f.field.upper() for f in fills})
     return Action(label=label or " ".join(words), note=note,
                   call=Call(operation=operation, request=json.loads(json.dumps(values, default=str))),
                   fills=fills)
@@ -239,8 +245,8 @@ class DefectAnswer(Model):
     """An error femkit did not expect: its kind and the operation's log, never a stack trace."""
 
     defect: str = Describe(description="the kind of error")
-    message: str = Describe(default="an error femkit did not expect; the server's log has the detail",
-                            description="what a person reads")
+    message: str = Describe(default="an error femkit did not expect: a defect, or a system it needs that is "
+                                    "unavailable", description="what a person reads")
     log: str | None = Describe(default=None, description="the operation's log, where one was written")
 
     @classmethod

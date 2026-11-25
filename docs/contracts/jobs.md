@@ -1,7 +1,7 @@
 # Jobs — requests, run scripts, runs and schedulers
 
 **Role:** contract
-**Status:** current; built: machine records and the probe (§ 9), and the scheduler kinds' probe commands and readers, each kind checked against its reader when it loads (§ 7). Not built: §§ 1–6, § 8 but `job probe` and `job machines`, and § 7's header, submit, check, query and cancel (plan § 3, M3, M4); whether X rewrites §§ 1–5 is the person's (plan § 6)
+**Status:** current; built: machine records and the probe (§ 9), and the scheduler kinds' probe commands and readers, each kind checked against its reader when it loads (§ 7). Not built: §§ 1–6, § 8 but `job probe` and `job machines`, and § 7's header, submit, check, query and cancel (plan § 4, X and M4); whether X rewrites §§ 1–5 is the person's (plan § 4, X)
 **Authority:** machine records and the probe, the job request, preparation,
 the run script, the run state machine, and how femkit uses a scheduler
 
@@ -37,9 +37,9 @@ the inputs a job request names.
 
 A calculation folder is written by a person, or by `case prepare` for a
 prepared case, in its project's run folders (`runs/`,
-[`projects.md`](projects.md) § 2; their design is plan § 3, X), holding its
+[`projects.md`](projects.md) § 2; their design is plan § 4, X), holding its
 `job.toml` (§ 2) beside the prepared `final/` inputs; a job reads nothing else of the
-preparation ([`models.md`](models.md) § 9.3; not built yet, plan § 3, M3).
+preparation ([`models.md`](models.md) § 9.3; not built yet, plan § 4, X and M6).
 
 ## 2. The job request — `job.toml`
 
@@ -79,7 +79,7 @@ request holds only what this calculation asks for; nothing about a machine.
 - `partition` and `qos` together name one of the target's queues
   (§ 9.1); which queue to spend the wall time in is
   the person's judgement.
-- **A prepared case's request** (not built yet, plan § 3, M3) lists each input
+- **A prepared case's request** (not built yet, plan § 4, M6) lists each input
   with its SHA-256 and whether it was generated or customized
   (`{ path = "case.sif", sha256 = "…", origin = "customized" }`), the steps
   to run before and after the command (`steps.before`, `steps.after`), and the
@@ -167,7 +167,7 @@ directory, copies no file and changes directory nowhere. Its blocks, in order:
 | 6 | enter the exact prefix with the target's `activation.command`, from the record's `settings` — `source activate <prefix>`, or the manager kind's hook sourced then `conda activate` / `mamba activate <prefix>` (`set +u` as in 5) — then verify the active prefix is that one, that the command's executable resolves inside it, and, for a prepared case, that the prefix's install fingerprint and lock hash are the request's `prepared_for`; stop with the reason otherwise |
 | 7 | set each of the environment's `thread_variables` to `threads` and its `fixed_variables` to their values ([`definitions.md`](definitions.md) § 4.4) |
 | 8 | verify every input the request lists is present in the run directory; stop naming any that is missing |
-| 9 | run the command — through `launch.mpi` when `ranks > 1` — with output to the run's log. Under a scheduler no binding or mapping options are added: the scheduler has placed the job. For a prepared case, the steps its request lists run before and after the command, each with its own log ([`models.md`](models.md) § 8.3; not built yet, plan § 3, M8) |
+| 9 | run the command — through `launch.mpi` when `ranks > 1` — with output to the run's log. Under a scheduler no binding or mapping options are added: the scheduler has placed the job. For a prepared case, the steps its request lists run before and after the command, each with its own log ([`models.md`](models.md) § 8.3; not built yet, plan § 4, M8) |
 | 10 | exit with the command's status |
 
 ## 5. Runs

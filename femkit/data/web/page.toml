@@ -13,10 +13,10 @@ key = "model"
 title = "Model"
 icon = "workflow"
 tagline = "The physics as a graph: shapes become regions, regions take materials and conditions."
-help = "Add from the palette, wire a port to what it names, and follow the next step until the model is complete."
+help = "Select a node to read its text, the help of each key it may hold and its findings; the next step stays in view until the model is complete."
 document = "model.graph"
 context = ["project", "study"]
-empty = "Open a project to build its model — choose one, or make a new one."
+empty = "Open a project to see its model — choose one, or make a new one."
 
 [[workspaces]]
 key = "runs"
@@ -81,26 +81,6 @@ observable = "gauge"
 binding = "plug"
 
 [[shortcuts]]
-key = "Mod+Z"
-command = "undo"
-help = "Take back the last edit."
-
-[[shortcuts]]
-key = "Mod+Shift+Z"
-command = "redo"
-help = "Make the last undone edit again."
-
-[[shortcuts]]
-key = "Delete"
-command = "remove"
-help = "Remove what is selected, once its plan is seen."
-
-[[shortcuts]]
-key = "Enter"
-command = "commit"
-help = "Commit the form being edited."
-
-[[shortcuts]]
 key = "Escape"
 command = "cancel"
-help = "Put the form back, or close what is open."
+help = "Close what is open."

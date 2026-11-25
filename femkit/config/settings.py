@@ -7,6 +7,7 @@ init`, the command-line options and the reference page all read it.
 
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +22,7 @@ from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import document_set, read_document, write_document
 from femkit.core.schema import DefinitionError, Model, classes, field_extras, load_toml, validate
-from femkit.definitions.catalogue import data_root
+from femkit.definitions.catalogue import data_root, shipped
 from femkit.definitions.models import Launcher
 
 FILE_NAME = "config.toml"
@@ -160,8 +161,18 @@ def config_file() -> Path:
     return dirs.config_dir() / FILE_NAME
 
 
+# What a key's absence means, where code reads it (config.md § 3.1): the one home of each rule,
+# beside the model that states it.
+
 def environments_root(config: UserConfig) -> Path:
+    """paths.environments, or while it is unset `<data>/environments`."""
     return config.paths.environments or dirs.environments_dir()
+
+
+def build_jobs(config: UserConfig) -> int:
+    """build.jobs, or while it is unset the CPUs this process may use — its CPU affinity: on a
+    cluster, the allocation's share, never the whole login node."""
+    return config.build.jobs or len(os.sched_getaffinity(0))
 
 
 # ------------------------------------------------------------- loading
@@ -229,7 +240,7 @@ def as_planned(ctx: Context, values: dict[str, Any]) -> Context:
 # ------------------------------------------------------------- writing
 
 def template_text() -> str:
-    return (data_root() / "templates" / FILE_NAME).read_text(encoding="utf-8")
+    return shipped(data_root() / "templates" / FILE_NAME)
 
 
 def with_values(values: dict[str, Any]) -> tomlkit.TOMLDocument:

@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from femkit.core import persist
 from femkit.definitions.models import ControlDefinition, EnvironmentDefinition
 
 
@@ -35,8 +36,8 @@ def check(env: EnvironmentDefinition, engine_package: Path | None, judging: tupl
     files = {}
     for path in sorted(engine_package.rglob("*")) if engine_package is not None else []:
         if path.is_file() and "__pycache__" not in path.parts:
-            files[str(path.relative_to(engine_package))] = hashlib.sha256(path.read_bytes()).hexdigest()
-    shared = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(judging)}
+            files[str(path.relative_to(engine_package))] = persist.sha256(path)
+    shared = {path.name: persist.sha256(path) for path in sorted(judging)}
     return _digest({
         "checks": [c.model_dump(mode="json") for c in env.checks],
         "agreements": {k: v.model_dump(mode="json") for k, v in env.agreements.items()},

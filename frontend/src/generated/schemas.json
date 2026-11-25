@@ -302,7 +302,7 @@
       "description": "An operation and its request \u2014 the values a fill leaves out are asked for.",
       "properties": {
         "operation": {
-          "description": "the operation's name, `model.set`",
+          "description": "the operation's name, `study.expand`",
           "type": "string"
         },
         "request": {
@@ -630,7 +630,7 @@
           "description": "the operation's log, where one was written"
         },
         "message": {
-          "default": "an error femkit did not expect; the server's log has the detail",
+          "default": "an error femkit did not expect: a defect, or a system it needs that is unavailable",
           "description": "what a person reads",
           "type": "string"
         }
@@ -1131,7 +1131,7 @@
     },
     "Fill": {
       "additionalProperties": false,
-      "description": "A value an action still needs, asked of the person before it runs: a request field's\nwhole value, or a hole in its text \u2014 the `<name>` of `model:regions.<name>`.",
+      "description": "A value an action still needs, asked of the person before it runs: a request field's\nwhole value.",
       "properties": {
         "accepts": {
           "description": "the node kinds whose names may fill it, as `kind` or `kind:type`",
@@ -1168,18 +1168,6 @@
           "default": null,
           "description": "its sentence"
         },
-        "hole": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the text in the field's value it replaces; none: the whole value"
-        },
         "json_schema": {
           "additionalProperties": true,
           "description": "the JSON schema fragment of what it may hold",
@@ -1188,18 +1176,6 @@
         "label": {
           "description": "what the value is",
           "type": "string"
-        },
-        "template": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "for an object's text, the text it starts from: its template, every key it may hold written or commented"
         },
         "toml": {
           "anyOf": [
@@ -1217,14 +1193,12 @@
       },
       "required": [
         "field",
-        "hole",
         "toml",
         "label",
         "help",
         "json_schema",
         "accepts",
-        "example",
-        "template"
+        "example"
       ],
       "title": "Fill",
       "type": "object"
@@ -1750,6 +1724,7 @@
       "description": "One finding: what it is about, what is wrong, and what a person may do next.",
       "properties": {
         "code": {
+          "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$",
           "type": "string"
         },
         "label": {
@@ -2797,9 +2772,9 @@
           "type": "string"
         },
         "state": {
-          "description": "stopped | stale | running | starting | elsewhere",
-          "doc": "web.md \u00a7 4",
-          "type": "string"
+          "$ref": "#/$defs/ServerState",
+          "description": "its state, observed (web.md \u00a7 4)",
+          "doc": "web.md \u00a7 4"
         },
         "supervisor": {
           "anyOf": [
@@ -2828,6 +2803,17 @@
       ],
       "title": "ServerRow",
       "type": "object"
+    },
+    "ServerState": {
+      "enum": [
+        "elsewhere",
+        "stopped",
+        "stale",
+        "running",
+        "starting"
+      ],
+      "title": "ServerState",
+      "type": "string"
     },
     "SetOutcome": {
       "additionalProperties": false,
@@ -2883,14 +2869,8 @@
       "additionalProperties": false,
       "properties": {
         "command": {
+          "const": "cancel",
           "description": "the page's command it runs",
-          "enum": [
-            "undo",
-            "redo",
-            "remove",
-            "commit",
-            "cancel"
-          ],
           "type": "string"
         },
         "help": {

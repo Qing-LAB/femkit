@@ -64,7 +64,6 @@ kind of document each is.
 | reference | generated from the schema models | promises, or text written by hand |
 | process | how work is done, and the rules a review checks | rules of a single package |
 | guide | ordered instructions over current behavior | rules a contract does not state |
-| example | what an example shows, and which contract it follows | rules of its own |
 | ADR | one decision: context, alternatives, reason, consequences | living interface documentation |
 | plan | unfinished work, its order and its acceptance | claims that planned behavior exists; history |
 
@@ -109,8 +108,6 @@ Moving or merging a document is a review, not a file move:
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — where a contributor starts.
 - [`../SECURITY.md`](../SECURITY.md) — the trust boundary, and how to report a
   problem.
-- [`../examples/bowtie_nanogap/README.md`](../examples/bowtie_nanogap/README.md)
-  — the first application model, not yet written.
 
 ### Principles and process
 
@@ -138,16 +135,19 @@ Moving or merging a document is a review, not a file move:
   validated and entered, and the install script.
 - [`contracts/projects.md`](contracts/projects.md) — the projects root, a
   project's tree and parts, addresses, and the one door every read and write
-  passes through; not built yet (plan § 3, R).
+  passes through; its framework built — finding projects, the layout model,
+  names, addresses, the door — the shipped layout and the part schemas not yet
+  (plan § 4, D).
 - [`contracts/materials.md`](contracts/materials.md) — the property list, the
   material format, the global and local libraries, importers; not built yet
-  (plan § 3, R).
+  (plan § 4, D and E).
 - [`contracts/geometry.md`](contracts/geometry.md) — the geometry script, its
-  contract, the pipeline's steps, mesh recipes, the mesh step and the hand-over to each engine;
-  not built yet (plan § 3, R).
+  contract, the pipeline's steps, mesh recipes, the mesh step and the
+  hand-over to each engine; not built yet (plan § 4, D and X).
 - [`contracts/models.md`](contracts/models.md) — how a calculation is described
   once, matched against an environment's declared and proven abilities,
-  decided on, customized, prepared and reduced; not built yet (plan § 3).
+  decided on, customized, prepared and reduced; not built yet (plan § 4, D and
+  M5–M9).
 - [`contracts/jobs.md`](contracts/jobs.md) — machine records and the probe;
   how a job will be prepared and run.
 - [`contracts/testing.md`](contracts/testing.md) — test tiers, isolation, what
@@ -207,8 +207,14 @@ Moving or merging a document is a review, not a file move:
 - [`decisions/0014-materials.md`](decisions/0014-materials.md)
   — materials in femkit's own format, named once and per engine,
   global and local libraries.
+- [`decisions/0015-the-persons-files.md`](decisions/0015-the-persons-files.md)
+  — femkit changes no file the person wrote; one set of templates starts
+  them.
 
 ### Plan
 
-- [`plans/plan.md`](plans/plan.md) — everything not built yet: the milestones,
-  framework debts, and model preparation and analysis.
+- [`plans/plan.md`](plans/plan.md) — everything not built yet: where femkit
+  stands, the person's workflow and the step that builds each part of it, how
+  the work is done, the road of steps with their acceptance, questions and
+  decisions not yet in a contract, framework debts, the bowtie model's data,
+  and jobs across several nodes.

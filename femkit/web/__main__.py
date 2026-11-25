@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     _end_with_parent(args.parent)
 
     from femkit.core.operations import Context
-    from femkit.core.persist import open_private
+    from femkit.core.persist import open_private, read_text
     from femkit.server import protocol
     from femkit.server.protocol import Listen
 
@@ -50,7 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     except (DefinitionError, OSError) as exc:  # a configuration that does not load: exit, not respawned
         print(protocol.event_line("error", f"config.toml does not load: {exc}"), end="", flush=True)
         return 2
-    token = protocol.token_file(listen.name).read_text(encoding="utf-8").strip()
+    token = read_text(protocol.token_file(listen.name))
+    if token is None:  # removed by a stop meanwhile: nothing to serve with
+        print(protocol.event_line("error", "the token file is gone"), end="", flush=True)
+        return 2
+    token = token.strip()
 
     from femkit.web.app import create_app
     from femkit.web.serving import BoundedServer

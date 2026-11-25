@@ -9,7 +9,6 @@ from femkit.core.errors import UsageError
 from femkit.projects import names
 
 PROJECT_FILE = "project.toml"   # what makes a folder a project (projects.md § 2)
-LOCAL = ".femkit"               # undo history, uploads, the page's view file: never moves (projects.md § 2)
 
 
 @dataclass(frozen=True)

@@ -24,7 +24,7 @@ test but only the first body's name. Gmsh's command line is installed in the
 1. **Every mesh is made by Gmsh**, in femkit's mesh step — the second step of
    the pipeline, after the person's geometry script — from the geometry and a
    mesh recipe, in an environment of its own holding Gmsh with its Python
-   interface — proposed as `gmsh`, decided with execution (plan § 3, X).
+   interface — proposed as `gmsh`, decided with execution (plan § 4, X).
    Neither engine owns the mesh.
 2. **femkit hands each engine its mesh.** How — the format written, the
    formats each engine reads, the conversion step and what each keeps (region

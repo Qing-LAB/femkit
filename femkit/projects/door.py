@@ -3,7 +3,7 @@ folder as the layout declares it; each part loaded through its registered schema
 a part that does not load is a finding on that part, and every other part is still read; a file
 in the tree that no part kind declares is a finding, never read. A part's text is its file as it
 holds it, comments kept. The references between parts are read from the schemas' `ref`
-annotations. The door only reads: femkit changes no file the person wrote (plan § 6).
+annotations. The door only reads: femkit changes no file the person wrote (projects.md § 7).
 
 The findings opening makes, each an `Issue` (core.md § 10):
 - `unloadable` (error), subject the part's address: its file does not load — the message names
@@ -11,12 +11,12 @@ The findings opening makes, each an `Issue` (core.md § 10):
 - `stray` (warning), subject the file's path in the project: a file in the tree no part kind
   declares, never read.
 
-OWNER: the main line (layout, addresses, the door).
+A part's text, or a value's, that cannot be given is refused: `UsageError` `unloadable`, subject
+the address asked for — a part that could not be read, a value in a part that is not TOML.
 """
 
 from __future__ import annotations
 
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
@@ -25,12 +25,14 @@ import tomlkit
 from femkit.core import persist
 from femkit.core.errors import UsageError
 from femkit.core.issues import Issue
-from femkit.core.schema import DefinitionError, Model, references as cited, validate
+from femkit.core.operations import Context
+from femkit.core.schema import DefinitionError, Model, load_text, references as cited
+from femkit.definitions import catalogue
 from femkit.projects import layout as layouts
 from femkit.projects import names, schemas
 from femkit.projects.addresses import Address
 from femkit.projects.layout import Layout
-from femkit.projects.project import Project
+from femkit.projects.project import PROJECT_FILE, Project
 
 
 @dataclass(frozen=True)
@@ -89,7 +91,7 @@ def _classify(layout: Layout, files: list[str]) -> tuple[dict[str, tuple[str, st
             continue
         rel = PurePosixPath(f)
         top = rel.parts[0]
-        if f == layout.kinds[layout.project_kind].file:
+        if f == PROJECT_FILE:
             parts[f] = (layout.project_kind, None)
             continue
         if len(rel.parts) > 1 and top in layout.folders:
@@ -120,28 +122,22 @@ def listing(project: Project, layout: Layout) -> dict[str, list[str]]:
 
 # ------------------------------------------------------------------ opening
 
-def _load(text: str, model: type[Model], file: str) -> Model:
-    try:
-        data = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
-        raise DefinitionError(file, [("", f"not TOML: {exc}")]) from None
-    return validate(model, data, file)
-
-
-def open_project(project: Project, layout: Layout | None = None) -> Opened:
-    """Every part, each on its own."""
+def open_project(project: Project, ctx: Context, layout: Layout | None = None) -> Opened:
+    """Every part, each on its own, read as every declared file is: by `schema.load_text`, its
+    numbers exact and the unit table in its validation context (projects.md § 6)."""
     layout = layout or layouts.load()
     files = _inventory(project)
     found, stray = _classify(layout, files)
     opened = Opened(project=project, layout=layout, files=tuple(files))
     registered = schemas.registered()
+    context = {"units": catalogue.units(ctx)}
     for file, (kind, name) in sorted(found.items(), key=lambda item: (layout.kinds[item[1][0]].rank, item[0])):
         address = Address(kind, name)
         data = None
         try:
             content = persist.read_text(project.path(file))
             opened.texts[file] = content
-            data = _load(content, registered[layout.kinds[kind].schema_], file)
+            data = load_text(content, registered[layout.kinds[kind].schema_], file, context, exact=True)
         except DefinitionError as exc:
             problem = exc.summary()
         except (OSError, UnicodeDecodeError) as exc:           # a part that cannot be read is a finding on it
@@ -157,12 +153,20 @@ def open_project(project: Project, layout: Layout | None = None) -> Opened:
 
 
 def text(opened: Opened, address: Address) -> str:
-    """The part's file as it holds it, comments kept; a value's text is its TOML."""
+    """The part's file as it holds it, comments kept; a value's text is its TOML. Refused,
+    `unloadable`, for a part that could not be read, or a value in a part that is not TOML."""
     part = opened.part(address)
-    held = opened.texts[part.file]
+    held = opened.texts.get(part.file)
+    if held is None:
+        raise UsageError(f"{part.address} could not be read: its finding says why", code="unloadable",
+                         subject=str(address))
     if not address.path:
         return held
-    doc = tomlkit.parse(held)
+    try:
+        doc = tomlkit.parse(held)
+    except tomlkit.exceptions.ParseError as exc:
+        raise UsageError(f"{part.address} is not TOML, so {address} cannot be read: {exc}", code="unloadable",
+                         subject=str(address)) from None
     if not persist.document_has(doc, address.path):
         raise UsageError(f"{address} holds no value", code="no-such-value", subject=str(address))
     return persist.document_text(doc, address.path)

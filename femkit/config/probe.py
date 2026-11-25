@@ -14,20 +14,36 @@ from typing import Literal
 from femkit.core import process
 from femkit.definitions.models import SchedulerKind
 
-GPU_QUERY = ("nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader")
+GPU_QUERY = ("nvidia-smi", "--query-gpu=name,compute_cap,memory.total", "--format=csv,noheader,nounits")
+
+
+def gpus() -> tuple[list[dict] | None, str]:
+    """This machine's GPUs as the driver lists them — each one's model, compute capability and
+    memory in MiB — or None and why not. The one GPU query: `config init`'s proposal and the
+    machine record both read it."""
+    if shutil.which(GPU_QUERY[0]) is None:
+        return None, f"{GPU_QUERY[0]} not found on PATH"
+    result = process.run(GPU_QUERY, timeout=30)
+    if not result.ok:
+        said = (result.stderr or result.stdout).strip().splitlines()
+        return None, f"{GPU_QUERY[0]} failed" + (f": {said[0][:200]}" if said else "")
+    found = []
+    for line in filter(str.strip, result.stdout.splitlines()):
+        parts = [p.strip() for p in line.rsplit(",", 2)]     # a model's name may hold a comma; the numbers do not
+        if len(parts) != 3 or not parts[1].replace(".", "", 1).isdigit() or not parts[2].isdigit():
+            return None, f"{GPU_QUERY[0]} printed a line that does not read: {line.strip()[:200]}"
+        found.append({"model": parts[0], "compute_capability": parts[1], "memory_mib": int(parts[2])})
+    return found, GPU_QUERY[0]
 
 
 def gpu_architectures() -> tuple[list[str] | None, str]:
     """The CUDA architectures of this machine's GPUs, or None and why not."""
-    if shutil.which(GPU_QUERY[0]) is None:
-        return None, f"{GPU_QUERY[0]} not found"
-    result = process.run(GPU_QUERY, timeout=30)
-    if not result.ok:
-        return None, f"{GPU_QUERY[0]} failed: {(result.stderr or result.stdout).strip()[:200]}"
-    caps = sorted({line.strip().replace(".", "") for line in result.stdout.splitlines() if line.strip()})
-    if not caps or not all(c.isdigit() for c in caps):
-        return None, f"{GPU_QUERY[0]} gave no compute capability"
-    return caps, GPU_QUERY[0]
+    found, why = gpus()
+    if found is None:
+        return None, why
+    if not found:
+        return None, f"{GPU_QUERY[0]} lists no GPU"
+    return sorted({g["compute_capability"].replace(".", "") for g in found}), why
 
 
 def detect_scheduler(kinds: dict[str, SchedulerKind]) -> tuple[str | None, str]:

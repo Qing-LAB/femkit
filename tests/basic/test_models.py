@@ -18,7 +18,7 @@ LAPLACE = Path(__file__).resolve().parent / "data" / "laplace"
 
 def examples() -> tuple[str, str]:
     """The Laplace check's model and study in today's one-file shape, until the project layout
-    replaces it (plan § 3, R steps C and D)."""
+    replaces it (plan § 4, D)."""
     return (LAPLACE / "model.toml").read_text(), (LAPLACE / "study.toml").read_text()
 
 

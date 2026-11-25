@@ -1,18 +1,17 @@
-// The one notification stack (web.md § 9.2): what applied, with its Undo; what failed. A view
-// says what happened; the stack is drawn once, by the shell.
+// The one notification stack (web.md § 9.2): what applied; what failed. A view says what
+// happened; the stack is drawn once, by the shell.
 
 import { useSyncExternalStore } from "react";
-import type { Action } from "../generated/schemas";
 
-export interface Note { id: number; tone: "ok" | "bad" | "info"; text: string; actions: Action[] }
+export interface Note { id: number; tone: "ok" | "bad" | "info"; text: string }
 
 let notes: Note[] = [];
 let next = 1;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((l) => l());
 
-export function notify(tone: Note["tone"], text: string, actions: Action[] = []): void {
-  const note = { id: next++, tone, text, actions };
+export function notify(tone: Note["tone"], text: string): void {
+  const note = { id: next++, tone, text };
   notes = [...notes.slice(-3), note];
   changed();
   if (tone !== "bad") setTimeout(() => dismiss(note.id), 6000);

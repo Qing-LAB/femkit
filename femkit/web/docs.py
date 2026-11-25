@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from femkit.core import dirs
+from femkit.core.persist import read_bytes
 
 MARKDOWN = (".md",)
 IMAGES = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -31,12 +32,11 @@ def _walk(root: Path, top: Path) -> list[str]:
 
 def listing() -> list[str]:
     """Every document and image the viewer may show, as paths from the repository's root:
-    the root's own documents, and everything under docs/ and examples/."""
+    the root's own documents, and everything under docs/."""
     top = dirs.checkout()
     found = [name for name in ROOT_DOCUMENTS if (top / name).is_file() and not (top / name).is_symlink()]
-    for folder in ("docs", "examples"):
-        if (top / folder).is_dir() and not (top / folder).is_symlink():
-            found += _walk(top / folder, top)
+    if (top / "docs").is_dir() and not (top / "docs").is_symlink():
+        found += _walk(top / "docs", top)
     return found
 
 
@@ -47,5 +47,8 @@ def read(path: str) -> tuple[str, bytes] | None:
     file = dirs.checkout() / path
     if file.stat().st_size > LIMIT:
         return None
+    data = read_bytes(file)
+    if data is None:
+        return None
     suffix = file.suffix.lower()
-    return ("markdown" if suffix in MARKDOWN else IMAGES[suffix]), file.read_bytes()
+    return ("markdown" if suffix in MARKDOWN else IMAGES[suffix]), data

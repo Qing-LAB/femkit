@@ -333,4 +333,4 @@ capability unless a reason says otherwise.
 The shipped checks run Elmer's own CTest cases from its build tree; none runs
 the installed solver on a mesh femkit prepares, and CPU evidence does not
 qualify `elmer-cuda`. What this environment still has to show is in
-[the plan](../plans/plan.md) § 3, M1.
+[the plan](../plans/plan.md) § 4, M1.

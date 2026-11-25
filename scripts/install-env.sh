@@ -38,10 +38,14 @@ if [[ "$CACHE_DIR" != /* ]]; then
 fi
 # Every manager command runs in femkit's own places, never the person's home (envs.md § 4.4):
 # its HOME, its package cache, its list of environments and its temporary files; none of the
-# person's own configuration or caches named apart from HOME.
-MANAGER_ENV=(env -u XDG_CONFIG_HOME -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_STATE_HOME -u CONDARC -u MAMBARC
-             "HOME=$CACHE_DIR/manager-home" "CONDA_PKGS_DIRS=$CACHE_DIR/pkgs" "CONDA_REGISTER_ENVS=false"
-             "TMPDIR=$CACHE_DIR/tmp")
+# person's own configuration or caches named apart from HOME, and none of their CONDA_* or
+# MAMBA_* variables, which a manager reads as its settings -- as femkit/envs/manager.py does.
+MANAGER_ENV=(env -u XDG_CONFIG_HOME -u XDG_CACHE_HOME -u XDG_DATA_HOME -u XDG_STATE_HOME -u CONDARC -u MAMBARC)
+for variable in $(compgen -e); do
+    case "$variable" in CONDA_*|MAMBA_*) MANAGER_ENV+=(-u "$variable") ;; esac
+done
+MANAGER_ENV+=("HOME=$CACHE_DIR/manager-home" "CONDA_PKGS_DIRS=$CACHE_DIR/pkgs" "CONDA_REGISTER_ENVS=false"
+              "TMPDIR=$CACHE_DIR/tmp")
 STAMP="$CONTROL/.femkit/control.sha256"
 
 AUTO_YES=0
@@ -68,7 +72,7 @@ COMMON TASKS:
     bash scripts/install-env.sh list
 
 With --yes nothing is asked: give --preamble LINE (once per line) or
---no-preamble, and --environments PATH, on the line instead.
+--no-preamble, --activation COMMAND, and --environments PATH, on the line instead.
 
 Every verb after `bootstrap` is forwarded verbatim to `python -m femkit env`;
 its flags are Python's:  bash scripts/install-env.sh <verb> --help
@@ -313,9 +317,10 @@ recreate_control() {
 
 # The control environment's own python, never `<manager> run`: `run` would stand between
 # Python and the terminal it asks on, and femkit needs no activation to run -- it is pure
-# Python, from this checkout (envs.md § 7.3).
+# Python, from this checkout (envs.md § 7.3). The checkout alone is its PYTHONPATH, and no
+# user site-packages load: none of the person's own Python packages reaches femkit.
 dispatch() {
-    FEMKIT_ENV_MANAGER="$ENV_MGR" PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+    FEMKIT_ENV_MANAGER="$ENV_MGR" PYTHONPATH="$REPO_ROOT" PYTHONNOUSERSITE=1 \
         "$CONTROL/bin/python" -m femkit env "$@"
 }
 

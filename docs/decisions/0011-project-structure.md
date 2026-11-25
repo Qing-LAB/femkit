@@ -2,7 +2,8 @@
 
 **Role:** ADR
 
-**Status:** accepted (2026-11-23)
+**Status:** accepted (2026-11-23); decision 5's transactions and undo
+superseded by [ADR 0015](0015-the-persons-files.md)
 
 **Authority:** the reasons and the alternatives only;
 [`projects.md`](../contracts/projects.md) owns the rules
@@ -36,7 +37,7 @@ later, and observables that several studies share.
    studies' results. A command names a project as a whole.
 4. **One layout, declared as data**: each part kind's folder, file, schema,
    writer, and whether it moves with the project, is regenerated, or stays
-   local. The graph, the edits, the checks and the page read it.
+   local. The graph, the checks and the page read it.
 5. **One door.** The `projects` package is the only code that forms a path in a
    project or reads or writes its files. Each part loads on its own, so a broken
    file is a finding on that part. Every change of the project's data is one
@@ -44,6 +45,9 @@ later, and observables that several studies share.
    create, change, move or delete files, holds the project's lock, checks
    nothing was edited by hand since it was planned, writes all or nothing, and
    is one undo step.
+   *Superseded 2026-11-24:* femkit changes no file the person wrote, so no
+   transaction or undo of theirs exists; the one door remains ([ADR
+   0015](0015-the-persons-files.md)).
 
 ## Alternatives not chosen
 
@@ -63,8 +67,8 @@ later, and observables that several studies share.
 
 ## Consequences
 
-- The model's schema, its addresses and the edit commands change; benchmarks
-  become projects in this tree.
+- The model's schema and its addresses change; benchmarks become projects in
+  this tree.
 - Jobs leave the study's folder for the project's run folders, designed with
   execution.
 - `web.projects` becomes `paths.projects`, read by every surface.

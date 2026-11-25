@@ -142,7 +142,7 @@ Both keep one recipe and build it twice.
 - **Cost:** on a cluster that wants both, both are built: twice the build time
   and disk, paid only where GPU work is wanted.
 - **Jobs:** a GPU job runs in the engine's CUDA environment.
-- **Still to measure, with the first CUDA build on the cluster** (plan § 3, M1):
+- **Still to measure, with the first CUDA build on the cluster** (plan § 4, M1):
   - whether a CUDA build starts on a node without the NVIDIA driver;
   - whether nvcc's host compiler and CMake's CUDA toolkit are found inside the
     prefix.

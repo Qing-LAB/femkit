@@ -60,6 +60,15 @@ def test_bootstrap_installs_every_default_environment_past_a_failure_then_record
     assert shlex.join(["source", "activate", str(dirs.control_prefix())]) in [e.command for e in outcome.entry]
 
 
+def test_bootstrap_with_no_manager_named_says_why_it_gives_no_entry_line(monkeypatch):
+    """Fails if bootstrap ends without the lines that enter femkit day to day and does not say
+    why — no package manager is named, so the stated activation cannot be written (envs.md § 6.2)."""
+    for variable in ("FEMKIT_ENV_MANAGER", "MAMBA_EXE", "CONDA_EXE"):
+        monkeypatch.delenv(variable, raising=False)
+    outcome = apply("env.bootstrap", **GIVEN, activation=STATED["activation"])   # no preamble: no record measured
+    assert not outcome.entry and ("no-entry", settings.COMMAND) in {(i.code, i.subject) for i in outcome.issues}
+
+
 def test_bootstrap_plans_each_install_against_the_configuration_it_will_write(manager, workstation, definitions):
     """Fails if an install is planned against config.toml as it is rather than as bootstrap
     will write it — a launcher given to bootstrap then reads as unset — or if an install

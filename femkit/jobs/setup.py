@@ -19,7 +19,7 @@ from femkit.config import settings
 from femkit.config.operations import ConfigInit, stating, where_environments_go
 from femkit.config.probe import place
 from femkit.config.requests import CONFIG_INIT
-from femkit.core import dirs, text, view
+from femkit.core import dirs, persist, text, view
 from femkit.core.errors import Refusal
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
@@ -67,13 +67,13 @@ CONTROL_STAMP = "control.sha256"  # in the control prefix's records; written las
 def _control_row() -> DoctorRow:
     """The control environment, observed by the rules of envs.md § 7.2, with the command § 7.3 allows."""
     prefix = dirs.control_prefix()
-    stamp = layout.records(prefix) / CONTROL_STAMP
+    stamp = persist.read_text(layout.records(prefix) / CONTROL_STAMP)   # None: there is none
     if not prefix.exists():
         state = "absent"
     elif not (prefix / "conda-meta").is_dir() or not os.access(prefix / "bin" / "python", os.X_OK) \
-            or not stamp.is_file():
+            or stamp is None:
         state = "broken"
-    elif stamp.read_text().strip() != catalogue.control_digest():
+    elif stamp.strip() != catalogue.control_digest():
         state = "outdated"
     else:
         state = "current"
@@ -188,13 +188,10 @@ def _login_node(ctx: Context) -> list[Issue]:
 
 def entry_lines(ctx: Context, config: settings.UserConfig) -> list[view.Action]:
     """This machine's day-to-day entry (envs.md § 6.2): the preamble, the activation the person
-    stated for the real control prefix, the checkout, and the first command."""
-    try:
-        m = resolve(ctx)
-    except Refusal:
-        return []
+    stated for the real control prefix, the checkout, and the first command. A stated activation
+    is written with the manager's kind: refused while the invocation names none."""
     command = config.activation.command
-    enter = [view.shell(line) for line in m.activation(dirs.control_prefix(), command)] if command else [
+    enter = [view.shell(line) for line in resolve(ctx).activation(dirs.control_prefix(), command)] if command else [
         a.model_copy(update={"note": f"activation.command is unset; {a.note}"})
         for a in stating(CONFIG_INIT, [settings.COMMAND])]
     return [*(view.shell(line) for line in config.activation.preamble or []), *enter,
@@ -222,7 +219,7 @@ class EnvBootstrap:
             issues.append(Issue(severity="info", code="environments", subject="paths.environments",
                                 message=f"environments go to {where_environments_go(root)}"))
         installs, refused = {}, {}
-        for name in default_environments():
+        for name in default_environments(ctx):
             try:
                 sub = EnvInstall.plan(EnvInstall.request(names=[name], clean=req.clean), planned)
             except Refusal as exc:  # said now, not after the other installs
@@ -264,7 +261,7 @@ class EnvBootstrap:
         """What the plan decided on: the keys config.toml holds, each default environment's
         state, and this machine's record — each part's own apply checks its own besides."""
         return {"present": sorted(settings.load(ctx, fresh=True).present()),
-                "environments": {name: observe(ctx, name)[1].value for name in default_environments()},
+                "environments": {name: observe(ctx, name)[1].value for name in default_environments(ctx)},
                 "record": record.sha256(record.path(LOCAL))}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> BootstrapOutcome:
@@ -313,9 +310,16 @@ class EnvBootstrap:
 
         status, where = run_steps(plan, ctx, observer, do, keep_going=True)
         rows += [BootstrapRow(part=i.subject, status="left alone", detail="ready") for i in plan.issues if i.code == "ready"]
-        order = ["config.toml", *default_environments(), "this machine's record"]
+        order = ["config.toml", *default_environments(ctx), "this machine's record"]
         rows.sort(key=lambda r: order.index(r.part))
         c = again()
+        config = settings.load(c).config
+        try:
+            entry = entry_lines(c, config)
+        except Refusal as exc:   # no manager to write the activation with: said, never left out unsaid
+            entry = []
+            issues.append(Issue(severity="warning", code="no-entry", subject=settings.COMMAND,
+                                message=f"the lines that enter femkit day to day here are not written: {exc}",
+                                next=exc.next))
         return BootstrapOutcome(plan=plan, status=status, log=str(where), rows=rows, issues=issues,
-                                doctor=doctor.run(doctor.request(), c),
-                                entry=entry_lines(c, settings.load(c).config))
+                                doctor=doctor.run(doctor.request(), c), entry=entry)

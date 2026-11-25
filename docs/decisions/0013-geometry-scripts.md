@@ -54,6 +54,9 @@ job they reviewed.
 
 - A request may now carry a script's text as the content of a file; it is never
   run outside a pipeline's first step, in a run folder.
+  *Superseded 2026-11-24:* no request carries a script's text; the person
+  writes the script in their own editor, and it still runs only as a
+  pipeline's first step ([ADR 0015](0015-the-persons-files.md)).
 - With sign-in, everyone on the allow-list can run code as the server's owner
   through a reviewed run — as they already can through a reviewed job; the
   allow-list names only people trusted that far ([`web.md`](../contracts/web.md) § 5).

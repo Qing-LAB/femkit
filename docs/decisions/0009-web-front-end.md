@@ -35,7 +35,7 @@ node editor is a program that runs in the browser, and femkit has none.
    against its sources' hash like the reference pages, so installing femkit and
    opening the page need neither Node.js nor the network.
 4. **Generic, as the command line is**: forms from the JSON schemas, the graph
-   from `model graph`, every change through plan and apply.
+   from `project graph`, every change through plan and apply.
 
 ## Alternatives not chosen
 

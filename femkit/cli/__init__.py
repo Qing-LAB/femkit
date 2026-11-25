@@ -29,15 +29,28 @@ from femkit.registry import operations
 # ------------------------------------------------------------ fields to params
 
 def _param(name: str, field: FieldInfo) -> click.Parameter:
+    """A field's parameter (api.md § 4.1). It takes the words as typed — no type, nothing
+    required — so every problem with them is the request model's, refused with its key path."""
     s = commandline.spelling(name, field)
-    help_text = described(field)
-    if s.kind == "argument":
-        return click.Argument([name], nargs=-1 if s.many else 1, required=field.is_required())
+    if s.kind == "argument":   # its usage says what the request requires, which click is not asked to check
+        shown = name.upper() if field.is_required() else f"[{name.upper()}]"
+        return click.Argument([name], nargs=-1 if s.many else 1, required=False,
+                              metavar=shown + ("..." if s.many else ""))
     if s.kind == "flag":
-        return click.Option([s.flag, name], is_flag=True, default=False, help=help_text)
-    kind = {int: click.INT, float: click.FLOAT}.get(s.element, click.STRING)
-    return click.Option([s.flag, name], type=kind, multiple=s.many, required=field.is_required(), default=None,
-                        help=help_text)
+        return click.Option([s.flag, name], is_flag=True, default=False, help=described(field))
+    return click.Option([s.flag, name], multiple=s.many, default=None, help=described(field),
+                        metavar={int: "INTEGER", float: "FLOAT"}.get(s.element))
+
+
+def _help(op: Operation) -> str:
+    """The command's help: the operation's docstring, then each argument with its field's
+    description — a positional argument has no help of its own (api.md § 4.1)."""
+    arguments = [(name.upper(), described(field)) for name, field in op.request.model_fields.items()
+                 if commandline.spelling(name, field).kind == "argument"]
+    if not arguments:
+        return op.doc
+    width = max(len(name) for name, _ in arguments)
+    return op.doc + "\n\n\b\nArguments:\n" + "\n".join(f"  {name:<{width}}  {says}" for name, says in arguments)
 
 
 def _again(op: Operation, req: Any) -> str:
@@ -46,10 +59,12 @@ def _again(op: Operation, req: Any) -> str:
 
 
 def _request(op: Operation, values: dict) -> Any:
+    """The request from the words given; a field given none is left to the model: its default, or
+    its refusal as missing."""
     data = {}
-    for name, field in op.request.model_fields.items():
+    for name in op.request.model_fields:
         value = values.get(name)
-        if value is None or (isinstance(value, tuple) and not value and not field.is_required()):
+        if value is None or value == ():
             continue
         if isinstance(value, tuple):
             value = list(value)
@@ -289,10 +304,12 @@ def _execute(op: Operation, values: dict) -> int:
             lines = [f"refused: {exc}"] + text.next_block("instead", exc.next)
             click.echo(_tagged(tag, "\n".join(lines)), err=True)
         return 2
-    except Exception as exc:  # a defect or an unavailable system (core.md § 9)
+    except Exception as exc:  # a defect or an unavailable system (core.md § 9): the surface's one report of it
         click.echo(traceback.format_exc(), err=True)
         if getattr(exc, "femkit_log", None):
             click.echo(f"log: {exc.femkit_log}", err=True)
+        if as_json:   # stdout holds exactly one document (api.md § 4.2)
+            click.echo(view.DefectAnswer.of(exc).model_dump_json(indent=2))
         return 1
 
 
@@ -306,7 +323,7 @@ def _command(verb: str, op: Operation) -> click.Command:
     def callback(**values: Any) -> None:
         sys.exit(_execute(op, values))
 
-    return click.Command(verb, params=params, callback=callback, help=op.doc, short_help=op.doc.split(". ")[0])
+    return click.Command(verb, params=params, callback=callback, help=_help(op), short_help=op.doc.split(". ")[0])
 
 
 def build(ops: dict[str, Operation] | None = None) -> click.Group:

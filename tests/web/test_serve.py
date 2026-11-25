@@ -25,6 +25,8 @@ from femkit.core.view import Verb
 from femkit.core.process import GRACE, Identity, end, identify
 from femkit.server import health, protocol
 from femkit.server.protocol import Listen, LogRoll, Pidfile
+from femkit.core.schema import Model
+from pydantic import model_validator
 from femkit.server.state import MACHINE, ServerFacts, ServerState, facts
 
 HERE = socket.gethostname()
@@ -326,12 +328,23 @@ def test_stop_is_refused_while_the_child_holds_an_operation_lock_unless_forced(s
 
 def test_status_tells_up_from_answering(server):
     """Fails if `status` calls a server healthy because its process is up — a child that is
-    alive and not answering is reported — or writes anything, its server's log included:
-    looking writes nothing (web.md § 4, api.md § 3)."""
+    alive and not answering is reported — or writes anything, its server's log included, of a
+    server that answers as of one that does not: looking writes nothing (web.md § 4, api.md § 3)."""
+    import http.client
     name = str(server)
     p = protocol.read_pidfile(protocol.pidfile(name))
+    before = len(protocol.log_file(name).read_text())
     row = run("serve.status").servers[0]
     assert (row.state, row.answers) == ("running", True)
+    # A request the log does hold, after the status: once its line is there, any line before it is too.
+    token = protocol.token_file(name).read_text().strip()
+    conn = http.client.HTTPConnection("127.0.0.1", server, timeout=10)
+    conn.request("GET", "/api/operations", headers={"Authorization": f"Bearer {token}"})
+    conn.getresponse().read()
+    conn.close()
+    since = lambda: protocol.log_file(name).read_text()[before:]  # noqa: E731
+    assert wait_until(lambda: "GET /api/operations " in since())
+    assert protocol.HEALTH_ROUTE not in since(), since()
     os.kill(p.child.pid, signal.SIGSTOP)  # up, and silent
     try:
         log = protocol.log_file(name).read_text()
@@ -340,6 +353,34 @@ def test_status_tells_up_from_answering(server):
         assert protocol.log_file(name).read_text() == log
     finally:
         os.kill(p.child.pid, signal.SIGCONT)
+
+
+@pytest.mark.parametrize("verb", ["serve.start", "serve.stop", "serve.restart"])
+def test_a_server_another_command_is_starting_is_refused_naming_that_command(verb):
+    """Fails if `start`, `stop` or `restart` meets a server whose lock another process holds,
+    with no pidfile yet, and does not name that process — the person cannot tell what holds it
+    (web.md § 4, the `starting` row)."""
+    port = free_port()
+    holder = hold(protocol.subject(str(port)), "alone")                   # a start, meanwhile
+    try:
+        with refused(Busy, "starting", str(port)) as caught:
+            apply(verb, port=port, **({"tcp": True} if verb == "serve.start" else {}))
+        assert f"process {holder.pid}" in str(caught.value)
+    finally:
+        holder.stdin.close()
+        holder.wait()
+
+
+@pytest.mark.parametrize("verb", ["serve.start", "web.build"])
+def test_serving_and_building_refuse_a_web_environment_not_ready_alike(web_environment, verb):
+    """Fails if `serve start` or `web build` plans while the web environment is not ready, or
+    the two refuse it differently: one check, offering the install that makes it ready (web.md
+    §§ 3–4)."""
+    from femkit.envs import layout
+    layout.manifest_file(web_environment.prefix).unlink()                 # no longer as an install leaves it
+    with refused(Refused, "environment-not-ready", "web") as caught:
+        planned(verb, **({"port": free_port(), "tcp": True} if verb == "serve.start" else {}))
+    assert [n.call.request for n in caught.value.next if n.call] == [{"names": ["web"]}]
 
 
 def test_a_process_is_signalled_only_when_it_is_the_one_identified():
@@ -359,9 +400,10 @@ def test_the_log_is_private_capped_and_rotated(tmp_path):
     for i in range(10):
         roll.write(f"line {i:03d} ".encode() * 10)
     roll.close()
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert {stat.S_IMODE(p.stat().st_mode) for p in path.parent.iterdir()} == {0o600}   # its archives too
     assert sorted(p.name for p in path.parent.iterdir()) == ["serve-1.log", "serve-1.log.1.gz", "serve-1.log.2.gz"]
     assert gzip.decompress((path.parent / "serve-1.log.1.gz").read_bytes()).startswith(b"line 008")
+    assert gzip.decompress((path.parent / "serve-1.log.2.gz").read_bytes()).startswith(b"line 006")  # shifted up
 
 
 # ------------------------------------------------------------------ every request checked
@@ -376,27 +418,56 @@ def client():
 AUTH = {"Authorization": "Bearer the-token", "Host": "127.0.0.1:8000"}
 
 
-@pytest.mark.parametrize("method, path, headers, body, status", [
-    ("GET", "/api/operations", {"Host": "127.0.0.1:8000"}, None, 401),                        # no token
-    ("GET", "/api/operations", {**AUTH, "Authorization": "Bearer other"}, None, 401),         # another token
-    ("GET", "/api/operations", {**AUTH, "Host": "localhost:8000"}, None, 403),                # not the printed host
-    ("GET", "/api/operations", {**AUTH, "Host": "attacker.example:8000"}, None, 403),         # a rebound name
-    ("POST", "/api/config/path", AUTH, "{}", 415),                                            # a write that is not JSON
-    ("POST", "/api/config/path", {**AUTH, "Content-Type": "application/json", "Origin": "null"}, "{}", 403),
-    ("POST", "/api/config/path", {**AUTH, "Content-Type": "application/json",
-                                  "Origin": "http://attacker.example"}, "{}", 403),
-    ("POST", "/api/config/path", {**AUTH, "Content-Type": "application/json"}, "x" * (1024 * 1024 + 1), 413),
-    ("POST", "/api/config/path", {**AUTH, "Content-Type": "application/json",
-                                  "Origin": "http://127.0.0.1:8000"}, "{}", 200),
+JSON = {**AUTH, "Content-Type": "application/json"}
+
+
+@pytest.mark.parametrize("method, path, headers, body, status, code, subject", [
+    ("GET", "/api/operations", {"Host": "127.0.0.1:8000"}, None, 401, "token", "Authorization"),       # no token
+    ("GET", "/api/operations", {**AUTH, "Authorization": "Bearer other"}, None, 401, "token", "Authorization"),
+    ("GET", "/api/operations", {**AUTH, "Host": "localhost:8000"}, None, 403, "host", "Host"),  # not the printed host
+    ("GET", "/api/operations", {**AUTH, "Host": "attacker.example:8000"}, None, 403, "host", "Host"),  # rebound name
+    ("POST", "/api/config/path", AUTH, "{}", 415, "content-type", "Content-Type"),           # a write that is not JSON
+    ("POST", "/api/config/path", {**JSON, "Origin": "null"}, "{}", 403, "origin", "Origin"),
+    ("POST", "/api/config/path", {**JSON, "Origin": "http://attacker.example"}, "{}", 403, "origin", "Origin"),
+    ("POST", "/api/config/path", JSON, "x" * (1024 * 1024 + 1), 413, "size", "/api/config/path"),
+    ("POST", "/api/config/path", JSON, "[]", 400, "body", "/api/config/path"),                # not one object
+    ("GET", "/no/such/route", AUTH, None, 404, "route", "/no/such/route"),
+    ("GET", "/api/config/path", AUTH, None, 405, "method", "/api/config/path"),              # its route takes POST
+    ("POST", "/api/config/set", JSON, "{}", 405, "method", "/api/config/set"),               # it changes: plan, apply
+    ("GET", "/api/health?nonce=short", {"Host": "127.0.0.1:8000"}, None, 400, "nonce", "nonce"),
+    ("GET", "/", {**AUTH, "Range": "bytes=999999999-"}, None, 416, "range", "/"),            # past the page's end
+    ("POST", "/api/config/path", {**JSON, "Origin": "http://127.0.0.1:8000"}, "{}", 200, None, None),
 ], ids=["no-token", "other-token", "localhost", "rebound-name", "not-json", "origin-null", "other-origin",
-        "too-large", "same-origin"])
-def test_every_request_is_checked_before_any_handler_runs(client, method, path, headers, body, status):
+        "too-large", "not-an-object", "no-route", "wrong-method", "run-a-change", "short-nonce", "past-the-end",
+        "same-origin"])
+def test_every_request_is_checked_before_any_handler_runs(client, method, path, headers, body, status, code, subject):
     """Fails if a request without this server's token, naming another host, writing without
-    JSON, from another origin, or over the size limit reaches an operation (web.md § 5)."""
+    JSON, from another origin, or over the size limit reaches an operation, or a refusal at the
+    door comes without its kind, its code and what it is about (web.md § 5)."""
     response = client.open(path, method=method, headers=headers, data=body)
     assert response.status_code == status
     assert response.headers["Content-Security-Policy"].startswith("default-src 'none'")
     assert response.headers["X-Content-Type-Options"] == "nosniff"
+    if code is not None:
+        kind = "Refused" if status in (401, 403) else "UsageError"
+        answer = response.get_json()
+        assert (answer["refused"], answer["code"], answer["subject"]) == (kind, code, subject), answer
+
+
+def test_an_apply_without_its_request_is_refused_never_applied_as_the_default():
+    """Fails if an apply whose body holds no request, or one that is not an object, is taken
+    as an empty request — an operation whose fields all have defaults would then apply them,
+    unasked (web.md § 1, § 5)."""
+    from femkit.web.app import create_app
+    op, _ = fake_operation(runs=1)
+    client = create_app("t", Listen(port=8000), operations={**registry.operations(), op.name: op}).test_client()
+    headers = {"Authorization": "Bearer t", "Host": "127.0.0.1:8000", "Content-Type": "application/json"}
+    digest = client.post("/api/demo/multi/plan", headers=headers, data="{}").get_json()["digest"]
+    for body in ({"digest": digest}, {"request": [], "digest": digest}):
+        answer = client.post("/api/demo/multi/apply", headers=headers, data=json.dumps(body))
+        assert answer.status_code == 400, answer.get_data(as_text=True)
+        assert (answer.get_json()["code"], answer.get_json()["subject"]) == ("body", "/api/demo/multi/apply")
+    assert not operations_root("demo-0").exists()                       # nothing ran
 
 
 def test_the_health_route_proves_the_server_without_the_token(client):
@@ -453,17 +524,27 @@ def test_a_child_that_does_not_end_is_killed_after_the_grace(server):
     assert not p.child.alive() and time.monotonic() - began < GRACE + 3
 
 
+class _NoInputs(Model):
+    """A test operation's request with no inputs: declared once, so every toy verb that uses
+    it is the same declaration (a verb's name has one request, api.md § 2.2)."""
+
+
+class _BrokenRequest(Model):
+    """A request that fails in reading, with an error femkit did not expect."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _broken(cls, data):
+        raise RuntimeError("a defect in reading the request")
+
+
 def fake_operation(runs: int, step_log: bool = False):
     """A changing operation that runs ``runs`` times, as an install over several environments
     does; with ``step_log``, its step reports a log to the apply's own observer and waits."""
     import threading as _t
     from femkit.core.operations import Operation, Plan, Step, run_steps
     from femkit.core.operations import Outcome
-    from femkit.core.schema import Model
     release = _t.Event()
-
-    class Req(Model):
-        """No inputs."""
 
     class Impl:
         def plan(self, req, ctx):
@@ -481,7 +562,7 @@ def fake_operation(runs: int, step_log: bool = False):
                 run_steps(plan.model_copy(update={"subjects": (f"demo-{i}",)}), ctx, observer, do)
             return Outcome(plan=plan, status="done")
 
-    return Operation(Verb("demo.multi", Req), Outcome, True, "a test operation", Impl()), release
+    return Operation(Verb("demo.multi", _NoInputs), Outcome, True, "a test operation", Impl()), release
 
 
 def test_an_apply_over_several_runs_reports_each_and_ends():
@@ -504,22 +585,14 @@ def test_a_defect_anywhere_in_a_route_is_answered_in_json_with_no_trace(route):
     operation runs — is answered as an HTML page or shows its stack trace, instead of the
     defect answer (web.md § 5)."""
     from femkit.core.operations import Operation, Plan, Result
-    from femkit.core.schema import Model
     from femkit.web.app import create_app
-    from pydantic import model_validator
-
-    class Req(Model):
-        @model_validator(mode="before")
-        @classmethod
-        def _broken(cls, data):
-            raise RuntimeError("a defect in reading the request")
 
     class Impl:
         def plan(self, req, ctx): return Plan()
         def run(self, req, ctx): return Result()
 
     changes = route.endswith("/plan")
-    op = Operation(Verb("demo.broken", Req), Result, changes, "a test operation", Impl())
+    op = Operation(Verb("demo.broken", _BrokenRequest), Result, changes, "a test operation", Impl())
     client = create_app("t", Listen(port=8000), operations={**registry.operations(), op.name: op}).test_client()
     answer = client.post(route, headers={"Authorization": "Bearer t", "Host": "127.0.0.1:8000",
                                          "Content-Type": "application/json"}, data="{}")
@@ -574,6 +647,38 @@ def test_unread_event_streams_hold_no_slot(client):
         client.head(f"/api/events/{address}", headers=AUTH)
     lines = client.get(f"/api/events/{address}", headers=AUTH).get_data(as_text=True).splitlines()
     assert json.loads(lines[-1])["kind"] == "operation-end"
+
+
+def test_an_event_stream_past_the_cap_is_refused_busy_naming_its_route(client):
+    """Fails if more event streams than the cap are served at once — each holds one of the
+    bounded threads — or the one refused is not `Busy`, code `streams`, about its route
+    (web.md § 5)."""
+    from femkit.web.app import STREAMS
+    address = OperationAddress.at("demo", clock.now())
+    EventLog.of(address.folder()).append("operation-start", process=identify(os.getpid()).as_json())  # running: this test
+    opened = [client.get(f"/api/events/{address}", headers=AUTH, buffered=False) for _ in range(STREAMS + 1)]
+    try:
+        first = [json.loads(next(iter(r.response))) for r in opened]  # read: each takes its slot
+        assert [line.get("kind") for line in first[:STREAMS]] == ["operation-start"] * STREAMS
+        assert (first[-1]["refused"], first[-1]["code"], first[-1]["subject"]) == ("Busy", "streams",
+                                                                                 f"/api/events/{address}")
+    finally:
+        for r in opened:
+            r.close()
+
+
+def test_a_server_whose_stream_cap_is_not_below_its_threads_does_not_start(monkeypatch):
+    """Fails if the server starts while its cap on event streams is not below its thread pool's
+    size: open streams could then hold every thread, and no request would be answered (web.md § 5)."""
+    from femkit.web import serving
+    from femkit.web.app import STREAMS, create_app
+    monkeypatch.setattr(serving, "THREADS", STREAMS)
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        with pytest.raises(RuntimeError):
+            serving.BoundedServer(Listen(port=port), create_app("t", Listen(port=port)), listener.fileno())
 
 
 def in_process_server(monkeypatch, timeout: float):

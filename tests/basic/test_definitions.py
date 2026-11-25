@@ -270,6 +270,26 @@ def test_conda_names_the_declared_channels_on_a_create_from_a_lock_and_a_removal
             assert ("--override-channels" in argv) is named, (kind, argv)
 
 
+@pytest.mark.parametrize("key, value, at", [
+    ("version", ["{exe}", "--version", "{file}"], "version"),                        # a value it is never given
+    ("root", {"argv": ["{exe}", "info", "-p", "{prefix}"], "key": "root_prefix"}, "root.argv"),
+    ("remove", ["{exe}", "remove", "--all", "-y"], "remove"),                         # no prefix to remove
+    ("create_from_lock", ["{exe}", "create", "-y", "-p", "{prefix}"], "create_from_lock"),   # the lock left out
+], ids=["the version names a file", "a query names a prefix", "a removal names no prefix",
+        "a create from a lock names no lock"])
+def test_a_manager_command_names_exactly_the_values_femkit_renders_it_with(tmp_path, key, value, at):
+    """Fails if a manager kind loads with a command naming a placeholder femkit never renders it
+    with — it would stop an install, not the load — or leaving out the prefix or the lock it acts
+    on (definitions.md § 6)."""
+    from femkit.core.persist import write_toml
+    from femkit.definitions.models import ManagerKind
+    path = tmp_path / "conda.toml"
+    write_toml(path, {**tomllib.loads((data_root() / "managers" / "conda.toml").read_text()), key: value})
+    with pytest.raises(DefinitionError) as caught:
+        load_toml(path, ManagerKind)
+    assert at in dict(caught.value.problems), caught.value.problems
+
+
 DERIVED = {"description": "d", "section": "7-derived-quantities"}
 KIND = {"description": "d", "section": "3-conditions-on-an-outer-boundary", "on": ["boundary"],
         "parameters": {"value": {"unit": "V", "description": "d"}}}

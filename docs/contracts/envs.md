@@ -272,7 +272,7 @@ Every step's command is fixed by data, never by an engine's name:
 | `compile`, `install` | `cmake --build` / `cmake --install`, `build.jobs` in parallel | — |
 | `toolchain` | `[toolchain]`: its compilers, MPI wrappers and tools; `launch.mpi` for the two-rank run | each tool and compiler inside the prefix; each trivial program compiled, linked and run |
 | `audit` | `provides`: executables and Python modules | each found inside the prefix; with builds, each variable `[toolchain].compilers` names too |
-| `manifest` | the engine's version probe (`femkit/engines/<engine>/`) | the probed version equals `version` |
+| `manifest` | the engine's version probe (`femkit/engines/<engine>/`) | the probed version equals `version`, and the manager's version reads; otherwise the step fails, its log saying why |
 
 ### 4.2 Step machine and resume
 
@@ -355,7 +355,7 @@ Where every file lives, and what removes it:
 | prefix | `<paths.environments>/<name>/` | `create` | `remove`, `clean` |
 | manifest | `<prefix>/.femkit/manifest.json` | `manifest` | with the prefix |
 | checks | `<prefix>/.femkit/checks.json` | `validate` | with the prefix |
-| proofs | `<prefix>/.femkit/proofs.json` | `formulation verify --record` ([`models.md`](models.md) § 6.3; not built yet, plan § 3, M6) | with the prefix |
+| proofs | `<prefix>/.femkit/proofs.json` | `formulation verify --record` ([`models.md`](models.md) § 6.3; not built yet, plan § 4, M6) | with the prefix |
 | source tree | `<prefix>/.femkit/src/<source>/` | `unpack` | with the prefix |
 | build tree | `<prefix>/.femkit/build/<build>/` | `configure`, `compile` | with the prefix |
 | toolchain programs | `<prefix>/.femkit/toolchain/` | `toolchain`, emptied first each time | with the prefix |
@@ -411,7 +411,12 @@ flowchart LR
   `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`,
   `CONDARC`, `MAMBARC` — are removed from every manager command: measured,
   conda 26.7.1 under femkit's `HOME` still reads
-  `$XDG_CONFIG_HOME/conda/.condarc` and `$CONDARC`. The person's
+  `$XDG_CONFIG_HOME/conda/.condarc` and `$CONDARC`. So is every `CONDA_*`
+  and `MAMBA_*` variable of the person's; femkit sets only `CONDA_PKGS_DIRS`
+  and `CONDA_REGISTER_ENVS`: measured 2026-11-24, conda 26.7.1 reads any
+  `CONDA_<KEY>` as configuration (`CONDA_CHANNEL_PRIORITY=disabled` turns
+  `conda config --show channel_priority` from flexible to disabled); the
+  `MAMBA_*` ones are removed by the same rule, not measured. The person's
   `~/.condarc` and `~/.mambarc` are therefore not read by femkit's installs:
   the channels are femkit's own (below), and a proxy reaches the manager
   through `HTTPS_PROXY`, which passes. A command inside a prefix inherits that
@@ -446,7 +451,7 @@ flowchart LR
   (measured on mamba 1.5.9 and 2.9.0). Where a machine's `run` still cannot
   start a command, the step would enter through the kind's shell hook (its
   `activate`, § 6.2) and `job probe` would record `manager.run_enters = false`
-  ([`jobs.md`](jobs.md) § 9.1); that fallback is not built yet (plan § 3, M1).
+  ([`jobs.md`](jobs.md) § 9.1); that fallback is not built yet (plan § 4, M1).
 - **Every command femkit runs inside a prefix starts from an allow-list** —
   `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TERM`, `TMPDIR`,
   `CUDA_VISIBLE_DEVICES`, OpenMPI's two run-as-root variables, and
@@ -466,7 +471,7 @@ flowchart LR
   prefix. The allow-list is one constant, `envs/manager.py` (`CONFINED`).
 - The manager's own commands — create, remove, export a lock — keep the
   invocation's variables but those naming the person's own configuration
-  (above): the manager reads its installation's configuration and proxies.
+  and their `CONDA_*` and `MAMBA_*` (above): the manager reads its installation's configuration and proxies.
 
 ### 4.5 The toolchain and the host
 
@@ -619,7 +624,9 @@ only when every part is done and `doctor` finds the machine ready.
 It ends with the lines that enter femkit day to day on this machine: the
 preamble, the activation the person stated (`activation.command`,
 [`config.md`](config.md) § 3.1) of the real control prefix, the checkout, and
-`doctor`. `source activate` is one line, `source activate <prefix>`;
+`doctor`. While no package manager is named, the stated activation cannot be
+written: the lines are left out, and a finding (`no-entry`) says why.
+`source activate` is one line, `source activate <prefix>`;
 `conda activate` or `mamba activate` is the manager kind's hook file sourced
 first, then the line. While `activation.command` is unset, the activation line
 says so and names `config init --activation`.
@@ -745,12 +752,17 @@ the consent the question would have asked for).
 
 - **Create** is the conda kind's `create` — `<manager> create -y -p <prefix>
   --override-channels --no-default-packages`, `-c <channel>` for each line of
-  `channels.txt`, then `--file control.txt` — and then the stamp; **remove** is `<manager> env remove -y -p <prefix>` — the conda kind's
+  `channels.txt`, then `--file control.txt` — and then the stamp; **remove** is
+  the kind's `remove`, `<manager> remove --all -y -p <prefix>
+  --override-channels`, with `-c <channel>` for each line of `channels.txt`
+  where the kind names its channels there — the kind's
   declared forms (a basic test holds the two together); the field tests run
   them on each kind.
 - **Forward** is `<control prefix>/bin/python -m femkit env <the arguments>`,
-  with the repository root on `PYTHONPATH` and `FEMKIT_ENV_MANAGER` set:
-  femkit runs from its checkout and is never installed into an environment.
+  with the repository root alone as `PYTHONPATH`, no user site-packages
+  (`PYTHONNOUSERSITE=1`), and `FEMKIT_ENV_MANAGER` set: femkit runs from its
+  checkout, is never installed into an environment, and imports none of the
+  person's own Python packages.
   It never goes through `<manager> run`: some managers' `run` writes a shell stub that dies on `exec: --: invalid
   option`, a cluster's mamba module among them, and `run` stands between
   Python and the terminal it asks on (§ 6.2). femkit is pure Python and needs
@@ -774,7 +786,7 @@ the consent the question would have asked for).
 ```mermaid
 flowchart TD
     sh["scripts/install-env.sh<br/>§ 7"] -->|forwards| cli["femkit/cli<br/>generic adapter"]
-    cli --> ops["envs/operations.py<br/>list, plan, install, validate, clean, log"]
+    cli --> ops["envs/operations.py<br/>list, install, validate, clean, log"]
     cli --> setup["jobs/setup.py<br/>doctor, bootstrap"]
     setup --> ops
     ops --> state["envs/state.py<br/>facts, MACHINE, observe"]
@@ -796,7 +808,7 @@ flowchart TD
 | install steps, resume, validate after `manifest` (§ 4.1, § 4.2) | `femkit/envs/install.py`, `femkit/envs/operations.py` |
 | records (§ 4.3) | `femkit/envs/records.py`, `femkit/envs/layout.py` |
 | `validate` and the check runner (§ 5) | `femkit/envs/checks.py`, `femkit/envs/operations.py`; check programs and readers in `femkit/engines/<engine>/` |
-| `env list`, `plan`, `install`, `clean`, `log` (§ 6) | `femkit/envs/operations.py` |
+| `env list`, `install`, `validate`, `clean`, `log` (§ 6) | `femkit/envs/operations.py` |
 | the toolchain step's program and judgement (§ 4.5) | `femkit/engines/toolchain.py` (runs inside the prefix, measures), `femkit/envs/toolchain.py` (judges) |
 | the allow-list every command in a prefix starts from (§ 4.4) | `femkit/envs/manager.py` (`CONFINED`, `confined`) |
 | `doctor`, `env bootstrap` (§ 6.1, § 6.2) | `femkit/jobs/setup.py`: both read or write this machine's record, which sits in `jobs`, above `envs` ([`framework.md`](framework.md) § 1) |

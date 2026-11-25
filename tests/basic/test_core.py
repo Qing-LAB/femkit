@@ -12,12 +12,13 @@ from enum import Enum
 import pytest
 
 from tests.kit import hold, refused
-from femkit.core import view
-from pydantic import Field
-from femkit.core.schema import Model
+from femkit.core import persist, view
+from pydantic import Field, ValidationError
+from femkit.core.schema import DefinitionError, Model, load_toml
 
 from femkit.core import process
 from femkit.core.errors import Busy, Refused
+from femkit.core.issues import Issue
 from femkit.core.eventlog import EventLog, fold
 from femkit.core.locks import subject_lock
 from femkit.core.states import Action, Machine, Rule
@@ -29,10 +30,14 @@ class Light(Enum):
 
 
 def test_a_state_table_that_could_fall_through_or_strand_a_state_is_rejected():
-    """Fails if a table with no `otherwise`, an unreachable state, a state with no action
-    row, or a rule producing another machine's state could be built (core.md § 7)."""
+    """Fails if a table with no `otherwise`, an `otherwise` before the last rule, an unreachable
+    state, a state with no action row, or a rule producing another machine's state could be built
+    (core.md § 7). Each table breaks one rule only, so each rejection is that rule's."""
     with pytest.raises(ValueError):
-        Machine("m", Light, (Rule("lit", Light.on, lambda f: f),), {Light.on: {}, Light.off: {}})
+        Machine("m", Light, (Rule("lit", Light.on, lambda f: f), Rule("dark", Light.off, lambda f: not f)),
+                {Light.on: {}, Light.off: {}})
+    with pytest.raises(ValueError):
+        Machine("m", Light, (Rule("always", Light.on), Rule("dark", Light.off)), {Light.on: {}, Light.off: {}})
     with pytest.raises(ValueError):
         Machine("m", Light, (Rule("always", Light.on),), {Light.on: {}, Light.off: {}})
     with pytest.raises(ValueError):
@@ -146,6 +151,45 @@ def test_the_event_log_fold_reads_progress_interruption_and_a_torn_line(tmp_path
     assert not fold([{"kind": "operation-start", "process": me.as_json()}]).interrupted
     reused = {**me.as_json(), "start": me.start + 1}           # this process's ID, another process's start
     assert fold([{"kind": "operation-start", "process": reused}]).interrupted
+
+
+def test_an_interrupted_copy_of_a_folder_leaves_nothing_in_its_place(tmp_path):
+    """Fails if a folder copy that stops part way leaves a half folder where the copy goes, or
+    anything beside it (core.md § 4: "Every write is atomic")."""
+    source, place = tmp_path / "source", tmp_path / "place"
+    (source / "a").mkdir(parents=True)
+    (source / "a" / "one").write_text("1")
+    (source / "two").write_text("2")
+    (source / "two").chmod(0)                              # the copy stops here
+    place.mkdir()
+    try:
+        with pytest.raises(OSError):
+            persist.copy_tree(source, place / "copy")
+    finally:
+        (source / "two").chmod(0o644)
+    assert list(place.iterdir()) == []
+    persist.copy_tree(source, place / "copy")
+    assert (place / "copy" / "a" / "one").read_text() == "1" and (place / "copy" / "two").read_text() == "2"
+
+
+@pytest.mark.parametrize("written", [None, b"# caf\xe9\n"], ids=["no file", "not UTF-8"])
+def test_a_declared_file_that_is_absent_or_not_text_is_refused_at_the_file(tmp_path, written):
+    """Fails if a declared file that is not there, or not UTF-8 text, fails as a defect instead of
+    a `DefinitionError` naming the file (core.md § 2: "One TOML reader")."""
+    path = tmp_path / "declared.toml"
+    if written is not None:
+        path.write_bytes(written)
+    with refused(DefinitionError, "definition-invalid", str(path)):
+        load_toml(path, Model)
+
+
+def test_a_findings_code_is_kebab_case_or_refused_when_made():
+    """Fails if a finding can be made with a code that is not kebab-case — the code tests and
+    programs match on (core.md § 10)."""
+    assert Issue(severity="error", code="preamble-unset", subject="x", message="m").code == "preamble-unset"
+    for code in ("Preamble_unset", "preamble unset", "-preamble", ""):
+        with pytest.raises(ValidationError):
+            Issue(severity="error", code=code, subject="x", message="m")
 
 
 def test_a_timeout_stops_the_whole_process_group(tmp_path):

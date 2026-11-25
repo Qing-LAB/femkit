@@ -23,7 +23,6 @@ def init(**fields):
 def test_init_adds_only_missing_keys_and_never_replaces_a_value():
     """Fails if re-running init replaces what a person set (config.md § 3.2)."""
     init(jobs=4)
-    ctx = Context.from_process()
     apply("config.set", key="build.jobs", value="12")
     outcome = init(jobs=2, preamble=["module load x"])
     rows = {r.key: r for r in outcome.rows}
@@ -48,7 +47,6 @@ def test_a_value_is_toml_text_and_a_bare_word_is_refused():
     """Fails if config set guesses that a bare word is text, reads TOML text otherwise than
     the file would, or fails on a value of the wrong type instead of refusing it — here `true`
     for a number (config.md § 3, web.md § 7.3)."""
-    ctx = Context.from_process()
     with refused(UsageError, "not-toml", "/data/projects"):
         planned("config.set", key="paths.projects", value="/data/projects")
     with refused(UsageError, "invalid-value", "build.jobs"):
@@ -100,7 +98,6 @@ def test_a_broken_config_file_is_refused_naming_the_file(text):
     request instead of refused naming the file (config.md § 2, § 3.1; core.md § 2)."""
     settings.config_file().parent.mkdir(parents=True, exist_ok=True)
     settings.config_file().write_text(text)
-    ctx = Context.from_process()
     with pytest.raises(DefinitionError) as caught:
         planned("config.set", key="launch.mpi", value='["mpirun", "-np", "{ranks}"]')
     assert caught.value.file == str(settings.config_file())

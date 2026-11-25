@@ -1,5 +1,5 @@
 # SLURM. The header, submission, query and
-# cancel lines arrive with their users (jobs.md § 7; milestones M3, M4).
+# cancel lines arrive with their users (jobs.md § 7; plan § 4, X and M4).
 # The environment's own mpirun, never srun: the environment's MPI and the
 # cluster's process manager need not agree (jobs.md § 7).
 mpi_launch = ["mpirun", "-np", "{ranks}"]

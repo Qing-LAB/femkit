@@ -33,24 +33,24 @@ femkit/
 │                  (jobs.md) — records, the probe and setup built, the rest not yet
 ├── projects/      the projects root, a project's tree and the one door to it:
 │                  every path, every read; what femkit writes into a project
-│                  (projects.md) — the framework built; the shipped layout with R step D
+│                  (projects.md) — the framework built; the shipped layout with step D
 ├── materials/     the property list, the material format, libraries, importers,
 │                  a property's data for a case (materials.md) — approved, not built yet
 ├── geometry/      the geometry script's contract, mesh recipes, the mesh step,
 │                  kinds and coverage, the hand-over to each engine (geometry.md) —
 │                  approved, not built yet; the mesh step's code runs inside its
-│                  environment (plan § 3, X)
+│                  environment (plan § 4, X)
 ├── models/        calculations described once: model, studies, cases, the match
 │                  against an environment's abilities, decisions, customizations,
 │                  preparation (models.md) — today an earlier, one-file design,
-│                  frozen until R step D replaces it (models.md, status); the
-│                  rest not yet (plan § 3, M6, M8, M9)
+│                  frozen until step D replaces it (models.md, status); the
+│                  rest not yet (plan § 4, M5, M6, M8, M9)
 ├── results/       a run's observables, proofs, comparisons, analysis (models.md
-│                  § 6.3, § 10) — not built yet (plan § 3, M6)
+│                  § 6.3, § 10) — not built yet (plan § 4, M6, M9)
 ├── server/        `serve`: the web server's verbs, state machine, supervisor,
 │                  pidfile and log (web.md § 4); `web build`, the page's
 │                  bundle (web.md § 3)
-├── registry.py    the one list of operation modules (api.md § 6)
+├── registry.py    the one list of operation modules and of part-schema modules (api.md § 6)
 ├── reference.py   `schema check|docs`: they span every domain (definitions.md § 2.3)
 ├── page.py        the page declaration, checked against the operations (web.md § 8.1)
 ├── cli/           the generic command-line adapter (api.md § 4)
@@ -68,11 +68,12 @@ tools/             developer tools that import nothing from femkit (testing.md �
 | registry | `registry.py`, `reference.py`, `page.py` | every domain |
 | surfaces | `cli`, `web` | everything below; never each other |
 
-**One way to do each thing.** Decided by the person; not built yet (plan § 3, R step C). Each rule below
-has one home, held by design where it can be — a module never given a
-project's folder cannot form a path in it — and by each milestone's
-independent review, which reads the source against it; no test reads code
-([`testing.md`](testing.md) § 3):
+**One way to do each thing.** Decided by the person; rules 4–6 wait for
+packages not built yet, and rule 7's state machines become data in step D
+(plan § 4, D). Each rule below has one home, held by design where it can
+be — a module never given a project's folder cannot form a path in it — and
+by each milestone's independent review, which reads the source against it; no
+test reads code ([`testing.md`](testing.md) § 3):
 
 1. in the control process, only `core/persist.py` opens or writes a file —
    code that runs inside an environment (`engines/`) holds to its own
@@ -112,10 +113,10 @@ independent review, which reads the source against it; no test reads code
 | shipped definitions and kinds | [`definitions.md`](definitions.md) |
 | configuration | [`config.md`](config.md) |
 | environments, installs, the install script | [`envs.md`](envs.md) |
-| a project's tree, its parts, addresses, the one door, what femkit writes into a project | [`projects.md`](projects.md) — the framework built; the shipped layout with R step D (plan § 3) |
-| the property list, materials, libraries, importers | [`materials.md`](materials.md) — approved, not built yet (plan § 3, R) |
-| the geometry script's contract, the pipeline's steps, mesh recipes, the mesh step and the hand-over | [`geometry.md`](geometry.md) — approved, not built yet (plan § 3, R) |
-| calculations: parameters, physics, studies, observables, cases, formulations, environment abilities and proofs, the match report, decisions, customizations, preparation, results and analyses | [`models.md`](models.md) — an earlier design today, frozen until R step D replaces it (models.md, status; plan § 3, M5–M9, R) |
+| a project's tree, its parts, addresses, the one door, what femkit writes into a project | [`projects.md`](projects.md) — the framework built; the shipped layout with step D (plan § 4, D) |
+| the property list, materials, libraries, importers | [`materials.md`](materials.md) — approved, not built yet (plan § 4, D and E) |
+| the geometry script's contract, the pipeline's steps, mesh recipes, the mesh step and the hand-over | [`geometry.md`](geometry.md) — approved, not built yet (plan § 4, D and X) |
+| calculations: parameters, physics, studies, observables, cases, formulations, environment abilities and proofs, the match report, decisions, customizations, preparation, results and analyses | [`models.md`](models.md) — an earlier design today, frozen until step D replaces it (models.md, status; plan § 4, D and M5–M9) |
 | machine records and the probe, jobs, schedulers | [`jobs.md`](jobs.md) |
 | tests and the test runner | [`testing.md`](testing.md) |
 
@@ -127,11 +128,11 @@ The rules every change follows, whatever package it touches, are
 Built: the install script's control environment ([`envs.md`](envs.md) § 7),
 an environment ([`envs.md`](envs.md) § 3), an install's steps
 ([`envs.md`](envs.md) § 4) and the web server ([`web.md`](web.md) § 4). Not
-built yet: a run ([`jobs.md`](jobs.md) § 5; plan § 3, M3) and a case's
+built yet: a run ([`jobs.md`](jobs.md) § 5; plan § 4, X) and a case's
 preparation ([`models.md`](models.md) § 9.5; M6); a part of a project
-([`projects.md`](projects.md) § 8), a step's run
-([`geometry.md`](geometry.md) § 4; plan § 3, X), a study's expansion (plan
-§ 3, R) and a run's results (M6). The test runner's batch states ([`testing.md`](testing.md)
+([`projects.md`](projects.md) § 8; D), a step's run
+([`geometry.md`](geometry.md) § 4; X), a study's expansion (D) and a run's
+results (M6). The test runner's batch states ([`testing.md`](testing.md)
 § 4.4) are a machine outside femkit.
 
 Every one follows these rules. In Python the primitive that enforces them is
@@ -172,7 +173,7 @@ environment — has three owners, and each answers only its own part:
   it used one — a GPU check's expectations require the device to have done the
   work ([`definitions.md`](definitions.md) § 5.2), and a run asking for GPUs
   stops at its start, saying so, when it sees none ([`jobs.md`](jobs.md) § 4;
-  runs are not built, plan § 3, M3).
+  runs are not built, plan § 4, X).
   When the machine cannot do what was asked, the outcome says so with the
   reason and its log, so "no GPU was granted" and "the GPU build is broken"
   read differently.
@@ -190,7 +191,7 @@ environment — has three owners, and each answers only its own part:
   naming the probe that renews it), or an environment to install whose CUDA
   toolkit needs a newer driver than the record measured, since what it builds
   could not run here (the driver is the machine's; femkit never changes it) —
-  not built: the record holds no driver version yet (plan § 3, M1).
+  not built: the record holds no driver version yet (plan § 4, M1).
   These are `Refusal`s
   ([`core.md`](core.md) § 9) — a contradicting statement a `UsageError`, a
   record that no longer matches `Refused` — because nothing could be prepared

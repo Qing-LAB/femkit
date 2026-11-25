@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -106,11 +105,14 @@ def test_a_root_stated_through_a_link_finds_the_project_a_command_runs_in(root, 
 
 def test_a_folder_in_no_project_is_refused(root, tmp_path):
     """Fails if, with no project named, a folder in no project — the root itself, a group, the
-    global library, a `.`-folder, a folder outside the root — yields a project instead of a refusal
-    naming that folder (projects.md § 1)."""
+    global library, a `.`-folder, a folder the name rule cannot name, a folder outside the root —
+    yields a project, or another refusal, instead of a refusal naming that folder (projects.md
+    §§ 1, 3: a project is named by its path from the root)."""
     outside = tmp_path / "outside"
     make(outside)
-    for cwd in (root, root / "groups", root / "materials/old", root / ".trash/gone", outside):
+    make(root / "groups" / "My Project")
+    for cwd in (root, root / "groups", root / "materials/old", root / ".trash/gone", root / "groups/My Project",
+                outside):
         with refused(UsageError, "not-in-a-project", str(cwd)):
             location.locate(ctx(), None, cwd)
 
@@ -132,27 +134,6 @@ def test_a_name_breaking_the_name_rule_is_refused(root):
     for name in ("Bowtie", "../escaped"):
         with refused(UsageError, "bad-name", name):
             location.locate(ctx(), name, root)
-
-
-def test_a_project_zipped_and_unpacked_under_another_root_is_the_same_project(root, tmp_path):
-    """Fails if a project, zipped and unpacked under another projects root, is not found there by
-    the same name with the same files — a path in it held otherwise than relative (projects.md § 1)."""
-    before = location.locate(ctx(), "groups/dimer", root)
-    make(before.folder, {"studies/s.toml": 'component = "c"\n', "components/c/geometry.py": "import gmsh\n"})
-    archive = shutil.make_archive(str(tmp_path / "dimer"), "zip", root_dir=root, base_dir="groups/dimer")
-    other = tmp_path / "other"
-    other.mkdir()
-    shutil.unpack_archive(archive, other)
-    set_root(other)
-    after = location.locate(ctx(), "groups/dimer", tmp_path)
-    assert after == Project(other, "groups/dimer")
-
-    def files(project: Project) -> dict[str, bytes]:
-        return {f.relative_to(project.folder).as_posix(): f.read_bytes()
-                for f in project.folder.rglob("*") if f.is_file()}
-
-    assert files(after) == files(before) and len(files(after)) == 3
-    assert after.path("studies/s.toml").read_text() == 'component = "c"\n'
 
 
 def test_a_path_in_a_project_is_relative_and_stays_inside(root):

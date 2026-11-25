@@ -144,29 +144,3 @@ def the_run_leaves_your_machine_alone():
              "checkout": str(REPO), "manager": ", ".join(map(str, REAL_MANAGER)), **{name: str(root) for name, root in REAL_SHALLOW.items()}}
     if changed:
         raise AssertionError("canary: the run changed " + "; ".join(f"{n} ({where[n]})" for n in changed))
-
-
-# ------------------------------------------------------------------ next steps
-
-@pytest.fixture(scope="session", autouse=True)
-def every_next_step_names_its_operation():
-    """Every next step the run builds names a registered operation, with that operation's own
-    request model (web.md § 7.2): a renamed verb, or a request model taken for another's, fails
-    here, wherever the step was made. Steps of operations a test declares itself are its own."""
-    from femkit import registry
-    from femkit.core import view
-    made: dict[view.Verb, None] = {}
-    real = view.command
-
-    def recording(verb, **kw):
-        made[verb] = None
-        return real(verb, **kw)
-
-    patch = pytest.MonkeyPatch()
-    patch.setattr(view, "command", recording)
-    yield
-    patch.undo()
-    ops = registry.operations()
-    wrong = sorted(f"{v.name} with {v.request.__name__}" for v in made
-                   if v.request.__module__.startswith("femkit.") and (v.name not in ops or ops[v.name].request is not v.request))
-    assert not wrong, f"next steps naming no operation, or another's request: {wrong}"

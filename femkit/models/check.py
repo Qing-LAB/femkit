@@ -61,7 +61,7 @@ def findings(m: ModelFile, formulations: dict[str, FormulationDefinition], units
                                 next=tuple(n for n in next if n is not None))))
 
     # A finding says what is wrong and what would be right; the person writes the fix in the file —
-    # femkit changes no file the person wrote (plan § 6, 2026-11-24), so no finding offers an edit.
+    # femkit changes no file the person wrote (projects.md § 7), so no finding offers an edit.
     def choose(path: tuple[str, ...], label: str, schema: dict) -> None:
         return None
 

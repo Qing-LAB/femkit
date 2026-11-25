@@ -14,15 +14,17 @@ from concurrent.futures import ThreadPoolExecutor
 
 from werkzeug.serving import BaseWSGIServer, WSGIRequestHandler
 
-from femkit.server.protocol import LOOPBACK, Listen, event_line
+from femkit.server.protocol import HEALTH_ROUTE, LOOPBACK, Listen, event_line
+from femkit.web.app import STREAMS
 
-THREADS = 16          # above the app's cap on event streams (app.STREAMS)
+THREADS = 16          # above the app's cap on event streams, checked when the server starts
 READ_TIMEOUT = 15.0   # seconds a connection may take to send a request, and stay idle
 
 
 class _Handler(WSGIRequestHandler):
     """One line per request on stdout, which the supervisor writes to the log: method, path
-    without its query, status, time — never a header, a token or a body (web.md § 4)."""
+    without its query, status, time — never a header, a token or a body (web.md § 4). The
+    health route answered is not a line: `status` writes nothing, not even there."""
 
     server_version = "femkit"  # no version string reaches a response (web.md § 5)
     sys_version = ""
@@ -31,10 +33,14 @@ class _Handler(WSGIRequestHandler):
         return "femkit"
 
     def log_request(self, code="-", size="-") -> None:
-        path = (getattr(self, "path", "") or "").split("?", 1)[0].encode("unicode_escape").decode("ascii")
+        status = getattr(code, "value", code)
+        path = (getattr(self, "path", "") or "").split("?", 1)[0]
+        if path == HEALTH_ROUTE and status == 200:
+            return
+        path = path.encode("unicode_escape").decode("ascii")
         elapsed = (time.monotonic() - getattr(self, "_began", time.monotonic())) * 1000
         print(event_line("request", f"{getattr(self, 'command', None) or '-'} {path or '-'} "
-                                    f"{getattr(code, 'value', code)} {elapsed:.0f} ms"), end="", flush=True)
+                                    f"{status} {elapsed:.0f} ms"), end="", flush=True)
 
     def log_error(self, format: str, *args) -> None:
         print(event_line("error", format % args), end="", flush=True)
@@ -70,6 +76,9 @@ class BoundedServer(BaseWSGIServer):
     multithread = True  # HTTP/1.1, as werkzeug enables for a threaded server
 
     def __init__(self, listen: Listen, app, fd: int) -> None:
+        if STREAMS >= THREADS:  # each open stream holds a thread: requests would find none free (web.md § 5)
+            raise RuntimeError(f"the cap on event streams, {STREAMS}, is not below the {THREADS} threads "
+                               "that serve requests")
         self.listen_on = listen
         self.pool = ThreadPoolExecutor(max_workers=THREADS, thread_name_prefix="request")
         host = f"unix://{listen.socket}" if listen.socket else LOOPBACK

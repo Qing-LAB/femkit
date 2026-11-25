@@ -14,7 +14,7 @@ import json
 import secrets
 import socket
 
-from femkit.server.protocol import LOOPBACK, Listen
+from femkit.server.protocol import HEALTH_ROUTE, LOOPBACK, Listen
 
 
 def proof(token: str, nonce: str) -> str:
@@ -45,7 +45,7 @@ def ask(listen: Listen, token: str, *, timeout: float = 5.0) -> tuple[bool, str]
     nonce = secrets.token_hex(16)
     conn = connection(listen, timeout)
     try:
-        conn.request("GET", f"/api/health?nonce={nonce}")
+        conn.request("GET", f"{HEALTH_ROUTE}?nonce={nonce}")
         response = conn.getresponse()
         body = response.read()
     except (OSError, http.client.HTTPException) as exc:

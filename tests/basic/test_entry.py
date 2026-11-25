@@ -239,17 +239,32 @@ def test_help_before_control_exists_is_the_scripts_own_and_creates_nothing(manag
 
 def femkit_places() -> list[str]:
     return [str(dirs.cache_dir() / "manager-home"), str(dirs.cache_dir() / "pkgs"), "false",
-            str(dirs.cache_dir() / "tmp"), "person="]
+            str(dirs.cache_dir() / "tmp"), "person=", "managers=CONDA_PKGS_DIRS,CONDA_REGISTER_ENVS,"]
 
 
 def test_the_script_runs_the_manager_in_femkits_places_never_the_persons_home(manager, tmp_path, monkeypatch):
-    """Fails if the install script's create runs the manager with the person's HOME, package
-    cache, environment registration or temporary folder, or with a variable naming the person's
-    own configuration: whatever the manager writes would land in their home, and what they
+    """Fails if the install script's create or removal runs the manager with the person's HOME,
+    package cache, environment registration or temporary folder, or with a variable naming the
+    person's own configuration, or with any `CONDA_*` or `MAMBA_*` of theirs, which a manager
+    reads as its settings: whatever the manager writes would land in their home, and what they
     configured would be read (envs.md § 4.4, § 7)."""
     from femkit.envs.manager import PERSONS_OWN
     for variable in PERSONS_OWN:
         monkeypatch.setenv(variable, str(tmp_path / "the-persons" / variable))
+    monkeypatch.setenv("CONDA_CHANNEL_PRIORITY", "disabled")
+    monkeypatch.setenv("MAMBA_ROOT_PREFIX", str(tmp_path / "the-persons" / "mamba"))
     install_env("bootstrap", "--yes")
+    (dirs.control_prefix() / ".femkit" / "control.sha256").write_text("outdated\n")
+    install_env("bootstrap", "--yes")                              # removed, and created again
     places = [line.split() for line in Path(f"{manager}.places").read_text().splitlines()]
-    assert places and all(p == femkit_places() for p in places), places
+    assert len(places) == 3 and all(p == femkit_places() for p in places), places
+
+
+def test_the_control_python_is_given_the_checkout_alone_and_no_user_packages(manager, tmp_path, monkeypatch):
+    """Fails if the script's forward hands the control environment's python the person's own
+    PYTHONPATH, or lets their user site-packages load: femkit would import what they installed
+    for themselves instead of its own control environment's packages (envs.md § 7.3)."""
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "the-persons-packages"))
+    monkeypatch.delenv("PYTHONNOUSERSITE", raising=False)
+    assert install_env("bootstrap", "--yes").returncode == 0
+    assert Path(f"{manager}.python").read_text().split() == [str(REPO), "1"]

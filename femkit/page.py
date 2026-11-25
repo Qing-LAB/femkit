@@ -15,8 +15,9 @@ from femkit.definitions import catalogue
 from femkit.models.schema import OBJECTS
 
 Context = Literal["project", "study", "environment"]
-#: The page's own commands, which a key may be bound to (web.md § 8.1).
-Command = Literal["undo", "redo", "remove", "commit", "cancel"]
+#: The page's own commands, which a key may be bound to (web.md § 8.1). The page changes no file
+#: the person wrote (projects.md § 7), so none edits, removes or undoes.
+Command = Literal["cancel"]
 
 
 class App(Model):

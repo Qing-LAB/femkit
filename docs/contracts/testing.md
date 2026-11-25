@@ -40,12 +40,12 @@ its progress log, its one-run-per-batch lock and the states it reports
   yet: a tiny environment from a test definition in `tests/field/data/`,
   walked through its states (`absent → ready`, a changed definition →
   `outdated`, an interrupted install → `incomplete` → resumed); a small job
-  run through `run.sh` (M3); on a cluster, asking the scheduler without
+  run through `run.sh` (X); on a cluster, asking the scheduler without
   submitting (`job launch --check`, M4).
 - **Engine** runs `env validate` on installed engines and one real calculation
   per engine through `job launch`, checked against analytic or published
   values. It spends the machine's cores and runs on the person's word. Not
-  built yet: `tests/engine/` comes with jobs (plan § 3, M3), and until then the
+  built yet: `tests/engine/` comes with jobs (plan § 4, X), and until then the
   engine readers and check programs are proven by `env validate` alone.
 
 A tier passes before the next is worth running.
@@ -137,7 +137,7 @@ it ends, and a difference fails the run, naming what changed:
   ([`web.md`](web.md) § 12) — are held by design where it can hold them, and
   by each milestone's independent review, which reads the source against them
   ([`../process/conventions.md`](../process/conventions.md) § 1). No test reads
-  code, the person's decision (plan § 6), with one exception, theirs too: a
+  code — the person's decision — with one exception, theirs too: a
   generated file is checked against its source — the reference pages rendered
   again and compared ([`definitions.md`](definitions.md) § 2.3), the page's
   bundle against the hashes of its sources ([`web.md`](web.md) § 3) — so a

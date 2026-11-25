@@ -7,6 +7,7 @@ The install script finds the manager and passes it as FEMKIT_ENV_MANAGER
 from __future__ import annotations
 
 import json
+import re
 import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -68,6 +69,18 @@ class Manager:
         """``command`` run inside ``prefix`` through the manager's own mechanism (envs.md § 4.4)."""
         return self.argv(self.kind.run, prefix=str(prefix)) + list(command)
 
+    def version(self) -> tuple[str | None, str | None]:
+        """(the manager's version, None), or (None, why it did not read): the first group of
+        the kind's `version_pattern` in what its `version` command printed."""
+        argv = self.argv(self.kind.version)
+        result = process.run(argv, env=self.environment, timeout=60)
+        if not result.ok:
+            return None, _failed(argv, result)
+        found = re.search(self.kind.version_pattern, result.stdout)
+        if found is None:
+            return None, f"`{shlex.join(argv[1:])}` printed nothing that {self.kind.version_pattern!r} matches"
+        return found.group(1), None
+
     def query(self, q: JsonQuery) -> tuple[Any, str | None]:
         """(the answer, None), or (None, why there is none): one key of the JSON the
         manager prints."""
@@ -76,7 +89,7 @@ class Manager:
             self.printed[tuple(argv)] = process.run(argv, env=self.environment, timeout=60)
         result = self.printed[tuple(argv)]
         if not result.ok:
-            return None, f"`{shlex.join(argv[1:])}` failed"
+            return None, _failed(argv, result)
         try:
             data = json.loads(result.stdout)
         except ValueError:
@@ -105,6 +118,12 @@ class Manager:
         return [line + f"   # {why or f'no hook file at {hook}'}: `{command}` needs the manager's hook sourced first"]
 
 
+def _failed(argv: list[str], result: process.ProcessResult) -> str:
+    """Why a manager command gave no answer: how it ended."""
+    ended = "did not end in time" if result.timed_out else f"failed (exit {result.returncode})"
+    return f"`{shlex.join(argv[1:])}` {ended}"
+
+
 # What every command run inside a prefix starts from (envs.md § 4.4): this allow-list, and the
 # manager's activation then adds the prefix's own settings. Whatever else a shell, a module or a
 # site profile set — compilers, flags, search paths, package roots — never reaches the command.
@@ -130,6 +149,11 @@ ACTIVATION_VARIABLES = ("MAMBA_EXE", "CONDA_EXE")  # set by the manager's own ac
 # `condarc` and writes its caches through these (measured 2026-11-23, conda 26.7.1 reads both
 # `$XDG_CONFIG_HOME/conda/.condarc` and `$CONDARC` under femkit's `HOME`), so none reaches it.
 PERSONS_OWN = ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "CONDARC", "MAMBARC")
+# A manager's own settings, named in the environment: measured 2026-11-24, conda 26.7.1 reads any
+# `CONDA_<KEY>` as its configuration — `CONDA_CHANNEL_PRIORITY=disabled` turns `conda config --show
+# channel_priority` from flexible to disabled. So none of the person's `CONDA_*`, nor `MAMBA_*`
+# (mamba's, by the same naming; not measured), reaches a manager command: only those femkit sets.
+MANAGERS_OWN = ("CONDA_", "MAMBA_")
 
 
 def in_femkit_places(base: Mapping[str, str]) -> dict[str, str]:
@@ -137,15 +161,16 @@ def in_femkit_places(base: Mapping[str, str]) -> dict[str, str]:
     cache, list of environments and temporary files in femkit's cache, never in the person's
     home or the system's temporary folder, and none of the person's own configuration read."""
     home, packages, tmp = (dirs.cache_dir() / d for d in ("manager-home", "pkgs", "tmp"))
-    return {**{k: v for k, v in base.items() if k not in PERSONS_OWN}, "HOME": str(home),
-            "CONDA_PKGS_DIRS": str(packages), "CONDA_REGISTER_ENVS": "false", "TMPDIR": str(tmp)}
+    kept = {k: v for k, v in base.items() if k not in PERSONS_OWN and not k.startswith(MANAGERS_OWN)}
+    return {**kept, "HOME": str(home), "CONDA_PKGS_DIRS": str(packages), "CONDA_REGISTER_ENVS": "false",
+            "TMPDIR": str(tmp)}
 
 
 def named(ctx: Context) -> str | None:
     """The manager the invocation names: FEMKIT_ENV_MANAGER (set by the install script), else the
     first variable a manager's activation sets that names one femkit has a kind file for, so a
     mamba beside conda is passed over (envs.md § 7.1); None when none is named."""
-    kinds = catalogue.load_managers()
+    kinds = catalogue.load(ctx).managers
     activated = [ctx.env[v] for v in ACTIVATION_VARIABLES if ctx.env.get(v)]
     return ctx.env.get(VARIABLE) or next((v for v in activated if Path(v).name in kinds), None) \
         or next(iter(activated), None)
@@ -153,7 +178,7 @@ def named(ctx: Context) -> str | None:
 
 def resolve(ctx: Context) -> Manager:
     """The manager the invocation names, to run its commands; refused when none names a known kind."""
-    kinds = catalogue.load_managers()
+    kinds = catalogue.load(ctx).managers
     named_here = named(ctx)
     if not named_here:
         raise Unstated("no package manager is named: run femkit in the activated control environment, "

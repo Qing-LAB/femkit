@@ -2,7 +2,7 @@
 and for what a formulation declares — a condition's or a source's parameters, a material's
 properties, an observable's quantity — from the formulation; each fragment self-contained, a
 quantity's carrying the unit table's symbols for its dimension. One home: a node's keys and
-help, the palette's templates and the check's choices are all drawn from these."""
+help and the check's choices are all drawn from these."""
 
 from __future__ import annotations
 

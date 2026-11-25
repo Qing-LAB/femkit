@@ -4,7 +4,7 @@
 
 **Status:** current; the formulation is declared
 (`femkit/data/formulations/electrostatics.toml`), and no benchmark has been
-solved yet ([`../plans/plan.md`](../plans/plan.md) § 3, M5, M6)
+solved yet ([`../plans/plan.md`](../plans/plan.md) § 4, M6)
 
 **Authority:** the `electrostatics` formulation's terms, equation, conditions,
 dimensional meanings and derived quantities; how each is stated in a model is
@@ -144,7 +144,7 @@ reproduced exactly by first-order elements whatever $\epsilon_r$ is taken to
 be, and proves nothing about materials. The formulation lists each
 (`femkit/data/formulations/electrostatics.toml`, `[benchmarks]`) with its
 model, its study and its reference values; manufactured solutions follow with
-the expression language ([`../plans/plan.md`](../plans/plan.md) § 3, M6).
+the expression language ([`../plans/plan.md`](../plans/plan.md) § 4, M6).
 
 ### 9.1 `two_material`: a layered capacitor
 

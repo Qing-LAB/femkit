@@ -7,13 +7,12 @@ The program that runs inside an environment is exercised in the field tier
 
 from __future__ import annotations
 
+import shlex
+
 import pytest
 
 from tests.kit import apply, ctx, planned, refused
 from femkit.core.errors import Unstated
-from femkit.core.operations import Step
-from femkit.core import process as process_module
-from femkit.core.process import ProcessResult
 from femkit.definitions.catalogue import load_environments
 from femkit.engines.toolchain import LANGUAGES
 from femkit.envs import checks, install, toolchain
@@ -56,38 +55,40 @@ LEAKS = {"CC": "/opt/site/gcc", "LD_LIBRARY_PATH": "/opt/site/lib", "HYPRE_ROOT"
 INSIDE = ("toolchain", "configure", "compile", "install", "audit", "manifest")  # step kinds run in the prefix
 
 
-def test_every_command_in_the_prefix_sees_none_of_the_shells_build_settings(monkeypatch, tmp_path):
+def test_every_command_in_the_prefix_sees_none_of_the_shells_build_settings(manager_doing, monkeypatch, tmp_path):
     """Fails if a command femkit runs inside the prefix — the toolchain check, configure,
     compile, install, the audit, the version probe, a check — sees a compiler, search path or
     package root the person's shell set, or loses the locale; or if the manager's own create
     loses the person's variables, which its configuration needs (envs.md § 4.4)."""
     for name, value in {**LEAKS, "LC_ALL": "C.UTF-8"}.items():
         monkeypatch.setenv(name, value)
-    ran: list[dict] = []
-    monkeypatch.setattr(process_module, "run", lambda argv, log=None, env=None, **kw:
-                        ran.append(env) or ProcessResult(tuple(argv), 1, "", "", log))  # each fails at once
+    handed = tmp_path / "handed"   # the variables each command was handed, as the manager received them
+    handed.mkdir()
+    manager_doing(f'  *) env -0 > "$(mktemp -p {shlex.quote(str(handed))})"; exit 1 ;;')   # each fails at once
     apply("config.set", key="launch.mpi", value='["mpirun", "-np", "{ranks}"]')  # its toolchain check runs MPI
     t = install.target(ctx(), "ngsolve")
     env = t.env
 
-    def seen(step: Step) -> list[dict]:
-        ran.clear()
-        install.run_step(t, step, tmp_path / "logs")
-        return list(ran)
+    def seen(run) -> list[dict]:
+        for earlier in handed.iterdir():
+            earlier.unlink()
+        run()
+        return [dict(v.split("=", 1) for v in f.read_bytes().decode().split("\0") if v) for f in handed.iterdir()]
 
     steps = install.plan_steps(t, remove_first=False, discard_lock=True)
-    confined = {s.id: seen(s) for s in steps if s.id.split(":")[0] in INSIDE}
+    confined = {s.id: seen(lambda: install.run_step(t, s, tmp_path / "logs"))
+                for s in steps if s.id.split(":")[0] in INSIDE}
     work = tmp_path / "check"
     work.mkdir()
-    ran.clear()
     r = checks.runner(ctx(), "ngsolve")
-    checks.run_check(r, env.checks[0], checks.steps(r, env.checks[:1])[0].argv, work)   # as validate runs one
-    confined["check"] = list(ran)
+    confined["check"] = seen(lambda: checks.run_check(r, env.checks[0], checks.steps(r, env.checks[:1])[0].argv,
+                                                      work))   # as validate runs one
     assert {i.split(":")[0] for i, envs in confined.items() if envs} == {*INSIDE, "check"}  # every kind ran something
     for step_id, envs in confined.items():
         for variables in envs:
             assert not set(LEAKS) & set(variables) and variables["LC_ALL"] == "C.UTF-8", step_id
-    assert all(set(LEAKS) <= set(v) for v in seen(next(s for s in steps if s.id == "create")))  # the manager's own
+    create = next(s for s in steps if s.id == "create")            # the manager's own command keeps them
+    assert all(set(LEAKS) <= set(v) for v in seen(lambda: install.run_step(t, create, tmp_path / "logs")))
 
 
 def _report(prefix) -> dict:

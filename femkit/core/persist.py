@@ -76,11 +76,15 @@ def copy_file(source: Path, path: Path) -> Path:
 
 
 def append_text(path: Path, text: str) -> None:
-    """``text`` added at the end of ``path`` — a log's lines — its folders made; what was there stays."""
+    """``text`` added at the end of ``path`` — a log's lines, an event log's record — its folders
+    made; what was there stays. The one appender: flushed and fsynced before it returns, so what
+    it added outlives the process (core.md §§ 4, 6)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
 
 
 def touch(path: Path) -> Path:
@@ -114,9 +118,17 @@ def empty_folder(path: Path) -> Path:
 
 
 def copy_tree(source: Path, path: Path) -> Path:
-    """A copy of the folder ``source`` at ``path``, which is not there yet."""
-    shutil.copytree(source, path)
-    return Path(path)
+    """A copy of the folder ``source`` at ``path``, which is not there yet: copied beside it and
+    renamed in, whole — an interrupted copy leaves nothing at ``path`` (core.md § 4)."""
+    path = Path(path)
+    if path.exists() or path.is_symlink():
+        raise FileExistsError(f"{path} is there already")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{path.name}.", dir=path.parent) as scratch:
+        fresh = Path(scratch) / path.name
+        shutil.copytree(source, fresh)
+        os.rename(fresh, path)
+    return path
 
 
 def replace_folder(fresh: Path, path: Path) -> None:
@@ -228,11 +240,11 @@ def open_private(path: Path, mode: str) -> IO:
                      **({} if binary else {"encoding": "utf-8"}))
 
 
-# ------------------------------------------------------------ editing TOML in place
+# ------------------------------------------------------------ TOML as a document
 #
-# A person's file keeps its comments, its order and its layout through every edit a
-# command makes (config set, model set): read as a document, changed key by key, written
-# whole and atomically.
+# `config.toml` keeps its comments, its order and its layout through every edit `config set`
+# makes: read as a document, changed key by key, written whole and atomically. A project's
+# files are only read so: a part's text as its file holds it (projects.md § 6).
 
 Key = tuple[str, ...]
 
@@ -247,25 +259,16 @@ def write_document(path: Path, doc: tomlkit.TOMLDocument) -> Path:
     return atomic_write_text(path, tomlkit.dumps(doc))
 
 
-def parse_value(text: str) -> Any:
-    """A TOML inline value as a person types it — `"1 nm"`, `2`, `[0, 0]`, `{ kind = "x" }` —
-    as the item a document holds, its formatting kept; or ValueError."""
-    return _one_value(text)["value"]
-
-
 def plain_value(text: str) -> Any:
-    """`parse_value`'s value as plain Python: a number, text, a list, a dict; or ValueError."""
-    return _one_value(text).unwrap()["value"]
-
-
-def _one_value(text: str) -> tomlkit.TOMLDocument:
+    """A TOML inline value as a person types it — `"1 nm"`, `2`, `[0, 0]`, `{ kind = "x" }` —
+    as plain Python: a number, text, a list, a dict; or ValueError."""
     try:
         doc = tomlkit.parse(f"value = {text}")
     except tomlkit.exceptions.TOMLKitError as exc:
         raise ValueError(f"{text!r} is not a TOML value: {exc}") from None
     if list(doc) != ["value"]:
         raise ValueError(f"{text!r} is not one TOML value")
-    return doc
+    return doc.unwrap()["value"]
 
 
 def _parent(doc: Any, key: Key, create: bool) -> Any:
@@ -292,7 +295,7 @@ def document_has(doc: Any, key: Key) -> bool:
 def document_set(doc: Any, key: Key, value: Any) -> None:
     """``key`` set to ``value``, every table on the way made when absent. A table set over a
     table already there is changed in place, key by key — a key the value leaves out removed —
-    so its form, its order and its comments stay (models.md § 11.1)."""
+    so its form, its order and its comments stay (config.md § 3.2)."""
     parent = _parent(doc, key, create=True)
     held = parent.get(key[-1]) if hasattr(parent, "get") else None
     if isinstance(value, dict) and isinstance(held, (tomlkit.items.Table, tomlkit.items.InlineTable)):
@@ -312,7 +315,7 @@ def _merge(table: Any, value: dict) -> None:
 
 
 def document_text(doc: Any, key: Key) -> str:
-    """The entry at ``key`` as a person edits it: a table as a TOML document of its own — its
+    """The entry at ``key`` as its file writes it: a table as a TOML document of its own — its
     keys, its comments, its tables headed relative to it — a value as its TOML inline text."""
     item = _parent(doc, key, create=False)[key[-1]]
     if isinstance(item, tomlkit.items.InlineTable):          # one line, no comments: each key on its own
@@ -348,53 +351,10 @@ def _inline(value: Any) -> Any:
     return tomlkit.item(value)
 
 
-def document_write(doc: Any, key: Key, text: str) -> None:
-    """The entry at ``key`` made what ``text`` writes — a table's text as `document_text` gives
-    it, or a value's inline text — every comment of the text kept, and the comment on the
-    entry's own line kept when the text brings none; or ValueError."""
-    try:
-        written = tomlkit.parse(text)
-    except tomlkit.exceptions.TOMLKitError:
-        written = None
-    parent = _parent(doc, key, create=True)
-    held = parent.get(key[-1]) if hasattr(parent, "get") else None
-    if written is None:
-        value = parse_value(text.strip())
-    else:
-        value = tomlkit.table()
-        for k, v in written.body:
-            if k is None:
-                value.add(v)
-            else:
-                _headers_from_keys(v)
-                value.add(k, v)
-        last = written.body[-1][1] if written.body else None
-        if not isinstance(last, tomlkit.items.Whitespace) or last.as_string().count("\n") < 2:
-            value.add(tomlkit.nl())                     # a blank line before the next table's header
-    if held is not None and not value.trivia.comment and held.trivia.comment:
-        value.trivia.comment, value.trivia.comment_ws = held.trivia.comment, held.trivia.comment_ws
-    parent[key[-1]] = value
-
-
-def document_unset(doc: Any, key: Key) -> None:
-    del _parent(doc, key, create=False)[key[-1]]
-
-
-def document_rename(doc: Any, key: Key, new: str) -> None:
-    """The entry at ``key`` renamed ``new``, in its place, its comment kept. tomlkit offers
-    this only as `Container._replace` (tomlkit < 1, control.txt); a test holds it to it."""
-    parent = _parent(doc, key, create=False)
-    container = parent if isinstance(parent, tomlkit.container.Container) else parent.value
-    if new in container:
-        raise KeyError(f"{new!r} is taken")
-    item = container[key[-1]]
-    container._replace(key[-1], new, item)
-    _headers_from_keys(item)
-
-
 def _headers_from_keys(item: Any) -> None:
     """A parsed table keeps its header's text (`[axes."parameters.bias"]`); forgetting it, in
-    the renamed table and every table under it, has each header written from its keys again."""
+    the table and every table under it, has each header written from its keys again — relative
+    to the table, when it stands as a document of its own."""
     if isinstance(item, tomlkit.items.Table):
         item.display_name = None
         for _, child in item.value.body:
@@ -416,7 +376,17 @@ def read_bytes(path: Path) -> bytes | None:
     return path.read_bytes() if path.is_file() else None
 
 
+BLOCK = 1 << 20   # bytes read at a time for a digest: a download may be larger than memory
+
+
 def sha256(path: Path) -> str | None:
-    """A file's sha256 over its bytes, or None when no file is there: the one digest of a file."""
-    held = read_bytes(path)
-    return None if held is None else hashlib.sha256(held).hexdigest()
+    """A file's sha256 over its bytes, read a block at a time, or None when no file is there: the
+    one digest of a file (core.md § 4)."""
+    path = Path(path)
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        while block := fh.read(BLOCK):
+            digest.update(block)
+    return digest.hexdigest()

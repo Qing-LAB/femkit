@@ -11,7 +11,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Callable
 
-from femkit.core import view
+from femkit.core import persist, view
 from femkit.core.dirs import CONTROL, folder_from
 from femkit.core.locks import SUBJECT
 from femkit.core.operations import Context
@@ -49,6 +49,18 @@ class CatalogueError(DefinitionError):
         )
 
 
+def shipped(file: Path, read: Callable[[Path], Any] = persist.read_text) -> Any:
+    """A shipped file's text — or, read with `persist.read_bytes`, its bytes; one that is not
+    there, or does not read, is refused, naming it."""
+    try:
+        held = read(file)
+    except OSError as exc:
+        raise DefinitionError(file, [("", f"does not read: {exc.strerror}")]) from None
+    if held is None:
+        raise DefinitionError(file, [("", "is not there")])
+    return held
+
+
 def control_files() -> tuple[Path, Path]:
     """The control environment's two files: the channel order every environment is solved with,
     and the control environment's packages (definitions.md § 3)."""
@@ -57,22 +69,16 @@ def control_files() -> tuple[Path, Path]:
 
 def control_digest() -> str:
     """What the install script's stamp holds: the SHA-256 of both files, channels first (envs.md § 7.2)."""
-    digest = hashlib.sha256()
-    for path in control_files():
-        digest.update(path.read_bytes())
-    return digest.hexdigest()
+    return hashlib.sha256(b"".join(shipped(file, persist.read_bytes) for file in control_files())).hexdigest()
 
 
 def load_control() -> ControlDefinition:
     """channels.txt is taken line by line as it stands, as the install script reads it; in
     control.txt, blank lines and `#` comments are skipped, as conda skips them."""
     channels_file, packages_file = control_files()
-    try:
-        channels = channels_file.read_text(encoding="utf-8").splitlines()
-        packages = [line.strip() for line in packages_file.read_text(encoding="utf-8").splitlines()
-                    if line.strip() and not line.lstrip().startswith("#")]
-    except OSError as exc:
-        raise DefinitionError(exc.filename or packages_file, [("", f"does not read: {exc.strerror}")]) from None
+    channels = shipped(channels_file).splitlines()
+    packages = [line.strip() for line in shipped(packages_file).splitlines()
+                if line.strip() and not line.lstrip().startswith("#")]
     try:
         return validate(ControlDefinition, {"channels": channels, "dependencies": packages}, packages_file.parent)
     except DefinitionError as exc:                         # each problem named by the file it is in

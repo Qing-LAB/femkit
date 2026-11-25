@@ -1,9 +1,11 @@
 # Geometry contract — the script and its contract, and the step from geometry to mesh
 
 **Role:** contract
-**Status:** current, approved by the person (plan § 6); nothing in it is
-built yet (plan § 3, R). How a step is run — its run folder,
-its run script, its monitoring — is designed with execution (plan § 3, X)
+**Status:** current, approved by the person
+([ADR 0012](../decisions/0012-one-mesh-path.md),
+[ADR 0013](../decisions/0013-geometry-scripts.md)); nothing in it is built yet
+(plan § 4, D and X). How a step is run — its run folder, its run script, its
+monitoring — is designed with execution (plan § 4, X)
 **Authority:** what a component is; the geometry script and the contract that
 wraps it; the pipeline from geometry to mesh to solve, and the contract of each
 step; mesh recipes; the kinds of geometry pieces and their coverage; how each
@@ -57,14 +59,14 @@ needs — in Gmsh's terms, physical groups — and writes the geometry. It does 
 mesh: meshing is the next step (§ 5).
 
 - **Its inputs** — the values of the parameters its contract declares — reach
-  it as its run hands them over, designed with execution (plan § 3, X). A
+  it as its run hands them over, settled at D's start (plan § 4, D). A
   script that hard-codes every size reads none.
-- **Templates and examples.** A new component starts from one of a few example
-  scripts with their contracts — a rectangle, a box, layered slabs — shipped
-  with femkit, each run by a test so none goes stale. One guide explains the
-  script, its contract and the pipeline.
-  Geometry is the person's work; femkit gives a start and the rules, nothing
-  more.
+- **Where a script starts.** A new component starts from one in femkit's
+  project templates ([`projects.md`](projects.md) § 7) — the Laplace square's
+  rectangle, the two-material slab's layers — each run by a test once the
+  geometry step exists (plan § 4, X), so none goes stale. One guide explains
+  the script, its contract and the pipeline. Geometry is the person's work;
+  femkit gives a start and the rules, nothing more.
 
 ## 3. The script's contract — `component.toml`
 
@@ -130,7 +132,7 @@ declared input of the next:
   wavelength.
 - **How a step runs** — its run folder, its run script inside the step's
   environment, its monitoring, where its outputs land — is designed with
-  execution (plan § 3, X), so nothing runs outside a run folder. Not built yet.
+  execution (plan § 4, X), so nothing runs outside a run folder. Not built yet.
 - **Room to grow, by the same contract**: step 1 may be a standard script
   (importing, § 9); step 2 may later be a script of the person's that keeps the
   mesh step's contract.
@@ -139,7 +141,7 @@ declared input of the next:
 
 femkit's own step, in the mesh step's environment — an environment holding
 Gmsh with its Python interface, proposed as `gmsh`, decided with execution
-(plan § 3, X): it reads the geometry and the study's mesh recipe, meshes, and writes the mesh with every promised group as a
+(plan § 4, X): it reads the geometry and the study's mesh recipe, meshes, and writes the mesh with every promised group as a
 named group of it, and its region map — each group's name, its elements, its
 measure in the mesh against its measure in the geometry. A group missing from
 the mesh, or measured unlike the geometry beyond the recipe's tolerance,
@@ -192,12 +194,12 @@ every group's name, so NGSolve never handles a file format. Measured on the
 both bodies' elements and only the first body's name. Which geometry orders each route keeps
 is not measured, nor whether femkit's layer can give NGSolve curved
 second-order elements; a geometry order a route does not keep is a match line
-([`models.md`](models.md) § 6.2). Not built yet (plan § 3, X).
+([`models.md`](models.md) § 6.2). Not built yet (plan § 4, X).
 
-Absorbing layers — layer domains an engine such as NGSolve needs to truncate an
-open domain, and the other does not — are open, the person's (plan § 6): made
-by the mesh step per environment from the open boundary, or promised by the
-geometry and used only by the environment that needs them.
+Absorbing layers — layer domains an engine such as NGSolve needs to truncate
+an open domain, and the other does not — are open, the person's (plan § 4,
+M9): made by the mesh step per environment from the open boundary, or
+promised by the geometry and used only by the environment that needs them.
 
 ## 9. Importing a CAD file
 
@@ -218,11 +220,12 @@ The standard import script reads the file, takes the bodies' names from it, and
 leaves a marked place for the person to pick out the faces the file does not
 name. Measured (Gmsh's version not recorded): Gmsh
 reads the names of a STEP file's solids; whether
-FreeCAD writes them is not measured. Not built yet (plan § 3, X).
+FreeCAD writes them is not measured. Not built yet; the plan places it after
+X (plan § 4, X).
 
 ## 10. The geometry's file format
 
 Step 1 writes a file that keeps both the exact shapes and the group names, so
 step 2 meshes the true curves and keeps the names. Which of Gmsh's formats does
 both is chosen by measurement with the execution design: measured (Gmsh's
-version not recorded), a Gmsh script saving to STEP lost the names (plan § 3, X).
+version not recorded), a Gmsh script saving to STEP lost the names (plan § 4, X).

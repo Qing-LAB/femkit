@@ -8,13 +8,11 @@ application or a domain must leave the supervisor running.
 from __future__ import annotations
 
 import gzip
-import json
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from femkit.core import clock, dirs
-from femkit.core.persist import open_private, write_json
+from femkit.core.persist import open_private, read_bytes, read_json, remove, write_json
 from femkit.core.process import Identity
 
 SOCKET_NAME = "sock"          # <name> of a server on a Unix socket; a TCP server's is its port
@@ -22,6 +20,7 @@ LOOPBACK = "127.0.0.1"        # printed and bound as this, never `localhost` (we
 SOCKET_PATH_MAX = 107         # bytes a Unix socket's path may hold, its terminating NUL aside
 FLAP_WINDOW = 30.0            # two deaths by a signal within this many seconds: the supervisor gives up
 CHILD_MODULE = "femkit.web"   # what the supervisor runs
+HEALTH_ROUTE = "/api/health"  # what `start` and `status` ask; it needs no token, and an answer is never logged
 
 
 def target(name: str) -> dict:
@@ -122,7 +121,7 @@ class Pidfile:
 def read_pidfile(path: Path) -> Pidfile | None:
     """The pidfile at ``path``; None when it is absent or cannot be read as one."""
     try:
-        return Pidfile.from_json(json.loads(path.read_text(encoding="utf-8")))
+        return Pidfile.from_json(read_json(path))
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
@@ -171,18 +170,23 @@ class LogRoll:
         return self.path.with_name(f"{self.path.name}.{i}.gz")
 
     def _rotate(self) -> None:
+        """The oldest archive gone, each other one place up, the log compressed into the first,
+        and the log begun again — each file through the core (core.md § 4)."""
         self._fh.close()
-        for i in range(self.keep, 0, -1):
-            if self._archive(i).exists():
-                if i >= self.keep:
-                    self._archive(i).unlink()
-                else:
-                    self._archive(i).rename(self._archive(i + 1))
         if self.keep > 0:
-            with open(self.path, "rb") as fin, open_private(self._archive(1), "wb") as raw, \
-                    gzip.GzipFile(fileobj=raw, mode="wb") as fout:
-                shutil.copyfileobj(fin, fout)
+            remove(self._archive(self.keep))
+            for i in range(self.keep - 1, 0, -1):
+                held = read_bytes(self._archive(i))
+                if held is not None:
+                    _put(self._archive(i + 1), held)
+            _put(self._archive(1), gzip.compress(read_bytes(self.path) or b""))
         self._fh = open_private(self.path, "wb")
 
     def close(self) -> None:
         self._fh.close()
+
+
+def _put(path: Path, data: bytes) -> None:
+    """``data`` as the whole of ``path``, readable by this account alone."""
+    with open_private(path, "wb") as fh:
+        fh.write(data)

@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import Field, ValidationInfo, model_validator
 
-from femkit.core import dirs
+from femkit.core import dirs, persist
 from femkit.core.markdown import headings
 from femkit.core.schema import Model, refuse
 from femkit.core.units import UnitError
@@ -92,7 +92,8 @@ class FormulationDefinition(Model):
     def _units_and_science(self, info: ValidationInfo) -> "FormulationDefinition":
         units = (info.context or {}).get("units")
         problems: list[tuple[tuple, str]] = []
-        if not (dirs.checkout() / self.science).is_file():
+        science = persist.read_text(dirs.checkout() / self.science)
+        if science is None:
             problems.append((("science",), f"{self.science} does not exist"))
         texts = [(("unknown", "unit"), self.unknown.unit)]
         texts += [(("properties", n, "unit"), p.unit) for n, p in self.properties.items()]
@@ -110,8 +111,7 @@ class FormulationDefinition(Model):
                 problems.append((at, str(exc)))
         if self.unknown.name not in self.derived:
             problems.append((("derived",), f"names the unknown, {self.unknown.name!r}, as an observable may"))
-        science = dirs.checkout() / self.science
-        anchors = {h.anchor for h in headings(science.read_text(encoding="utf-8"))} if science.is_file() else set()
+        anchors = {h.anchor for h in headings(science)} if science is not None else set()
         described = [((t, k), d) for t in ("constants", "properties", "conditions", "sources", "derived",
                                             "benchmarks")
                      for k, d in getattr(self, t).items()]

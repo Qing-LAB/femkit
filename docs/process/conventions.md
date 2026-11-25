@@ -17,6 +17,7 @@ for code and configuration, and working practice;
 | Every fact has one home and one reader; the core is the only way to write a file, start a process or take a lock | 2, 3 |
 | The repository holds no user, machine or environment data | 4 |
 | Environment changes, cluster submissions and history are the person's decisions | 6 |
+| Work on disjoint files is split among helpers, each in its own worktree; the main line integrates and reviews; nothing edits a checkout a running check reads | 6 |
 
 ## 1. The order of work
 
@@ -218,6 +219,13 @@ environment, through the runner: `python tools/testrun.py run basic`.
 - **Uncommitted work is never discarded to undo an experiment**: the file is
   copied aside first and copied back.
 - **Published history is never rewritten.**
+- **Parallel helpers.** Work on disjoint files is split among helpers, each
+  on its own files in its own git worktree, briefed with its contract and its
+  tests. The main line keeps what touches shared files or the one set of real
+  environments, integrates each helper's result and reviews it against its
+  contract. Long checks — the field tier, an environment's validation, a
+  review — run in the background while other work goes on, and nothing edits
+  a checkout a running check reads.
 
 ## 7. Checklist
 

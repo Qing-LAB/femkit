@@ -20,16 +20,16 @@ from werkzeug.exceptions import HTTPException
 from femkit import registry
 from femkit.core import eventlog, view
 from femkit.core.markdown import headings
-from femkit.core.errors import PlanStale, Refusal
+from femkit.core.errors import Busy, PlanStale, Refusal
 from femkit.core.operations import Context, Operation, OperationAddress, Plan, PlanAnswer, SilentObserver, operations_root
 from femkit.core.process import TAIL_LINES, tail
 from femkit.server import health
 from femkit import page as page_declaration
-from femkit.server.protocol import Listen
+from femkit.server.protocol import HEALTH_ROUTE, Listen
 from femkit.web import access, docs
 
 STATIC = Path(__file__).parent / "static"
-STREAMS = 8              # open event streams at most, below the thread pool's size (web.md § 5)
+STREAMS = 8              # open event streams at most, below the thread pool's size (web.md § 5; serving.py)
 POLL = 0.25              # seconds between looks at a growing event log
 KEEPALIVE = 5.0          # seconds of quiet after which a stream sends an empty line
 
@@ -46,12 +46,6 @@ def _line(model) -> str:
     return model.model_dump_json(by_alias=True) + "\n"
 
 
-def _refused(exc: Refusal) -> Response:
-    response = _json(view.RefusalAnswer.of(exc))
-    response.status_code = REFUSAL_STATUS
-    return response
-
-
 def _defect(exc: BaseException, app: Flask) -> Response:
     """A defect: the reason and the operation's log, never a stack trace (web.md § 5)."""
     app.logger.error("defect: %s", "".join(traceback.format_exception(exc)))
@@ -63,12 +57,12 @@ def _defect(exc: BaseException, app: Flask) -> Response:
 def _body() -> dict:
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        raise _BadBody()
+        raise _BadBody("the body is one JSON object: the request")
     return data
 
 
 class _BadBody(Exception):
-    pass
+    """A body the route cannot take: refused at the door, code `body` (web.md § 5)."""
 
 
 class _Started(SilentObserver):
@@ -110,28 +104,28 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
 
     @app.errorhandler(Refusal)
     def refused(exc: Refusal):
-        return _refused(exc)
+        return access.answer(exc, REFUSAL_STATUS)
 
     @app.errorhandler(_BadBody)
-    def bad_body(_):
-        return access.refusal(400, "body", "the body is one JSON object: the request")
+    def bad_body(exc: _BadBody):
+        return access.refusal(400, "body", request.path, str(exc))
 
     @app.errorhandler(Exception)
     def defect(exc: Exception):
         """Whatever else a route meets, answered in JSON, never as an HTML page (web.md § 5): an
-        HTTP error the door has no answer of its own for is refused with its status, anything
-        else is a defect."""
-        if isinstance(exc, HTTPException):
-            return access.refusal(exc.code or 400, "http", exc.description or exc.name)
+        HTTP error the door has a code for is refused with it, anything else is a defect."""
+        if isinstance(exc, HTTPException) and exc.code in access.HTTP_ERRORS:
+            code, message = access.HTTP_ERRORS[exc.code]
+            return access.refusal(exc.code, code, request.path, message)
         return _defect(exc, app)
 
     # ------------------------------------------------------------ the routes
 
-    @app.get("/api/health")
+    @app.get(HEALTH_ROUTE)
     def health_route():
         nonce = request.args.get("nonce", "")
         if not 8 <= len(nonce) <= 128:
-            return access.refusal(400, "nonce", "send a nonce of 8 to 128 characters")
+            return access.refusal(400, "nonce", "nonce", "send a nonce of 8 to 128 characters")
         return _json(view.Proof(proof=health.proof(token, nonce)))
 
     @app.get("/api/operations")
@@ -160,7 +154,9 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
         if not op.changes:
             abort(404)
         body = _body()
-        req = op.request_from(body.get("request") if isinstance(body.get("request"), dict) else {})
+        if not isinstance(body.get("request"), dict):
+            raise _BadBody('the body is one JSON object: {"request": {…}, "digest": "…"}')
+        req = op.request_from(body["request"])
         ctx = Context.from_process()
         plan = op.plan(req, ctx)
         if plan.digest() != body.get("digest"):
@@ -185,7 +181,7 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
                     if kind == "outcome":
                         return _json(view.Ended(ok=value.ok(), outcome=value.model_dump(mode="json")))
                     if isinstance(value, Refusal):
-                        return _refused(value)
+                        return access.answer(value, REFUSAL_STATUS)
                     return _defect(value, app)
 
         def answer() -> Iterator[str]:
@@ -214,21 +210,22 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
     def run_route(name: str):
         op = lookup(name)
         if op.changes:
-            return access.refusal(405, "method", f"{op.name} changes things: POST to its /plan, then /apply")
+            return access.refusal(405, "method", request.path,
+                                  f"{op.name} changes things: POST to its /plan, then /apply")
         req = op.request_from(_body())
         result = op.run(req, Context.from_process())
         return _json(view.RunAnswer(ok=result.ok(), result=result.model_dump(mode="json")))
 
     @app.get("/api/events/<subject>/<at>")
     def events_route(subject: str, at: str):
-        where = _operation_dir(subject, at)
+        where, path = _operation_dir(subject, at), request.path
 
         def stream() -> Iterator[str]:
             # The slot is taken here, when the stream is read, so a response never read (HEAD)
             # holds none; a client that went away is found by the next keep-alive line.
             if not streams.acquire(blocking=False):
-                yield _line(view.RefusalAnswer(refused="Busy", code="streams", message=f"at most {STREAMS} event "
-                                                                                     "streams are open at once"))
+                yield _line(view.RefusalAnswer.of(Busy(f"at most {STREAMS} event streams are open at once",
+                                                       code="streams", subject=path)))
                 return
             try:
                 sent, quiet = 0, 0.0

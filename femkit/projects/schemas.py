@@ -1,6 +1,7 @@
 """The part schemas (projects.md § 6): the layout names each part kind's schema by a key; the
-package that owns the schema registers it here when femkit starts, so the door, a lower layer,
-imports no package above it. A test registers its own, and takes them back."""
+package that owns the schema declares it, and the registry registers it here when femkit starts
+(api.md § 6), so the door, a lower layer, imports no package above it. A test registers its own,
+and takes them back."""
 
 from __future__ import annotations
 

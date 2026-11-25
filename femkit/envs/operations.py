@@ -20,7 +20,7 @@ from femkit.definitions import catalogue
 from femkit.envs import checks, layout, manager, toolchain
 from femkit.envs.manager import resolve
 from femkit.envs.records import CheckOutcome
-from femkit.envs.state import INSTALLED, MACHINE, EnvState, definition, facts, install_fingerprint, observe
+from femkit.envs.state import INSTALLED, MACHINE, EnvState, definition, install_fingerprint, observe
 from femkit.envs.requests import ListRequest, CleanRequest, LogRequest, InstallRequest, ValidateRequest
 from femkit.config.requests import CONFIG_SET
 from femkit.envs.requests import ENV_CLEAN, ENV_INSTALL, ENV_LIST, ENV_LOG, ENV_VALIDATE
@@ -91,7 +91,7 @@ class EnvClean:
             return Plan()
         locks.require_free(layout.subject(req.name))      # a program using it — a web server — holds it shared
         m = resolve(ctx)
-        argv = tuple(m.remove(f.prefix, catalogue.load_control().channels))
+        argv = tuple(m.remove(f.prefix, catalogue.load(ctx).control.channels))
         return Plan(steps=(Step(id="remove", describe=f"remove {text.path(f.prefix)}", argv=argv),))
 
     def observe(self, req: CleanRequest, ctx: Context) -> dict:
@@ -163,16 +163,16 @@ def last_install(name: str) -> tuple[str | None, frozenset[str]]:
     return fingerprint, frozenset(finished)
 
 
-def default_environments() -> list[str]:
+def default_environments(ctx: Context) -> list[str]:
     """What `env install --all` and `env bootstrap` install (envs.md § 1)."""
-    return sorted(n for n, e in catalogue.load_catalogue().environments.items() if e.default)
+    return sorted(n for n, e in catalogue.load(ctx).environments.items() if e.default)
 
 
-def _requested(req) -> list[str]:
+def _requested(req, ctx: Context) -> list[str]:
     if req.all:
         if req.names:
             raise UsageError("give environment names or --all, not both", code="contradiction", subject="names")
-        return default_environments()
+        return default_environments(ctx)
     if not req.names:
         raise UsageError("name an environment, or --all", (view.command(ENV_LIST),), code="unnamed", subject="names")
     return list(dict.fromkeys(req.names))
@@ -273,22 +273,23 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
     return steps + [validate]
 
 
-@operation(ENV_INSTALL, result=InstallOutcome, changes=True,
-           subject=lambda req: [layout.subject(n) for n in _requested(req)])
+@operation(ENV_INSTALL, result=InstallOutcome, changes=True, subject="plan")
 class EnvInstall:
     """Install environments from their definitions (envs.md § 4); resumes an interrupted install."""
 
     def plan(self, req: InstallRequest, ctx: Context) -> Plan:
+        names = _requested(req, ctx)
         steps = [s.model_copy(update={"id": f"{name}/{s.id}", "describe": f"{name}: {s.describe}"})
-                 for name in _requested(req) for s in _env_steps(ctx, name, req.clean)]
+                 for name in names for s in _env_steps(ctx, name, req.clean)]
         validated = {s.id.split("/", 1)[0] for s in steps if s.id.endswith("/validate")}
         held = {name: [s.model_dump(mode="json") for s in checks.steps(
             checks.runner(ctx, name), checks.selected(definition(ctx, name), gpu=False))] for name in sorted(validated)}
-        return Plan(holds={"checks": held}, steps=tuple(steps))   # what each validate runs, shown with the plan
+        return Plan(subjects=tuple(layout.subject(n) for n in names), holds={"checks": held},
+                    steps=tuple(steps))   # what each validate runs, shown with the plan
 
     def observe(self, req: InstallRequest, ctx: Context) -> dict:
         """Each requested environment's install basis: every one re-observed before any is touched."""
-        return {name: _install_basis(ctx, name) for name in _requested(req)}
+        return {name: _install_basis(ctx, name) for name in _requested(req, ctx)}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> InstallOutcome:
         from femkit.envs.install import KILLED, run_step, target
@@ -297,7 +298,6 @@ class EnvInstall:
             if status == "failed":
                 results.append(EnvResult(name=name, status="not reached"))
                 continue
-            f = facts(ctx, name)
             mine = tuple(s.model_copy(update={"id": s.id.split("/", 1)[1]}) for s in plan.steps if s.id.startswith(f"{name}/"))
             env_status, where, killed, outcomes, validated = "done", None, [], [], None
             if mine:

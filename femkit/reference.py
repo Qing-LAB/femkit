@@ -23,25 +23,31 @@ from femkit.core import dirs, text, view
 from femkit.definitions.requests import CheckRequest, DocsRequest
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.persist import atomic_write_text, inline_text
-from femkit.core.schema import (DefinitionError, Model, allowed, alternatives, classes, described, field_extras,
-                                items_of, keys_of, optional, values_of)
+from femkit.core.persist import atomic_write_text, inline_text, read_text
+from femkit.core.schema import (QUANTITIES, DefinitionError, Model, allowed, alternatives, classes, described,
+                                field_extras, items_of, keys_of, optional, values_of)
 from femkit.core.units import Units
 from femkit.definitions import catalogue
 from femkit.jobs.record import Record
-from femkit.models.schema import QUANTITIES, ModelFile, StudyFile
+from femkit.models.schema import ModelFile, StudyFile
 from femkit import page
 from femkit.definitions.requests import DOCS_SUBJECT, SCHEMA_CHECK, SCHEMA_DOCS
 
-# page name -> (title, the files it describes, models)
-PAGES: dict[str, tuple[str, str, list[type[Model]]]] = {
-    "definitions": ("Shipped definitions", "`femkit/data/` (definitions.md)",
-                    [kind.metadata["model"] for kind in fields(catalogue.Catalogue)] + [page.Page]),
-    "config": ("User configuration", "`<config>/config.toml` (config.md § 3)", [UserConfig]),
-    "machines": ("Machine records", "`<config>/machines/<name>.toml` (jobs.md § 9)", [Record]),
-    "models": ("Models and studies", "`<project>/model.toml` and `<project>/studies/<study>/study.toml` "
-               "(models.md § 3, § 5)", [ModelFile, StudyFile]),
-}
+
+def pages() -> dict[str, tuple[str, str, list[type[Model]]]]:
+    """page name -> (title, the files it describes, models). A project's parts are the part
+    schemas the registry registers (api.md § 6), a page once there is one."""
+    from femkit import registry               # here: the registry imports this module
+    parts = list(registry.part_schemas().values())
+    return {
+        "definitions": ("Shipped definitions", "`femkit/data/` (definitions.md)",
+                        [kind.metadata["model"] for kind in fields(catalogue.Catalogue)] + [page.Page]),
+        "config": ("User configuration", "`<config>/config.toml` (config.md § 3)", [UserConfig]),
+        "machines": ("Machine records", "`<config>/machines/<name>.toml` (jobs.md § 9)", [Record]),
+        "models": ("Models and studies", "`<project>/model.toml` and `<project>/studies/<study>/study.toml` "
+                   "(models.md § 3, § 5)", [ModelFile, StudyFile]),
+        **({"parts": ("A project's parts", "each part of a project (projects.md §§ 2–4)", parts)} if parts else {}),
+    }
 
 
 def reference_dir() -> Path:
@@ -209,7 +215,7 @@ def render_model(model: type[Model], seen: set) -> list[str]:
 
 
 def render_page(name: str) -> str:
-    title, describes, models = PAGES[name]
+    title, describes, models = pages()[name]
     lines = [
         f"# {title}", "",
         "**Role:** reference",
@@ -294,11 +300,11 @@ def _stale() -> dict[str, str]:
     """file, from the checkout -> its text, for every reference page and the page's schemas
     that differ from what the models render."""
     out = {}
-    wanted = {reference_dir() / f"{name}.md": render_page(name) for name in PAGES}
+    wanted = {reference_dir() / f"{name}.md": render_page(name) for name in pages()}
     wanted[schemas_file()] = page_schemas()
     wanted[icons_file()] = page_icons()
     for path, text in wanted.items():
-        if not path.exists() or path.read_text(encoding="utf-8") != text:
+        if read_text(path) != text:
             out[str(path.relative_to(dirs.checkout()))] = text
     return out
 

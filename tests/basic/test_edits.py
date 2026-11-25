@@ -1,5 +1,5 @@
 """The old model's graph and project listing, read-only (models.md § 11.2): what replaces them is
-plan § 3, R step D; nothing here edits a person's file (plan § 6, 2026-11-24)."""
+plan § 4, D; nothing here edits a person's file (projects.md § 7)."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def test_the_graph_holds_every_object_and_every_reference_the_loader_checks(proj
 
 def test_a_finding_sits_on_the_node_it_names_and_offers_no_edit(project):
     """Fails if `model check`'s finding is not shown on its node, or offers to change the file:
-    the person writes the fix (web.md § 8.3; plan § 6, 2026-11-24)."""
+    the person writes the fix (web.md § 8.3; projects.md § 7)."""
     text = model_file(project).read_text()
     model_file(project).write_text(text.replace('sides = { kind = "insulating" }\n', ""))
     g = graph(project)

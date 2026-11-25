@@ -3,7 +3,7 @@
 **Role:** scientific background
 
 **Status:** current; no rung of the validation ladder has been run yet
-([`../plans/plan.md`](../plans/plan.md) § 3, M9)
+([`../plans/plan.md`](../plans/plan.md) § 4, M9)
 
 **Authority:** electromagnetic equations, assumptions, and validation ladder
 

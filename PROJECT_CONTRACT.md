@@ -62,7 +62,6 @@ same change.
 | `tests/` | executable evidence of the contracts ([`testing.md`](docs/contracts/testing.md)) | data copied from `projects/` or `work/` |
 | `tools/` | developer tools that import nothing from `femkit` | product code |
 | `docs/` | the documents [`docs/README.md`](docs/README.md) lists | generated dumps other than `docs/reference/`, copied upstream manuals, or history |
-| `examples/` | small reviewed inputs that show a public contract | research results or machine settings |
 
 `projects/` and `work/` are the person's research data: ignored by git, never
 read as evidence or test input. The repository holds no user, machine or

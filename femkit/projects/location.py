@@ -4,7 +4,7 @@ as a whole: by its path from the root, or, with none named, by the folder it run
 folder is the project or lies inside it. A project is the folder holding `project.toml`; every
 path inside it is relative, so it moves whole.
 
-OWNER: the location piece. Paths in a project are formed by `Project.path` alone.
+Paths in a project are formed by `Project.path` alone.
 """
 
 from __future__ import annotations
@@ -47,14 +47,21 @@ def _holds_none(steps: tuple[str, ...]) -> bool:
     return steps == (GLOBAL_LIBRARY,) or steps[-1].startswith(".")
 
 
+def _is_project(top: Path, steps: tuple[str, ...]) -> Project | None:
+    """The project the folder at ``steps`` from the root is, when it holds `project.toml`."""
+    candidate = Project(top, "/".join(steps))
+    return candidate if candidate.path(PROJECT_FILE).is_file() else None
+
+
 def _along(top: Path, steps: tuple[str, ...]) -> Project | None:
     """The project a folder, by its steps from the root, is or lies inside: the first folder from
-    the root down that holds `project.toml` — a project inside another's folder is not looked for."""
+    the root down that holds `project.toml` — a project inside another's folder is not looked for,
+    and a folder the name rule cannot name holds none."""
     for i in range(1, len(steps) + 1):
-        if _holds_none(steps[:i]):
+        if _holds_none(steps[:i]) or not names.valid(steps[i - 1]):
             return None
-        if (top.joinpath(*steps[:i]) / PROJECT_FILE).is_file():
-            return Project(top, "/".join(steps[:i]))
+        if found := _is_project(top, steps[:i]):
+            return found
     return None
 
 
@@ -68,8 +75,8 @@ def projects(ctx: Context) -> list[Project]:
             here = (*steps, child.name)
             if not child.is_dir() or _holds_none(here) or not names.valid(child.name):
                 continue                                       # a folder the name rule cannot name holds none
-            if (child / PROJECT_FILE).is_file():
-                found.append(Project(top, "/".join(here)))   # what lies inside it is the project's
+            if project := _is_project(top, here):
+                found.append(project)                          # what lies inside it is the project's
             else:
                 look(child, here)                              # a group folder
 

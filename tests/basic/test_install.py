@@ -148,15 +148,34 @@ def test_the_saved_lock_is_the_list_every_manager_creates_from(listing):
 def test_every_manager_command_femkit_runs_is_in_femkits_places(manager, cuda, tmp_path, monkeypatch):
     """Fails if femkit runs its manager, or a command in a prefix, with the person's HOME,
     package cache, environment registration or temporary folder, or hands it a variable naming
-    the person's own configuration — conda reads a `condarc` through each (envs.md § 4.4)."""
+    the person's own configuration — conda reads a `condarc` through each — or any `CONDA_*` or
+    `MAMBA_*` of theirs, which a manager reads as its settings (envs.md § 4.4)."""
     from femkit.core import dirs
     from femkit.envs.manager import PERSONS_OWN
     for variable in PERSONS_OWN:
         monkeypatch.setenv(variable, str(tmp_path / "the-persons" / variable))
+    monkeypatch.setenv("CONDA_CHANNEL_PRIORITY", "disabled")
+    monkeypatch.setenv("MAMBA_ROOT_PREFIX", str(tmp_path / "the-persons" / "mamba"))
     apply("env.install", names=[NAME])              # its create and its lock reach the manager
     places = [line.split() for line in Path(f"{manager}.places").read_text().splitlines()]
     assert len(places) >= 2 and all(line == [str(dirs.cache_dir() / "manager-home"), str(dirs.cache_dir() / "pkgs"),
-                                             "false", str(dirs.cache_dir() / "tmp"), "person="] for line in places)
+                                             "false", str(dirs.cache_dir() / "tmp"), "person=",
+                                             "managers=CONDA_PKGS_DIRS,CONDA_REGISTER_ENVS,"] for line in places)
+
+
+def test_a_manager_whose_version_does_not_read_leaves_no_manifest(manager_doing, tmp_path):
+    """Fails if an install's manifest records a manager version that did not read — the stand-in
+    prints none — instead of its step failing, its log saying why (envs.md § 4.3)."""
+    from femkit.definitions.catalogue import load_environments
+    from femkit.envs import install
+    # web's version probe, run in its prefix, answers the definition's own version: a tool's, no manager's
+    manager_doing(f'  "run --no-capture-output") echo {shlex.quote(load_environments()["web"].version)} ;;')
+    t = install.target(ctx(), "web")
+    t.lock.parent.mkdir(parents=True)
+    t.lock.write_text("@EXPLICIT\n")                               # as its lock step left it
+    step = next(s for s in install.plan_steps(t, remove_first=False, discard_lock=False) if s.id == "manifest")
+    assert install.run_step(t, step, tmp_path / "logs")[0] == "failed"
+    assert not layout.manifest_file(t.prefix).exists()
 
 
 def test_an_install_that_ended_done_leaves_nothing_to_resume(manager):

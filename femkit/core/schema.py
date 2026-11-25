@@ -1,8 +1,8 @@
-"""The schema base and the one loader (definitions.md § 2).
+"""The schema base and the one loader (core.md § 2).
 
-Every declared file — shipped definition, user configuration, machine record —
-is a ``Model``. The model is the only place a field, its default, its allowed
-values and its description are defined; the loader turns any failure into one
+Every declared file — shipped definition, user configuration, machine record, a project's
+part — is a ``Model``. The model is the only place a field, its default, its allowed values
+and its description are defined; the one reader, ``load_text``, turns any failure into one
 ``DefinitionError`` naming the file, the key path and the reason.
 """
 
@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.fields import FieldInfo
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
+from femkit.core import persist
 from femkit.core.errors import Refusal
 
 if TYPE_CHECKING:
@@ -91,15 +92,29 @@ def validate(model: type[M], data: Any, file: Path | str, context: dict | None =
         raise DefinitionError(file, problems) from None
 
 
-def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact: bool = False) -> M:
-    """``exact``: every TOML float is read from its decimal text as a ``Decimal``, never a
-    binary float — a model's numbers enter a case ID exactly (core.md § 11)."""
+def load_text(text: str, model: type[M], file: Path | str, context: dict | None = None, *,
+              exact: bool = False) -> M:
+    """The one TOML reader (core.md § 2): ``text``, as the file ``file`` holds it, validated by
+    ``model`` with ``context`` — the outside facts its validators read. ``exact``: every TOML
+    float is read from its decimal text as a ``Decimal``, never a binary float — a model's
+    numbers enter a case ID exactly (core.md § 11)."""
     try:
-        with open(path, "rb") as fh:
-            data = tomllib.load(fh, parse_float=Decimal) if exact else tomllib.load(fh)
+        data = tomllib.loads(text, parse_float=Decimal) if exact else tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise DefinitionError(path, [("", f"not TOML: {exc}")]) from None
-    return validate(model, data, path, context)
+        raise DefinitionError(file, [("", f"not TOML: {exc}")]) from None
+    return validate(model, data, file, context)
+
+
+def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact: bool = False) -> M:
+    """The file at ``path``, read by persist and then by ``load_text``; a file that is not
+    there, or not UTF-8 text, does not load either (core.md § 2)."""
+    try:
+        text = persist.read_text(path)
+    except UnicodeDecodeError as exc:
+        raise DefinitionError(path, [("", f"not UTF-8 text: {exc}")]) from None
+    if text is None:
+        raise DefinitionError(path, [("", "there is no such file")])
+    return load_text(text, model, path, context, exact=exact)
 
 
 # ---------------------------------------------------------------- placeholders
@@ -199,6 +214,36 @@ def matching(pattern: re.Pattern[str] | str, **field: Any) -> Any:
     """A text field whose whole value matches ``pattern`` — a name, a digest, an ID — with
     pydantic's other ``Field`` arguments."""
     return Field(pattern=whole(pattern), **field)
+
+
+# ---------------------------------------------------------------- quantities and references
+#
+# Two annotations a field may carry (core.md § 2): `quantity`, a value written as a quantity
+# (core.md § 11), and `ref`, the type of object it names.
+
+LENGTH = (("length", 1),)   # a length's dimension (core.md § 11)
+
+#: Each `quantity` kind: its dimension, when fixed, and what a reader is told it takes — the one
+#: table the loaders, the forms' units and the reference pages read.
+QUANTITIES: dict[str, tuple[tuple[tuple[str, int], ...] | None, str]] = {
+    "any": (None, "a quantity with its unit, or an expression of parameters"),
+    "length": (LENGTH, "a length"),
+    "coordinate": (LENGTH, "a bare number in the frame's unit, or a length"),
+    "unit": (None, "a unit"),
+}
+DIMENSIONS = {kind: dimension for kind, (dimension, _) in QUANTITIES.items() if dimension}
+
+
+def as_quantity(description: str, kind: str = "any", **field: Any) -> Any:
+    """A field written as a quantity of ``kind``, one of `QUANTITIES`, with pydantic's other
+    ``Field`` arguments."""
+    return Field(description=description, json_schema_extra={"quantity": kind}, **field)
+
+
+def as_reference(description: str, target: str | dict, *, extra: dict | None = None, **field: Any) -> Any:
+    """A field naming objects of ``target``'s type — on a table, ``{"key": type, "value": type}`` —
+    with any other annotation in ``extra`` and pydantic's other ``Field`` arguments."""
+    return Field(description=description, json_schema_extra={"ref": target, **(extra or {})}, **field)
 
 
 def field_named(cls: type[BaseModel], key: str) -> tuple[str, FieldInfo] | None:

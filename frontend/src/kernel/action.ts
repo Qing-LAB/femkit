@@ -1,7 +1,7 @@
 // The action machine (web.md § 9.1): one state machine for every action, in every view. A read
-// runs; a change is planned at once — planning only reads — then applied with its plan's digest:
-// at once when its operation asks no confirmation, else after one press. Whether an operation
-// changes things or asks comes from the registry, never from the view.
+// runs; a change is planned at once — planning only reads — shown as its plan, and applied with
+// its plan's digest after one press; a plan of no steps is applied at once. Whether an operation
+// changes things comes from the registry, never from the view.
 
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 import type { Action, DefectAnswer, Fill, OperationInfo, RefusalAnswer } from "../generated/schemas";
@@ -19,19 +19,18 @@ export function isAction(v: unknown): v is Action {
   return typeof v === "object" && v !== null && "label" in v && "call" in v && "shell" in v;
 }
 
-/** How a fill is named among an action's values: its hole's name, or its field. */
+/** How a fill is named among an action's values: its field. */
 export function fillKey(f: Fill): string {
-  return f.hole ? f.hole.replace(/^"?<|>"?$/g, "") : f.field;
+  return f.field;
 }
 
-/** The request an action makes once its fills are given: a hole replaced in its field's text,
- *  a whole value set — written as its TOML text where the request takes it so. */
+/** The request an action makes once its fills are given: each field's whole value set —
+ *  written as its TOML text where the request takes it so. */
 export function requestOf(action: Action, given: Given): Record<string, unknown> {
   const request: Record<string, unknown> = { ...(action.call?.request ?? {}) };
   for (const f of action.fills ?? []) {
     const v = given[fillKey(f)];
-    if (f.hole) request[f.field] = String(request[f.field]).split(f.hole).join(typeof v === "string" ? v : write(v));
-    else request[f.field] = f.toml ? write(v) : v;
+    request[f.field] = f.toml ? write(v) : v;
   }
   return request;
 }

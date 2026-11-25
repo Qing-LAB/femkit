@@ -70,10 +70,6 @@ class Address:
     def part(self) -> "Address":
         return Address(self.kind, self.name)
 
-    @property
-    def is_global(self) -> bool:
-        return self.name is not None and self.name.startswith(names.GLOBAL)
-
 
 def parse(text: str, kinds: dict[str, bool]) -> Address:
     """``text`` as an address; ``kinds`` maps each of the layout's kinds to whether its parts

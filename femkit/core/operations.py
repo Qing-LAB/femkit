@@ -18,7 +18,7 @@ from typing import Any, Callable, Literal, Mapping, Protocol, TypeVar
 
 from pydantic import Field, ValidationError, model_serializer
 
-from femkit.core import clock, dirs, text, view
+from femkit.core import clock, commandline, dirs, text, view
 from femkit.core.errors import PlanStale, UsageError
 from femkit.core.eventlog import OUTCOMES, EventLog
 from femkit.core.issues import Issue
@@ -390,6 +390,10 @@ def operation(
             raise TypeError(f"{name}: an operation's docstring is its help; write one")
         if result.text is Result.text and result.report is Result.report:
             raise TypeError(f"{name}: {result.__name__} builds no report(); a result is read on a terminal too")
+        flags = [n for n, f in request.model_fields.items()
+                 if commandline.spelling(n, f).kind == "flag" and (f.is_required() or f.default is not False)]
+        if flags:   # a flag only says yes: a field it cannot set back is one the command line cannot write
+            raise TypeError(f"{name}: a bool field is a flag and defaults to False (api.md § 4.1): {', '.join(flags)}")
         if changes:
             if not isinstance(target, type) or not all(hasattr(target, m) for m in ("plan", "apply")):
                 raise TypeError(f"{name}: a changing operation is a class with plan and apply")

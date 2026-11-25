@@ -26,7 +26,7 @@ who writes each, how each is found, and the user configuration
 | user configuration | choices for this machine | `<config>/config.toml` | the person, through `config init` / `config set` |
 | machine records | measured facts of a machine | `<config>/machines/<name>.toml` | `job probe`, run on that machine ([`jobs.md`](jobs.md) § 9) |
 | install records | what was installed and what its checks showed | inside each prefix, plus package locks under `<data>` | the installer and validator ([`envs.md`](envs.md) § 4) |
-| run files | a calculation's request, scripts and runs | the calculation folder | `job prepare`, the run script ([`jobs.md`](jobs.md)); `case prepare` for a prepared case ([`models.md`](models.md) § 2; not built yet, plan § 3, M6) |
+| run files | a calculation's request, scripts and runs | the calculation folder | `job prepare`, the run script ([`jobs.md`](jobs.md)); `case prepare` for a prepared case ([`models.md`](models.md) § 2; not built yet, plan § 4, M6) |
 
 A writer never writes another's home: a probe never writes a choice, `config
 set` never writes a fact, and preparing a job never edits configuration.
@@ -38,11 +38,11 @@ device model, site name or credential appears in a committed file.
 
 | directory | holds | default | override |
 |---|---|---|---|
-| `<config>` | what a person set and what a probe measured: `config.toml`, `machines/`; the web server's secrets, `secrets/` ([`web.md`](web.md) § 5; not built yet, plan § 3, M7) | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
-| `<data>` | environments, package locks, subject locks; benchmark projects, `<data>/benchmarks/` ([`models.md`](models.md) § 6.3; not built yet, plan § 3, M6) | `$XDG_DATA_HOME/femkit`, else `~/.local/share/femkit` | `FEMKIT_DATA_DIR` |
-| `<cache>` | downloads femkit can fetch again; may be emptied at any time | `$XDG_CACHE_HOME/femkit`, else `~/.cache/femkit` | `FEMKIT_CACHE_DIR` |
+| `<config>` | what a person set and what a probe measured: `config.toml`, `machines/`; the web server's secrets, `secrets/` ([`web.md`](web.md) § 5; not built yet, plan § 4, M7's remainder) | `$XDG_CONFIG_HOME/femkit`, else `~/.config/femkit` | `FEMKIT_CONFIG_DIR` |
+| `<data>` | environments, package locks, subject locks; benchmark projects, `<data>/benchmarks/` ([`models.md`](models.md) § 6.3; not built yet, plan § 4, M6) | `$XDG_DATA_HOME/femkit`, else `~/.local/share/femkit` | `FEMKIT_DATA_DIR` |
+| `<cache>` | what femkit can make or fetch again, and may be emptied at any time: source archives, `sources/`; the package manager's home, package cache and temporary files, `manager-home/`, `pkgs/`, `tmp/` ([`envs.md`](envs.md) § 4.4); the page's build folder, `frontend/` ([`web.md`](web.md) § 3) | `$XDG_CACHE_HOME/femkit`, else `~/.cache/femkit` | `FEMKIT_CACHE_DIR` |
 | `<state>` | operation logs ([`core.md`](core.md) § 6): what each install, check and probe did; kept until the person deletes them; the web server's logs, `<state>/logs/` ([`web.md`](web.md) § 4) | `$XDG_STATE_HOME/femkit`, else `~/.local/state/femkit` | `FEMKIT_STATE_DIR` |
-| `<runtime>` | a running web server's pidfile, token and socket ([`web.md`](web.md) § 4); its sign-in session records, not built yet (plan § 3, M7) | `<state>/run/<host>/` | `FEMKIT_RUNTIME_DIR` |
+| `<runtime>` | a running web server's pidfile, token and socket ([`web.md`](web.md) § 4); its sign-in session records, not built yet (plan § 4, M7's remainder) | `<state>/run/<host>/` | `FEMKIT_RUNTIME_DIR` |
 
 A log is not a cache: emptying a cache must lose nothing but downloads, so the
 logs live apart from it, under `$XDG_STATE_HOME`.
@@ -67,7 +67,7 @@ is not a setting. How Python learns the manager without it is
 
 | key | meaning | when unset |
 |---|---|---|
-| `paths.projects` | the projects root: the person's material library and their projects ([`projects.md`](projects.md) § 1); decided by the person (plan § 6) | no project is listed, made or named; each says so, naming this key |
+| `paths.projects` | the projects root: the person's material library and their projects ([`projects.md`](projects.md) § 1); decided by the person ([ADR 0011](../decisions/0011-project-structure.md)) | no project is listed, made or named; each says so, naming this key |
 | `paths.environments` | where engine environment prefixes are created (the control environment's place is fixed, [`envs.md`](envs.md) § 1) — on a cluster, typically project storage rather than a small home quota | `<data>/environments` |
 | `build.cuda_architectures` | GPU architectures the CUDA environments target, e.g. `["80", "90"]` ([`definitions.md`](definitions.md) § 4.5); the default environments never read it | installing an environment with a build compiled for CUDA (both CUDA environments have one) is refused, naming this key |
 | `build.jobs` | parallel compile jobs | the CPUs this process may use (its CPU affinity: on a cluster, the allocation's share, never the whole login node) |
@@ -77,7 +77,8 @@ is not a setting. How Python learns the manager without it is
 
 The web server's keys — `[web.auth]`, `web.tls`, `web.trust_proxy`,
 `web.public_name`, `web.upload_max_mb` — are [`web.md`](web.md) § 5's and
-§ 8.6's, not built yet (plan § 3, M7); `web.projects` became `paths.projects`.
+§ 8.6's, not built yet (plan § 4, M7's remainder); `web.projects` became
+`paths.projects`.
 
 Every key is optional in the file, and its absence has the one consequence the
 table states. Unknown keys are refused at load. The schema model is the
@@ -96,7 +97,7 @@ someone said nothing is needed.
 - `config init` writes the file from `femkit/data/templates/config.toml`,
   a commented template. Like every changing command it first shows its plan
   ([`api.md`](api.md) § 3): each key it will add and where the value came
-  from — given as an option (`--environments`, `--cuda-architectures`,
+  from — given as an option (`--environments`, `--projects`, `--cuda-architectures`,
   `--jobs`, `--mpi`, `--preamble`, `--no-preamble`, `--activation`) or measured here (the GPU
   architectures the driver reports, the scheduler kind's launcher). The person
   consents to the plan, or runs it again with an option to change a value.

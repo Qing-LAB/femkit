@@ -7,10 +7,7 @@ declarable).
 
 from __future__ import annotations
 
-import hashlib
 import json
-import os
-import re
 import tarfile
 import urllib.error
 import urllib.parse
@@ -76,7 +73,7 @@ def target(ctx: Context, name: str) -> Target:
     return Target(
         name=name, env=definition(ctx, name), prefix=layout.prefix(ctx, name), manager=m,
         channels=cat.control.channels, python_minor=cat.control.python_minor,
-        cuda_architectures=config.build.cuda_architectures, jobs=config.build.jobs or len(os.sched_getaffinity(0)),  # config.md § 3.1
+        cuda_architectures=config.build.cuda_architectures, jobs=settings.build_jobs(config),
         install_fingerprint=install_fingerprint(ctx, name, m.kind_name),
         launcher=config.launch.mpi, now=ctx.now,
     )
@@ -116,9 +113,20 @@ def configure_argv(t: Target, build: Build) -> list[str]:
     return ["cmake", "-S", str(t.source_dir(build.source)), "-B", str(t.build_dir(build.id)), *defs]
 
 
-def _cache(build_dir: Path) -> dict[str, str]:
+def _text(file: Path) -> str | None:
+    """What a build tool or a step's command wrote, as text — any byte that is not UTF-8
+    replaced, never refused; None when the file is not there."""
+    held = persist.read_bytes(file)
+    return None if held is None else held.decode("utf-8", errors="replace")
+
+
+def _cache(build_dir: Path) -> dict[str, str] | None:
+    """The entries of a build's CMakeCache.txt; None when configure wrote none."""
+    written = _text(build_dir / "CMakeCache.txt")
+    if written is None:
+        return None
     out = {}
-    for line in (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in written.splitlines():
         if line and not line.startswith(("#", "//")) and ":" in line and "=" in line:
             key, _, rest = line.partition(":")
             out[key] = rest.partition("=")[2]
@@ -199,11 +207,8 @@ COMPILER_KILLED = ("Killed signal terminated program", "died due to signal 9 (Ki
 
 def _compiler_killed(log: Path) -> str | None:
     """The line of ``log`` that says a compiler was ended by SIGKILL, if one does."""
-    try:
-        with open(log, encoding="utf-8", errors="replace") as fh:
-            return next((line.strip() for line in fh if any(k in line for k in COMPILER_KILLED)), None)
-    except OSError:
-        return None
+    lines = (_text(log) or "").splitlines()   # no log: no line says so
+    return next((line.strip() for line in lines if any(k in line for k in COMPILER_KILLED)), None)
 
 
 def _ended(result: process.ProcessResult, log: Path) -> str:
@@ -280,20 +285,16 @@ def locked(lock_text: str) -> set[str]:
 
 
 def step_forbid(t: Target, step: Step, log: Path, say: Say) -> str:
-    names = locked(t.lock.read_text(encoding="utf-8"))
+    held = persist.read_text(t.lock)
+    if held is None:
+        _note(log, f"no saved lock at {t.lock}")
+        return "failed"
+    names = locked(held)
     hits = [f for f in t.env.packages.forbid
             if any(n == f.lower() or n.startswith(f.lower() + "-") for n in names)]
     for family in hits:
         _note(log, f"forbidden package family in the lock: {family}")
     return "failed" if hits else "done"
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for block in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def step_toolchain(t: Target, step: Step, log: Path, say: Say) -> str:
@@ -319,13 +320,13 @@ def step_toolchain(t: Target, step: Step, log: Path, say: Say) -> str:
 def step_fetch(t: Target, step: Step, log: Path, say: Say) -> str:
     source = next(s for s in t.env.sources if s.id == step.id.split(":", 1)[1])
     target_file = layout.archive_cache(source.sha256)
-    if target_file.exists() and _sha256(target_file) == source.sha256:
+    if persist.sha256(target_file) == source.sha256:
         _note(log, f"cached: {target_file}")
         return "done"
     got: dict = {}
 
     def matches(written: Path) -> bool:
-        got["sha256"] = _sha256(written)
+        got["sha256"] = persist.sha256(written)
         return got["sha256"] == source.sha256
 
     with urllib.request.urlopen(source.archive, timeout=120) as response:
@@ -375,7 +376,10 @@ def step_configure(t: Target, step: Step, log: Path, say: Say) -> str:
         return outcome
     build = next(b for b in t.env.builds if b.id == step.id.split(":", 1)[1])
     cache = _cache(t.build_dir(build.id))
-    unread = sorted(set(build.options) & unused_options(log.read_text(encoding="utf-8", errors="replace")))
+    if cache is None:
+        _note(log, f"configure wrote no CMakeCache.txt into {t.build_dir(build.id)}")
+        return "failed"
+    unread = sorted(set(build.options) & unused_options(_text(log) or ""))
     missing = [k for k in build.options if k not in cache]
     outside = [f"{k}={cache[k]}" for k in COMPILER_KEYS
                if Path(cache.get(k, "")).is_absolute()  # NOTFOUND and empty values name no compiler
@@ -455,12 +459,17 @@ def step_manifest(t: Target, step: Step, log: Path, say: Say) -> str:
     if version != t.env.version:
         _note(log, f"the version probe reported {version!r}; the definition requires {t.env.version!r}")
         return "failed"
-    manager_version = process.run(t.manager.argv(t.manager.kind.version), env=t.manager.environment, timeout=60)
-    found = re.search(t.manager.kind.version_pattern, manager_version.stdout + manager_version.stderr)
+    manager_version, why = t.manager.version()
+    if manager_version is None:   # the manifest holds the manager's version (envs.md § 4.3): never a guess
+        _note(log, f"the manager's version did not read: {why}")
+        return "failed"
+    lock_sha256 = persist.sha256(t.lock)
+    if lock_sha256 is None:
+        _note(log, f"no saved lock at {t.lock}")
+        return "failed"
     write_json(layout.manifest_file(t.prefix), Manifest(
-        install_fingerprint=t.install_fingerprint, lock_sha256=_sha256(t.lock), manager_kind=t.manager.kind_name,
-        manager_version=found.group(1) if found else "unknown", solver_version=version,
-        time=clock.stamp(t.now()),
+        install_fingerprint=t.install_fingerprint, lock_sha256=lock_sha256, manager_kind=t.manager.kind_name,
+        manager_version=manager_version, solver_version=version, time=clock.stamp(t.now()),
     ).model_dump())
     return "done"
 

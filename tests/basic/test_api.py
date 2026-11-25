@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -31,6 +33,8 @@ class EchoRequest(Model):
     words: list[str] = Field(description="what to say", json_schema_extra={"cli": "argument"})
     shout: bool = Field(default=False, description="in capitals")
     fail: bool = Field(default=False, description="report a failure")
+    times: int = Field(default=1, description="how many times")
+    crash: bool = Field(default=False, description="raise an error femkit did not expect")
 
 
 class EchoResult(Result):
@@ -46,7 +50,9 @@ class EchoResult(Result):
 @operation(view.Verb("toy.echo", EchoRequest), result=EchoResult)
 def echo(req: EchoRequest, ctx: Context) -> EchoResult:
     """Repeat the words."""
-    said = " ".join(req.words)
+    if req.crash:
+        raise RuntimeError("a defect")
+    said = " ".join(req.words * req.times)
     return EchoResult(said="FAIL" if req.fail else said.upper() if req.shout else said)
 
 
@@ -156,6 +162,18 @@ class Nest:
         return WriteOutcome(plan=plan, status=status, log=f"{where}\n{inner[0].log}")
 
 
+class LoudRequest(Model):
+    """Speak; loudly unless told otherwise — which a flag cannot say."""
+
+    loud: bool = Field(default=True, description="shout")
+
+
+class QuietRequest(Model):
+    """Speak; whether quietly is required — which a flag cannot say either."""
+
+    quiet: bool = Field(description="whisper")
+
+
 TOYS = {"toy.echo": echo, "toy.write": Write, "toy.sign": Sign}
 
 
@@ -208,6 +226,46 @@ def test_json_prints_exactly_the_result_model():
     assert json.loads(out.stdout) == EchoResult(said="hi").model_dump(mode="json")
 
 
+def test_a_defect_under_json_prints_one_json_document_naming_it():
+    """Fails if an error femkit did not expect prints no JSON under --json, so a program reading
+    stdout reads nothing (api.md § 4.2: exactly one JSON document; core.md § 9: exit 1)."""
+    out = run("toy", "echo", "x", "--crash", "--json")
+    assert out.exit_code == 1
+    assert json.loads(out.stdout)["defect"] == "RuntimeError"
+
+
+def test_an_arguments_description_is_in_the_commands_help():
+    """Fails if a positional argument's description — which a click argument cannot carry — is
+    missing from its command's help (api.md § 4.1: "the field's description is the help")."""
+    out = run("toy", "echo", "--help")
+    assert out.exit_code == 0 and "WORDS" in out.output and "what to say" in out.output
+
+
+@pytest.mark.parametrize("args, key", [((), "words"), (("x", "--times", "many"), "times")],
+                         ids=["a missing argument", "a word that is no number"])
+def test_a_word_the_request_refuses_is_a_refusal_with_its_key_and_its_json(args, key):
+    """Fails if the command line checks a word's presence or type itself, so its error skips the
+    request model: no key path, and no refusal's JSON under --json (api.md §§ 4.1–4.2)."""
+    out = run("toy", "echo", *args, "--json")
+    assert out.exit_code == 2
+    answer = json.loads(out.stdout)
+    assert (answer["refused"], answer["code"], answer["subject"]) == ("UsageError", "invalid-request", "toy.echo")
+    assert answer["message"].startswith(f"{key}: ")
+
+
+@pytest.mark.parametrize("request_model", [LoudRequest, QuietRequest], ids=["defaulting to True", "required"])
+def test_a_bool_field_that_does_not_default_to_false_is_refused_when_declared(request_model):
+    """Fails if an operation could declare a bool field the command line cannot write: a flag only
+    sets it, so one defaulting to True could never be False, and a required one never be omitted
+    (api.md § 4.1)."""
+    field = next(iter(request_model.model_fields))
+    with pytest.raises(TypeError, match=field):
+        @operation(view.Verb(f"toy.{field}", request_model), result=EchoResult)
+        def speak(req, ctx):
+            """Speak."""
+            return EchoResult(said="")
+
+
 def test_dry_run_and_missing_consent_change_nothing():
     """Fails if --dry-run, or a changing operation without a terminal and without --yes,
     applies anything (api.md § 4.2)."""
@@ -229,6 +287,31 @@ def test_a_refusal_exits_2_with_its_next_commands():
 
 
 # --- the registry -------------------------------------------------------------
+
+def test_a_second_verb_of_one_name_with_another_request_is_refused():
+    """Fails if a verb already declared could be declared again with another request: every next
+    step naming the operation would then be written with the wrong request (api.md § 2)."""
+    with pytest.raises(TypeError):
+        view.Verb("toy.echo", WriteRequest)
+    assert view.Verb("toy.echo", EchoRequest).request is EchoRequest     # the same declaration again is the same
+
+
+STRAY_VERB = """
+from femkit.config.requests import SetRequest
+from femkit.core import view
+view.Verb("config.put", SetRequest)
+from femkit import registry
+registry.operations()
+"""
+
+
+def test_femkit_refuses_to_start_while_one_of_its_verbs_names_no_registered_operation():
+    """Fails if femkit starts while a verb over one of its request models names no registered
+    operation — a renamed verb, whose next steps would offer a command that does not exist
+    (api.md § 6). In a process of its own, as femkit starts."""
+    p = subprocess.run([sys.executable, "-c", STRAY_VERB], capture_output=True, text=True,
+                       cwd=Path(__file__).resolve().parents[2], timeout=60)
+    assert p.returncode != 0 and "config.put" in p.stderr
 
 def test_every_registered_operation_is_expressible_on_the_web():
     """Fails if an operation's request or result model cannot produce the JSON schema the web

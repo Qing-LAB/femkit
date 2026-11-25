@@ -4,10 +4,11 @@
 **Status:** current; nothing of the project structure this contract states —
 parameters in the project file; components, physics, mesh recipes, observable
 sets, studies and analyses as parts of their own; materials and geometry under
-their own contracts — is built yet (plan § 3, R steps C–F); running steps is
-plan § 3, X; the rest is [`../plans/plan.md`](../plans/plan.md) § 3, M6, M8, M9.
-**Today** `femkit/models/` holds an earlier design, frozen until R step D
-replaces it whole (plan § 6): one `model.toml` and `studies/<s>/study.toml` per
+their own contracts — is built yet (plan § 4, D and E; the analysis part,
+M9); running steps is plan § 4, X; the rest is
+[`../plans/plan.md`](../plans/plan.md) § 4, M5, M6, M8, M9.
+**Today** `femkit/models/` holds an earlier design, frozen until step D
+replaces it whole (plan § 4, D): one `model.toml` and `studies/<s>/study.toml` per
 project, with the units ([`core.md`](core.md) § 11), the formulation type with
 `electrostatics` and its first benchmark, `model check`, `model graph`,
 `study expand`/`list`,
@@ -42,7 +43,7 @@ the geometry, its contract and its meshes [`geometry.md`](geometry.md)'s; materi
 | **One mesh path**: Gmsh makes every mesh, and femkit hands each engine its mesh as declared data | 6.5 |
 | **case prepare** uses the case's geometry and mesh runs, writes the pure translation, applies the customizations and writes the job request; the **job's plan** is the review; a preparation is `blocked`, `orphaned`, `open`, `stale` or `prepared` | 9 |
 | Values come from the engine's own discretization; every observable says how faithful it is; comparisons show fidelity and refuse what does not solve the same stated problem | 10 |
-| The project is also a **graph** derived from its parts; a surface renders and edits it only through operations, addressed in one grammar | 11 |
+| The project is also a **graph** derived from its parts, addressed in one grammar; a surface renders it and changes no file the person wrote | 11 |
 
 ## 1. The chain
 
@@ -89,7 +90,7 @@ What this contract adds:
 - **Preparations belong to their study.** Two studies that produce the same
   case — a copy, or a convergence study and a sweep sharing a point — share
   its `case.json` and prepare it separately, each with its own bindings and
-  runs, in the project's run folders (designed with execution, plan § 3, X).
+  runs, in the project's run folders (designed with execution, plan § 4, X).
 - **Intent is never read back from input.** Prepared input is evidence, never
   the source of intent ([`../design.md`](../design.md), scientific data).
 - **Every JSON file carries `schema`**, an integer raised when its shape
@@ -98,13 +99,14 @@ What this contract adds:
 - **A case is named by its content**, its ID (§ 5.3): "500 nm" and "0.5 µm"
   give the same ID, and renaming a group or a material changes the case and
   its ID — the old preparations become `orphaned` and keep their runs.
-- **Benchmarks** (§ 4, § 6.3) are projects in the tree of
-  [`projects.md`](projects.md): shipped beside their formulation, under
-  `femkit/data/formulations/<formulation>/benchmarks/<benchmark>/`, each holding
-  its materials as its own so a proof never depends on a person's library;
+- **Benchmarks** (§ 4, § 6.3) are femkit's project templates
+  ([`projects.md`](projects.md) § 7) that a formulation names, each holding its
+  materials as its own so a proof never depends on a person's library;
   `formulation verify` copies them to
   `<data>/benchmarks/<environment>/<formulation>/<benchmark>/` to prepare and
-  run them there.
+  run them there. Not built yet: today's benchmark sits beside its
+  formulation, under `femkit/data/formulations/<formulation>/benchmarks/`,
+  until step D rewrites it as a template (plan § 4, D).
 
 ## 3. Parameters and physics
 
@@ -213,7 +215,7 @@ It is cut in two, so the physics is written once whatever is asked of it:
   one list, `femkit/data/step_kinds.toml`; a study's step names a physics and a
   kind (§ 5.1), and the family must support that kind.
 
-The person's decision (plan § 6): one physics file serves a frequency sweep and
+The person's decision: one physics file serves a frequency sweep and
 an eigenvalue study of the same structure; a new kind of calculation is a new
 step kind, never a copy of every physics file. Both lists are closed: what is
 not declared is refused, naming what is.
@@ -236,7 +238,7 @@ flowchart TB
 | family | the equations | unknown | step kinds | science document | state |
 |---|---|---|---|---|---|
 | `electrostatics` | −∇·(ε∇φ) = ρ | potential φ, in H¹, in V | `stationary` | [`electrostatics.md`](../science/electrostatics.md) | built, as `electrostatics` |
-| `maxwell` | Maxwell's equations, time-harmonic | electric field **E**, in H(curl), in V/m | `frequency`; `eigenvalues` later | [`electromagnetics.md`](../science/electromagnetics.md) | not built (plan § 3, M9) |
+| `maxwell` | Maxwell's equations, time-harmonic | electric field **E**, in H(curl), in V/m | `frequency`; `eigenvalues` later | [`electromagnetics.md`](../science/electromagnetics.md) | not built (plan § 4, M9) |
 
 A family is one physics. Several physics are joined by steps and couplings
 (§ 4.5), never by a family of their own. Families to come are added to this
@@ -279,7 +281,7 @@ Each family states:
   parameters and their units;
 - the conventions a physics must choose;
 - the derived quantities an observable may name — **E**, **D**, energy
-  density, Poynting flux, absorbed power — and expressions of them (plan § 3,
+  density, Poynting flux, absorbed power — and expressions of them (plan § 4,
   M6);
 - its **benchmark set**, per step kind it supports (§ 6.3): problems with known answers — each a project, a
   study binding what each environment chooses (a truncation, say), and its
@@ -289,7 +291,7 @@ Each family states:
   reproduced exactly by linear elements and does not depend on ε. So a set
   holds manufactured, non-polynomial solutions with a measured convergence
   rate per element family, degree and geometry order — their sources and
-  boundary values written in the expression language (plan § 3, M6) — a
+  boundary values written in the expression language (plan § 4, M6) — a
   two-material case for interfaces and ε, and, for `maxwell` in the frequency
   kind, TE and
   TM cases in 2-D, a reflection benchmark for each truncation, and a lossy,
@@ -339,7 +341,7 @@ unit = "V/m"
 [benchmarks.two_material]
 description = "a layered capacitor: two materials in series between two held potentials, a named interface between them"
 section = "91-two_material-a-layered-capacitor"
-project = "electrostatics/benchmarks/two_material"
+project = "two_material"
 exercises = ["potential", "insulating", "interface", "relative_permittivity"]
 tolerance = "1e-9"
 
@@ -350,10 +352,10 @@ energy_low = "5.666680204032e-12 J/m"
 
 - **`constants`**: each physical constant the equation uses — `vacuum_permittivity`
   — given to every engine as stated there, never an engine's own value.
-- **A benchmark** is a project beside the formulation, in the tree of
-  [`projects.md`](projects.md) — its project file, its component with its
-  template geometry script, its physics, its observable sets and its study —
-  with the kinds and properties it exercises, a
+- **A benchmark** names one of femkit's project templates
+  ([`projects.md`](projects.md) § 7) — its project file, its component with its
+  geometry script, its physics, its observable sets and its study — with the
+  kinds and properties it exercises, a
   relative tolerance whose basis is in its section of the science document,
   and the exact value each observable of its study must reproduce.
   `schema check` loads each project and refuses one that `project check`
@@ -425,7 +427,7 @@ Several physics are solved in one of two ways, each declared as data:
   and step kinds (§ 6.1); a study asking for one an environment lacks is a
   match line.
 - **Not built yet**: couplings, repeated steps and a step's `takes` (plan
-  § 3, M9 and after); the first couplings declared are electromagnetic heating
+  § 4, after M9); the first couplings declared are electromagnetic heating
   and Joule heating, each with its science document and benchmarks.
 
 **Scope.** Symmetry planes and periodicity are conditions a family lists when
@@ -644,7 +646,7 @@ geometry against Gmsh's declared tolerance, in its contract's unit, is a
 finding once the geometry exists, naming a unit that works: Gmsh's absolute
 tolerance merges a 1 nm gap written in metres. Every derived quantity a unit change scales — fields,
 powers, fluxes, the wavenumber — is rescaled by the translator, and the factor
-is recorded in the manifest. Not built yet (plan § 3, X).
+is recorded in the manifest. Not built yet (plan § 4, X).
 
 ## 7. Decisions
 
@@ -694,8 +696,9 @@ result form (§ 10), and that observable's fidelity is `customized`.
 
 Each customization is declared in its environment's block of the study, with
 an ID, and is a file or a folder of pieces under `custom/`, written by the
-person or by the operation that adds one from an upload ([`web.md`](web.md)
-§ 5):
+person. How an uploaded file ([`web.md`](web.md) § 5) becomes one is settled
+at M8's start (plan § 4, M8), never by femkit writing the person's file
+([ADR 0015](../decisions/0015-the-persons-files.md)). A declaration holds:
 
 | field | holds |
 |---|---|
@@ -742,7 +745,7 @@ upload, a check, a match, a preparation or a reduction — an NGSolve hook's
 functions are found by parsing it, not by importing it. One exception: a
 component's geometry script, which runs only as the first step of a case's
 pipeline, in a run folder — its environment, and how its imports are provided,
-designed with execution (plan § 3, X) — its contract checked before and after ([`geometry.md`](geometry.md) § 3;
+designed with execution (plan § 4, X) — its contract checked before and after ([`geometry.md`](geometry.md) § 3;
 [ADR 0013](../decisions/0013-geometry-scripts.md)).
 
 ### 8.5 Developing post-processing
@@ -778,7 +781,7 @@ geometry and recipe and shared by every case and environment that needs the
 same; `case prepare` checks the case's geometry against the component's
 contract and the coverage of its groups, and hands each environment the mesh as
 it reads it. How each step runs — its run folder and run script — is designed
-with execution (plan § 3, X).
+with execution (plan § 4, X).
 
 ### 9.3 prepare and finalize
 
@@ -843,12 +846,12 @@ the review a person consents to before anything runs.
 
 ### 9.7 Locks
 
-Every operation that writes in a project — edits, a run's steps,
+Every operation that writes in a project — a run's steps,
 `study expand`, `case prepare`, a mesh, `run reduce`, an analysis — holds the
 project's lock (a write to the global library: [`materials.md`](materials.md)
 § 4); each lock's subject is computed from the
 path in the request ([`core.md`](core.md) § 5). How a run's own folder is
-locked against a preparation is designed with execution (plan § 3, X). `formulation verify` holds the benchmark projects' locks, and `--record`
+locked against a preparation is designed with execution (plan § 4, X). `formulation verify` holds the benchmark projects' locks, and `--record`
 also the environment's (`env-<name>`), since it writes into the prefix.
 
 ## 10. Results and analyses
@@ -896,7 +899,7 @@ sets and declares what to make of their results: a comparison across
 environments or studies, convergence over an axis, a spectrum over a sweep, an
 export. `analysis run ANALYSIS` reads the reduced runs and writes
 `results/<analysis>/`; it changes no run, and an analysis whose runs changed
-since is out of date. Not built yet (plan § 3, M6, M9).
+since is out of date. Not built yet (plan § 4, M6, M9).
 
 ## 11. Surfaces
 
@@ -904,22 +907,22 @@ since is out of date. Not built yet (plan § 3, M6, M9).
 
 Every command reaches the project through its one door
 ([`projects.md`](projects.md) § 6); its parts and values are named by address
-(§ 5 there). The `project` names are the person's decision (plan § 6). No
+(§ 5 there). The `project` names are the person's decision. No
 command changes a file the person wrote (§ 7 there): they write every part in
 their own editor, and these read it, check it, start it from a template, or
 write femkit's own outputs.
 
 | command | does | changes |
 |---|---|---|
-| `project new NAME`, `project list` | a new project, its whole tree from the layout and its templates; the projects under the root | the new project; nothing |
+| `project new NAME --from SOURCE`, `project list` | a new project, a copy of one of femkit's templates or of one of the person's projects ([`projects.md`](projects.md) § 7); the projects under the root | the new project; nothing |
 | `project check` | every rule of § 3 and the formulation's; each study's pairing; kinds and coverage ([`geometry.md`](geometry.md) § 7) once a geometry exists | nothing |
 | `project graph [--study S] [--environment E] [--mermaid]` | the project as a graph (§ 11.2), with findings and, with an environment, the worst match line per node | nothing |
 | `project view` | remembers where the page draws nodes, when the person asks; no project data ([`projects.md`](projects.md) § 2) | `.femkit/view.json` |
-| `material add NAME [--from ENTRY]`, `material import SOURCE FILE --into library\|project [--as NAME]` | a material from its template or the library; another source's data ([`materials.md`](materials.md) §§ 3, 7) | `materials/` |
+| `material add NAME [--from ENTRY]`, `material import SOURCE FILE --into library\|project [--as NAME]` | a material copied from the library; another source's data ([`materials.md`](materials.md) §§ 3, 7) | `materials/` |
 | `study expand` | write a study's cases | `cases/` |
 | `case list` | every case, its axis values, its match and preparation state per study and environment | nothing |
 | `case match`, `study match` | the match report (§ 6.2) | nothing |
-| `case prepare`, `study prepare` | prepare (§ 9.3); how its steps run is designed with execution (plan § 3, X) | `runs/` |
+| `case prepare`, `study prepare` | prepare (§ 9.3); how its steps run is designed with execution (plan § 4, X) | `runs/` |
 | `formulation verify`, `--record` | prepare a benchmark set; record proofs from its finished runs (§ 6.3) | the benchmark projects; the proof record |
 | `run reduce`, `analysis run` | a finished run's results; an analysis (§ 10) | the run's `result.json`; `results/` |
 | `result show`, `result compare` | a run's observables; one comparison (§ 10.1) | nothing |
@@ -954,7 +957,7 @@ never stored, and no surface draws it from a list of its own.
   group carries its target type as a schema annotation
   ([`core.md`](core.md) § 2) — `group:boundary`, `material`, `parameter` —
   and becomes a port of that type; the loader reads the same annotation, so the
-  graph and the check cannot disagree. A port accepts only its own type.
+  graph and the check cannot disagree.
 - **Each node shows its part's text** — or a component's script — beside the
   help of every key it may hold ([`web.md`](web.md) § 8.3); a wire whose
   group's kind cannot be checked before the geometry exists is shown out of
@@ -971,8 +974,8 @@ never stored, and no surface draws it from a list of its own.
 
 ### 11.3 The web interface
 
-The web interface renders this graph and every operation's forms, and edits
-only through these operations ([`web.md`](web.md)).
+The web interface renders this graph and every operation's forms, runs only
+these operations, and changes no file the person wrote ([`web.md`](web.md)).
 
 ## 12. Where each part lives
 
@@ -980,7 +983,7 @@ only through these operations ([`web.md`](web.md)).
 |---|---|
 | a project's tree, the one door, what femkit writes | `femkit/projects/` ([`projects.md`](projects.md)) |
 | materials, the library, importers, a property's data for a case | `femkit/materials/` ([`materials.md`](materials.md)) |
-| the script's contract, mesh recipes, the mesh step, kinds and coverage, the hand-over | `femkit/geometry/` ([`geometry.md`](geometry.md)); the mesh step's code in `femkit/engines/`, run in the mesh step's environment (plan § 3, X) |
+| the script's contract, mesh recipes, the mesh step, kinds and coverage, the hand-over | `femkit/geometry/` ([`geometry.md`](geometry.md)); the mesh step's code in `femkit/engines/`, run in the mesh step's environment (plan § 4, X) |
 | physics, study and case schemas; expansion and case IDs; matching and the match report; decisions; customization resolution; preparation, the manifest and its state; the proof record's schema; the graph | `femkit/models/` ([`framework.md`](framework.md) § 1) |
 | `run reduce`, `formulation verify`, `result show`, `result compare`, analyses | `femkit/results/`, a domain after `models`: it reads runs |
 | formulations, the property list, dispersion models, the mesh hand-over, the project layout | `femkit/data/`, under schema ([`definitions.md`](definitions.md) § 1) |
