@@ -5,17 +5,42 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field, ValidationInfo, model_validator
+from pydantic import ConfigDict, Field, RootModel, ValidationInfo, model_validator
 
 from femkit.core import dirs, persist
 from femkit.core.markdown import headings
 from femkit.core.schema import Model, refuse
 from femkit.core.units import UnitError
+from femkit.definitions.properties import NAME
 
-#: The step kinds (models.md § 4.2): the kinds of calculation a study's step asks of a family. One
-#: list, closed; `femkit/data/step_kinds.toml` holds it as data, each kind with its sentence and what
-#: it supplies and produces, once a second kind is declared (plan § 4, M9).
-StepKind = Literal["stationary"]
+
+class StepKind(Model):
+    """One kind of calculation a study's step asks of a formulation family (models.md § 4.2), from
+    `femkit/data/step_kinds.toml`: one list, closed, each kind read by its name."""
+
+    description: str = Field(description="the calculation, in one plain sentence")
+    supplies: list[str] = Field(default_factory=list, description="the variables it supplies a value of, each by its "
+                                "name in femkit's list of variables: what a material's data may vary with under it; "
+                                "none for a calculation that supplies none", json_schema_extra={"doc": "materials.md § 6"})
+
+    @model_validator(mode="after")
+    def _variables(self, info: ValidationInfo) -> "StepKind":
+        variables = (info.context or {}).get("variables")
+        refuse("StepKind", [(("supplies", i), f"{v!r} is none of the variables: {', '.join(sorted(variables))}")
+                            for i, v in enumerate(self.supplies) if variables is not None and v not in variables])
+        return self
+
+
+class StepKindList(RootModel[dict[str, StepKind]]):
+    """`step_kinds.toml`: each step kind by its name."""
+
+    model_config = ConfigDict(frozen=True)
+
+    @model_validator(mode="after")
+    def _names(self) -> "StepKindList":
+        refuse("StepKindList", [((name,), f"{name!r} is no step kind's name: its calculation, lowercase, with `_`")
+                                for name in self.root if not NAME.fullmatch(name)])
+        return self
 
 
 class Unknown(Model):
@@ -33,10 +58,15 @@ class Described(Model):
                                      "(`3-conditions-on-an-outer-boundary`)")
 
 
-class PropertySpec(Described):
-    """A material property the formulation reads."""
-    unit: str = Field(description="its unit; `1` for a plain number")
-    complex: bool = Field(description="whether its values may be complex")
+class PropertySpec(Model):
+    """A material property the formulation reads, named by its key from the property list
+    (materials.md § 1; models.md § 4.3): its sentence and its unit are the list's, never
+    repeated here."""
+    note: str | None = Field(default=None, description="what this formulation adds to the property list's sentence, "
+                                                       "where it adds anything")
+    section: str = Field(description="the science document's section that defines it, as its link anchor "
+                                     "(`1-terms-and-symbols`)")
+    complex: bool = Field(description="whether it allows complex values; false where it needs them real")
 
 
 class ParameterSpec(Model):
@@ -79,7 +109,8 @@ class FormulationDefinition(Model):
     """One physical problem, stated without reference to any engine (models.md § 4)."""
     description: str = Field(description="one line: what it solves")
     science: str = Field(description="its science document, from the checkout's root")
-    kinds: list[StepKind] = Field(min_length=1, description="the step kinds it supports (models.md § 4.2)")
+    kinds: list[str] = Field(min_length=1, description="the step kinds it supports, each by its name in the list of "
+                                                       "step kinds (models.md § 4.2)")
     unknown: Unknown = Field(description="what it solves for")
     meanings: dict[Literal["2", "3"], list[str]] = Field(description="what each dimension may mean; a model "
                                                                         "chooses one")
@@ -87,7 +118,9 @@ class FormulationDefinition(Model):
                                                                description="the conventions a model must choose")
     constants: dict[str, Constant] = Field(default_factory=dict, description="the physical constants its equation "
                                            "uses, each given to every engine as stated here")
-    properties: dict[str, PropertySpec] = Field(description="the material properties it reads")
+    properties: dict[str, PropertySpec] = Field(description="the material properties it reads, each by its name in "
+                                                "femkit's list of material properties",
+                                                json_schema_extra={"doc": "materials.md § 1"})
     conditions: dict[str, KindSpec] = Field(description="the condition kinds it allows")
     sources: dict[str, KindSpec] = Field(default_factory=dict, description="the source kinds it allows")
     derived: dict[str, DerivedSpec] = Field(description="each quantity an observable may name")
@@ -102,7 +135,6 @@ class FormulationDefinition(Model):
         if science is None:
             problems.append((("science",), f"{self.science} does not exist"))
         texts = [(("unknown", "unit"), self.unknown.unit)]
-        texts += [(("properties", n, "unit"), p.unit) for n, p in self.properties.items()]
         texts += [((table, k, "parameters", p, "unit"), spec.unit) for table in ("conditions", "sources")
                   for k, kind in getattr(self, table).items() for p, spec in kind.parameters.items()]
         texts += [(("derived", n, "unit"), d.unit) for n, d in self.derived.items()]
@@ -125,6 +157,12 @@ class FormulationDefinition(Model):
         problems += [((table, k, "on", i), f"{p!r} is no place: {', '.join(sorted(places))}")
                      for table in ("conditions", "sources") for k, kind in getattr(self, table).items()
                      for i, p in enumerate(kind.on) if places is not None and p not in places]
+        declared = (info.context or {}).get("kinds")
+        problems += [(("kinds", i), f"{k!r} is no step kind: {', '.join(sorted(declared))}")
+                     for i, k in enumerate(self.kinds) if declared is not None and k not in declared]
+        listed = (info.context or {}).get("properties")     # the property list's names (materials.md § 1)
+        problems += [(("properties", p), f"{p!r} is no property of femkit's list: {', '.join(sorted(listed))}")
+                     for p in self.properties if listed is not None and p not in listed]
         kinds = set(self.conditions) | set(self.sources) | set(self.properties)
         templates = (info.context or {}).get("templates")
         for name, b in self.benchmarks.items():

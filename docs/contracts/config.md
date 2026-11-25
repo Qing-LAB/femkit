@@ -53,7 +53,7 @@ a directory that is still relative is refused, so no file is read from the
 working directory. No two files of one kind are combined. `scripts/install-env.sh`
 resolves the data directory by the same rule, because it must find the control
 environment before Python runs.
-`python -m femkit config path` prints the five directories, the rule that chose
+`femkit config path` prints the five directories, the rule that chose
 each, every file under the configuration directory and the top-level entries of
 the others, so which file is in effect is never a guess. `core/dirs.py` holds
 the list of the five and their variables ([`core.md`](core.md) § 3).
@@ -107,8 +107,9 @@ someone said nothing is needed.
 - `config init` writes the file from `femkit/data/templates/config.toml`,
   the settings file's template, under [`projects.md`](projects.md) § 7's
   rule: the comment directly above each key is its help as its field states
-  it (§ 3.1), and every key the template leaves unset is shown commented out
-  under its help — held so by a test. Like every changing command it first
+  it (§ 3.1) — its manual chapter, where it names one, the settings file's,
+  `1-install.md` — and every key the template leaves unset is shown commented
+  out under its help — held so by a test. Like every changing command it first
   shows its plan ([`api.md`](api.md) § 3): each key it will add and where the value came
   from — given as an option (`--environments`, `--projects`, `--cuda-architectures`,
   `--jobs`, `--mpi`, `--preamble`, `--no-preamble`, `--activation`) or measured here (the GPU
@@ -148,7 +149,9 @@ someone said nothing is needed.
 - `config set KEY VALUE` validates and writes one key, keeping the file's
   comments and layout. `VALUE` is TOML text, as the file writes it —
   `config set paths.projects '"/data/projects"'` — and a bare word is refused,
-  never guessed to be text ([`web.md`](web.md) § 7.3). `config show` prints every key with its value and where
+  never guessed to be text ([`web.md`](web.md) § 7.3): the refusal says a text
+  is written in quotes and, where the key takes text, gives the command again
+  with the word quoted. `config show` prints every key with its value and where
   it came from: the file, or the "when unset" rule.
 
 ## 4. Install records and run files

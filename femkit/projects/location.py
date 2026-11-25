@@ -14,7 +14,7 @@ from pathlib import Path
 
 from femkit.config import settings
 from femkit.config.requests import CONFIG_SET
-from femkit.core import view
+from femkit.core import text, view
 from femkit.core.errors import Refused, Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.projects import layout as layouts
@@ -51,7 +51,7 @@ def root(ctx: Context) -> Path:
     `project new` that makes it and the `config set` that states another) when it is no folder."""
     folder = stated(ctx)
     if not folder.is_dir():
-        raise Refused(f"the projects root {folder} ({KEY}) is no folder: the first project new makes it",
+        raise Refused(f"the projects root {text.path(folder)} ({KEY}) is no folder: the first project new makes it",
                       (_make_root(), _state_root()), code="no-root", subject=str(folder))
     return folder
 
@@ -125,14 +125,14 @@ def locate(ctx: Context, name: str | None, cwd: Path) -> Project:
     if name is not None:
         wanted = Project(top, name)   # the name rule: `bad-name`
         if along(top, tuple(names.steps(name))) != wanted:
-            raise UsageError(f"no project {name!r} under the projects root {top}", code="no-such-project",
-                             subject=name)
+            raise UsageError(f"no project {name!r} under the projects root {text.path(top)}",
+                             code="no-such-project", subject=name)
         return wanted
     # The root and the folder compared as the file system has them: a command runs in a real path,
     # and the root may be stated through a link.
     here, real = cwd.resolve(), top.resolve()
     found = along(top, here.relative_to(real).parts) if here.is_relative_to(real) else None
     if found is None:
-        raise UsageError(f"{cwd} is in no project under the projects root {top}: name the project, or run "
-                         "the command in its folder", code="not-in-a-project", subject=str(cwd))
+        raise UsageError(f"{text.path(cwd)} is in no project under the projects root {text.path(top)}: name the "
+                         "project, or run the command in its folder", code="not-in-a-project", subject=str(cwd))
     return found

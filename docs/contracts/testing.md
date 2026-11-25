@@ -145,7 +145,12 @@ it ends, and a difference fails the run, naming what changed:
   generated file is checked against its source — the reference pages rendered
   again and compared ([`definitions.md`](definitions.md) § 2.3), the page's
   bundle against the hashes of its sources ([`web.md`](web.md) § 3) — so a
-  change made without regenerating fails.
+  change made without regenerating fails; and the manual is held to what
+  femkit does: every example it marks as run is run through the command line,
+  as the person types it, in a temporary projects root, in its chapter's
+  order, and must print what it shows; every command and option it names is
+  one femkit has; every command femkit has appears in it; every link resolves
+  ([`../README.md`](../README.md) § 3.1).
 - **Proven to fail.** Before a test is trusted, the rule it guards is broken in
   the code and the test is seen to fail.
 - **Retired with its design.** When a design is replaced, its tests are deleted

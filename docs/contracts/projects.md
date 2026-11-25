@@ -11,9 +11,10 @@ its own, a folder part's other files and its citations, each part kind's
 schema registered at start, the check frame and what cannot be checked yet
 (§ 6); `project new` and `project list`, and the templates, each passing
 `project check` and carrying each key's help, held by tests (§ 7); the states
-of § 8. The part kinds' schemas are their owners' ([`models.md`](models.md),
-[`geometry.md`](geometry.md), [`materials.md`](materials.md)). Not built: the
-global library (§§ 1, 6; plan § 4, E)
+of § 8; the global library, seeded by the first `project new` on a root and
+read when a project names one of its parts (§§ 1, 6, 7). The part kinds'
+schemas are their owners' ([`models.md`](models.md),
+[`geometry.md`](geometry.md), [`materials.md`](materials.md))
 **Authority:** where projects live; the tree of a project — every folder and
 file, what it holds, who writes it, which door reads it, and whether it moves
 with the project; the part kinds and what each may cite; addresses; the one
@@ -65,10 +66,9 @@ projects root. It holds:
   that does not exist yet — `config init` asks for it
   ([`config.md`](config.md) § 3.2); `project new` makes it, as a step of its
   plan, and every other command refuses a root that is no folder, naming
-  `project new`. From step E, `project new` also makes the root's library when
-  it lacks one, seeding it with femkit's shipped materials
-  ([`materials.md`](materials.md) § 4). Not built yet: the library (plan § 4,
-  E).
+  `project new`. `project new` also makes the root's library when it lacks
+  one, seeding it with femkit's shipped materials
+  ([`materials.md`](materials.md) § 4).
 - **A command names a project as a whole** — never a loose file or folder
   inside it: by its path from the projects root (`--project bowtie`), or, with
   none named, by the folder the command runs in, when that folder is the
@@ -107,7 +107,7 @@ projects root. It holds:
 | path | holds | written by | moves with the project |
 |---|---|---|---|
 | `project.toml` | its description, the shared parameters, and the names of its components and studies (§ 3) | the person | yes |
-| `materials/<m>/` | `material.toml` and its tables ([`materials.md`](materials.md) § 3) | the person; `material add`, `material import` | yes |
+| `materials/<m>/` | `material.toml` and its tables ([`materials.md`](materials.md) § 3) | the person; `material import`, a new one | yes |
 | `components/<c>/component.toml` | the script's contract ([`geometry.md`](geometry.md) § 3) and the material assignment ([`materials.md`](materials.md) § 5) | the person | yes |
 | `components/<c>/geometry.py` | the geometry script ([`geometry.md`](geometry.md) § 2) | the person | yes |
 | `components/<c>/<file>` | a file the script reads, by its path from the component's folder, as its contract declares it ([`geometry.md`](geometry.md) § 3) | the person | yes |
@@ -196,9 +196,11 @@ one file (`<name>.toml`) or a folder holding its own file (`component.toml`,
 `material.toml`), and the other files every part of its kind holds by a fixed
 name (a component's `geometry.py`); the schema it loads with; its writer —
 `person`, `femkit` or `run`; whether it moves with the project, is
-regenerated, or stays local; and whether the projects root holds a global
-library of its kind. Whether a folder is a part or a group is read from that
-declaration, never guessed from its name.
+regenerated, or stays local; whether the projects root holds a global
+library of its kind; and, for a kind the person writes, the manual's chapter
+that explains it, which its keys' help names ([`core.md`](core.md) § 2).
+Whether a folder is a part or a group is read from that declaration, never
+guessed from its name.
 
 ```toml
 [kinds.material]
@@ -208,6 +210,7 @@ file = "material.toml"
 schema = "material"
 rank = 1
 library = true                  # the projects root holds a global library of materials, in materials/
+manual = "6-materials.md"       # the manual's chapter its keys' help names
 
 [kinds.component]
 folder = "components"
@@ -342,9 +345,11 @@ alone ([`materials.md`](materials.md) § 4).
   key>": check}`, `check(checking, part) -> Iterable[Issue]`, and registered
   at femkit's start ([`api.md`](api.md) § 6); a schema may have checks from
   several modules — the materials package checks a component's assignment. A
-  check is handed a `Checking` — the project as opened, the unit table, the
-  formulations, the property list, the kinds of place and the parameters
-  resolved once ([`models.md`](models.md) § 3) — and makes each finding with
+  check is handed a `Checking` — the project as opened, the definitions its
+  rules read (the unit table, the formulations, the property list, the
+  variables and dispersion models, the step kinds, the kinds of place, the
+  engine environments a study may bind) and the parameters resolved once
+  ([`models.md`](models.md) § 3) — and makes each finding with
   `Checking.issue(part, *keys, code=…, message=…, right=…, choices=…)`, at
   its part's file and key, `right` and `choices` given as plain values and
   written as the file writes them; reads each value written as a quantity
@@ -376,14 +381,29 @@ alone ([`materials.md`](materials.md) § 4).
   path, data)`, written whole as JSON (`core.md` § 4), each by its path from
   the project's folder and refused, a `UsageError` `not-femkits`, outside a
   folder the layout declares femkit writes (§ 7).
+- **A global library** is read through the door too: opening a project lists
+  each library's materials and its record of femkit's copies, and loads each
+  library material a loaded part names (`material:GLOBAL/<name>`, its file by
+  its full path); `load_library` loads one a case names that the project no
+  longer does, for `case list` ([`materials.md`](materials.md) § 4).
+- **A new part the person brings** — an imported material
+  ([`materials.md`](materials.md) § 7) — is written through the door too:
+  `write_part(home, layout, kind, name, files)` writes the new folder part
+  whole, built apart and moved into place, into the project or a global
+  library; `new_part` says where it goes and refuses, `Refused` with the name
+  its subject, `exists` where a file or folder is there already and
+  `inside-part` where a folder along the name is a part of that kind — never
+  over or into a part (§ 7).
 
 ## 7. What femkit writes
 
 - **No file the person wrote.** The person writes every part in their own
   editor; femkit reads it, checks it and says what is wrong and what would be
   right, and never changes it
-  ([ADR 0015](../decisions/0015-the-persons-files.md)). There is no command
-  that sets, writes, renames or undoes a part.
+  ([ADR 0015](../decisions/0015-the-persons-files.md)). No command sets,
+  renames or undoes a part, and none writes into one; a new file is written
+  only when the person asks for it — a template, an imported material, the
+  library's first copy of femkit's materials (below).
 - **A template the person asks for**: `project new NAME --from SOURCE` copies
   one of femkit's project templates, or one of the person's own projects —
   built apart and moved into place, never over a project already there
@@ -430,10 +450,13 @@ alone ([`materials.md`](materials.md) § 4).
   - **A key's help is the comment above it**: the comment lines directly
     above the key, with no blank line between, read without their `# ` and
     joined by single spaces, equal to its help as the schema states it
-    (`described`, [`core.md`](core.md) § 2), or, for a key a formulation or
-    the property list declares, as they state it — its sentence, then `, in`
-    and its unit (`the potential the boundary is held at, in V`)
-    ([`web.md`](web.md) § 8.3).
+    (`described`, [`core.md`](core.md) § 2), or, for a key a formulation,
+    the property list or the dispersion list declares, as they state it — its
+    sentence, then `, in` and its unit, or its units joined by ` or `
+    (`the potential the boundary is held at, in V`) ([`web.md`](web.md)
+    § 8.3). The same holds for a file femkit writes for the person to keep —
+    an imported material ([`materials.md`](materials.md) § 7) — written by
+    the core's one writer of such a file, `persist.commented_text`.
   - **Which keys carry it**: every key whose name the schema fixes, and every
     table header that ends in one — so each table the schema names is written
     as its own header, `[inputs]` before `[inputs.parameters]`, and no key the
@@ -452,11 +475,16 @@ alone ([`materials.md`](materials.md) § 4).
   rather than edited.
 - **Its own side file**: `project view` writes `.femkit/view.json`, where the
   page draws each node (§ 2) — no project data.
-- **A new file the person brings**, never over one there: `material add` and
-  `material import` write a new material's folder ([`materials.md`](materials.md)
-  § 7), and the upload route a file into `.femkit/uploads/`
-  ([`web.md`](web.md) § 5); how each is offered is settled with materials
-  (plan § 4, E) and with uploads (M7's remainder).
+- **A new file the person brings**, never over or into one there: `material
+  import` writes a new material's folder from another source's file
+  ([`materials.md`](materials.md) § 7) — to add a source to a material they
+  have, the person copies its lines — and the upload route writes a file into
+  `.femkit/uploads/` ([`web.md`](web.md) § 5); how an upload is offered is
+  settled with uploads (M7's remainder).
+- **The global library's seed**: the first `project new` on a root without
+  `materials/` copies femkit's shipped materials into it, and records what it
+  copied in `materials/.femkit/shipped.json` ([`materials.md`](materials.md)
+  § 4).
 - **The global library is not the project's**: its lock and its confirmation
   are [`materials.md`](materials.md) § 4.
 
@@ -473,7 +501,7 @@ yet; `unchecked`, a finding of what cannot be checked yet (the `info` finding
 |---|---|
 | `unloadable` | its file does not load |
 | `findings` | it loads and `project check` has findings on it |
-| `unchecked` | it loads with no findings, but what it names cannot be checked yet: a group's kind, before the geometry of a component a study pairs it with exists; a material the project lacks, until the global library is read (plan § 4, E; [`materials.md`](materials.md) § 4) |
+| `unchecked` | it loads with no findings, but what it names cannot be checked yet: a group's kind, before the geometry of a component a study pairs it with exists |
 | `complete` | otherwise |
 
 A project's state is a count over its parts; it is never a machine of its own.

@@ -1,0 +1,36 @@
+# Vacuum, one of femkit's shipped materials (manual: 6 · Materials): its relative permittivity
+# is exactly 1, by the definition of vacuum. `project new` copies it into a new projects root's
+# global library, where it is yours; a component names it `GLOBAL/vacuum`, or `vacuum` where the
+# project holds no material of that name.
+
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 6 · Materials)
+schema = 1
+
+# the name shown to a person; nothing refers to the material by it, since its folder's name is its name
+display = "Vacuum"
+
+# its chemical formula, as `Au` or `SiO2`
+# formula = "Au"
+
+# other names it goes by, for a person; nothing refers to the material by them
+aliases = ["free space"]
+
+# each property, by its name in femkit's list of material properties, holding its datasets, each named by its source (manual: 6 · Materials)
+[properties]
+
+# the material's relative permittivity, in 1
+[properties.relative_permittivity]
+
+# the dataset named `definition`
+[properties.relative_permittivity.definition]
+# a real constant, with its unit where it has one
+value = "1"
+# the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)`
+convention = "real"
+# where the data comes from: a citation a reader can check, with its DOI where there is one
+source = "the definition of vacuum: its permittivity is the vacuum electric permittivity ε0 itself, so its relative permittivity is exactly 1"
+# where the data holds: `all`, or `[from, to]` in its variable
+range = "all"
+
+# anything kept beside the material; read by no step
+# [notes]

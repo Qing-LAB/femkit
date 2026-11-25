@@ -139,8 +139,8 @@ def test_install_never_discards_a_failing_build_on_its_own():
         m = machine(ctx())
         m.require(m.states.failing, "install", NAME)
     offered = {n.command for n in caught.value.next}
-    assert {"python -m femkit env validate ngsolve", "python -m femkit env install ngsolve --clean"} <= offered
-    assert "python -m femkit env install ngsolve" not in offered
+    assert {"femkit env validate ngsolve", "femkit env install ngsolve --clean"} <= offered
+    assert "femkit env install ngsolve" not in offered
 
 
 def test_doctor_reports_an_environment_that_is_not_ready():
@@ -182,7 +182,7 @@ def test_a_change_made_while_a_plan_is_read_is_seen_though_the_command_read_it_b
 
 
 def test_in_the_activated_control_environment_the_manager_is_the_one_activation_named(manager, monkeypatch):
-    """Fails if femkit run day to day — `conda activate`, then `python -m femkit` — cannot
+    """Fails if femkit run day to day — `conda activate`, then `femkit` — cannot
     find the manager the activation named, and every report refuses (envs.md § 7.1)."""
     path = os.environ["FEMKIT_ENV_MANAGER"]
     monkeypatch.delenv("FEMKIT_ENV_MANAGER")

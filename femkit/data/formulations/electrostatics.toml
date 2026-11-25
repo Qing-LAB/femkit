@@ -13,10 +13,11 @@ description = "eps_0, the vacuum permittivity (CODATA 2022), given to every engi
 section = "1-terms-and-symbols"
 value = "8.8541878188e-12 F/m"
 
+# Each property it reads, by its name in the property list (materials.md § 1), whose sentence and
+# unit are the list's: what this formulation adds, its section, and whether it allows complex values.
 [properties.relative_permittivity]
-description = "the material's relative permittivity, eps_r: a real, positive number"
+note = "eps_r: a real, positive number"
 section = "1-terms-and-symbols"
-unit = "1"
 complex = false
 
 [conditions.potential]

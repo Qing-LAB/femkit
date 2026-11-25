@@ -26,8 +26,9 @@ class Property(Model):
     unit: str = as_quantity("its unit, as the unit table reads it; `1` for a plain number", "unit")
     values: Literal["real", "complex"] = Field(description="whether its values are real or may be complex")
     shape: Literal["scalar", "tensor"] = Field(description="one value, or a 3 x 3 tensor in the component's frame")
-    depends_on: list[str] = Field(default_factory=list, description="what a dataset of it may vary with, each by "
-                                                                    "its name: `wavelength`, `temperature`")
+    depends_on: list[str] = Field(default_factory=list, description="the variables a dataset of it may vary with, "
+                                  "each by its name in femkit's list of variables",
+                                  json_schema_extra={"doc": "materials.md § 2"})
     equivalents: list[str] = Field(default_factory=list, description="the properties of this list convertible to "
                                    "it, each by its name; the science documents state each conversion and its sign")
     names: dict[str, str | dict[str, str]] = Field(default_factory=dict, description="its name in each engine and "
@@ -37,14 +38,17 @@ class Property(Model):
     @model_validator(mode="after")
     def _unit(self, info: ValidationInfo) -> "Property":
         units = (info.context or {}).get("units")
+        variables = (info.context or {}).get("variables")   # dispersion.toml's, where it loads (materials.md § 2)
         problems: list[tuple[tuple, str]] = []
         if units is not None:
             try:
                 units.parse(self.unit)
             except UnitError as exc:
                 problems.append((("unit",), str(exc)))
-        problems += [(("depends_on", i), f"{v!r} is no variable's name") for i, v in enumerate(self.depends_on)
-                     if not NAME.fullmatch(v)]
+        problems += [(("depends_on", i), f"{v!r} is none of the variables: {', '.join(sorted(variables))}"
+                      if variables is not None else f"{v!r} is no variable's name")
+                     for i, v in enumerate(self.depends_on)
+                     if not NAME.fullmatch(v) or variables is not None and v not in variables]
         problems += [(("names", k), f"{k!r} is no engine's or source's ID") for k in self.names if not NAME.fullmatch(k)]
         refuse("Property", problems)
         return self

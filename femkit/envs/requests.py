@@ -9,6 +9,9 @@ from femkit.core.commandline import ARGUMENT
 from femkit.core.schema import Model
 from pydantic import Field
 
+#: An argument naming environments, by their names in the definitions (core.md § 2, `choices`).
+ENVIRONMENTS = {**ARGUMENT, "choices": "environments"}
+
 
 class ListRequest(Model):
     """No inputs."""
@@ -17,19 +20,20 @@ class ListRequest(Model):
 class CleanRequest(Model):
     """One environment to remove."""
 
-    name: str = Field(description="the environment", json_schema_extra=ARGUMENT)
+    name: str = Field(description="the environment", json_schema_extra=ENVIRONMENTS)
 
 
 class LogRequest(Model):
     """One environment."""
 
-    name: str = Field(description="the environment", json_schema_extra=ARGUMENT)
+    name: str = Field(description="the environment", json_schema_extra=ENVIRONMENTS)
 
 
 class InstallRequest(Model):
     """Environments to install; an environment already ready is left alone unless --clean."""
 
-    names: list[str] = Field(default_factory=list, description="environments", json_schema_extra=ARGUMENT)
+    names: list[str] = Field(default_factory=list, description="the environments to install",
+                             json_schema_extra=ENVIRONMENTS)
     all: bool = Field(default=False, description="every environment whose definition has default = true")
     clean: bool = Field(default=False, description="remove and rebuild, discarding the saved lock")
 
@@ -37,7 +41,7 @@ class InstallRequest(Model):
 class ValidateRequest(Model):
     """One environment to validate."""
 
-    name: str = Field(description="the environment", json_schema_extra=ARGUMENT)
+    name: str = Field(description="the environment", json_schema_extra=ENVIRONMENTS)
     gpu: bool = Field(default=False, description="run the GPU checks and the checks they agree with, "
                       "instead of the CPU checks")
 

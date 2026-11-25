@@ -9,6 +9,7 @@ and its description are defined; the one reader, ``load_text``, turns any failur
 from __future__ import annotations
 
 import difflib
+import functools
 import json
 import re
 import tomllib
@@ -16,15 +17,16 @@ import types
 import typing
 from dataclasses import dataclass
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, NamedTuple, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 from pydantic.fields import FieldInfo
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
-from femkit.core import persist
+from femkit.core import dirs, persist
 from femkit.core.errors import Refusal
+from femkit.core.markdown import headings
 
 if TYPE_CHECKING:
     from femkit.core.view import Action
@@ -578,25 +580,97 @@ def field_extras(field: FieldInfo) -> dict:
     return found
 
 
-def described(field: FieldInfo) -> str:
+def described(field: FieldInfo, manual: str | None = None) -> str:
     """A field's help, one text (core.md § 2): its description; then, when its value — or a
-    table's values — is a closed list, `: one of` and each allowed value in backticks; then
-    where it is defined, its `doc` annotation, in parentheses."""
+    table's values — is a closed list, `: one of` and each allowed value in backticks; then, for
+    a field whose values a declaration holds (`choices`), the names it holds now; then, where the
+    field states a `doc`, the chapter of the manual that explains it — ``manual``, the chapter its
+    file or command declares — as `(manual: <title>)`. The `doc` itself is the reference pages':
+    a help never cites a contract."""
     values = _closed_list(field.annotation) or _closed_list(values_of(field.annotation))
-    return help_text(field.description, values, field_extras(field).get("doc"))
+    return help_text(field.description, values, manual if field_extras(field).get("doc") else None,
+                     among=choices(field))
 
 
-def help_text(sentence: str | None, values: Iterable[Any] = (), doc: str | None = None, *,
-              unit: str | None = None) -> str:
+def help_text(sentence: str | None, values: Iterable[Any] = (), manual: str | None = None, *,
+              unit: str | None = None, among: tuple[str, list[str]] | None = None) -> str:
     """A help, one text (core.md § 2; projects.md § 7): ``sentence``; then, for a key a
     declaration states with its ``unit`` — a formulation's parameter, the property list's
     property — `, in` and the unit; then, when ``values`` — a closed list — are given, `: one of`
-    and each in backticks; then ``doc`` in parentheses. The one builder of a help: what
-    `described` makes of a field, and what each `declared` makes of a declaration's key."""
+    and each in backticks; then, for ``among`` — a declaration's name and the names it holds —
+    `; the <declaration>:` and each in backticks; then the manual's chapter ``manual``, by its
+    title, `(manual: 6 · Materials)`. The one builder of a help: what `described` makes of a
+    field, and what each `declared` makes of a declaration's key."""
     shown = [f"`{v if isinstance(v, str) else persist.inline_text(v)}`" for v in values]
     closed_list = shown and "one of " + ", ".join(shown)
     said = f"{sentence}, in {unit}" if sentence and unit else sentence
-    return ": ".join(part for part in (said, closed_list) if part) + (f" (see {doc})" if doc else "")
+    text = ": ".join(part for part in (said, closed_list) if part)
+    if among is not None:
+        text += f"; the {among[0]}: " + ", ".join(f"`{name}`" for name in among[1])
+    return text + (f" {pointer(manual)}" if manual else "")
+
+
+def pointer(manual: str) -> str:
+    """Where a help sends the person: the manual's chapter ``manual`` by its title, `(manual: 6 ·
+    Materials)` — what ends a field's help and a command's (core.md § 2; api.md § 4)."""
+    return f"(manual: {chapter(manual)})"
+
+
+#: The user manual's folder, from the checkout's root (docs/README.md § 3.1): where a help sends
+#: the person, by a chapter's title.
+MANUAL_DIR = PurePosixPath("docs/manual")
+
+
+@functools.cache
+def chapter_name(file: str) -> bool:
+    """Whether ``file`` is written as a chapter of the manual is named: a file's name alone in
+    `docs/manual/`, ending in `.md` — what a declaration naming one must be where it loads."""
+    named = PurePosixPath(file)
+    return named.name == file and named.suffix == ".md" and file != ".md"
+
+
+def chapter(file: str) -> str:
+    """The manual's chapter ``file`` — a file of the checkout's `docs/manual/`, `6-materials.md` —
+    as a help names it: its title, the file's first heading, `6 · Materials` (core.md § 2). Where
+    the checkout holds no such file, or it opens with no heading, the file's own name: a help is
+    never refused for a document, and the basic tests hold every declared chapter to one the
+    manual has. A `ValueError` for a name no chapter could have (`chapter_name`)."""
+    if not chapter_name(file):
+        raise ValueError(f"{file!r} is no chapter of the manual: a file's name in {MANUAL_DIR}/, ending in .md")
+    text = persist.read_text(dirs.checkout() / MANUAL_DIR / file)
+    found = headings(text) if text is not None else []
+    return found[0].text if found else file
+
+
+# ---------------------------------------------------------------- values a declaration holds
+#
+# A request field whose values are the names a declaration holds — the importers, the
+# environments, the templates — names that declaration in `choices` (core.md § 2). What gives its
+# names is registered at start (api.md § 6) and called only when a help is built, never at import:
+# a help names the declarations of that moment, those `FEMKIT_DEFINITIONS_DIR` points at.
+
+_PROVIDERS: dict[str, Callable[[], Iterable[str]]] = {}
+
+
+def provide(declaration: str, names: Callable[[], Iterable[str]]) -> None:
+    """Register ``names``, what gives the names ``declaration`` holds, for every field naming it in
+    `choices`."""
+    _PROVIDERS[declaration] = names
+
+
+def choices(field: FieldInfo) -> tuple[str, list[str]] | None:
+    """The declaration ``field`` names in `choices`, and the names it holds now; None for a field
+    naming none, for a declaration none is registered for, and while the declarations do not load
+    — what reads them says why — or hold no name."""
+    declaration = field_extras(field).get("choices")
+    names = _PROVIDERS.get(declaration) if isinstance(declaration, str) else None
+    if names is None:
+        return None
+    try:
+        held = [str(name) for name in names()]
+    except DefinitionError:
+        return None
+    return (declaration, held) if held else None
 
 
 def _closed_list(annotation: Any) -> list[Any]:
@@ -661,12 +735,14 @@ class HelpFinding:
         return f"line {self.line or '-'}: {self.key or '<text>'}: {self.problem}"
 
 
-def help_findings(text: str, model: type[BaseModel], declared: Declared = lambda path: None) -> list[HelpFinding]:
+def help_findings(text: str, model: type[BaseModel], declared: Declared = lambda path: None,
+                  manual: str | None = None) -> list[HelpFinding]:
     """Where ``text``, a template of a file ``model`` reads, breaks projects.md § 7: a key the
     schema names — a key whose name it fixes, or a table header ending in one — whose comment
-    is not its help (`described`); a key the schema does not allow; a table the schema names
-    that is not written as its own header, or one holding such keys written inline; a key of
-    a table the text writes that it neither sets nor shows commented out. A key whose name the
+    is not its help (`described`, ending, where the field states a `doc`, with ``manual``, the
+    chapter of the manual the file declares); a key the schema does not allow; a table the schema
+    names that is not written as its own header, or one holding such keys written inline; a key
+    of a table the text writes that it neither sets nor shows commented out. A key whose name the
     person chooses carries a note, never compared. ``declared`` gives, by its path, the help of
     a key a declaration outside the schema states — a formulation's parameter, the property
     list's property: its sentence, then `, in` and its unit — and None for every other key."""
@@ -684,7 +760,7 @@ def help_findings(text: str, model: type[BaseModel], declared: Declared = lambda
         if (sentence := declared(path)) is not None:
             return sentence, True
         how, field, _ = _place(model, path)
-        return (described(field) if field is not None else None), how != "unknown"
+        return (described(field, manual) if field is not None else None), how != "unknown"
 
     for e in entries:
         key = key_path(e.path)
@@ -710,7 +786,7 @@ def help_findings(text: str, model: type[BaseModel], declared: Declared = lambda
             for name, field in models[0].model_fields.items():
                 if (path := (*table, field.alias or name)) not in written:
                     findings.append(HelpFinding(line, key_path(path), f"neither set nor shown; show it commented "
-                                                f"out under its help, {described(field)!r}"))
+                                                f"out under its help, {described(field, manual)!r}"))
     return findings
 
 

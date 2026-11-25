@@ -1,14 +1,14 @@
-# One physics (models.md § 3): the electrostatic potential, stated on the groups it names —
-# never on a component — so it serves every component that promises `left`, `right` and
-# `sides`. Which material fills each body is the component's.
+# One physics (manual: 3 · Write each part): the electrostatic potential, stated on the groups
+# it names — never on a component — so it serves every component that promises `left`, `right`
+# and `sides`. Which material fills each body is the component's.
 
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
 schema = 1
 
-# the formulation family it states: one of `electrostatics` (see models.md § 4)
+# the formulation family it states: one of `electrostatics` (manual: 3 · Write each part)
 formulation = "electrostatics"
 
-# what each dimension of the components it serves means for its formulation, keyed by the dimension (see models.md § 3)
+# what each dimension of the components it serves means for its formulation, keyed by the dimension (manual: 3 · Write each part)
 [meaning]
 # for electrostatics in 2-D: `per unit depth`, or `axisymmetric` about the axis the component's `[frame.symmetry]` names; in 3-D: `full`
 2 = "per unit depth"

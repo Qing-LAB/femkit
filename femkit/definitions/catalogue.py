@@ -16,10 +16,12 @@ from femkit.core.dirs import CONTROL, folder_from
 from femkit.core.locks import SUBJECT
 from femkit.core.operations import Context
 from femkit.core import states
-from femkit.core.schema import DefinitionError, load_toml, validate
+from femkit.core.schema import DefinitionError, key_path, load_toml, validate
 from femkit.core.states import StateTable
 from femkit.core.units import UnitTable, Units
-from femkit.definitions.formulations import FormulationDefinition
+from femkit.definitions.dispersion import Dispersion
+from femkit.definitions.formulations import FormulationDefinition, StepKind, StepKindList
+from femkit.definitions.importers import Importer, TableRecord, property_of
 from femkit.definitions.meshers import MesherDefinition
 from femkit.definitions.places import PlaceKind, PlaceList
 from femkit.definitions.properties import Property, PropertyList
@@ -121,10 +123,27 @@ def load_units() -> UnitTable:
 
 
 def load_formulations() -> dict[str, FormulationDefinition]:
-    """Every formulation, its units read by the unit table, its places by the vocabulary of places
-    and its benchmarks' projects among the project templates (models.md § 4)."""
+    """Every formulation, its units read by the unit table, its places by the vocabulary of places,
+    its step kinds by their list, its properties by the property list and its benchmarks'
+    projects among the project templates (models.md § 4; materials.md § 1)."""
     return _load_dir(data_root() / "formulations", FormulationDefinition,
-                     {"units": Units(load_units()), "places": frozenset(load_places()), "templates": load_templates()})
+                     {"units": Units(load_units()), "places": frozenset(load_places()), "templates": load_templates(),
+                      **_names("kinds", load_step_kinds), **_names("properties", load_properties)})
+
+
+def _names(key: str, load: Callable[[], Any]) -> dict[str, frozenset[str]]:
+    """``{key: the names ``load`` declares}``, what another file's validation context checks its
+    references by; nothing while that file does not load — its own loading says why, once."""
+    return {k: frozenset(loaded) for k, loaded in _loaded(key, load).items()}
+
+
+def _loaded(key: str, load: Callable[[], Any]) -> dict[str, Any]:
+    """``{key: what ``load`` loads}``, what another file's validation context checks it by; nothing
+    while that file does not load — its own loading says why, once."""
+    try:
+        return {key: load()}
+    except DefinitionError:
+        return {}
 
 
 CUDA_SUFFIX = "-cuda"  # a definition's CUDA environment is named after it with this (definitions.md § 4.5)
@@ -206,13 +225,76 @@ def places(ctx: Context) -> dict[str, PlaceKind]:
 
 
 def load_properties() -> dict[str, Property]:
-    """The property list, each unit read by the unit table (materials.md § 1)."""
-    return dict(load_toml(data_root() / "properties.toml", PropertyList, {"units": Units(load_units())}).root)
+    """The property list, each unit read by the unit table and each variable it depends on one of
+    dispersion.toml's (materials.md §§ 1, 2)."""
+    return dict(load_toml(data_root() / "properties.toml", PropertyList,
+                          {"units": Units(load_units()), **_names("variables", lambda: load_dispersion().variables)}).root)
 
 
 def properties(ctx: Context) -> dict[str, Property]:
     """The property list, loaded once per invocation."""
     return ctx.cached("properties", load_properties)
+
+
+def load_dispersion() -> Dispersion:
+    """The variables and the dispersion models, each unit read by the unit table and each model's
+    property one of the property list's — the list read by its own rules alone, since its own
+    variables are checked against this file (materials.md § 2)."""
+    units = Units(load_units())
+    listed = _names("properties", lambda: load_toml(data_root() / "properties.toml", PropertyList,
+                                                    {"units": units}).root)
+    return load_toml(data_root() / "dispersion.toml", Dispersion, {"units": units, **listed})
+
+
+def dispersion(ctx: Context) -> Dispersion:
+    """The variables and the dispersion models, loaded once per invocation."""
+    return ctx.cached("dispersion", load_dispersion)
+
+
+def load_importers() -> dict[str, Importer]:
+    """Every importer, by its source's ID — its file's stem (materials.md § 7): its units read by
+    the unit table, its variables and models dispersion.toml's, and each table's property the one
+    the property list's `names` gives the source's name for it — exactly one, which depends on the
+    variable the source writes its data in."""
+    directory = data_root() / "importers"
+    units = Units(load_units())
+    context = {"units": units, **_loaded("dispersion", load_dispersion)}
+    found = _load_dir(directory, Importer, context)
+    listed = _loaded("properties", load_properties).get("properties")
+    errors = []
+    for source, importer in found.items() if listed is not None else ():
+        problems = []
+        for kind, record in importer.records.items():
+            if not isinstance(record, TableRecord):
+                continue
+            named = property_of(listed, source, record.property)
+            if len(named) != 1:
+                problems.append((key_path(("records", kind, "property")),
+                                 f"the property list's names give {source}'s {record.property!r} "
+                                 f"{'to ' + ', '.join(named) if named else 'to no property'}: one, exactly"))
+            elif importer.variable.name not in listed[named[0]].depends_on:
+                problems.append(("variable.name", f"the {named[0]} depends on no {importer.variable.name}"))
+        if problems:
+            errors.append(DefinitionError(directory / f"{source}.toml", problems))
+    if errors:
+        raise CatalogueError(errors)
+    return found
+
+
+def importers(ctx: Context) -> dict[str, Importer]:
+    """The importers, loaded once per invocation."""
+    return ctx.cached("importers", load_importers)
+
+
+def load_step_kinds() -> dict[str, StepKind]:
+    """The step kinds, each variable it supplies one of dispersion.toml's (models.md § 4.2)."""
+    return dict(load_toml(data_root() / "step_kinds.toml", StepKindList,
+                          _names("variables", lambda: load_dispersion().variables)).root)
+
+
+def step_kinds(ctx: Context) -> dict[str, StepKind]:
+    """The step kinds, loaded once per invocation."""
+    return ctx.cached("step_kinds", load_step_kinds)
 
 
 def states_dir() -> Path:
@@ -276,6 +358,9 @@ class Catalogue:
     meshers: dict[str, MesherDefinition] = _type("meshers/<id>.toml", MesherDefinition, load_meshers)
     places: dict[str, PlaceKind] = _type("geometry/kinds.toml", PlaceKind, load_places)
     properties: dict[str, Property] = _type("properties.toml", Property, load_properties)
+    dispersion: Dispersion = _type("dispersion.toml", Dispersion, load_dispersion)
+    step_kinds: dict[str, StepKind] = _type("step_kinds.toml", StepKind, load_step_kinds)
+    importers: dict[str, Importer] = _type("importers/<source>.toml", Importer, load_importers)
     states: dict[str, StateTable] = _type("states/<machine>.toml", StateTable, load_states)
     templates: dict[str, Path] = _type("templates/<name>/", None, load_templates)
 

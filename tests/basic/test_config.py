@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
+from tests import kit
 from tests.kit import apply, planned, refused, run
 from femkit.config import probe, settings
 from femkit.core import dirs
@@ -57,13 +60,56 @@ def test_an_invalid_value_or_key_is_refused_before_anything_is_written(request_,
 def test_a_value_is_toml_text_and_a_bare_word_is_refused():
     """Fails if config set guesses that a bare word is text, reads TOML text otherwise than
     the file would, or fails on a value of the wrong type instead of refusing it — here `true`
-    for a number (config.md § 3, web.md § 7.3)."""
-    with refused(UsageError, "not-toml", "/data/projects"):
+    for a number; or if the refusal of a bare word does not give, as its next step, the command
+    again with the word in quotes where the key takes that text, and only there (config.md § 3.2:
+    "a bare word is refused, never guessed to be text"; core.md § 9: "its next steps say what to
+    do"; web.md § 7.3)."""
+    with refused(UsageError, "not-toml", "/data/projects") as caught:
         planned("config.set", key="paths.projects", value="/data/projects")
+    (again,) = caught.value.next
+    assert again.call.operation == "config.set"
+    assert again.call.request == {"key": "paths.projects", "value": '"/data/projects"'}
+    with refused(UsageError, "not-toml", "eight") as caught:
+        planned("config.set", key="build.jobs", value="eight")       # no text fits: no quoted command
+    assert caught.value.next == ()
     with refused(UsageError, "invalid-value", "build.jobs"):
         planned("config.set", key="build.jobs", value="true")
-    apply("config.set", key="paths.projects", value='"/data/projects"')
+    apply("config.set", **again.call.request)
     assert str(settings.load(Context.from_process()).config.paths.projects) == "/data/projects"
+
+
+def test_config_writes_its_file_and_a_path_it_holds_from_home(tmp_path, monkeypatch):
+    """Fails if `config set`, `config show` or `config path` writes, in the text a person reads, a
+    path under the home folder otherwise than from `~` — the file it wrote or read, a path a key
+    holds, a directory — or gives a program anything but the full path in its JSON (api.md § 4.4:
+    "Paths under the home directory are written from `~`"; config.md §§ 2, 3.2)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    file = settings.config_file()
+    assert file.is_relative_to(tmp_path)
+    said = apply("config.set", key="paths.projects", value=f'"{tmp_path / "projects"}"').text()
+    assert said.endswith(f"in ~/{file.relative_to(tmp_path)}") and str(tmp_path) not in said
+    shown = run("config.show")
+    held = shown.model_dump(mode="json")
+    assert held["file"] == str(file)
+    assert {r["key"]: r["value"] for r in held["rows"]}["paths.projects"] == str(tmp_path / "projects")
+    text = shown.text()
+    assert f"read ~/{file.relative_to(tmp_path)}" in text and "~/projects" in text and str(tmp_path) not in text
+    listed = run("config.path")
+    assert {d.name: d.path for d in listed.directories}["config"] == str(dirs.config_dir())
+    assert f"~/{dirs.config_dir().relative_to(tmp_path)}" in listed.text() and str(tmp_path) not in listed.text()
+
+
+def test_what_a_keys_absence_blocks_names_only_commands_femkit_has():
+    """Fails if what a key's absence means, as `config show` prints it, names a command femkit
+    does not have — `job prepare`, not built yet — or an option that command does not take
+    (config.md § 3.1: "its absence has the one consequence its field states"; api.md § 4.4)."""
+    have = kit.commands()
+    named = [span.split() for k in settings.keys() for span in re.findall(r"`([^`]+)`", k.unset)]
+    assert named
+    for words in named:
+        command = next((tuple(words[:n]) for n in range(len(words), 0, -1) if tuple(words[:n]) in have), None)
+        assert command is not None, words
+        assert {w for w in words[len(command):] if w.startswith("-")} <= have[command], words
 
 
 def test_show_says_where_each_value_came_from_or_what_its_absence_means():

@@ -7,33 +7,42 @@ the component's frame and groups through the layout's object types (projects.md 
 `geometry` package that owns them sits above this one (framework.md § 1).
 
 A material is named as materials.md § 4 says: `GLOBAL/<name>` names the global library's; any
-other name, the project's own first, then the global library's. Until the global library is read
-(plan § 4, E), a name the project lacks, and every `GLOBAL/` name, is not checked yet.
+other name, the project's own first, then the global library's — found by the door, which loads
+each library material the project names (`door.named`). The name rule is checked here, where it
+can say what in a name breaks it, so the component still loads (projects.md § 3).
 
 The findings, each at its key (core.md § 10):
 - `not-a-body`: an assigned group that is not a body group the component promises — the body
   groups its choices;
-- `no-such-material` (warning), at `material`: a name the project lacks that is close to one it
-  holds, a misspelling, most likely — the project's materials its choices;
-- `not-checked-yet` (info), at `material`: any other name the global library may hold;
-- `no-such-property`, at `datasets.<property>`: a property the material does not hold — its
-  properties the choices;
-- `no-such-dataset`, at `datasets.<property>`: a dataset the property does not hold — its
+- `bad-name`, at `material`: a name the name rule refuses, saying what in it breaks the rule —
+  the name it most likely meant, by the rule (`names.mended`), its right value;
+- `no-such-material`, at `material`: a name in neither place, naming both places looked in —
+  the library alone for a `GLOBAL/` name — or, where the projects root has no library yet,
+  saying so, with the `project new` that makes it; its right value the name either place holds
+  closest to it by its whole name or its last step, written as the choice would be — `gold`
+  meaning `GLOBAL/metals/gold`; else the materials each holds its choices, the library's as
+  `GLOBAL/<name>`;
+- `no-such-property`, at `datasets.<property>`: a property the material does not provide, or an
+  equivalent form named in place of the property a formulation reads — the properties it
+  provides the choices;
+- `no-such-dataset`, at `datasets.<property>`: a dataset the property is not provided by — its
   datasets the choices;
-- `dataset-unchosen`, at `datasets.<property>`: a property holding several datasets, none named —
-  its datasets the choices; there is no default dataset.
+- `dataset-unchosen`, at `datasets.<property>`: a property provided by several datasets, none
+  named — its datasets the choices; there is no default dataset.
+A material provides a property by the datasets held under it and under each of its equivalent
+forms (materials.md § 1; `material.answering`).
 """
 
 from __future__ import annotations
 
-import difflib
 from typing import Any, Iterator
 
+from femkit.core import text
 from femkit.core.issues import Issue
-from femkit.core.schema import Model, as_reference, whole
+from femkit.core.schema import Model, as_reference
 from femkit.definitions.places import possible
 from femkit.materials import material as materials
-from femkit.projects import names
+from femkit.projects import door, names
 from femkit.projects.checking import Checking
 from femkit.projects.door import Part
 from femkit.projects.layout import held
@@ -47,17 +56,13 @@ BODY = "body"                      # the place an assigned group is (geometry.md
 FRAME, GROUP, ASSIGNMENT, PROPERTY = "frame", "group", "assignment", "property"
 DIMENSION = "dimension"            # the frame's key stating the geometry's dimension (geometry.md § 3)
 
-#: A material's name: the project's own first, then the global library's; or the global library's,
-#: opening with `GLOBAL/` (materials.md § 4; projects.md § 3).
-MATERIAL = rf"(?:{names.GLOBAL})?{names.NAME.pattern}"
-
 
 class Assignment(Model):
     """The material of one body group, and the dataset of each property that holds several
     (materials.md § 5)."""
 
     material: str = as_reference("the material, by name: the project's own, else the global library's; `GLOBAL/` "
-                                 "names the global library's", "material", pattern=whole(MATERIAL))
+                                 "names the global library's", "material")
     datasets: dict[str, str] = as_reference("for each property whose material holds several datasets, the one "
                                             "used, by its name", {"key": "property"}, default_factory=dict)
 
@@ -81,54 +86,74 @@ def places(checking: Checking, part: Part) -> dict[str, list[str]]:
 
 def check(checking: Checking, part: Part) -> Iterator[Issue]:
     """The findings on a component's assignment (module docstring), from the check frame
-    (projects.md § 6): each assigned group a body the component promises, and each material the
-    project's own, with the datasets it names."""
+    (projects.md § 6): each assigned group a body the component promises, and each material found
+    — the project's own, or the global library's — with the datasets it names."""
     can = places(checking, part)
     bodies = sorted(group for group, there in can.items() if BODY in there)
     opened = checking.opened
     kind = opened.layout.objects[PROPERTY].part
-    own = {p.address.name: p for p in opened.parts.values() if p.address.kind == kind}
     for group, assignment in opened.layout.objects[ASSIGNMENT].entries(part.data).items():
         if BODY not in can.get(group, ()):
             what = f"is {' or '.join(can[group])}" if can.get(group) else "is no group the component promises"
             yield checking.issue(part, TABLE, group, code="not-a-body", choices=bodies,
                                  message=f"a material fills a body; `{group}` {what}")
-        name = assignment.material
-        if name not in own:                           # a `GLOBAL/` name never is: it names the library's
-            yield _elsewhere(checking, part, group, name, sorted(own))
+        if (why := names.broken(assignment.material)) is not None:
+            meant = names.mended(assignment.material)
+            yield checking.issue(part, TABLE, group, "material", code="bad-name", label=assignment.material,
+                                 right=meant, message=f"`{assignment.material}` is no material's name: {why}"
+                                                      + (f"; it most likely means `{meant}`" if meant else ""))
             continue
-        loaded: materials.Material | None = own[name].data
+        found = door.named(opened, kind, assignment.material)
+        if found is None:
+            yield _nowhere(checking, part, group, assignment.material, kind)
+            continue
+        loaded: materials.Material | None = found.data
         if loaded is not None:                        # one that does not load: its own finding says why
             yield from _datasets(checking, part, group, assignment, loaded)
 
 
-def _elsewhere(checking: Checking, part: Part, group: str, name: str, own: list[str]) -> Issue:
-    """A material the project does not hold: a misspelling of one it does, most likely, when its
-    name is close to one; else one the global library, not read yet, may hold (materials.md § 4)."""
-    at = (TABLE, group, "material")
-    near = difflib.get_close_matches(name, own, n=1) if not name.startswith(names.GLOBAL) else []
-    if near:
-        return checking.issue(part, *at, code="no-such-material", severity="warning", label=name, choices=own,
-                              message=f"no material `{name}` in this project; did you mean `{near[0]}`?")
-    library = "" if name.startswith(names.GLOBAL) else f"the project holds no material `{name}`, and "
-    return checking.unchecked(part, *at, message=f"`{name}` is not checked: {library}the global material library is "
-                                                 "not read yet")
+def _nowhere(checking: Checking, part: Part, group: str, name: str, kind: str) -> Issue:
+    """A material in neither place a name is looked for (materials.md § 4): the project's own
+    materials — not for a `GLOBAL/` name — and the global library's, or none where the projects
+    root holds none yet, which the next `project new` makes. The name either place holds closest
+    to it, by its whole name or its last step — the place the name points at first — is what it
+    most likely meant, its right value, written as the choice would be; else the materials each
+    holds are its choices."""
+    opened = checking.opened
+    listed = opened.libraries.get(kind)
+    explicit = name.startswith(names.GLOBAL)
+    there, missing = listed is not None and listed.there, listed is not None and not listed.there
+    looked = ([] if explicit else [f"the project's {opened.layout.kinds[kind].folder}/"]) + (
+        [f"the global library {text.path(listed.library.place)}"] if there else [])
+    choices = door.known(opened, kind)
+    pool = sorted(choices, key=lambda c: c.startswith(names.GLOBAL) != explicit)   # where the name points first
+    meant = names.nearest(names.bare(name), pool, names.whole_or_last)
+    none = (f"; your projects root has no global library yet, {text.path(listed.library.place)}: the next project "
+            "new makes it, holding femkit's shipped materials" if missing else "")
+    return checking.issue(part, TABLE, group, "material", code="no-such-material", label=name, right=meant,
+                          choices=choices if meant is None else (), next=(door.seeding(),) if missing else (),
+                          message=f"no material `{name}`" + (f" in {' or in '.join(looked)}" if looked else "") + none
+                                  + (f"; did you mean `{meant}`?" if meant else ""))
 
 
 def _datasets(checking: Checking, part: Part, group: str, assignment: Assignment,
               loaded: materials.Material) -> Iterator[Issue]:
-    """The dataset of each property the material holds: named where it holds several, and every
-    name one it holds."""
+    """The dataset of each property the material provides — held under it, or under an
+    equivalent form of it (materials.md § 1): named where it provides several, by the property
+    a formulation reads, and every name one it provides."""
+    answered = materials.answering(checking.properties, loaded.properties)
     for name, dataset in assignment.datasets.items():
-        if name not in loaded.properties:
-            yield checking.issue(part, TABLE, group, DATASETS, name, code="no-such-property",
-                                 choices=sorted(loaded.properties),
-                                 message=f"the material `{assignment.material}` holds no property `{name}`")
-        elif dataset not in loaded.properties[name]:
+        if name not in answered:
+            of = [p for p, listed in checking.properties.items() if name in listed.equivalents and p in answered]
+            said = (f"`{name}` is a form of the {of[0]}, and a dataset is named by the property a formulation reads"
+                    if of else f"the material `{assignment.material}` holds no property `{name}`")
+            yield checking.issue(part, TABLE, group, DATASETS, name, code="no-such-property", choices=sorted(answered),
+                                 message=said)
+        elif dataset not in answered[name]:
             yield checking.issue(part, TABLE, group, DATASETS, name, code="no-such-dataset",
-                                 choices=sorted(loaded.properties[name]),
+                                 choices=sorted(answered[name]),
                                  message=f"the {name} of `{assignment.material}` holds no dataset `{dataset}`")
-    for name, datasets in loaded.properties.items():
+    for name, datasets in answered.items():
         if len(datasets) > 1 and name not in assignment.datasets:
             yield checking.issue(part, TABLE, group, DATASETS, name, code="dataset-unchosen", choices=sorted(datasets),
                                  message=f"the {name} of `{assignment.material}` holds several datasets; name the "

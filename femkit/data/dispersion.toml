@@ -1,0 +1,115 @@
+# The variables a material's data may vary with, and the dispersion models (materials.md § 2):
+# two closed lists. A property's `depends_on` names its variables (materials.md § 1), a step kind
+# the variables it supplies (models.md § 4.2), a table the variable its first column is written in,
+# and a model's dataset its model (materials.md § 3). What each means is the science document
+# below; a model joins the list with its section there and its checks (material-data.md § 8).
+science = "docs/science/material-data.md"
+
+# The exact constants the spectral variables are converted by (material-data.md § 1; SI 2019).
+[constants.speed_of_light]
+description = "c0, the speed of light in vacuum, exact"
+section = "1-terms-and-symbols"
+value = "299792458 m/s"
+
+[constants.planck]
+description = "h, the Planck constant, exact"
+section = "1-terms-and-symbols"
+value = "6.62607015e-34 J s"
+
+# The variables (materials.md § 2), each with a unit of its dimension. The three spectral ones
+# state one spectral position three ways: each is a constant times the frequency raised to a
+# power, so each converts to the others exactly (material-data.md § 4).
+[variables.wavelength]
+description = "the vacuum wavelength"
+unit = "m"
+spectral = { constant = "speed_of_light", power = -1 }   # lambda = c0 / nu
+
+[variables.frequency]
+description = "the frequency"
+unit = "Hz"
+spectral = { power = 1 }                                   # nu itself
+
+[variables.photon_energy]
+description = "the photon energy"
+unit = "eV"
+spectral = { constant = "planck", power = 1 }              # E = h nu; 1 eV = e times 1 V (units.toml)
+
+[variables.temperature]
+description = "the temperature"
+unit = "K"
+
+# The dispersion models (materials.md § 2): each with its sentence, its section of the science
+# document — its formula — the property it gives, the variable its formula is written in, the
+# convention it is written in, its parameters with a unit of each dimension each may have and the
+# sign each must have — each checked on its own, since a term that gives energy can hide in the
+# sum (material-data.md § 6.2) — and each list of terms it sums, by the key a dataset writes the
+# list under.
+[models.sellmeier]
+description = "a transparent material's permittivity, from the poles it lies between: eps = 1 + A + sum of B lambda^2 / (lambda^2 - C)"
+section = "61-sellmeier"
+gives = "relative_permittivity"
+variable = "wavelength"
+convention = "real"
+
+[models.sellmeier.parameters.A]
+description = "A, the permittivity beyond 1 that the terms leave"
+units = ["1"]
+sign = "any"
+
+[models.sellmeier.sums.terms]
+description = "a pole: the term B lambda^2 / (lambda^2 - C)"
+
+[models.sellmeier.sums.terms.parameters.B]
+description = "B, the term's strength"
+units = ["1"]
+sign = "any"
+
+[models.sellmeier.sums.terms.parameters.C]
+description = "C, the pole: a length squared, or the resonance wavelength whose square it is"
+units = ["um^2", "um"]
+sign = "any"
+
+[models.drude_lorentz]
+description = "a metal's permittivity, from its free electrons and its bound oscillators, in photon energies"
+section = "62-drude_lorentz"
+gives = "relative_permittivity"
+variable = "photon_energy"
+convention = "exp(-iwt)"
+
+[models.drude_lorentz.parameters.eps_inf]
+description = "eps_inf, the permittivity the oscillators leave at high energy"
+units = ["1"]
+sign = "positive"
+
+[models.drude_lorentz.parameters.plasma]
+description = "E_p, the plasma energy"
+units = ["eV"]
+sign = "positive"
+
+[models.drude_lorentz.parameters.f0]
+description = "f0, the free electrons' strength"
+units = ["1"]
+sign = "not negative"
+
+[models.drude_lorentz.parameters.gamma0]
+description = "Gamma0, the free electrons' damping"
+units = ["eV"]
+sign = "not negative"
+
+[models.drude_lorentz.sums.oscillators]
+description = "a bound oscillator: the term f E_p^2 / (E_j^2 - E^2 - i Gamma E)"
+
+[models.drude_lorentz.sums.oscillators.parameters.f]
+description = "f, the oscillator's strength"
+units = ["1"]
+sign = "not negative"
+
+[models.drude_lorentz.sums.oscillators.parameters.energy]
+description = "E_j, the oscillator's resonance energy"
+units = ["eV"]
+sign = "positive"
+
+[models.drude_lorentz.sums.oscillators.parameters.gamma]
+description = "Gamma, the oscillator's damping"
+units = ["eV"]
+sign = "not negative"

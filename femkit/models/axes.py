@@ -34,12 +34,13 @@ from femkit.core.errors import UsageError
 from femkit.core.issues import Issue
 from femkit.core.schema import QUANTITIES, DefinitionError, field_extras, key_path, validate
 from femkit.core.units import Quantity, UnitError
-from femkit.models.parts import ASSIGNMENT, DATASETS, PROPERTY, contract, datasets, material, nearest, quantity_kind
+from femkit.models.parts import ASSIGNMENT, DATASETS, contract, datasets, material, quantity_kind
 from femkit.projects import checking
 from femkit.projects.addresses import Address
 from femkit.projects.checking import PARAMETER, Checking, resolve
 from femkit.projects.door import Part
 from femkit.projects.layout import held
+from femkit.projects.names import nearest
 
 NUMERICS = "numerics"   # the study's own table an axis may vary (models.md § 5.1)
 
@@ -102,7 +103,7 @@ def _none(key: str) -> str:
 def varied(c: Checking, study: Part) -> list[str]:
     """The address of everything an axis of ``study`` may vary now (models.md § 5.1): each
     parameter; each value of its recipe and of its numerics; the dataset of each property of each
-    body's material, where the material is the project's own."""
+    body's material, the project's own or the global library's, where it loads."""
     data, layout = study.data, c.opened.layout
     refs = {name: field_extras(f).get("ref") for name, f in type(data).model_fields.items()}
     parameters, assign = layout.objects[PARAMETER], layout.objects[ASSIGNMENT]
@@ -118,7 +119,7 @@ def varied(c: Checking, study: Part) -> list[str]:
     for group, assigned in k.assign.items() if k else ():
         m = material(c.opened, assigned.material) if assigned.material else None
         found += [str(Address(component.address.kind, component.address.name, (*assign.keys, group, DATASETS, prop)))
-                  for prop in (datasets(c.opened, m) if m is not None else {})]
+                  for prop in (datasets(c, m) if m is not None else {})]
     return found
 
 
@@ -145,7 +146,7 @@ def address_meant(c: Checking, study: Part, key: str) -> str | None:
         address = c.opened.layout.address(key)
     except UsageError:
         last = {a: a.replace(":", ".").rpartition(".")[2] for a in found}
-        near = key if key in last.values() else nearest(key, set(last.values()))
+        near = key if key in last.values() else nearest(key, sorted(set(last.values())))
         meant_by = [a for a, step in last.items() if step == near]
         return meant_by[0] if len(meant_by) == 1 else None
     head = f"{address.part}:"
@@ -254,27 +255,25 @@ def _own(c: Checking, part: Part, path: tuple[str, ...]) -> str | None:
 
 
 def _held_datasets(c: Checking, found: Target) -> list[str]:
-    """The datasets the material of a dataset axis's body holds for its property; none where it is
-    not the project's own."""
+    """The datasets the material of a dataset axis's body holds for its property — the project's
+    own, or the global library's; none where it is found nowhere or does not load."""
     k = contract(c.opened, c.opened.part(found.address))
     assigned = k.assign.get(found.address.path[-3]) if k else None
     m = material(c.opened, assigned.material) if assigned and assigned.material else None
-    return sorted(datasets(c.opened, m).get(found.address.path[-1], {})) if m is not None else []
+    return sorted(datasets(c, m).get(found.address.path[-1], {})) if m is not None else []
 
 
 def _dataset(c: Checking, found: Target, value: Any) -> str | None:
     """Why the dataset of a property of a body group's material cannot be ``value``: the group is
-    assigned no material of the project's own, or its material holds no such dataset; None where
-    the material does not load, its own finding saying why."""
+    assigned no material, or its material holds no such dataset; None where its material is found
+    nowhere or does not load, the component's or the material's own finding saying why."""
     k = contract(c.opened, c.opened.part(found.address))
     g, prop = found.address.path[-3], found.address.path[-1]
     assigned = k.assign.get(g) if k else None
     m = material(c.opened, assigned.material) if assigned and assigned.material else None
     if m is None:
-        own = assigned is not None and str(Address(c.opened.layout.objects[PROPERTY].part, assigned.material)) \
-            in c.opened.parts
-        return None if own else f"{g} is assigned no material of the project's own"
-    held_sets = datasets(c.opened, m).get(prop, {})
+        return None if assigned is not None else f"{g} is assigned no material"
+    held_sets = datasets(c, m).get(prop, {})
     return None if value in held_sets else f"its material holds {', '.join(held_sets) or 'no dataset'} for {prop}"
 
 

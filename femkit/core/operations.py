@@ -6,8 +6,6 @@ declarations and the surfaces serve them. Nothing here knows a domain.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import re
 from contextlib import ExitStack
@@ -18,7 +16,7 @@ from typing import Any, Callable, Literal, Mapping, Protocol, TypeVar
 
 from pydantic import Field, ValidationError, model_serializer
 
-from femkit.core import clock, commandline, dirs, text, view
+from femkit.core import clock, commandline, dirs, persist, text, view
 from femkit.core.errors import PlanStale, UsageError
 from femkit.core.eventlog import OUTCOMES, EventLog
 from femkit.core.issues import Issue
@@ -121,8 +119,7 @@ class Plan(Model):
         return "\n".join(lines + ([] if brief else text.findings(self.issues)))
 
     def digest(self) -> str:
-        canonical = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(canonical.encode()).hexdigest()
+        return persist.canonical_sha256(self.model_dump(mode="json"))
 
 
 class PlanAnswer(Model):

@@ -1,0 +1,19 @@
+# this file is part of refractiveindex.info database
+# refractiveindex.info database is in the public domain
+# copyright and related rights waived via CC0 1.0
+#
+# Johnson.yml, cut short, written as an older file of the source writes its notes: under
+# COMMENTS, for femkit's tests.
+
+REFERENCES: |
+    P. B. Johnson and R. W. Christy.
+    Optical constants of the noble metals.
+    [*Phys. Rev. B* **6**, 4370-4379 (1972)](https://doi.org/10.1103/PhysRevB.6.4370)
+COMMENTS: |
+    Room temperature
+DATA:
+  - type: tabulated nk
+    data: |
+        0.5486 0.43 2.455
+        0.5821 0.29 2.863
+        0.6168 0.21 3.272

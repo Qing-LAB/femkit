@@ -7,8 +7,9 @@
 <p align="center"><b>Reproducible finite-element studies with Elmer and NGSolve, on a workstation or an HPC cluster.</b></p>
 
 **Role:** repository entry point
-**Status:** under construction — the environment framework is built; preparing
-and running jobs is not yet ([`docs/plans/plan.md`](docs/plans/plan.md))
+**Status:** under construction — installing the solvers, and writing, checking
+and expanding a project, are built; running jobs is not yet
+([`docs/plans/plan.md`](docs/plans/plan.md))
 **Authority:** orientation only; [`PROJECT_CONTRACT.md`](PROJECT_CONTRACT.md)
 says which document governs what
 
@@ -35,10 +36,14 @@ Its first scientific use is frequency-domain electromagnetics of nanogaps.
 
 | | |
 |---|---|
-| **works today** | `env bootstrap`, `doctor`, `env install / validate / list / log / clean`, `job probe`, `job machines` |
-| **not built yet** | preparing and running jobs, on a workstation and then through SLURM |
+| **works today** | installing and proving the solvers (`env bootstrap`, `doctor`, `env …`, `job probe`); projects started from templates, written in your own editor and checked (`project new / list / check / graph`); studies expanded into cases (`study list / expand`, `case list`); materials as values, tables and dispersion formulas, your material library, and imports from refractiveindex.info (`material import`) |
+| **not built yet** | running a case — its geometry, mesh and solve — on a workstation and through SLURM, and reading its results |
 
 ## Start here
+
+The [user manual](docs/manual/README.md) takes you from installing femkit to
+a checked project and its cases, every step an example of what you type and
+what femkit prints. In short:
 
 femkit runs from this checkout and is never installed. It needs Linux, Bash,
 `flock` and conda (on a cluster, load the manager's module in the shell first).
@@ -57,13 +62,16 @@ and why, and asks to proceed. With `--yes` it asks nothing, so give those
 answers on the line: `--preamble LINE` (once per line) or `--no-preamble`, and
 `--environments PATH`. On a cluster, run it inside an interactive allocation:
 a login node's limits kill large builds. It ends by printing the lines that
-enter femkit day to day on that machine.
+enter femkit day to day on that machine; after them, you type `femkit …` in any
+folder.
 
 Every command takes `--help`, and every command that changes something takes
 `--dry-run`.
 
 ## Where to read next
 
+- [`docs/manual/`](docs/manual/README.md) — the user manual: install, start a
+  project, write and check it, studies and cases, materials.
 - [`docs/design.md`](docs/design.md) — what femkit is for, and the values behind it.
 - [`docs/contracts/`](docs/contracts/) — the design, one contract per package.
 - [`docs/README.md`](docs/README.md) — every document, one line each.

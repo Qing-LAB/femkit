@@ -5,7 +5,8 @@
 
 # where things go
 [paths]
-# the projects root: the person's global material library and their projects (see projects.md § 1)
+# the projects root: the person's global material library and their projects (manual: 1 · Install
+# and set up)
 # projects = "/data/projects"
 # where engine environment prefixes are created (the control environment's place is fixed) — on a
 # cluster, typically project storage rather than a small home quota
@@ -27,9 +28,10 @@
 [activation]
 # the shell lines a run script runs on this machine before it enters an environment — a batch job
 # starts a fresh shell, so a `module load` that puts the manager on PATH belongs here; [] states
-# that none are needed (see config.md § 3.1)
+# that none are needed (manual: 1 · Install and set up)
 # preamble = ["module load mamba"]
 # how a shell on this machine enters an environment after the preamble — by the activate script on
 # PATH, which a cluster's module puts there, or by the manager's shell function, its hook file
-# sourced first: one of `source activate`, `conda activate`, `mamba activate` (see config.md § 3.1)
+# sourced first: one of `source activate`, `conda activate`, `mamba activate` (manual: 1 · Install
+# and set up)
 # command = "source activate"

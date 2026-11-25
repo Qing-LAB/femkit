@@ -27,12 +27,12 @@ def opened(folder: Path) -> tuple[dict, list]:
 
 
 def test_the_first_project_new_makes_the_root_and_copies_a_template_whole(root):
-    """Fails if `project new` from a template does not make the missing projects root as a step of
-    its plan, copies other than every file of the template — each part and the script its kind
-    fixes — or the copy opens otherwise than the template does; or if, the root there, it makes
-    it again (projects.md § 1: "The first project makes the root"; § 7)."""
+    """Fails if `project new` from a template does not make the missing projects root as the first
+    step of its plan, copies other than every file of the template — each part and the script its
+    kind fixes — or the copy opens otherwise than the template does; or if, the root there, it
+    makes it again (projects.md § 1: "The first project makes the root"; § 7)."""
     op, plan, c = kit.planned("project.new", name="first", source="laplace_square")
-    assert [s.id for s in plan.steps] == ["root", "copy"] and not root.exists()
+    assert (plan.steps[0].id, plan.steps[-1].id) == ("root", "copy") and not root.exists()
     outcome = op.apply(plan, c)
     template = catalogue.templates(kit.ctx())["laplace_square"]
     assert outcome.ok() and kit.tree(root / "first") == kit.tree(template) and outcome.copied == sorted(kit.tree(template))
@@ -141,6 +141,32 @@ def test_a_source_that_names_both_a_template_and_a_project_or_neither_is_refused
         kit.planned("project.new", name="first", source="nowhere")
     kit.apply("project.new", name="first", source="two_material")        # a project alone: copied
     assert kit.tree(root / "first") == kit.tree(root / "laplace_square")
+
+
+def test_a_refusal_writes_a_place_under_home_from_home(root, tmp_path, monkeypatch):
+    """Fails if a refusal about a place under the projects root — a project there already, one of
+    two a source names, a name with no project, a root that is no folder — writes a path under the
+    home folder otherwise than from `~`, as every path a person reads is written (api.md § 4.4:
+    "Paths under the home directory are written from `~`"; projects.md §§ 1, 7)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    kit.apply("project.new", name="laplace_square", source="two_material")
+
+    def said(kind, code, subject, call) -> str:
+        with kit.refused(kind, code, subject) as caught:
+            call()
+        return str(caught.value)
+
+    for shown in (said(Refused, "exists", "laplace_square",
+                       lambda: kit.planned("project.new", name="laplace_square", source="two_material")),
+                  said(UsageError, "ambiguous-source", "laplace_square",
+                       lambda: kit.planned("project.new", name="first", source="laplace_square")),
+                  said(UsageError, "no-such-project", "nowhere", lambda: kit.run("project.check", project="nowhere"))):
+        assert "~/projects" in shown and str(tmp_path) not in shown, shown
+    (tmp_path / "a-file").write_text("")
+    kit.set_root(tmp_path / "a-file")
+    for call in (lambda: kit.run("project.list"), lambda: kit.planned("project.new", name="x", source="two_material")):
+        shown = said(Refused, "no-root", str(tmp_path / "a-file"), call)
+        assert "~/a-file" in shown and str(tmp_path) not in shown, shown
 
 
 def test_the_projects_are_listed_each_with_its_studies(root):

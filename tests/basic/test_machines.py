@@ -86,8 +86,8 @@ def test_a_stale_record_of_this_machine_offers_the_probe_that_writes_it_again_un
         record.write(record.path(name), a_record(identity="this-host", settings=here.model_dump(exclude_none=True)))
     apply("config.set", key="activation.preamble", value='["module load y"]')
     offered = {i.subject: [n.command for n in i.next] for i in run("job.machines").issues if i.code == "stale"}
-    assert offered == {"local": ["python -m femkit job probe --write"],
-                       "workstation": ["python -m femkit job probe --write --name workstation"]}
+    assert offered == {"local": ["femkit job probe --write"],
+                       "workstation": ["femkit job probe --write --name workstation"]}
 
 
 @pytest.mark.parametrize("fields, refusal", [

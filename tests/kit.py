@@ -2,9 +2,9 @@
 through the registry as a surface calls it, a refusal told apart by its code, a lock held by
 another process, an environment left as an install leaves it, a machine record, part schemas and
 checks of a test's own, a project opened as femkit's start leaves the door, a projects root
-stated, a copy of a project template — the Laplace and the two-material one as fixtures — a
-folder's files, a file of a test's own changed, and the tripwires the basic and web tiers stand
-behind. Each test file takes these from here, never from another test file; a tier's conftest.py
+stated, a copy of a project template — the Laplace and the two-material one as fixtures — every
+command of the command line with its options, a folder's files, a file of a test's own changed,
+and the tripwires the basic and web tiers stand behind. Each test file takes these from here, never from another test file; a tier's conftest.py
 takes the tripwire fixtures it applies."""
 
 from __future__ import annotations
@@ -194,6 +194,26 @@ def laplace(tmp_path) -> Path:
 def slab(tmp_path) -> Path:
     """A copy of the two-material template, as the project `slab`, under a projects root of the test's own."""
     return copy_template(tmp_path / "projects", "two_material", "slab")
+
+
+def commands() -> dict[tuple[str, ...], frozenset[str]]:
+    """Every command femkit's command line has, as the words a person types after `femkit` —
+    `("project", "new")`, `("doctor",)` — each with the options it takes, `--help` among them
+    (api.md § 4.1)."""
+    import click
+    from femkit.cli import build
+    out: dict[tuple[str, ...], frozenset[str]] = {}
+
+    def walk(command: click.Command, path: tuple[str, ...]) -> None:
+        if isinstance(command, click.Group):
+            for name, sub in command.commands.items():
+                walk(sub, (*path, name))
+        else:
+            out[path] = frozenset(o for p in command.params for o in (*p.opts, *p.secondary_opts)
+                                  if o.startswith("-")) | {"--help"}
+
+    walk(build(), ())
+    return out
 
 
 def tree(folder: Path) -> dict[str, bytes]:

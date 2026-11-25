@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 import tomlkit
-from pydantic import AfterValidator, ConfigDict, Field, PositiveInt
+from pydantic import AfterValidator, ConfigDict, Field, PositiveInt, TypeAdapter
 from pydantic.fields import FieldInfo
 from typing import Annotated
 
-from femkit.core import dirs, paths, view
+from femkit.core import dirs, paths, text, view
 from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import document_set, read_document, write_document
@@ -28,6 +28,10 @@ from femkit.definitions.catalogue import data_root, shipped
 from femkit.definitions.models import Launcher
 
 FILE_NAME = "config.toml"
+
+#: The chapter of the user manual that explains the settings file, by its file's name in
+#: `docs/manual/`: the help of its keys ends with it (core.md § 2).
+MANUAL = "1-install.md"
 
 
 def _unset(text: str, **more: str) -> dict:
@@ -100,7 +104,7 @@ class Activation(Section):
         description="the shell lines a run script runs on this machine before it enters an environment — a batch "
         "job starts a fresh shell, so a `module load` that puts the manager on PATH belongs here; [] states that "
         "none are needed",
-        json_schema_extra=_unset("`job probe --write` and `job prepare` are refused, naming this key",
+        json_schema_extra=_unset("`job probe --write` is refused, naming this key",
                                  ask="Which shell lines must a job here run before it enters an environment? "
                                      "If none, give --no-preamble instead",
                                  doc="config.md § 3.1"),
@@ -110,7 +114,7 @@ class Activation(Section):
         description="how a shell on this machine enters an environment after the preamble — by the activate "
         "script on PATH, which a cluster's module puts there, or by the manager's shell function, its hook file "
         "sourced first",
-        json_schema_extra=_unset("`job probe --write` and `job prepare` are refused, naming this key",
+        json_schema_extra=_unset("`job probe --write` is refused, naming this key",
                                  ask="How does a shell here enter an environment, after those lines?",
                                  doc="config.md § 3.1"),
     )
@@ -151,7 +155,7 @@ class Key:
     @property
     def help(self) -> str:
         """Its help, as the template's comment above it reads (core.md § 2)."""
-        return described(self.field)
+        return described(self.field, MANUAL)
 
     @property
     def unset(self) -> str:
@@ -162,6 +166,11 @@ class Key:
     def ask(self) -> str | None:
         """The question `config init` asks while it is unset; None for a key it does not ask for."""
         return field_extras(self.field).get("ask")
+
+    def shown(self, value: Any) -> str:
+        """A value the key holds, as a person reads it (api.md § 4.4): read by the key's type, so a
+        path is written from `~` where it lies under the home folder; unset in words."""
+        return text.show(TypeAdapter(self.annotation).validate_python(value))
 
 
 def keys() -> list[Key]:

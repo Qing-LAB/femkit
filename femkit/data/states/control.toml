@@ -11,7 +11,7 @@
 absent = "no control prefix"
 broken = "no conda-meta/, no bin/python, or no stamp file"
 outdated = "the stamp's SHA-256 is not that of channels.txt then control.txt"
-current = "otherwise: python -m femkit runs inside it"
+current = "otherwise: femkit runs on its own Python"
 
 [[rules]]
 state = "absent"
@@ -41,4 +41,7 @@ bootstrap = { describe = "remove it, create it", shell = "bash scripts/install-e
 [actions.outdated]
 bootstrap = { describe = "remove it, create it", shell = "bash scripts/install-env.sh bootstrap" }
 
+# A current one needs nothing of its own; the same line writes its `femkit` command, which doctor
+# names while that command is missing or is not this checkout's (envs.md § 7).
 [actions.current]
+bootstrap = { describe = "write its femkit command, naming this checkout", shell = "bash scripts/install-env.sh bootstrap" }

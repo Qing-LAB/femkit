@@ -31,6 +31,7 @@ femkit ships these definitions under `femkit/data/`, beside its templates
 femkit/data/
 ├── channels.txt               the channel order every environment is solved with
 ├── control.txt                the control environment's packages, as `conda create --file` reads them
+├── launcher.sh                the `femkit` command's text, which the install script fills and writes (envs.md § 7)
 ├── environments/<name>.toml   one per engine environment
 ├── formulations/<family>.toml a formulation family, stated for every engine (models.md § 4)
 ├── meshers/<id>.toml          a mesher and what it builds; decided: `gmsh.toml` alone, with the
@@ -40,26 +41,26 @@ femkit/data/
 ├── units.toml                 the units a value may be written in, with exact factors (core.md § 11)
 ├── geometry/kinds.toml        the kinds of place a group may be (geometry.md § 7)
 ├── properties.toml            the property list: names in femkit, each engine and each source (materials.md § 1)
+├── dispersion.toml            the variables a material's data may vary with, and the dispersion models (materials.md § 2)
+├── step_kinds.toml            the kinds of calculation and the variables each supplies (models.md § 4.2)
+├── materials/<name>/          the shipped materials, seeding the global library (materials.md § 4)
+├── importers/<source>.toml    how another library's files map onto femkit's (materials.md § 7)
 ├── states/<machine>.toml      each state machine declared as data (core.md § 7)
 ├── project/layout.toml        a project's parts, folders and object types (projects.md § 4)
 ├── web/page.toml              the web page's own structure (web.md § 8.1)
 └── templates/                 the settings file's template, and the project templates (projects.md § 7)
 ```
 
-The data the new parts are driven by, decided by the person (ADRs
-[0011](../decisions/0011-project-structure.md)–[0014](../decisions/0014-materials.md))
-and not built yet (the materials' files, plan § 4, E; the step kinds, with
-Maxwell's frequency step, M9; couplings after M9; the mesh step's environment,
-X, where it is still open):
+`step_kinds.toml` holds `stationary` alone; its `frequency` kind joins with
+Maxwell (plan § 4, M9). Not built yet, decided by the person (ADRs
+[0011](../decisions/0011-project-structure.md)–[0014](../decisions/0014-materials.md)):
+couplings (after M9) and the mesh step's environment (X, where it is still
+open):
 
 ```text
 femkit/data/
 ├── environments/gmsh.toml     the mesh step's tool environment, Gmsh with its Python interface — proposed, open with X (geometry.md § 5)
-├── step_kinds.toml            the kinds of calculation: stationary, frequency, … (models.md § 4.2)
-├── couplings/<coupling>.toml  a coupling joining formulation families (models.md § 4.5)
-├── dispersion.toml            the dispersion models (materials.md § 2)
-├── materials/<name>/          the shipped materials, seeding the global library (materials.md § 4)
-└── importers/<source>.toml    how another library's files map onto femkit's (materials.md § 7)
+└── couplings/<coupling>.toml  a coupling joining formulation families (models.md § 4.5)
 ```
 
 A definition changes only when femkit changes: it is reviewed, versioned
@@ -126,12 +127,12 @@ writes nothing; importing a schema module loads nothing.
 
 ### 2.3 Generated reference
 
-`python -m femkit schema docs` (in `femkit/reference.py`, beside the registry, because it
+`femkit schema docs` (in `femkit/reference.py`, beside the registry, because it
 reads every domain's models) renders `docs/reference/` from the schema models
 (the state tables are not rendered yet, [`core.md`](core.md) § 7). The
 committed pages are that output; a test renders them again and fails on any difference. Contracts,
 guides and help text link to the reference instead of restating fields.
-`python -m femkit schema check` loads every shipped definition; a test runs it.
+`femkit schema check` loads every shipped definition; a test runs it.
 Beside the table, it checks what only the registry can: each state table's
 operations, by their names and their requests' fields; the layout by its own
 rules ([`projects.md`](projects.md) § 4); each template a project named by one

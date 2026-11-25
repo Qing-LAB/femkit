@@ -6,13 +6,15 @@ is tests/basic/test_templates.py's."""
 from __future__ import annotations
 
 import hashlib
+import shutil
 from pathlib import Path
+
+import pytest
 
 from tests import kit
 from femkit.core.schema import LENGTH
 from femkit.definitions import catalogue
 from tests.kit import slab  # noqa: F401 -- a fixture
-from femkit.projects import door
 
 COMPONENT = "components/slab/component.toml"
 MESH = "mesh/uniform.toml"
@@ -117,33 +119,75 @@ def test_a_material_fills_a_body_group_the_component_promises(slab):
                              ("not-a-body", COMPONENT, "assign.void", None, ('"high"', '"low"'))]
 
 
-def test_a_material_the_project_lacks_is_not_checked_yet_and_a_name_off_the_rule_does_not_load(slab):
-    """Fails if a `GLOBAL/` material, or one the project lacks, is other than not checked yet until
-    the global library is read, or a material's name that breaks the name rule loads
-    (materials.md § 4: "a name the project lacks, and every `GLOBAL/` name, is not checked yet";
-    projects.md § 3)."""
+def library_names(slab: Path) -> tuple[str, ...]:
+    """The materials the global library at the project's root holds, as an assignment names each
+    explicitly: `GLOBAL/<name>` (materials.md § 4)."""
+    return tuple(f'"GLOBAL/{p.parent.relative_to(slab.parent / "materials").as_posix()}"'
+                 for p in sorted((slab.parent / "materials").rglob("material.toml")))
+
+
+def on_component(slab: Path) -> list[tuple]:
+    """Every finding `project check` makes on the component: its severity, code, key, right value
+    and choices, and the operations its next steps run."""
+    found = kit.run("project.check", project=slab.name).issues
+    return [(i.severity, i.code, i.key, i.right, i.choices, [a.call.operation for a in i.next])
+            for i in found if i.file == COMPONENT]
+
+
+def test_a_material_in_neither_place_is_an_error_whose_choices_are_the_materials_each_holds(slab):
+    """Fails if a `GLOBAL/` material the global library lacks, or a name neither the project nor
+    the library holds — close to none of theirs — is other than an error `no-such-material` at the
+    assignment's `material` key, its choices the materials each holds, the library's as
+    `GLOBAL/<name>`; or if, where the projects root has no library yet, the finding does not offer
+    the `project new` that makes it, or offers it where the library is there (materials.md § 4:
+    "a name in neither is a finding of `project check` on the assignment's `material` key,
+    `no-such-material` … with the materials each holds as its choices"; "where the root has no
+    library yet, the finding says so, and that the next `project new` makes it")."""
     kit.rewrite(slab / COMPONENT, 'material = "dielectric_1"', 'material = "GLOBAL/metals/gold"')
     kit.rewrite(slab / COMPONENT, 'material = "dielectric_2"', 'material = "gold"')
-    assert checked(slab) == [(door.UNCHECKED, COMPONENT, "assign.low.material", None, ()),
-                             (door.UNCHECKED, COMPONENT, "assign.high.material", None, ())]
-    kit.rewrite(slab / COMPONENT, 'material = "gold"', 'material = "GLOBAL/../gold"')
-    assert [f[:3] for f in checked(slab)] == [("unloadable", COMPONENT, "assign.high.material")]
+    choices = ('"dielectric_1"', '"dielectric_2"', *library_names(slab))
+    assert on_component(slab) == [("error", "no-such-material", "assign.low.material", None, choices, []),
+                                  ("error", "no-such-material", "assign.high.material", None, choices, [])]
+    shutil.rmtree(slab.parent / "materials")
+    own = ('"dielectric_1"', '"dielectric_2"')
+    assert on_component(slab) == [
+        ("error", "no-such-material", "assign.low.material", None, own, ["project.new"]),
+        ("error", "no-such-material", "assign.high.material", None, own, ["project.new"])]
 
 
-def test_a_material_name_close_to_one_the_project_holds_is_a_warning_naming_it(slab):
-    """Fails if a material the project lacks whose name is close to one it holds — a misspelling,
-    most likely — is not a warning at the assignment's `material` naming the one meant, the
-    project's materials its choices; or if one close to none is, rather than not checked yet
-    (materials.md § 4: "a name in neither is a finding … with the materials each holds as its
-    choices"; core.md § 10)."""
-    kit.rewrite(slab / COMPONENT, 'material = "dielectric_2"', 'material = "dielectrc_2"')
-    found = kit.run("project.check", project=slab.name).issues
-    assert [(i.severity, i.code, i.key, i.choices) for i in found if i.file == COMPONENT] == [
-        ("warning", "no-such-material", "assign.high.material", ('"dielectric_1"', '"dielectric_2"'))]
-    assert found[0].message.endswith("did you mean `dielectric_2`?")
-    kit.rewrite(slab / COMPONENT, 'material = "dielectrc_2"', 'material = "gold"')
-    assert [(i.severity, i.code) for i in kit.run("project.check", project=slab.name).issues
-            if i.file == COMPONENT] == [("info", door.UNCHECKED)]
+@pytest.mark.parametrize("name, meant", [("GLOBAL/../gold", '"GLOBAL/gold"'), ("Global/vacuum", '"GLOBAL/vacuum"'),
+                                         ("Dielectric 2", '"dielectric_2"'), ("metals//2gold", None)],
+                         ids=["a step leaving the folder", "the prefix in other letters", "capitals and a space",
+                              "an empty step and a digit first"])
+def test_a_material_name_the_name_rule_refuses_is_an_error_whose_right_value_is_the_name_it_meant(slab, name, meant):
+    """Fails if a material's name that breaks the name rule makes the component not load — so
+    nothing else of it is checked — or is other than one error `bad-name` at the assignment's
+    `material`, its right value the name it most likely meant, by the rule, where there is one
+    (materials.md § 4: "A name the name rule refuses — `Global/gold` — says what in it breaks the
+    rule and the name it most likely meant"; projects.md § 3)."""
+    kit.rewrite(slab / COMPONENT, 'material = "dielectric_2"', f'material = "{name}"')
+    assert on_component(slab) == [("error", "bad-name", "assign.high.material", meant, (), [])]
+
+
+def test_a_material_name_close_to_one_either_place_holds_is_an_error_whose_right_value_is_it(slab):
+    """Fails if a material name in neither place, close to one the project or the global library
+    holds by its whole name or its last step — a misspelling, or a group left out, most likely —
+    is not an error at the assignment's `material` whose right value is the one meant, written as
+    the assignment would write it, the library's as `GLOBAL/<name>`; or if one close to none has a
+    right value rather than the materials each place holds as its choices (materials.md § 4: "did
+    you mean" the closest, "by its whole name or its last step, in either place, written as the
+    choice would be"; core.md § 10)."""
+    (slab.parent / "materials" / "metals" / "gold").mkdir(parents=True)
+    shutil.copy(slab.parent / "materials" / "vacuum" / "material.toml", slab.parent / "materials/metals/gold")
+    for written, meant in [("dielectrc_2", '"dielectric_2"'), ("GLOBAL/vacum", '"GLOBAL/vacuum"'),
+                           ("gold", '"GLOBAL/metals/gold"'), ("GLOBAL/gold", '"GLOBAL/metals/gold"'),
+                           ("metal/gold", '"GLOBAL/metals/gold"')]:
+        kit.rewrite(slab / COMPONENT, 'material = "dielectric_2"', f'material = "{written}"')
+        assert on_component(slab) == [("error", "no-such-material", "assign.high.material", meant, (), [])], written
+        kit.rewrite(slab / COMPONENT, f'material = "{written}"', 'material = "dielectric_2"')
+    kit.rewrite(slab / COMPONENT, 'material = "dielectric_2"', 'material = "copper"')
+    assert on_component(slab) == [("error", "no-such-material", "assign.high.material", None,
+                                   ('"dielectric_1"', '"dielectric_2"', *library_names(slab)), [])]
 
 
 def test_a_property_holding_several_datasets_names_the_one_used_and_each_name_is_held(slab):
@@ -208,7 +252,7 @@ def test_a_materials_properties_are_the_lists_each_value_a_quantity_naming_no_pa
     kit.rewrite(slab / HIGH, 'value = "4"', 'value = "4 furlong"')
     assert checked(slab) == [
         ("wrong-dimension", LOW, "properties.relative_permittivity.benchmark.value", None, ()),
-        ("no-such-property", LOW, "properties.conductivity", None, ('"relative_permittivity"',)),
+        ("no-such-property", LOW, "properties.conductivity", None, ('"refractive_index"', '"relative_permittivity"')),
         ("bad-quantity", HIGH, "properties.relative_permittivity.benchmark.value", None, ())]
     kit.rewrite(slab / HIGH, 'value = "4 furlong"', 'value = "length / height"')
     kit.rewrite(slab / HIGH, 'range = "all"', 'range = ["400 nm", "800 furlong"]')

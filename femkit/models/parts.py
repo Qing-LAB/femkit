@@ -11,7 +11,6 @@ declaration lists.
 
 from __future__ import annotations
 
-import difflib
 from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
@@ -23,11 +22,13 @@ from femkit.core.issues import Issue
 from femkit.core.schema import Model, allowed, classes, field_extras, field_named, references, values_of
 from femkit.definitions.places import PlaceKind, possible
 from femkit.materials.assign import ASSIGNMENT, DATASETS, DIMENSION, FRAME, GROUP, PROPERTY
-from femkit.projects import names
+from femkit.materials.material import Answer, answering
+from femkit.projects import door
 from femkit.projects.addresses import Address
 from femkit.projects.checking import Checking
 from femkit.projects.door import Opened, Part
 from femkit.projects.layout import held
+from femkit.projects.names import nearest
 
 #: The object types this package reads of other parts, by their names in the layout, beside those
 #: the materials package reads of a component and a material (`femkit/materials/assign.py`).
@@ -119,26 +120,21 @@ def contract(opened: Opened, part: Part) -> Contract | None:
 
 
 def material(opened: Opened, name: str) -> Part | None:
-    """The project's own material ``name``, loaded; None for one the project lacks, one of the
-    global library's — not read yet (materials.md § 4) — or one that does not load."""
-    kind = opened.layout.objects[PROPERTY].part
-    found = opened.parts.get(str(Address(kind, name))) if not name.startswith(names.GLOBAL) else None
+    """The material ``name`` names, loaded (materials.md § 4): `GLOBAL/<name>` the global
+    library's; any other the project's own first, then the library's. None for one in neither, or
+    one that does not load."""
+    found = door.named(opened, opened.layout.objects[PROPERTY].part, name)
     return found if found is not None and found.data is not None else None
 
 
-def datasets(opened: Opened, part: Part) -> dict[str, dict[str, Any]]:
-    """A loaded material's datasets, by property, each by its name (materials.md § 3)."""
-    return {prop: table(sets) for prop, sets in objects(opened, part, PROPERTY).items()}
+def datasets(c: Checking, part: Part) -> dict[str, dict[str, Answer]]:
+    """A loaded material's datasets, by the property each answers and then by name, each with the
+    property it is held under — the one it answers, or an equivalent form of it (materials.md
+    §§ 1, 3; `material.answering`)."""
+    return answering(c.properties, {prop: table(sets) for prop, sets in objects(c.opened, part, PROPERTY).items()})
 
 
 # ------------------------------------------------------------------ what every part of this package checks
-
-def nearest(name: str, among: Iterable[str]) -> str | None:
-    """The one of ``among`` closest to ``name`` — what a misspelling most likely meant — or None
-    where none is close (the standard library's measure)."""
-    found = difflib.get_close_matches(name, list(among), n=1)
-    return found[0] if found else None
-
 
 def meant(name: str, among: Iterable[str]) -> str:
     """`; did you mean `x`?` for the one of ``among`` closest to ``name``; nothing where none is."""
@@ -147,15 +143,18 @@ def meant(name: str, among: Iterable[str]) -> str:
 
 
 def called(address: Address) -> str:
-    """A part as a person calls it: `the project file`, `the physics `electrostatics``."""
+    """A part as a sentence names it: `the project file`; any other by its address, as a person
+    names it in a command and `project check` lists it — `` `observables:benchmark` `` — so a
+    kind named in the plural, as an observable set's is, never reads as many (projects.md § 5)."""
     if address.name is None:
         return "the project file"
-    return f"the {address.kind} `{address.name}`"
+    return f"`{address}`"
 
 
-def listed(items: Iterable[str]) -> str:
-    """Names as a person lists them: `` `a` ``, `` `a` and `b` ``, `` `a`, `b` and `c` ``."""
-    shown = [f"`{i}`" for i in items]
+def listed(items: Iterable[str], form: str = "`{}`") -> str:
+    """Names as a person lists them: `` `a` ``, `` `a` and `b` ``, `` `a`, `b` and `c` `` — each
+    in ``form``."""
+    shown = [form.format(i) for i in items]
     return " and ".join(shown) if len(shown) < 3 else ", ".join(shown[:-1]) + " and " + shown[-1]
 
 
@@ -176,30 +175,23 @@ class Missing:
 
 
 def missing(c: Checking, part: Part) -> Iterator[Missing]:
-    """Each name a field of ``part`` cites, by its `ref`, that names no part of the project
-    (projects.md § 3)."""
+    """Each name a field of ``part`` cites, by its `ref`, that names no part — of the project, or
+    of the global library of a kind with one (projects.md § 3; materials.md § 4)."""
     layout = c.opened.layout
     for location, ref, name, how in references(part.data):
         kinds = [t for t in ref.split("|") if t in layout.kinds]
-        if not kinds or any(str(Address(k, name)) in c.opened.parts for k in kinds):
+        if not kinds or any(door.named(c.opened, k, name) is not None for k in kinds):
             continue
-        there = sorted(p.address.name for p in c.opened.parts.values() if p.address.kind in kinds)
+        there = sorted({n for k in kinds for n in door.known(c.opened, k)})
         yield Missing(location, how, name, kinds, there, nearest(name, there))
 
 
 def cited(c: Checking, part: Part) -> Iterator[Issue]:
-    """Each name a field of ``part`` cites that names no part of the project (projects.md § 3): a
-    finding at the key — its right value, where one name the project holds is close, the value
-    with that name put in place; else the parts of that kind its choices. A name of a kind with a
-    global library that the project lacks, and close to none it holds, is not checked yet
-    (materials.md § 4)."""
-    layout = c.opened.layout
+    """Each name a field of ``part`` cites that names no part (projects.md § 3): a finding at the
+    key — its right value, where one name it may give is close, the value with that name put in
+    place; else the names it may give its choices: the project's parts of that kind, and, of a
+    kind with a global library, the library's, `GLOBAL/<name>` (materials.md § 4)."""
     for m in missing(c, part):
-        if m.near is None and any(layout.kinds[k].library for k in m.kinds):
-            yield c.unchecked(part, *m.keys, message=f"`{m.name}` is not checked: the project holds no "
-                                                     f"{' or '.join(m.kinds)} of that name, and the global "
-                                                     f"{' or '.join(m.kinds)} library is not read yet")
-            continue
         right: Any = None
         if m.near is not None and m.held == "value":
             right = m.near

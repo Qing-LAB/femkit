@@ -58,8 +58,10 @@ def test_expand_writes_one_complete_case_per_point_named_by_its_content(laplace)
     assert one["steps"]["solve"]["physics"]["meaning"] == "per unit depth"
     assert one["component"]["assign"]["domain"]["properties"]["relative_permittivity"] == {
         "dataset": "definition", "data": {"value": {"value": "1", "dimension": {}}, "convention": "real",
-                                          "source": "the definition of vacuum: its relative permittivity is exactly 1",
-                                          "range": "all"}}
+                                          "source": "the definition of vacuum: its permittivity is the vacuum "
+                                                    "electric permittivity ε0 itself, so its relative permittivity "
+                                                    "is exactly 1",
+                                          "range": "all", "temperature": None, "uncertainty": None}}
     again = expand()
     assert again.added == [] and sorted(again.kept) == sorted(cases_there)
 
@@ -86,7 +88,7 @@ def test_two_studies_of_one_content_each_write_their_own_cases(laplace):
     first, second = expand(study="check"), expand(study="again")
     assert len(first.added) == len(second.added) == 3 and second.kept == []
     assert sorted(written(laplace, "check")) == sorted(written(laplace, "again")) == sorted(first.added)
-    listed = {s.name: [c.id for c in s.written] for s in kit.run("case.list", project="laplace_square").studies}
+    listed = {s.name: sorted(c.id for c in s.written) for s in kit.run("case.list", project="laplace_square").studies}
     assert listed == {"again": sorted(second.added), "check": sorted(first.added)}
 
 
@@ -149,14 +151,16 @@ def test_a_study_with_findings_or_not_named_is_refused_and_nothing_is_written(la
 
 
 @pytest.mark.parametrize("file, old, new, why", [
-    ("physics/electrostatics.toml", 'value = "0 V"', 'value = "0 V', "the physics `electrostatics` does not load"),
-    ("mesh/uniform.toml", 'size = "0.1 m"', 'sise = "0.1 m"', "the mesh `uniform` does not load"),
-], ids=["a physics with an unclosed quote", "a recipe with a misspelled key"])
+    ("physics/electrostatics.toml", 'value = "0 V"', 'value = "0 V', "`physics:electrostatics` does not load"),
+    ("mesh/uniform.toml", 'size = "0.1 m"', 'sise = "0.1 m"', "`mesh:uniform` does not load"),
+    ("observables/midpoint.toml", 'unit = "V"', 'unit = "V', "`observables:midpoint` does not load"),
+], ids=["a physics with an unclosed quote", "a recipe with a misspelled key", "an observable set not TOML"])
 def test_a_study_using_a_part_that_does_not_load_lists_as_not_expanding_and_is_not_complete(laplace, file, old,
                                                                                            new, why):
     """Fails if `study list` or `case list` does not say a study using a part that does not load
-    does not expand, naming that part, or if `project check` shows the study complete then
-    (models.md § 11.1: "a study that does not expand, and why"; projects.md § 8)."""
+    does not expand, naming that part by its address — never by its kind's name, which reads as
+    many for an observable set, `observables` (models.md § 11.1: "a study that does not expand,
+    and why"; projects.md §§ 5, 8)."""
     kit.rewrite(laplace / file, old, new)
     for verb in ("study.list", "case.list"):
         assert [(s.name, s.expands, s.why) for s in kit.run(verb, project="laplace_square").studies] == [
@@ -168,7 +172,8 @@ def test_a_study_using_a_part_that_does_not_load_lists_as_not_expanding_and_is_n
 def test_case_list_shows_each_studys_cases_their_point_and_a_study_that_does_not_expand(laplace):
     """Fails if `case list` does not show each written case under its study, with its point and
     whether the study makes it now — one it no longer makes kept, with its point as its file holds
-    it — or a study that does not expand and why (models.md § 5.3, § 11.1)."""
+    it, exactly, its decimal where it has one, so the same value reads the same — or a study that
+    does not expand and why (models.md § 5.3, § 11.1; core.md § 11)."""
     expand()
     (study,) = kit.run("case.list", project="laplace_square").studies
     assert (study.name, study.expands, study.cases) == ("check", True, 3)
@@ -179,8 +184,36 @@ def test_case_list_shows_each_studys_cases_their_point_and_a_study_that_does_not
     units = catalogue.units(kit.ctx())
     assert sorted((c.id, c.point, c.made) for c in study.written) == [
         (i, {k: cases.shown(v, units) for k, v in d["point"].items()}, False) for i, d in written(laplace).items()]
+    assert sorted(c.point["mesh:uniform:size"] for c in study.written) == ["0.025 m", "0.05 m", "0.1 m"]
     assert (study.name, study.expands, study.cases) == ("check", False, 0) and study.why
     assert [(s.name, s.expands) for s in kit.run("study.list", project="laplace_square").studies] == [("check", False)]
+
+
+def test_case_list_orders_a_studys_cases_by_their_point_as_the_study_lists_it(laplace):
+    """Fails if `case list` orders a study's cases otherwise than by their point — axis by axis as
+    the study declares its axes, each value where the study lists it, neither by ID nor by value —
+    those the study makes now first, then those it no longer makes in that order, a value it no
+    longer lists after those it does, by its value (models.md § 5.3)."""
+    size, degree = "mesh:uniform:size", "study:check:numerics.element.degree"
+    study = laplace / "studies" / "check.toml"
+    kit.rewrite(study, f'[axes."{size}"]',                             # declared first, though it sorts last
+                f'[axes."{degree}"]\nclass = "numerical convergence"\nvalues = [2, 1]\n\n[axes."{size}"]')
+    kit.rewrite(study, '["0.1 m", "0.05 m", "0.025 m"]', '["0.05 m", "0.1 m", "0.025 m"]')
+    expand()
+
+    def listed() -> list[tuple[str, str, bool]]:
+        (held,) = kit.run("case.list", project="laplace_square").studies
+        return [(c.point[degree], c.point[size], c.made) for c in held.written]
+
+    points = [(d, s) for d in ("2", "1") for s in ("0.05 m", "0.1 m", "0.025 m")]
+    assert listed() == [(d, s, True) for d, s in points]
+    kit.rewrite(laplace / "mesh" / "uniform.toml", "tolerance = 1e-9", "tolerance = 1e-8")   # each point anew
+    expand()
+    assert listed() == [(d, s, True) for d, s in points] + [(d, s, False) for d, s in points]
+    kit.rewrite(study, '["0.05 m", "0.1 m", "0.025 m"]', '["0.2 m", "0.05 m"]')
+    no_longer = ("0.05 m", "0.025 m", "0.025 m", "0.1 m", "0.1 m")    # listed first; the others by value
+    assert listed() == [(d, "0.05 m", True) for d in ("2", "1")] + [(d, s, False) for d in ("2", "1")
+                                                                    for s in no_longer]
 
 
 def test_a_recipe_value_an_axis_varies_is_exact_in_the_case_and_in_its_dimension(laplace):

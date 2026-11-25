@@ -1,8 +1,8 @@
-# One mesh recipe (geometry.md § 6): an even size over the whole slab. The interface is a face
-# of the geometry, so every mesh has a line of nodes on it, and first-order elements hold the
-# benchmark's piecewise-linear potential exactly.
+# One mesh recipe (manual: 3 · Write each part): an even size over the whole slab. The
+# interface is a face of the geometry, so every mesh has a line of nodes on it, and first-order
+# elements hold the benchmark's piecewise-linear potential exactly.
 
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
 schema = 1
 
 # the largest element size anywhere: a length

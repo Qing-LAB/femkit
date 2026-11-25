@@ -348,6 +348,71 @@
       "title": "CaseList",
       "type": "object"
     },
+    "CaseMaterial": {
+      "additionalProperties": false,
+      "description": "One property of one body's material in a case, where its material is found now, and how\nits data differs from what the material holds now (materials.md \u00a7\u00a7 4, 6).",
+      "properties": {
+        "changed": {
+          "description": "for a case its study no longer makes, each way the dataset's data differs from what its material holds now; none where it holds the same",
+          "doc": "materials.md \u00a7 6",
+          "items": {
+            "$ref": "#/$defs/DataChange"
+          },
+          "type": "array"
+        },
+        "dataset": {
+          "description": "the dataset the case used, by its name",
+          "type": "string"
+        },
+        "found": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "where that name finds it now, by the name that names it exactly: the project's own as it is, the global library's as `GLOBAL/<name>`; none where neither holds it"
+        },
+        "group": {
+          "description": "the body group it fills",
+          "type": "string"
+        },
+        "material": {
+          "description": "the material, by its name in its library",
+          "type": "string"
+        },
+        "property": {
+          "description": "the property",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the dataset's source, as the case holds it"
+        }
+      },
+      "required": [
+        "group",
+        "material",
+        "found",
+        "property",
+        "dataset",
+        "source",
+        "changed"
+      ],
+      "title": "CaseMaterial",
+      "type": "object"
+    },
     "CaseRow": {
       "additionalProperties": false,
       "properties": {
@@ -361,11 +426,19 @@
           "description": "whether its study makes it now; one it no longer makes is kept",
           "type": "boolean"
         },
+        "materials": {
+          "description": "each body's material, with the dataset and source of each property, as the case holds them, where its material is found now, and, for a case its study no longer makes, how that data differs from what the material holds now",
+          "doc": "materials.md \u00a7\u00a7 4, 6",
+          "items": {
+            "$ref": "#/$defs/CaseMaterial"
+          },
+          "type": "array"
+        },
         "point": {
           "additionalProperties": {
             "type": "string"
           },
-          "description": "its axis values, as its study writes them \u2014 as its file holds them for a case the study no longer makes",
+          "description": "its axis values, as its study writes them \u2014 for a case the study no longer makes, as its file holds them, exactly, in canonical units",
           "type": "object"
         },
         "why": {
@@ -385,7 +458,8 @@
         "id",
         "point",
         "made",
-        "why"
+        "why",
+        "materials"
       ],
       "title": "CaseRow",
       "type": "object"
@@ -645,6 +719,31 @@
         "depends"
       ],
       "title": "ContextPart",
+      "type": "object"
+    },
+    "DataChange": {
+      "additionalProperties": false,
+      "description": "One way a dataset's data in a case differs from what its material holds now (materials.md\n\u00a7 6), each value as a person reads it: `value`, `1`, `1.0006`.",
+      "properties": {
+        "case": {
+          "description": "the value there as the case holds it",
+          "type": "string"
+        },
+        "key": {
+          "description": "the dataset's key where it differs, its dotted path; empty for the dataset as a whole",
+          "type": "string"
+        },
+        "now": {
+          "description": "the value there as the material holds it now; for the dataset as a whole, why there is none to compare",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "case",
+        "now"
+      ],
+      "title": "DataChange",
       "type": "object"
     },
     "DefectAnswer": {
@@ -1581,6 +1680,78 @@
       "title": "Image",
       "type": "object"
     },
+    "ImportOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset": {
+          "description": "its dataset, by its name",
+          "type": "string"
+        },
+        "files": {
+          "description": "each file written, by its path from the material's folder",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "name": {
+          "description": "the new material, by the name an assignment gives it: `GLOBAL/<name>` in the global library",
+          "type": "string"
+        },
+        "path": {
+          "description": "its folder",
+          "type": "string"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "property": {
+          "description": "the property its dataset is held under",
+          "type": "string"
+        },
+        "status": {
+          "description": "whether every step finished",
+          "enum": [
+            "done",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "name",
+        "path",
+        "property",
+        "dataset",
+        "files"
+      ],
+      "title": "ImportOutcome",
+      "type": "object"
+    },
     "InitOutcome": {
       "additionalProperties": false,
       "properties": {
@@ -2262,7 +2433,7 @@
       "additionalProperties": false,
       "properties": {
         "file": {
-          "description": "its file, from the project's folder",
+          "description": "its file, from the project's folder; a global library's by its full path, shown from `~` where it lies under the home folder",
           "type": "string"
         },
         "part": {

@@ -170,7 +170,9 @@ def _requested(req, ctx: Context) -> list[str]:
             raise UsageError("give environment names or --all, not both", code="contradiction", subject="names")
         return default_environments(ctx)
     if not req.names:
-        raise UsageError("name an environment, or --all", (view.command(ENV_LIST),), code="unnamed", subject="names")
+        raise UsageError(f"name an environment, or --all; the environments: "
+                         f"{', '.join(catalogue.load(ctx).environments) or 'none'}", (view.command(ENV_LIST),),
+                         code="unnamed", subject="names")
     return list(dict.fromkeys(req.names))
 
 
@@ -273,7 +275,7 @@ def _env_steps(ctx: Context, name: str, clean: bool) -> list[Step]:
 
 @operation(ENV_INSTALL, result=InstallOutcome, changes=True, subject="plan")
 class EnvInstall:
-    """Install environments from their definitions (envs.md § 4); resumes an interrupted install."""
+    """Install environments from their definitions; resumes an interrupted install."""
 
     def plan(self, req: InstallRequest, ctx: Context) -> Plan:
         names = _requested(req, ctx)
@@ -347,7 +349,7 @@ class ValidateOutcome(Outcome):
 @operation(ENV_VALIDATE, result=ValidateOutcome, changes=True,
            subject=lambda req: [layout.subject(req.name)])
 class EnvValidate:
-    """Run an environment's checks and record whether it is ready (envs.md § 5)."""
+    """Run an environment's checks and record whether it is ready."""
 
     @staticmethod
     def _basis(f, state, ctx: Context) -> dict:

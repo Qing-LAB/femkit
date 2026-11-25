@@ -6,7 +6,10 @@ folders, and one per object inside a loaded part, as the layout's object types d
 with its text as its file holds it, its state, and the findings that name it. Its ports are its
 fields that name another part or a group, typed by their `ref` annotations — the ones the checks
 read — and the wires are the references between parts: each name a field cites, and each
-parameter a quantity uses. A surface draws it all from this document and changes nothing.
+parameter a quantity uses. A global library's material the project names is a node too, its
+address `material:GLOBAL/<name>` and its group `GLOBAL`: the library's, said so; an assignment's
+wire goes to the material its name finds (materials.md § 4). A surface draws it all from this
+document and changes nothing.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from pydantic import Field
 from femkit.core.errors import UsageError
 from femkit.core.issues import Issue
 from femkit.core.schema import QUANTITIES, Model, references
+from femkit.core.text import count
 from femkit.core.units import name_spans
 from femkit.models.parts import quantities
 from femkit.projects import door, names
@@ -94,13 +98,17 @@ def _text(opened: Opened, address: Address) -> str | None:
         return None
 
 
-def _named(layout, kind: str, name: str) -> str:
-    """The node a name of ``kind`` refers to: a part of that kind; or an object of the project
-    file's — a parameter — the one part whose objects a name reaches without knowing a pairing."""
+def _named(opened: Opened, kind: str, name: str) -> str:
+    """The node a name of ``kind`` refers to: a part of that kind, as the door finds it — a
+    material the project's own first, then the global library's, `<kind>:GLOBAL/<name>`
+    (materials.md § 4); or an object of the project file's — a parameter — the one part whose
+    objects a name reaches without knowing a pairing."""
+    layout = opened.layout
     o = layout.objects.get(kind)
     if o is not None and o.part == layout.project_kind and o.named:
         return str(Address(o.part, None, (*o.keys, name)))
-    return str(Address(kind, name))
+    found = door.named(opened, kind, name)
+    return str(found.address if found is not None else Address(kind, name))
 
 
 def _owner(addresses: list[str], written: str) -> str | None:
@@ -139,7 +147,7 @@ def build(opened: Opened, issues: list[Issue], states: dict[str, str]) -> tuple[
             port = ports.setdefault(source, {}).setdefault(port_name, GraphPort(
                 name=port_name, address=written, accepts=ref.split("|"), many=how != "value"))
             port.names.append(name)
-            target = next((t for k in ref.split("|") if (t := _named(layout, k, name)) in by_address), None)
+            target = next((t for k in ref.split("|") if (t := _named(opened, k, name)) in by_address), None)
             if target is not None:
                 edges.setdefault((source, target, written), GraphEdge(source=source, target=target, port=port_name,
                                                                       type=ref, address=written, held=how))
@@ -170,7 +178,7 @@ def mermaid(nodes: list[GraphNode], edges: list[GraphEdge]) -> str:
     lines = ["flowchart LR"]
 
     def box(n: GraphNode) -> str:
-        mark = f" ({len(n.findings)} findings)" if n.findings else ""
+        mark = f" ({count(len(n.findings), 'finding')})" if n.findings else ""
         what = f"{n.kind}: {n.type}" if n.type else n.kind
         return f'{ids[n.address]}["{n.label}<br/>{what}{mark}"]'
 

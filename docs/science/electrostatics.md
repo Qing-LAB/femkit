@@ -12,17 +12,17 @@ dimensional meanings and derived quantities; how each is stated in a model is
 
 ## Contents
 
-1. [Terms and symbols](#1-terms-and-symbols)
-2. [The equation](#2-the-equation)
-3. [Conditions on an outer boundary](#3-conditions-on-an-outer-boundary) —
+1. Terms and symbols
+2. The equation
+3. Conditions on an outer boundary —
    `potential`, `insulating`, `surface_charge`, `normal_flux`, and the sign of
    the normal
-4. [Between two domains](#4-between-two-domains) — `interface`
-5. [Sources](#5-sources) — `charge_density`
-6. [What each dimension means](#6-what-each-dimension-means)
-7. [Derived quantities](#7-derived-quantities) — what an observable may name
-8. [Validity](#8-validity)
-9. [Benchmarks](#9-benchmarks)
+4. Between two domains — `interface`
+5. Sources — `charge_density`
+6. What each dimension means
+7. Derived quantities — what an observable may name
+8. Validity
+9. Benchmarks
 
 ## 1. Terms and symbols
 

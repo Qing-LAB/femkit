@@ -1,8 +1,8 @@
-# One study (models.md § 5.1): it pairs the square with the physics, a mesh recipe and an
-# observable set, and holds everything that is not the physics. Its one axis refines the mesh:
-# `study expand` writes one case per size, and the midpoint's potential is the same in each.
+# One study (manual: 3 · Write each part): it pairs the square with the physics, a mesh recipe
+# and an observable set, and holds everything that is not the physics. Its one axis refines the
+# mesh: `study expand` writes one case per size, and the midpoint's potential is the same in each.
 
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
 schema = 1
 
 # the component it solves, by name
@@ -17,18 +17,18 @@ observables = ["midpoint"]
 # the units values are shown in: each value in the first listed unit of its dimension, else in SI units, angles in degrees
 display = ["m", "V", "V/m"]
 
-# its steps, by name: each solves its physics as a kind of calculation, after any step it takes from; the order they are written in means nothing (see models.md § 4.5)
+# its steps, by name: each solves its physics as a kind of calculation, after any step it takes from; the order they are written in means nothing (manual: 3 · Write each part)
 [steps]
 
 [steps.solve]
 # the physics it solves, by name
 physics = "electrostatics"
-# the kind of calculation, which the physics' formulation must support: one of `stationary` (see models.md § 4.2)
+# the kind of calculation, which the physics' formulation must support: one of `stationary` (manual: 3 · Write each part)
 kind = "stationary"
 # when several physics are solved in turn, what it takes from a step that runs before it — a heat step taking an optics step's absorbed power, say: each by what it is to its own physics, then the step's name and a quantity that step derives
 # takes = { heat_source = "optics.absorbed_power_density" }
 
-# how the equations are discretized and solved — the finite element and the linear solver — the same in every environment (see models.md § 6.4)
+# how the equations are discretized and solved — the finite element and the linear solver — the same in every environment (manual: 3 · Write each part)
 [numerics]
 
 # the finite element
@@ -45,7 +45,7 @@ kind = "direct"
 # the relative tolerance an iterative solver stops at: a plain number; required with `iterative`
 # tolerance = 1e-10
 
-# what varies, each axis keyed by the address of what it varies — a parameter, `project:parameters.side`; a value of the mesh recipe, `mesh:uniform:size`; a numerics field; or a material's dataset — every axis crossed with every other (see models.md § 5.1)
+# what varies, each axis keyed by the address of what it varies — a parameter, `project:parameters.side`; a value of the mesh recipe, `mesh:uniform:size`; a numerics field; or a material's dataset — every axis crossed with every other (manual: 3 · Write each part)
 [axes]
 
 # the recipe's size, halved twice
@@ -62,10 +62,10 @@ values = ["0.1 m", "0.05 m", "0.025 m"]
 # why the full product is needed, in a sentence
 # reason = "the midpoint must hold half the bias at every size, whatever the bias"
 
-# each engine environment's settings for this study, by the environment's name (see models.md § 5.1)
+# each engine environment's settings for this study, by the environment's name (manual: 3 · Write each part)
 [environments]
 
-# the job's resources in this environment (see jobs.md § 2)
+# the job's resources in this environment (manual: 3 · Write each part)
 [environments.elmer.resources]
 # MPI ranks
 ranks = 1
@@ -82,7 +82,7 @@ memory = "2G"
 # the quality of service, where the record lists one
 # qos = "normal"
 
-# the job's resources in this environment (see jobs.md § 2)
+# the job's resources in this environment (manual: 3 · Write each part)
 [environments.ngsolve.resources]
 # MPI ranks
 ranks = 1

@@ -13,7 +13,7 @@ from femkit.core import text, view
 from femkit.core.errors import Unstated, UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.schema import DefinitionError, Model
+from femkit.core.schema import DefinitionError, Model, pointer
 from femkit.jobs import probe, record
 from femkit.jobs.record import LOCAL, Record
 from femkit.jobs.requests import ProbeRequest, MachinesRequest
@@ -110,7 +110,7 @@ class JobProbe:
         declared = probe.declarations(req.set)
         if req.write and (unset := settings.unstated(settings.load(ctx).config)):
             raise Unstated(f"{' and '.join(unset)} {'is' if len(unset) == 1 else 'are'} unset, and every job "
-                          "prepared for this record needs it (config.md § 3.1)", stating(CONFIG_INIT, unset),
+                          f"prepared for this record needs it {pointer(settings.MANUAL)}", stating(CONFIG_INIT, unset),
                           code="setting-unset", subject=", ".join(unset))
         new = probe.measure(ctx, req.scheduler, declared)
         if req.write and isinstance(new.scheduler.commands.get("submit"), record.Unknown):

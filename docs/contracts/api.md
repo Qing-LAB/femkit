@@ -71,7 +71,7 @@ class EnvInstall:
 | declaration part | meaning |
 |---|---|
 | verb | a `Verb` (`core/view.py`): the name and the request model, declared once beside the request; the declaration and every next step that names the operation read it |
-| name | `group.verb` (`env.install`), or one word for a top-level verb (`doctor`). It is the command `python -m femkit env install` and the route `/api/env/install` |
+| name | `group.verb` (`env.install`), or one word for a top-level verb (`doctor`). It is the command `femkit env install` and the route `/api/env/install` |
 | request | a `Model`; its fields are every input the operation takes; a `bool` field defaults to `False`, or the declaration is refused (§ 4.1) |
 | `result` | a `Result` subclass (§ 2.3) |
 | `changes` | `False` (default): one function `(req, ctx) -> result`. `True`: a class with `plan` and `apply` (§ 3) |
@@ -219,7 +219,12 @@ terminal.
 
 One click group per name prefix, one command per operation, built at start
 from the registry. The CLI package holds the adapter and nothing
-operation-specific.
+operation-specific. Each group is declared in the registry with its one
+sentence and the manual's chapter that explains it; a command's help ends
+with that chapter, `(manual: <chapter>)` ([`core.md`](core.md) § 2). A
+command or argument the person leaves out, or a value not among its choices,
+is said as the person types it — `--as`, `STUDY` — with what it takes or the
+choices, and the next step, as every refusal is.
 
 ### 4.1 From request fields to options
 
@@ -237,9 +242,13 @@ operation-specific.
   missing argument and a word that is no number are the request's problems
   like any other — a `UsageError` naming each by its key path, exit 2, and the
   refusal's JSON under `--json`.
-- Help is the operation's docstring and each field's description, with its
-  `doc` reference ([`core.md`](core.md) § 2); an argument's, which a
-  positional argument cannot carry, is listed under the command's help.
+- Help is the operation's docstring and each field's help
+  ([`core.md`](core.md) § 2) — a field whose values are declared data names
+  them as they are declared now (`json_schema_extra={"choices": "importers"}`:
+  the importers, the environments, the templates), read when the help is
+  shown, never at import; an argument's help, which a positional argument
+  cannot carry, is listed under the command's help; and the last line is its
+  group's manual chapter, `(manual: <chapter>)`.
 - **One mapping, both ways.** This table is `core/commandline.py`: the command
   line parses a command by it, and an `Action` ([`web.md`](web.md) § 7.2) is
   written as the command a person types by it — so a refusal's or a finding's
@@ -283,9 +292,9 @@ Built from `core/text.py`, so every command reads alike:
   then the commands that resolve it.
 - **What to do next** is `next -- <sentence>:` and the commands, one a line,
   indented, prose after `#`. A printed command is one a person can paste:
-  `python -m femkit …`, run in the control environment from the checkout,
-  because femkit is never installed ([`envs.md`](envs.md) § 7). Contracts
-  write commands the same way, or leave out the leading `python -m femkit`
+  `femkit …`, the launcher the activated control environment puts on the
+  path ([`envs.md`](envs.md) § 7); femkit itself is never installed.
+  Contracts write commands the same way, or leave out the leading `femkit`
   (`env install NAME`) where the context makes it plain.
 - **A refusal** is `[group verb] refused: <reason>` and `next -- instead:`
   with the commands its state allows.
@@ -301,7 +310,10 @@ Built from `core/text.py`, so every command reads alike:
   time it has run and its log's last line, cut to the terminal's width. The
   line is erased before anything else is printed and when the step ends, so
   it takes no room; output that is not a terminal never gets it. Paths under the
-  home directory are written from `~`. With `--yes` the plan is printed first,
+  home directory are written from `~` — in every message, finding, table and
+  setting's value a person reads; `--json` keeps the full path. A count names
+  its noun in English's plural (`1 study`, `2 studies`), by the one helper,
+  `text.count`. With `--yes` the plan is printed first,
   its steps only; its findings come with the outcome.
 
 `--json` is for programs: the model as JSON, indented.
@@ -334,8 +346,16 @@ the key of each schema it checks and its check — possibly another module's
 schema, as the materials package checks a component's assignment
 ([`projects.md`](projects.md) § 6); adding one adds a line to `PARTS`.
 
+`GROUPS` declares each command group, by its name, with its one sentence and
+its manual chapter (`Group(sentence, manual)`); the group `""` holds femkit's
+own commands (`doctor`) and the help of `femkit` itself.
+
 `operations()` is femkit's start — the command line and the web server call it
 before anything else — and, besides collecting the operations, it
+
+- registers, for each declaration a field may name its values from
+  (`importers`, `environments`, `templates`), what gives its names now
+  (`schema.provide`), read only when a help or a refusal is built,
 
 - registers every part schema with the door (`femkit/projects/schemas.py`),
   so a lower layer reads a schema it never imports

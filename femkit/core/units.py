@@ -6,15 +6,16 @@ its dimension's canonical unit; no binary float is ever involved.
 
 from __future__ import annotations
 
+import difflib
 import re
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from fractions import Fraction
 
 from pydantic import Field, model_validator
 
-from femkit.core.schema import Model, refuse
+from femkit.core.schema import NEAR, Model, refuse
 
 
 class UnitError(ValueError):
@@ -141,12 +142,39 @@ def _build(table: UnitTable) -> tuple[dict[str, Quantity], list[tuple[tuple, str
 
 # ---------------------------------------------------------------- the grammar
 
-_TOKEN = re.compile(r"""\s*(?:
-      (?P<number>(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)
+NUMBER = r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"   # a decimal number, as the grammar reads one
+_TOKEN = re.compile(rf"""\s*(?:
+      (?P<number>{NUMBER})
     | (?P<name>[^\W\d]\w*)
     | (?P<op>[-+*/()^])
     )""", re.VERBOSE)
 _INTEGER = re.compile(r"\d+")
+_SIGNED = re.compile(rf"[-+]?{NUMBER}")
+
+
+def decimal(value: Fraction) -> str:
+    """``value`` for a person, still exact: its decimal where it has one — `1/40` is `0.025` —
+    else `p/q`, as `1/3`; the inverse of `number` where the decimal exists."""
+    rest, twos, fives = value.denominator, 0, 0
+    while rest % 2 == 0:
+        rest, twos = rest // 2, twos + 1
+    while rest % 5 == 0:
+        rest, fives = rest // 5, fives + 1
+    if rest != 1:
+        return str(value)
+    places = max(twos, fives)
+    digits = str(abs(value.numerator) * 10 ** places // value.denominator).rjust(places + 1, "0")
+    whole, part = digits[:len(digits) - places], digits[len(digits) - places:]
+    return ("-" if value < 0 else "") + whole + ("." + part if places else "")
+
+
+def number(text: str) -> Fraction:
+    """A decimal number alone, a sign before it where it has one — `-0.25`, `1.602176634e-19` —
+    read exactly, never through a binary float: a cell of a material's table (materials.md § 3);
+    a `UnitError` naming the text for anything else, a unit or an expression among it."""
+    if not _SIGNED.fullmatch(text):
+        raise UnitError(f"{text!r} is no decimal number")
+    return Fraction(text)
 
 
 @dataclass(frozen=True)
@@ -179,10 +207,23 @@ class _Parser:
     atom       = number | name | symbol ["^" ["-"] integer] | "(" expression ")"
     """
 
-    def __init__(self, symbols: Mapping[str, Quantity], text: str, names: Mapping[str, Quantity]):
+    def __init__(self, symbols: Mapping[str, Quantity], text: str, names: Mapping[str, Quantity],
+                 known: Iterable[str] = ()):
         self.symbols, self.text, self.names = symbols, text, names
+        self.given = sorted({*names, *known})
         self.tokens = _tokens(text)
         self.at = 0
+
+    def unknown(self, name: str) -> UnitError:
+        """A name that is neither a unit nor a parameter given here, said one way (core.md § 11):
+        the name; that it is neither; the parameter given here closest to it, "did you mean"; and
+        every parameter given here, the choices. Where none is given, that it is no unit."""
+        if not self.given:
+            return UnitError(f"`{name}` is not a unit")
+        near = difflib.get_close_matches(name, self.given, n=1, cutoff=NEAR)
+        return UnitError(f"`{name}` is neither a unit nor a parameter given here"
+                         + (f"; did you mean `{near[0]}`?" if near else "")
+                         + f" (the parameters: {', '.join(f'`{g}`' for g in self.given)})")
 
     def parse(self) -> Quantity:
         if not self.tokens:
@@ -250,8 +291,7 @@ class _Parser:
         elif token.kind == "name":
             value = self.symbols.get(token.text)
             if value is None:
-                given = f" or a name given here ({', '.join(sorted(self.names))})" if self.names else ""
-                raise UnitError(f"{self.text!r}: {token.text!r} is not a unit{given}")
+                raise self.unknown(token.text)
             if not self._is("^"):
                 return value, token.start, token.end
             self._take()
@@ -308,9 +348,11 @@ class Units:
             self._of[dimension] = sorted(s for s in self._symbols if self.parse(s).dimension == dimension)
         return list(self._of[dimension])
 
-    def parse(self, text: str, names: Mapping[str, Quantity] = {}) -> Quantity:
-        """A quantity, a unit or an expression of the names given, exactly."""
-        return _Parser(self._symbols, text, names).parse()
+    def parse(self, text: str, names: Mapping[str, Quantity] = {}, *, known: Iterable[str] = ()) -> Quantity:
+        """A quantity, a unit or an expression of the names given, exactly. ``known``: the other
+        parameters given here that hold no value to read with — one that does not resolve, one a
+        text does not use — named with ``names`` when a name is neither a unit nor one of them."""
+        return _Parser(self._symbols, text, names, known).parse()
 
     def convert(self, quantity: Quantity, unit: str) -> Fraction:
         """The quantity's value in ``unit``; refused when the unit measures another dimension."""

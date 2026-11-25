@@ -1,12 +1,17 @@
 """The name rule (projects.md § 3): a part's name is its path inside its kind's folder, each
 step matching `[a-z][a-z0-9_]*`, the steps joined by `/`; a global material's opens with
-`GLOBAL/`. One rule for every name a request takes, a folder holds or `new` makes."""
+`GLOBAL/`. One rule for every name a request takes, a folder holds or `new` makes — and one
+reading of what a name most likely meant: the closest of the names there are (`nearest`), or, for
+one the rule refuses, what in it breaks the rule and the name it would be (`broken`, `mended`)."""
 
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
+from typing import Callable, Iterable
 
 from femkit.core.errors import UsageError
+from femkit.core.schema import NEAR
 
 STEP = r"[a-z][a-z0-9_]*"
 NAME = re.compile(rf"{STEP}(?:/{STEP})*")
@@ -42,3 +47,63 @@ def group(name: str) -> str | None:
 
 def last(name: str) -> str:
     return name.rpartition("/")[2]
+
+
+def bare(name: str) -> str:
+    """A name as its library holds it, `GLOBAL/` left out: what a case holds a material by
+    (materials.md § 6)."""
+    return name.removeprefix(GLOBAL)
+
+
+# ------------------------------------------------------------------ what a name most likely meant
+
+def nearest(name: str, among: Iterable[str], forms: Callable[[str], Iterable[str]] = lambda c: (c,)) -> str | None:
+    """The one of ``among`` closest to ``name`` — what a misspelling most likely meant — or None
+    where none is close: each compared by each of its ``forms`` (itself, unless given), by the
+    standard library's measure and at least as alike as a schema's own suggestion asks
+    (`schema.NEAR`); the first of equals, so ``among`` in the order a person looks wins a tie."""
+    best, score = None, NEAR
+    for candidate in among:
+        alike = max((SequenceMatcher(None, name, form).ratio() for form in forms(candidate)), default=0.0)
+        if alike > score or (best is None and alike >= score):
+            best, score = candidate, alike
+    return best
+
+
+def whole_or_last(name: str) -> tuple[str, ...]:
+    """A name compared by its whole name and by its last step, `GLOBAL/` aside — `metals/gold`
+    is what `gold` most likely meant (materials.md § 4)."""
+    held = bare(name)
+    return (held, last(held))
+
+
+def broken(name: str) -> str | None:
+    """What in ``name`` breaks the name rule, `GLOBAL/` allowed before it, as a plain sentence;
+    None for a name that keeps it (materials.md § 4: "says what in it breaks the rule")."""
+    for i, step in enumerate(bare(name).split("/")):
+        if re.fullmatch(STEP, step):
+            continue
+        if not step:
+            return "it has an empty step: two `/` together, or one at an end"
+        if i == 0 and step != GLOBAL[:-1] and step.upper() == GLOBAL[:-1]:
+            return (f"`{step}` is not `{GLOBAL[:-1]}`: a name is in lowercase, and `{GLOBAL}`, which names the "
+                    "global library's, alone is in capitals")
+        if step != step.lower():
+            return f"`{step}` holds capital letters, and a name is in lowercase"
+        if not step[0].isalpha():
+            return f"`{step}` starts with `{step[0]}`, and each step starts with a lowercase letter"
+        other = next(ch for ch in step if not re.fullmatch(r"[a-z0-9_]", ch))
+        return f"`{step}` holds `{other}`, and a step holds lowercase letters, digits and `_` alone"
+    return None
+
+
+def mended(name: str) -> str | None:
+    """The name ``name`` most likely meant, by the rule: `GLOBAL/` where its first step is that
+    word in other letters, each step in lowercase, each run of other characters one `_`, an
+    empty step left out; None where nothing of it keeps the rule."""
+    held = [s for s in name.split("/") if s]
+    prefix = ""
+    if held and held[0].upper() == GLOBAL[:-1]:
+        prefix, held = GLOBAL, held[1:]
+    made = "/".join(s for s in (re.sub(r"[^a-z0-9_]+", "_", s.lower()).strip("_") for s in held) if s)
+    return prefix + made if valid(made) else None

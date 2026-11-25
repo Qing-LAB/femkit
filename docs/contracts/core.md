@@ -32,7 +32,7 @@ module reads no file, probes nothing and starts nothing.
 | `clock` | how femkit writes a moment: UTC, ISO 8601, to the second — in every record, event log and server log line | 6 |
 | `paths` | `inside(path, root)`: the one test that a path resolves within a prefix or tree; `nearest_existing(path)`: where a place not made yet would be made | 3 |
 | `schema` | `Model`, the loader, `DefinitionError` and each `Problem` in plain words with what would be right, the placeholder grammar; a field's help, and a template held to it | 2 |
-| `persist` | every write: atomic files and streams, appends, copies, removal, a folder emptied or replaced whole, an archive unpacked; TOML and JSON reads and writes; a TOML text's keys with the comments above them | 4 |
+| `persist` | every write: atomic files and streams, appends, copies, removal, a new folder written whole, a folder emptied or replaced whole, an archive unpacked; TOML and JSON reads and writes; a TOML text's keys with the comments above them | 4 |
 | `locks` | `subject_lock`, and the grammar of a subject's name | 5 |
 | `eventlog` | `EventLog`, its file's name, the record kinds, the step outcomes, and its fold | 6 |
 | `states` | `StateTable`, a machine's table as data; `Binding`, what code gives it; `load`; `Machine`, `Rule`, `Action` | 7 |
@@ -41,7 +41,7 @@ module reads no file, probes nothing and starts nothing.
 | `issues` | `Issue` | 10 |
 | `units` | the unit table's schema, `Quantity`, `Units`: one grammar for a quantity, a unit and an expression of named quantities; conversion | 11 |
 | `text` | how a value, a path (from `~`), a count (`1 step`, `16 steps`), a table, a finding and a "next" block are shown | [`api.md`](api.md) § 4.4 |
-| `markdown` | `headings(text)`: a Markdown document's headings and their link anchors, by GitHub's rule — read by a formulation's section check and the document viewer, so a section named in data and its anchor agree | [`web.md`](web.md) § 2.3 |
+| `markdown` | `headings(text)`: a Markdown document's headings and their link anchors, by GitHub's rule — read by a formulation's section check and the document viewer, so a section named in data and its anchor agree; `plain(text, link)`: a Markdown text as one line of plain text, each link as `link` writes it — an importer's citation ([`materials.md`](materials.md) § 7) | [`web.md`](web.md) § 2.3 |
 | `view` | the one vocabulary of what a person may read and do: `Help`, `Action`, `Field`, `Table` — every next step an `Action`; and `Verb`, an operation's name with its request model, one per name ([`api.md`](api.md) § 2) | [`web.md`](web.md) § 7 |
 | `commandline` | the one mapping between a request's fields and a command's arguments, both ways: the command line parses by it, and an `Action` is written as a command by it | [`api.md`](api.md) § 4.1 |
 | `operations` | `Context`, `Plan`, `Step`, `Result`, `Outcome`, `Observer`, `operation`, `run_steps`; an operation's address and its folder | [`api.md`](api.md), § 6 |
@@ -68,12 +68,17 @@ def alternatives(annotation) -> list                    # what it may hold, thro
 def classes(annotation), keys_of(annotation), values_of(annotation), items_of(annotation), closed(annotation)
                                                         # its models; a table's keys, values; a list's items; a Literal's texts
 def optional(annotation) -> bool                        # whether it allows None, through Annotated and unions
-def described(field) -> str                             # its help: its description, `: one of` its closed values,
-                                                        # and its `doc` reference after it
-def help_text(sentence, values=(), doc=None, *, unit=None) -> str
+def described(field, manual=None) -> str               # its help: its description, `: one of` its closed values,
+                                                        # and, where it states a `doc`, the manual's chapter after it
+def help_text(sentence, values=(), manual=None, *, unit=None) -> str
                                                         # the one builder of a help: `described`'s, and a
                                                         # declared key's — its sentence, `, in` and its unit
-def help_findings(text, model, declared=lambda path: None) -> list[HelpFinding]
+def pointer(manual) -> str                              # `(manual: 6 · Materials)`: the chapter by its title,
+def chapter(file) -> str                                # read from docs/manual/<file>'s first heading; refused
+                                                        # for a file the manual lacks
+def provide(declaration, names) -> None                 # what gives a declaration's names now, for a field's
+def choices(field) -> tuple[str, list[str]] | None      # `choices`: those names, named in its help and refusal
+def help_findings(text, model, declared=lambda path: None, manual=None) -> list[HelpFinding]
                                                         # where a template of a file `model` reads breaks the rule
                                                         # that the comment above each key is its help
 class HelpFinding: line: int | None, key: str, problem: str   # its line from 1 (None: the text), its key path, why
@@ -99,7 +104,15 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[Problem]
   description; nothing restates it. A field's **help** is what `described`
   makes of it, one text: its description; then, when its value — or a table's
   values — is a closed list, `: one of` and each allowed value in backticks,
-  joined by `, `; then its `doc` reference in parentheses. An element's
+  joined by `, `; then, where the field states a `doc`, where the person
+  reads about it: `(manual: <chapter>)`, the manual's chapter that its file or
+  command declares — a part kind's in the layout ([`projects.md`](projects.md)
+  § 4), the settings file's, a command group's ([`api.md`](api.md) § 6) — and
+  a test holds every such chapter to one the manual has
+  ([`../README.md`](../README.md) § 3.1). The `doc` itself, a contract's
+  section, is for the reference pages, which are a developer's; a help, a
+  template's comment and a message a person reads never cite a contract or
+  the plan. An element's
   `family`, described as "the element family", has the help "the element
   family: one of \`lagrange\`, \`nedelec\`". A description therefore never
   lists the allowed values itself. A value is a closed list when every
@@ -251,6 +264,9 @@ variables or builds these paths.
 ```python
 def atomic_write_text(path: Path, text: str) -> Path   # temp file in the same directory, fsync, rename
 def write_json(path: Path, data: Any) -> Path          # atomic; sorted keys, two-space indent, final newline
+def json_text(data) -> str                             # the text write_json writes, for a file among others
+def canonical_sha256(data) -> str                      # the one digest of a value: its canonical JSON — keys sorted,
+                                                       # no whitespace, UTF-8 — a case's ID, a fingerprint, a plan's
 def write_toml(path: Path, data: dict) -> Path         # atomic
 def write_stream(path, source, accept=None) -> bool     # a stream written whole, or not at all: in place only
                                                         # when accept takes the written file (a download's digest)
@@ -268,12 +284,15 @@ def empty_folder(path) -> Path                         # an empty folder, whatev
 def copy_tree(source, path, only=None) -> Path         # a folder copied to a place not there yet: copied beside
                                                         # it and renamed in, whole — an interrupted copy leaves nothing;
                                                         # `only`: just these files, by their POSIX paths from source
+def write_folder(path, files) -> Path                  # a new folder holding files, {POSIX path: bytes}, at a place
+                                                        # not there yet: written beside it and renamed in, whole
 def replace_folder(fresh, path) -> None                # fresh takes path's place whole: old moved aside, fresh
                                                         # renamed in, old removed — never a half of either
 def unpack_single(archive, path) -> bool               # a gzipped tar's one top folder becomes path, whole
 BARE                                                   # a key TOML writes bare; any other it quotes — what a key path
                                                        # (§ 2), an address and a template's keys read
 def plain_value(text) -> Any                           # a TOML inline value as a person types it, as plain Python
+def json_value(text) -> Any                            # a JSON text, as plain Python: a file read through the door
 def read_toml(path: Path) -> dict
 def read_json(path: Path) -> Any
 def read_document(path, empty="") -> TOMLDocument     # a TOML file to edit, its comments and order kept
@@ -283,6 +302,9 @@ def document_has(doc, key) -> bool; document_set(doc, key, value)
 def key_comments(text) -> list[KeyComment]             # every key and table header a TOML text writes or shows
                                                        # commented out, with the comment lines directly above it
 class KeyComment: path, line, header, shown, value, comment
+def commented_text(data, comment, prose="") -> str    # the inverse of key_comments: the text of a file a person
+                                                       # reads as their own, each key under its help; a `Shown`
+                                                       # value commented out — the one writer of such a file
 def document_text(doc, key) -> str                     # an entry's text as its file holds it: a table as its own document
 def inline_text(value) -> str                          # a plain value as TOML text on one line
 def private_dir(path: Path, *, make=True) -> Path   # 0700; refused when another account could enter it or
@@ -616,6 +638,9 @@ class Issue(Model):
   group's dimension in its promise — it is `right`; where several would do —
   the condition kinds a formulation allows, the groups a component promises —
   they are `choices`, and the fix chooses none ([`web.md`](web.md) § 7.4).
+  One problem is one finding: a check says it once per key and code, however
+  many values at that key show it. A part named in a sentence is named by its
+  address (`observables:benchmark`), the project file as the project file.
   Its message is a plain sentence that leaves the file and the key to the
   finding, which shows them once.
 - **`next` holds only operations that exist** — `study expand`, `project new`,
@@ -642,11 +667,16 @@ class Quantity:
 class Units:
     def __init__(self, table: UnitTable)
     def symbols(self) -> list[str]                                 # every symbol read, prefixed ones included
-    def parse(self, text: str, names: Mapping[str, Quantity] = {}) -> Quantity
+    def parse(self, text: str, names: Mapping[str, Quantity] = {}, known=()) -> Quantity
+                                                   # `known`: names given here without a value yet; a name
+                                                   # neither a unit nor given is said once, with the closest
+                                                   # given name, "did you mean", and the names given
     def convert(self, quantity: Quantity, unit: str) -> Fraction   # its value in that unit
     def canonical(self, dimension) -> str | None                   # a base dimension's canonical unit: `m`
     def of(self, dimension) -> list[str]                           # every symbol of it, prefixed ones included
 
+def number(text: str) -> Fraction              # one decimal number, as the grammar reads it, exactly: a table's cell
+def decimal(value: Fraction) -> str            # a value for a person, exactly: its decimal where it has one, else p/q
 def name_spans(text: str) -> list[tuple[int, int, str]]   # each name a quantity text uses — a parameter or a
                                                           # unit symbol — with its span; empty when the grammar
                                                           # cannot read the text: what a graph draws a wire from

@@ -1,0 +1,8 @@
+# The step kinds (models.md § 4.2): the kinds of calculation a study's step asks of a formulation
+# family, one closed list. Each states its sentence and the variables it supplies a value of —
+# what a material's data may vary with under it (materials.md § 6), each by its name in
+# dispersion.toml. A kind joins the list with the first family that supports it (models.md § 4.4).
+
+[stationary]
+description = "a field that does not change in time"
+supplies = []   # none: a table or a model, which varies, is refused under it (materials.md § 6)

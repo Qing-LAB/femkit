@@ -5,7 +5,7 @@ Its modules, each the one home of what it names:
 
 - `project`      — a project: its root, its name, its folder, its lock subject, the project file
                    that makes a folder one (`PROJECT_FILE`), and the one place a path inside it is
-                   formed (`Project.path`)
+                   formed (`Project.path`); a global library at the root, the same (`Library`)
 - `names`        — the name rule: a part's name is its path inside its kind's folder (§ 3)
 - `addresses`    — `<kind>:<name>[:<dotted path>]`, the one grammar naming a part and a value (§ 5)
 - `layout`       — the layout as data: each part kind's folder, shape, fixed files, schema, rank,
@@ -18,10 +18,15 @@ Its modules, each the one home of what it names:
 - `location`     — the projects root, the projects under it, a project named by its path or by
                    the folder a command runs in (§ 1)
 - `door`         — listing and opening a project, each part on its own, a folder part's other
-                   files read once; a finding at a part's file and key; a part's text; the
-                   references between parts; femkit's own outputs read and written (§§ 2, 3, 5–7)
+                   files read once, and the global library's parts it names; a name found, the
+                   project's own first, then the library's; a finding at a part's file and key; a
+                   part's text; the references between parts; femkit's own outputs read and
+                   written; femkit's shipped parts, and a new library seeded with them; a new
+                   folder part a person brings written whole, never over or into one (§§ 2, 3,
+                   5–7; materials.md §§ 4, 7)
 - `state`        — a part's state, observed by the rules `femkit/data/states/part.toml` declares (§ 8)
-- `requests`, `operations` — `project new` and `project list` (§§ 1, 7)
+- `requests`, `operations` — `project new`, which seeds a root's missing library, and `project
+                   list` (§§ 1, 7)
 
 The framework names no part kind: every kind is the layout's (`femkit/data/project/layout.toml`).
 """

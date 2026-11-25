@@ -45,8 +45,9 @@ def test_bootstrap_installs_every_default_environment_past_a_failure_then_record
     """Fails if a failed environment stops the next one, if this machine's record is written
     before the installs it lists, if the verdict calls a failed bootstrap complete, if the
     plan's findings — where environments go, say — do not come with the outcome, as `--yes`
-    shows no others (api.md § 4), or if the entry line is not the stated activation of the
-    real control prefix (envs.md § 6.2)."""
+    shows no others (api.md § 4), or if the lines that enter femkit day to day are other than
+    the preamble, the stated activation of the real control prefix and `femkit doctor` — with a
+    `cd` to the checkout among them, which the `femkit` command makes needless (envs.md § 6.2, § 7)."""
     from femkit.jobs import record
     apply("config.set", key="build.jobs", value="4")           # a value bootstrap keeps, written earlier
     op, plan, c = planned("env.bootstrap", **GIVEN, **STATED)
@@ -58,7 +59,8 @@ def test_bootstrap_installs_every_default_environment_past_a_failure_then_record
     assert {n: measured[n]["state"] if isinstance(measured[n], dict) else measured[n].state for n in DEFAULT} == \
         {n: "incomplete" for n in DEFAULT}
     assert {i.code for i in plan.issues if i.code != "ready"} <= {i.code for i in outcome.issues}
-    assert shlex.join(["source", "activate", str(dirs.control_prefix())]) in [e.command for e in outcome.entry]
+    assert [e.command for e in outcome.entry] == [shlex.join(["source", "activate", str(dirs.control_prefix())]),
+                                                  "femkit doctor"]   # STATED: no preamble
 
 
 def test_bootstrap_with_no_manager_named_says_why_it_gives_no_entry_line(monkeypatch):
@@ -154,13 +156,13 @@ def test_doctor_names_the_probe_while_this_machine_has_no_record_and_states_the_
     """Fails if doctor counts a machine ready that has no record of itself, or names a probe
     that would be refused: `job probe --write` needs the preamble and the activation command
     stated first (envs.md § 6.1)."""
-    probe = "python -m femkit job probe --write"
+    probe = "femkit job probe --write"
     unset = _row("this machine's record")
     assert not unset.ready and unset.next == [*_row("config.toml").next, unset.next[-1]]  # state both, then probe
     assert unset.next[-1].command == probe
     apply("config.set", key="activation.preamble", value="[]")
     assert [str(n) for n in _row("this machine's record").next[-2:]] == [
-        "python -m femkit config init --activation 'source activate'   # or 'conda activate', 'mamba activate'", probe]
+        "femkit config init --activation 'source activate'   # or 'conda activate', 'mamba activate'", probe]
     apply("config.set", key="activation.command", value='"source activate"')
     assert [n.command for n in _row("this machine's record").next] == [probe]
 
@@ -234,7 +236,7 @@ def test_an_install_the_system_killed_says_where_to_run_it_again(inside_a_job, m
     manager_doing('  "create -y") kill -9 $$ ;;')
     outcome = apply("env.install", names=["web"])
     (killed,) = [i for i in outcome.issues if i.code == "killed"]
-    again = "python -m femkit env install web"
+    again = "femkit env install web"
     assert not outcome.ok() and killed.subject == "web"
     assert [n.command for n in killed.next] == ([again] if inside_a_job else [slurm.interactive])
 

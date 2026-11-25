@@ -68,8 +68,8 @@ def test_a_disallowed_action_is_refused_with_the_allowed_commands():
     assert m.observe(True) is Light.on and m.observe(False) is Light.off
     with refused(Refused, "not-allowed", "hall") as caught:
         m.require(Light.on, "on", "hall")
-    assert [n.command for n in caught.value.next] == ["python -m femkit light off hall",
-                                                      "python -m femkit light off hall --dim"]
+    assert [n.command for n in caught.value.next] == ["femkit light off hall",
+                                                      "femkit light off hall --dim"]
     assert caught.value.next[1].call.request == {"lamp": "hall", "dim": True}
 
 
@@ -146,8 +146,8 @@ def test_a_machine_declared_as_data_observes_by_its_first_rule_that_holds_and_of
     assert m.observe(LampFacts(**{**facts, "timer": True})) == "off"          # power, but neither
     assert m.observe(LampFacts(**{**facts, "power": False, "switch": True})) == "off"
     assert [(a.command, a.call.request) for a in m.next(m.states("on"), "hall-1")] == [
-        ("python -m femkit lamp off hall-1 --room hall", {"lamp": "hall-1", "room": "hall"}),
-        ("python -m femkit lamp off hall-1 --dim", {"lamp": "hall-1", "dim": True})]
+        ("femkit lamp off hall-1 --room hall", {"lamp": "hall-1", "room": "hall"}),
+        ("femkit lamp off hall-1 --dim", {"lamp": "hall-1", "dim": True})]
     assert m.next(m.states("on"), "porch")[0].call.request == {"lamp": "porch"}
     assert [a.command for a in m.next(m.states("broken"), "porch")] == ["replace the bulb"]
     with refused(Refused, "not-allowed", "porch") as caught:
@@ -321,6 +321,21 @@ def test_a_finding_says_where_and_what_would_be_right_and_never_chooses():
         Issue(severity="error", code="both", subject="x", message="m", right="1", choices=("2", "3"))
 
 
+@pytest.mark.parametrize("n, noun, said", [
+    (1, "study", "1 study"),
+    (2, "study", "2 studies"),        # -y after a consonant
+    (0, "study", "0 studies"),
+    (2, "key", "2 keys"),             # -y after a vowel
+    (2, "mesh", "2 meshes"),
+    (2, "case", "2 cases"),
+])
+def test_a_count_writes_its_noun_in_the_one_plural_english_has(n, noun, said):
+    """Fails if a count a person reads writes its noun's plural otherwise than English does —
+    `2 studys`, `2 meshs` — the one plural every command's text is built with (api.md § 4.4: the
+    text a person reads, built from core/text.py)."""
+    assert text.count(n, noun) == said
+
+
 def test_a_timeout_stops_the_whole_process_group(tmp_path):
     """Fails if a timed-out command leaves its children running (core.md § 8)."""
     pid_file = tmp_path / "child.pid"
@@ -388,7 +403,7 @@ class Part(Model):
 A_PART = '''\
 # A stand-in part: prose, followed by a blank line, is not compared.
 
-# the shape (see models.md § 2)
+# the shape (manual: 3 · Write each part)
 schema = 1
 
 # what it is
@@ -437,17 +452,21 @@ side = "length"
 '''
 
 
-def test_a_fields_help_is_its_description_its_closed_values_and_its_doc():
+def test_a_fields_help_is_its_description_its_closed_values_and_its_manuals_chapter():
     """Fails if a field's help leaves out the values a closed list allows — its own or a table's
-    values, numbers too — lists them for a value that is not only a closed list, or loses its
-    `doc` reference (core.md § 2)."""
-    help = {name: described(f) for name, f in [*Element.model_fields.items(), *Step.model_fields.items(),
-                                               *Part.model_fields.items()]}
+    values, numbers too — or lists them for a value that is not only a closed list; or if a field
+    stating a `doc` does not end with the chapter of the manual its file declares, by the
+    chapter's title, a field stating none ends with one, or a help cites the `doc`, a contract
+    (core.md § 2: "where the field states a `doc`, … `(manual: <chapter>)`"; docs/README.md § 3.1,
+    M5)."""
+    fields = [*Element.model_fields.items(), *Step.model_fields.items(), *Part.model_fields.items()]
+    help = {name: described(f, "6-materials.md") for name, f in fields}
     assert help["family"] == "the element family: one of `lagrange`, `nedelec`"
     assert help["order"] == "the geometry order: one of `1`, `2`"
     assert help["kinds"] == "what each must be: one of `length`, `angle`"
     assert help["limit"] == "the most it may take"
-    assert help["schema_"] == "the shape (see models.md § 2)"
+    assert help["schema_"] == "the shape (manual: 6 · Materials)"
+    assert described(Part.model_fields["schema_"]) == "the shape"   # no chapter declared: none named
 
 
 def test_a_templates_comment_above_each_key_is_its_help():
@@ -456,14 +475,16 @@ def test_a_templates_comment_above_each_key_is_its_help():
     or if prose, a name the person chose and its note, or a multi-line value's lines are taken for
     help or keys; if a key the schema does not allow, a table it names without a header of its
     own, keys it names written inline, or a key neither set nor shown passes; or if a key a
-    declaration outside the schema states is not held to the help it gives (projects.md § 7)."""
+    declaration outside the schema states is not held to the help it gives, or a key stating a
+    `doc` to the chapter of the manual its file declares (projects.md § 7; core.md § 2)."""
     def line(text: str) -> int:
         return next(n for n, written in enumerate(A_PART.splitlines(), 1) if written == text)
 
     def declared(path: tuple[str, ...]) -> str | None:
         return "the potential it is held at, in V" if path[0] == "steps" and path[-1] == "value" else None
 
-    assert {(f.line, f.key) for f in help_findings(A_PART, Part, declared)} == {
+    manual = "3-write-each-part.md"
+    assert {(f.line, f.key) for f in help_findings(A_PART, Part, declared, manual)} == {
         (line("[numerics.element]"), "numerics"),                       # no header of its own
         (line("# degree = 2"), "numerics.element.degree"),              # its comment is not its help
         (line('colour = "red"'), "numerics.element.colour"),            # no key of the schema
@@ -472,7 +493,10 @@ def test_a_templates_comment_above_each_key_is_its_help():
         (line("[kinds]"), "kinds"),                                     # no help above it
         (None, "display"),                                              # neither set nor shown
     }
-    assert (line('value = "1 V"'), "steps.solve.value") in {(f.line, f.key) for f in help_findings(A_PART, Part)}
+    assert (line('value = "1 V"'), "steps.solve.value") in {(f.line, f.key)
+                                                            for f in help_findings(A_PART, Part, manual=manual)}
+    assert (line("schema = 1"), "schema") in {(f.line, f.key) for f in help_findings(A_PART, Part, declared,
+                                                                                     "6-materials.md")}
 
 
 # ------------------------------------------------------------------ a file that does not load, in plain words (core.md § 2)

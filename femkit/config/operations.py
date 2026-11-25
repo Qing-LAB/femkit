@@ -37,7 +37,8 @@ class PathResult(Result):
     def report(self) -> view.Report:
         blocks: list = [view.Text(text="femkit's directories"),
                         view.Table(columns=view.columns("name", "path", "rule", name="directory", path="path", rule="from"),
-                                   rows=[{"name": d.name, "path": d.path, "rule": d.rule} for d in self.directories])]
+                                   rows=[{"name": d.name, "path": text.path(d.path), "rule": d.rule}
+                                         for d in self.directories])]
         for d in self.directories:
             if not d.entries:
                 blocks.append(view.Text(text=f"in {d.name}: empty"))
@@ -77,10 +78,10 @@ class ShowResult(Result):
 
     def report(self) -> view.Report:
         return view.Report(blocks=[
-            view.Text(text=f"read {self.file}" if self.file else "no config.toml: every key is unset"),
+            view.Text(text=f"read {text.path(self.file)}" if self.file else "no config.toml: every key is unset"),
             view.Table(columns=view.columns("key", "value", "unset", key="key", value="value", unset="when unset"),
-                       rows=[{"key": r.key, "value": text.show(r.value), "unset": r.unset if r.value is None else ""}
-                             for r in self.rows])])
+                       rows=[{"key": r.key, "value": settings.key(r.key).shown(r.value),
+                              "unset": r.unset if r.value is None else ""} for r in self.rows])])
 
 
 @operation(CONFIG_SHOW, result=ShowResult)
@@ -102,17 +103,26 @@ class SetOutcome(Outcome):
 
     def report(self) -> view.Report:
         if not self.plan.steps:
-            return view.Report(blocks=[view.Text(text=f"nothing to change in {self.file}")])
-        return view.Report(blocks=[view.Text(text=f"{self.plan.steps[0].describe}, in {self.file}")])
+            return view.Report(blocks=[view.Text(text=f"nothing to change in {text.path(self.file)}")])
+        return view.Report(blocks=[view.Text(text=f"{self.plan.steps[0].describe}, in {text.path(self.file)}")])
 
 
-def _value(raw: str) -> Any:
+def _value(dotted: str, raw: str) -> Any:
     """The value its TOML text gives — `8`, `"text"`, `["80", "90"]`, `[]` — as the file writes it;
-    a bare word is refused, never guessed to be text (web.md § 7.3)."""
+    a bare word is refused, never guessed to be text (web.md § 7.3): said plainly, with the
+    command again with the word in quotes as the next step, where the key takes that text."""
     try:
         return plain_value(raw)
-    except ValueError as exc:
-        raise UsageError(str(exc), code="not-toml", subject=raw) from None
+    except ValueError:
+        try:
+            settings.with_values({dotted: raw})
+            again: tuple[view.Action, ...] = (view.command(CONFIG_SET, key=dotted, value=inline_text(raw)),)
+        except UsageError:
+            again = ()
+        how = ("a text is written in quotes" if again else
+               "a text is written in quotes, a number and `true` or `false` bare, a list in `[ ]`")
+        raise UsageError(f"{raw} is no value as config.toml writes one: {how}", again, code="not-toml",
+                         subject=raw) from None
 
 
 @operation(CONFIG_SET, result=SetOutcome, changes=True,
@@ -121,12 +131,12 @@ class ConfigSet:
     """Validate and write one configuration key, keeping the file's comments and layout."""
 
     def plan(self, req: SetRequest, ctx: Context) -> Plan:
-        settings.key(req.key)
+        k = settings.key(req.key)
         old = settings.load(ctx).present().get(req.key)  # a broken file is refused here, naming it
-        new = _value(req.value)
+        new = _value(req.key, req.value)
         settings.with_values({req.key: new})  # an invalid new value is refused before anything is asked
         steps = () if old == new else (
-            Step(id=f"set:{req.key}", describe=f"set {req.key}: {text.show(old)} -> {text.show(new)}"),)
+            Step(id=f"set:{req.key}", describe=f"set {req.key}: {k.shown(old)} -> {k.shown(new)}"),)
         return Plan(steps=steps)
 
     def observe(self, req: SetRequest, ctx: Context) -> dict:
@@ -137,7 +147,7 @@ class ConfigSet:
         req = SetRequest.model_validate(plan.request)
 
         def do(step: Step, where):
-            settings.write(settings.with_values({req.key: _value(req.value)}))
+            settings.write(settings.with_values({req.key: _value(req.key, req.value)}))
             return "done", None
 
         status, log = run_steps(plan, ctx, observer, do)
@@ -180,10 +190,10 @@ class InitOutcome(Outcome):
     def report(self) -> view.Report:
         added = sum(r.status == "added" for r in self.rows)
         return view.Report(blocks=[
-            view.Text(text=f"{self.file}: {text.count(added, 'key')} added"),
+            view.Text(text=f"{text.path(self.file)}: {text.count(added, 'key')} added"),
             view.Table(columns=view.columns("status", "key", "value", "note", status="status", key="key", value="value", note="when unset"),
-                       rows=[{"status": r.status, "key": r.key, "value": text.show(r.value), "note": r.note}
-                             for r in self.rows])])
+                       rows=[{"status": r.status, "key": r.key, "value": settings.key(r.key).shown(r.value),
+                              "note": r.note} for r in self.rows])])
 
 
 def _given(req) -> dict[str, Any]:
@@ -204,7 +214,7 @@ def where_environments_go(path: Path) -> str:
     """A place for environments as a person weighs it: writable, and its free space."""
     existing = paths.nearest_existing(path)
     free = settings.free_space(path)
-    return (f"{path}  ({'writable' if existing and os.access(existing, os.W_OK) else 'NOT writable'}"
+    return (f"{text.path(path)}  ({'writable' if existing and os.access(existing, os.W_OK) else 'NOT writable'}"
             + (f", {free / 1e9:.0f} GB free" if free is not None else "") + ")")
 
 
@@ -225,16 +235,16 @@ def _proposals(ctx: Context, given: dict[str, Any], present: dict[str, Any]) -> 
 
 
 def _issues(given: dict[str, Any], present: dict[str, Any], adding: dict[str, Any]) -> list[Issue]:
-    issues = [Issue(severity="info", code="key-kept", subject=k, message=f"kept {k} = {text.show(v)}")
+    issues = [Issue(severity="info", code="key-kept", subject=k, message=f"kept {k} = {settings.key(k).shown(v)}")
               for k, v in present.items()]
     issues += [Issue(severity="warning", code="value-ignored", subject=k,
-                     message=f"{k} is already {text.show(present[k])}; the value given is ignored",
+                     message=f"{k} is already {settings.key(k).shown(present[k])}; the value given is ignored",
                      next=(view.command(CONFIG_SET, key=k, value=inline_text(given[k])),))
                for k in given if k in present and given[k] != present[k]]
     for dotted in settings.STATED:
         if dotted not in present and dotted not in adding:
             issues.append(Issue(severity="warning", code="stated-unset", subject=dotted,
-                                message=f"{dotted} is unset; state it before preparing jobs on this machine",
+                                message=f"{dotted} is unset: {settings.key(dotted).unset}",
                                 next=stating(CONFIG_INIT, [dotted])))
     return issues
 
@@ -267,7 +277,7 @@ class ConfigInit:
         proposals = _proposals(ctx, given, present)
         values = {k: v for k, (v, _) in proposals.items()}
         settings.with_values(values)  # refuses an invalid value before anything is asked
-        steps = tuple(Step(id=f"add:{k}", describe=f"add {k} = {text.show(v)}  # {why}")
+        steps = tuple(Step(id=f"add:{k}", describe=f"add {k} = {settings.key(k).shown(v)}  # {why}")
                       for k, (v, why) in proposals.items())
         issues = _issues(given, present, values)
         if ENVIRONMENTS not in present and ENVIRONMENTS not in values:

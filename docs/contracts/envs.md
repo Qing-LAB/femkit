@@ -29,11 +29,11 @@ flowchart LR
         S["bash scripts/install-env.sh &lt;verb&gt;"]
     end
     subgraph daily["every day"]
-        A["conda activate &lt;data&gt;/environments/control<br/>python -m femkit env &lt;verb&gt;"]
+        A["conda activate &lt;data&gt;/environments/control<br/>femkit env &lt;verb&gt;, in any folder"]
     end
-    S -->|"finds the manager § 7.1<br/>keeps control current § 7.2"| C["control environment<br/>&lt;data&gt;/environments/control"]
+    S -->|"finds the manager § 7.1<br/>keeps control current § 7.2<br/>writes its bin/femkit § 7"| C["control environment<br/>&lt;data&gt;/environments/control"]
     C -->|"&lt;control&gt;/bin/python -m femkit env &lt;verb&gt;"| F["femkit env operations § 6"]
-    A --> F
+    A -->|"&lt;control&gt;/bin/femkit"| F
     F -->|"observe § 3"| E["engine environments<br/>&lt;paths.environments&gt;/ngsolve, elmer"]
     F -->|"install § 4 · validate § 5 · clean"| E
     F -->|"events and step logs"| L["&lt;state&gt;/operations/env-&lt;name&gt;/&lt;time&gt;/"]
@@ -321,7 +321,7 @@ One `env install` over several environments, as one operation:
 ```mermaid
 sequenceDiagram
     actor P as person
-    participant CLI as python -m femkit
+    participant CLI as femkit
     participant Op as env.install
     participant D as disk
     P->>CLI: env install ngsolve elmer
@@ -582,7 +582,7 @@ has its state and, where something is missing, the next command:
 
 | subject | ready when | otherwise |
 |---|---|---|
-| control environment | current — `python -m femkit` runs inside it (§ 7.2) | `bash scripts/install-env.sh bootstrap` (never `--clean`, which also rebuilds every default environment) |
+| control environment | current — femkit runs on its own Python (§ 7.2) — and its `femkit` command there, naming this checkout (§ 7) | `bash scripts/install-env.sh bootstrap` (never `--clean`, which also rebuilds every default environment) |
 | `config.toml` | found, loads, and states `activation.preamble` and `activation.command` ([`config.md`](config.md) § 3.1) | `config init`, or `config init --preamble LINE` / `--no-preamble` and `--activation COMMAND` for each key unset; when it does not load, its state names each problem |
 | this machine's record | present, loads, and not `stale` ([`jobs.md`](jobs.md) § 9.3) | `job probe --write` — after stating the activation keys while either is unset, since the probe is refused until then |
 | each default engine environment, and any other once installed | `ready` (§ 3.2); a CUDA environment never installed is not counted | that state's allowed actions (§ 3.3) |
@@ -628,8 +628,8 @@ only when every part is done and `doctor` finds the machine ready.
 
 It ends with the lines that enter femkit day to day on this machine: the
 preamble, the activation the person stated (`activation.command`,
-[`config.md`](config.md) § 3.1) of the real control prefix, the checkout, and
-`doctor`. While no package manager is named, the stated activation cannot be
+[`config.md`](config.md) § 3.1) of the real control prefix, and `femkit
+doctor`. While no package manager is named, the stated activation cannot be
 written: the lines are left out, and a finding (`no-entry`) says why.
 `source activate` is one line, `source activate <prefix>`;
 `conda activate` or `mamba activate` is the manager kind's hook file sourced
@@ -668,11 +668,20 @@ before Python can run, and it does only that:
 
 The script reads `--yes`/`-y`, `--clean`, `--dry-run` and `--help` for its own
 steps and forwards every argument unchanged; every other flag is Python's, and
-`bash scripts/install-env.sh <verb> --help` prints femkit's own help. Day to day, femkit runs in the activated
-control environment, from the checkout — activated by the manager's own
-activation (`conda activate <data>/environments/control` on a conda machine;
-`env bootstrap` prints the exact line for this one) — then `python -m femkit …`,
-the form every printed command uses ([`api.md`](api.md) § 4.4).
+`bash scripts/install-env.sh <verb> --help` prints femkit's own help. Day to day, femkit runs as `femkit …`,
+in any folder, in the activated control environment — activated by the
+manager's own activation (`conda activate <data>/environments/control` on a
+conda machine; `env bootstrap` prints the exact line for this one) — the form
+every printed command uses ([`api.md`](api.md) § 4.4). `femkit` is a launcher
+the script writes into the control environment, `<control prefix>/bin/femkit`,
+each time it runs: it runs the control environment's own Python on femkit
+from the checkout the script ran from, with no user site-packages
+(`PYTHONNOUSERSITE=1`) and never the folder it runs in on Python's import path
+(`-P`), so no file of the person's stands in for a module femkit imports — so activating the control environment puts `femkit`
+on the path, and nothing is written outside femkit's own places. Whether it
+is there and names this checkout is part of `doctor`'s control environment
+line; a launcher whose checkout is gone says so, and names the script to run
+from the checkout's new place.
 
 ### 7.1 Finding the manager
 
@@ -815,6 +824,7 @@ flowchart TD
 | part | module |
 |---|---|
 | control state, actions, forwarding (§ 7) | `scripts/install-env.sh` |
+| the `femkit` command (§ 7): its one source, which the script fills and doctor reads it by | `femkit/data/launcher.sh`; filled in `scripts/install-env.sh` (`write_launcher`) and `femkit/jobs/setup.py` (`launcher_text`) |
 | facts, observation rules, action table (§ 3) | `femkit/envs/state.py` |
 | fingerprints (§ 2) | `femkit/envs/fingerprints.py` |
 | install steps, resume, validate after `manifest` (§ 4.1, § 4.2) | `femkit/envs/install.py`, `femkit/envs/operations.py` |

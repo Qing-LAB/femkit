@@ -7,7 +7,10 @@
 decision 5 of [ADR 0011](0011-project-structure.md), the two amendments of
 [ADR 0008](0008-one-model-declared-abilities.md) that have the page edit a
 part's text or write a geometry script, and the request carrying a script's
-text in [ADR 0013](0013-geometry-scripts.md)'s consequences
+text in [ADR 0013](0013-geometry-scripts.md)'s consequences; decision 2
+widened by the person (2026-11-25) to the new files they ask for besides a
+template — an imported material, and the library's first copy of femkit's
+shipped materials (consequences)
 
 **Authority:** the reasons and the alternatives only;
 [`projects.md`](../contracts/projects.md) § 7 owns the rules
@@ -59,3 +62,9 @@ safe against their editor.
   and the templates to copy; it writes nothing of the person's.
 - The benchmarks' and the tests' projects are templates
   ([`projects.md`](../contracts/projects.md) § 7).
+- A new material the person imports from another source's file, and the
+  global library's first copy of femkit's shipped materials, are new files
+  the person asks for, written as a template is: never over a file there,
+  never into a part ([`materials.md`](../contracts/materials.md) §§ 4, 7).
+  The person decided that an import writes only a new material
+  (2026-11-25).

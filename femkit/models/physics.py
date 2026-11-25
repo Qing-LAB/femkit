@@ -75,20 +75,21 @@ def kinds(f: FormulationDefinition, table: str) -> dict[str, KindSpec]:
     return getattr(f, table)
 
 
-def declared(formulations: Mapping[str, FormulationDefinition], text: str) -> Declared:
+def declared(formulations: Mapping[str, FormulationDefinition], text: str, manual: str | None = None) -> Declared:
     """The help of each key of a physics' text that a declaration states, not its schema
-    (core.md § 2): `formulation`, one of the declared families; a condition's or source's `kind`,
-    one of its formulation's kinds; and each parameter its kind lists, as the formulation states
-    it. A kind is read from the text as it writes it — set, or shown commented out — so an entry
-    shown as an example has its help too; a parameter of an entry whose kind the text does not
-    write has the help every kind listing it agrees on, if they do."""
+    (core.md § 2): `formulation`, one of the declared families, ending with ``manual``, the
+    chapter of the manual its kind declares; a condition's or source's `kind`, one of its
+    formulation's kinds; and each parameter its kind lists, as the formulation states it. A kind
+    is read from the text as it writes it — set, or shown commented out — so an entry shown as an
+    example has its help too; a parameter of an entry whose kind the text does not write has the
+    help every kind listing it agrees on, if they do."""
     written = {e.path: e.value for e in persist.key_comments(text) if not e.header}
     f = formulations.get(written.get(("formulation",)))
 
     def help_of(path: tuple[str, ...]) -> str | None:
         if path == ("formulation",):
             field = Physics.model_fields["formulation"]
-            return help_text(field.description, list(formulations), field_extras(field).get("doc"))
+            return help_text(field.description, list(formulations), manual if field_extras(field).get("doc") else None)
         if f is None or len(path) != 3 or path[0] not in TABLES:
             return None
         table, entry, key = path

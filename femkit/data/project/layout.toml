@@ -1,8 +1,8 @@
 # A project's layout (projects.md § 4): each part kind — its folder, whether each part is one
 # file or a folder holding its own, the files every part of its kind holds by a fixed name, the
-# schema it loads with, its place in the chain's order, and whether the projects root holds a
-# global library of it; each folder that holds no part, with its writer; and the object types
-# inside the parts. The project file is fixed, `project.toml`. The door, the graph, the checks
+# schema it loads with, its place in the chain's order, whether the projects root holds a global
+# library of it, and the chapter of the user manual that explains it, which its keys' help names;
+# each folder that holds no part, with its writer; and the object types inside the parts. The project file is fixed, `project.toml`. The door, the graph, the checks
 # and the page read this one declaration; `project new` copies what the person writes.
 
 # The files an editor keeps beside the one it edits — a backup, a swap file, a lock: no part, no
@@ -18,6 +18,7 @@ listed = "study"
 shape = "single"
 schema = "models.project"
 rank = 0
+manual = "3-write-each-part.md"
 
 [kinds.material]
 folder = "materials"
@@ -26,6 +27,7 @@ file = "material.toml"
 schema = "materials.material"
 rank = 1
 library = true
+manual = "6-materials.md"
 
 [kinds.component]
 folder = "components"
@@ -34,30 +36,35 @@ file = "component.toml"
 files = ["geometry.py"]
 schema = "geometry.component"
 rank = 2
+manual = "3-write-each-part.md"
 
 [kinds.physics]
 folder = "physics"
 shape = "file"
 schema = "models.physics"
 rank = 3
+manual = "3-write-each-part.md"
 
 [kinds.mesh]
 folder = "mesh"
 shape = "file"
 schema = "geometry.recipe"
 rank = 3
+manual = "3-write-each-part.md"
 
 [kinds.observables]
 folder = "observables"
 shape = "file"
 schema = "models.observables"
 rank = 3
+manual = "3-write-each-part.md"
 
 [kinds.study]
 folder = "studies"
 shape = "file"
 schema = "models.study"
 rank = 4
+manual = "3-write-each-part.md"
 
 # ------------------------------------------------------------------ the folders that hold no part
 

@@ -1,0 +1,68 @@
+# refractiveindex.info's files (materials.md § 7): how one of them becomes a new material. Its
+# ID, the file's stem, is the key the property list's `names` holds its name for a property under
+# (materials.md § 1). What its records mean, and how its formulas' coefficients map onto femkit's
+# models, is docs/science/material-data.md §§ 3, 6.1. femkit never fetches a file: the person
+# supplies it.
+description = "refractiveindex.info's database: one YAML file per material and source, its data in the public domain (CC0 1.0)"
+format = "yaml"
+
+# Its wavelengths, in every record, in micrometres. Whether they are vacuum wavelengths is not
+# stated in its documentation, and is not measured (material-data.md § 4).
+variable = { name = "wavelength", unit = "um" }
+
+# The links its citations hold to a DOI; every other link is kept as its text alone.
+doi = ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/"]
+
+# Where a file states each fact a dataset holds. Older files call their notes COMMENTS.
+[keys]
+references = "REFERENCES"
+notes = ["NOTES", "COMMENTS"]
+conditions = "CONDITIONS"
+records = "DATA"
+type = "type"
+range = "wavelength_range"
+
+# The other key a file may hold at its top, which femkit does not map: a file holding it is
+# refused, saying this, rather than drop what it says (material-data.md § 4).
+[unmapped]
+SPECS = "it can state that the file's wavelengths are in air rather than in vacuum, or its refractive index relative to air rather than to vacuum, and femkit's data is in vacuum and converts neither (material-data.md § 4); where it states nothing that would have to be converted, a copy of the file without it imports"
+
+# The conditions a file may state, each the value of a variable, in its unit.
+[conditions.temperature]
+name = "temperature"
+unit = "K"
+
+# Each record type, by the name a record's `type` gives it, and what it becomes. A table's
+# property is the source's name for it, `nk`, which the property list gives the refractive index.
+# Its extinction coefficient is a magnitude, so n and k are n + ik under exp(-iwt)
+# (material-data.md § 3).
+[records."tabulated nk"]
+property = "nk"
+data = "data"
+columns = ["n", "k"]
+convention = "exp(-iwt)"
+interpolation = "linear"
+
+[records."tabulated n"]
+property = "nk"
+data = "data"
+columns = ["n"]
+convention = "real"
+interpolation = "linear"
+
+# Its formulas 1 and 2 are both Sellmeier's: n^2 - 1 = C1 + sum of C2i lambda^2 / (lambda^2 - P),
+# P being C2i+1 squared in formula 1 — a resonance wavelength — and C2i+1 itself in formula 2 —
+# its square (material-data.md § 6.1). So C1 is A, then each term's B and C, term after term.
+[records."formula 1"]
+model = "sellmeier"
+coefficients = "coefficients"
+parameters = { A = "1" }
+sum = "terms"
+term = { B = "1", C = "um" }
+
+[records."formula 2"]
+model = "sellmeier"
+coefficients = "coefficients"
+parameters = { A = "1" }
+sum = "terms"
+term = { B = "1", C = "um^2" }

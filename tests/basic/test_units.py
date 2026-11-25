@@ -121,3 +121,16 @@ def test_a_table_that_reads_a_text_two_ways_or_states_a_wrong_unit_does_not_load
     with pytest.raises(DefinitionError) as caught:
         validate(UnitTable, data, "units.toml")
     assert at in [path for path, _ in caught.value.problems]
+
+
+@pytest.mark.parametrize("value, shown", [(Fraction(1, 40), "0.025"), (Fraction(-3, 2), "-1.5"), (Fraction(5), "5"),
+                                          (Fraction(-1, 40), "-0.025"), (Fraction(1, 10**6), "0.000001"),
+                                          (Fraction(1, 3), "1/3"), (Fraction(-2, 7), "-2/7")])
+def test_a_value_is_shown_as_its_exact_decimal_where_it_has_one(value, shown):
+    """Fails if a value a case holds is shown other than exactly — its decimal where its
+    denominator has no prime but 2 and 5, else `p/q` — or its decimal does not read back as the
+    same value (core.md § 11: every operation keeps a value exact)."""
+    from femkit.core.units import decimal, number
+    assert decimal(value) == shown
+    if "/" not in shown:
+        assert number(shown) == value

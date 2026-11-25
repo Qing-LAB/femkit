@@ -8,7 +8,7 @@ Its findings, each at the observable's key:
   group (choices);
 - `bad-unit` (error), at `unit`: not a unit the unit table reads;
 - `bad-quantity`, `wrong-dimension` (error), at `point` or `line`: a coordinate that does not read,
-  or is not a length.
+  or is not a length — one of each at the key, however many of its lengths are wrong.
 """
 
 from __future__ import annotations
@@ -113,9 +113,19 @@ def check(c: Checking, part: Part) -> Iterator[Issue]:
             c.units.parse(observable.unit)
         except UnitError as exc:
             yield c.issue(part, *at, "unit", code="bad-unit", message=f"the unit of `{name}` does not read: {exc}")
-        for point in points(observable):
-            for length in point:
-                yield from c.measure(part, (*at, where), length, LENGTH, "a length")[1]
+        yield from _once([issue for point in points(observable) for length in point
+                          for issue in c.measure(part, (*at, where), length, LENGTH, "a length")[1]])
+
+
+def _once(issues: list[Issue]) -> list[Issue]:
+    """One finding per key and code, as a finding is told apart (core.md §§ 9, 10): the lengths of
+    a point or a line share its key, so what is wrong with several is said once, each distinct
+    reason in it once."""
+    said: dict[tuple[str, str], list[Issue]] = {}
+    for issue in issues:
+        said.setdefault((issue.subject, issue.code), []).append(issue)
+    return [same[0].model_copy(update={"message": "; ".join(dict.fromkeys(i.message for i in same))})
+            for same in said.values()]
 
 
 def points(observable: Observable) -> list[list[str]]:

@@ -16,9 +16,9 @@ from pydantic.fields import FieldInfo
 
 from femkit.core.schema import PLACEHOLDER, alternatives, field_extras, items_of
 
-#: How a person runs femkit: in the activated control environment, from the repository folder
-#: (envs.md § 7). Every printed command starts with it.
-PROG = "python -m femkit"
+#: How a person runs femkit: the `femkit` command the activated control environment puts on the
+#: path, in any folder (envs.md § 7). Every printed command starts with it (api.md § 4.4).
+PROG = "femkit"
 
 #: A request field's annotation that makes it a positional argument (api.md § 4.1).
 ARGUMENT = {"cli": "argument"}
@@ -68,7 +68,7 @@ def word(value: Any) -> str:
 
 def words(operation: str, request: type[BaseModel], values: Mapping[str, Any],
           fills: Mapping[str, str] = {}) -> list[str]:
-    """The command for ``operation`` with ``values``, as its words after `python -m femkit`: the
+    """The command for ``operation`` with ``values``, as its words after `femkit`: the
     verb, each argument, each flag and option a value differs from its default for, and each
     value still to fill as its placeholder (``fills``: field → what stands in its place)."""
     out = operation.split(".")
@@ -92,6 +92,6 @@ def words(operation: str, request: type[BaseModel], values: Mapping[str, Any],
 
 
 def typed(args: list[str]) -> str:
-    """A femkit command as a person types it: `python -m femkit ARGS`, each word quoted only
-    when it needs it."""
+    """A femkit command as a person types it: `femkit ARGS`, each word quoted only when it
+    needs it."""
     return " ".join([PROG, *(word(a) for a in args)])

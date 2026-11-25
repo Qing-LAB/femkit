@@ -27,7 +27,8 @@ from femkit.core.operations import Context
 from femkit.core.units import Dimension, Quantity, UnitError, Units, name_spans
 from femkit.core.view import Action
 from femkit.definitions import catalogue
-from femkit.definitions.formulations import FormulationDefinition
+from femkit.definitions.dispersion import Dispersion
+from femkit.definitions.formulations import FormulationDefinition, StepKind
 from femkit.definitions.places import PlaceKind
 from femkit.definitions.properties import Property
 from femkit.projects import door
@@ -65,6 +66,8 @@ class Checking:
     units: Units
     formulations: Mapping[str, FormulationDefinition]
     properties: Mapping[str, Property]
+    dispersion: Dispersion               # the variables and the dispersion models (materials.md § 2)
+    step_kinds: Mapping[str, StepKind]   # what each kind of calculation supplies (models.md § 4.2)
     places: Mapping[str, PlaceKind]
     environments: frozenset[str]          # the engine environments a study may bind (models.md § 5.1)
     parameters: Mapping[str, Quantity]   # each parameter that resolves, by name, exactly
@@ -90,7 +93,8 @@ class Checking:
         found += [door.finding(opened, at(name), code="bad-quantity", message=f"the parameter {name} does not read: {why}")
                   for name, why in wrong.items()]
         return cls(opened=opened, units=units, formulations=catalogue.formulations(ctx),
-                   properties=catalogue.properties(ctx), places=catalogue.places(ctx),
+                   properties=catalogue.properties(ctx), dispersion=catalogue.dispersion(ctx),
+                   step_kinds=catalogue.step_kinds(ctx), places=catalogue.places(ctx),
                    environments=frozenset(catalogue.environments(ctx)), parameters=parameters,
                    unresolved=frozenset(texts) - set(parameters), issues=tuple(found),
                    known=project is not None and project.data is not None)
@@ -105,7 +109,7 @@ class Checking:
     def quantity(self, text: str) -> Quantity:
         """``text`` read as a quantity or an expression of the project's parameters (core.md § 11);
         a `UnitError` naming what does not read."""
-        return self.units.parse(text, self.parameters)
+        return self.units.parse(text, self.parameters, known=self.unresolved)
 
     def measure(self, part: Part, keys: tuple[str, ...], value: Any, dimension: Dimension | None = None,
                 what: str = "", *, parameters: bool = True) -> tuple[Quantity | None, list[Issue]]:
@@ -179,7 +183,8 @@ def resolve(texts: Mapping[str, str], units: Units) -> tuple[dict[str, Quantity]
             failed.add(name)
             return
         try:
-            values[name] = units.parse(texts[name], {n: values[n] for n in uses[name]})
+            values[name] = units.parse(texts[name], {n: values[n] for n in uses[name]},
+                                       known=[n for n in texts if n != name])
         except UnitError as exc:
             wrong[name] = str(exc)
             failed.add(name)

@@ -10,7 +10,6 @@ record, then `doctor`, the entry line, and one verdict.
 from __future__ import annotations
 
 import os
-import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,17 +62,34 @@ class DoctorResult(Result):
 
 
 CONTROL_STAMP = "control.sha256"  # in the control prefix's records; written last by the install script
+LAUNCHER = Path("bin") / "femkit"  # in the control prefix: the `femkit` command the install script writes (envs.md § 7)
+LAUNCHER_SOURCE = "launcher.sh"    # in femkit/data/: that command's one source, which the install script fills
+
+
+def shell_word(value: str) -> str:
+    """``value`` as one single-quoted shell word, each `'` in it written `'\\''`: as the install
+    script quotes what it fills the launcher's text with."""
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def launcher_text(checkout: Path, python: Path) -> str:
+    """The `femkit` command that runs femkit from ``checkout`` on ``python`` (envs.md § 7):
+    femkit/data/launcher.sh with `{checkout}` and then `{python}` each replaced by a shell word,
+    as the install script fills it."""
+    source = catalogue.shipped(catalogue.data_root() / LAUNCHER_SOURCE)
+    return source.replace("{checkout}", shell_word(str(checkout))).replace("{python}", shell_word(str(python)))
 
 
 @dataclass(frozen=True)
 class ControlFacts:
-    """What is observed of the control environment (envs.md § 7.2)."""
+    """What is observed of the control environment (envs.md § 7.2), and its `femkit` command (§ 7)."""
 
     prefix: bool           # the control prefix is there
     environment: bool      # it holds conda-meta/
     python: bool           # its bin/python can be run
     stamp: str | None      # the stamp's text; None: no stamp
     digest: str | None     # the SHA-256 of channels.txt then control.txt, read beside a stamp
+    launcher: bytes | None   # its `femkit` command's bytes (envs.md § 7); None: there is none
 
 
 CONTROL_BINDING = states.Binding("control", {
@@ -91,16 +107,27 @@ def control_facts() -> ControlFacts:
     stamp = persist.read_text(layout.records(prefix) / CONTROL_STAMP)   # None: there is none
     return ControlFacts(prefix=prefix.exists(), environment=(prefix / "conda-meta").is_dir(),
                         python=os.access(prefix / "bin" / "python", os.X_OK), stamp=stamp,
-                        digest=catalogue.control_digest() if stamp is not None else None)
+                        digest=catalogue.control_digest() if stamp is not None else None,
+                        launcher=persist.read_bytes(prefix / LAUNCHER))
 
 
 def _control_row(ctx: Context) -> DoctorRow:
     """The control environment, observed by the rules `femkit/data/states/control.toml` declares
-    (envs.md § 7.2), with the command its state allows (§ 7.3)."""
+    (envs.md § 7.2), with the command its state allows (§ 7.3); a current one is ready when its
+    `femkit` command is the one the install script writes from this checkout (§ 7), and its row
+    says whether it is."""
     m = catalogue.machine(ctx, CONTROL_BINDING)
-    state = m.observe(control_facts())
-    return DoctorRow(subject="control environment", state=state.value, ready=state is m.states.current,
-                     next=list(m.next(state, dirs.CONTROL)))
+    facts = control_facts()
+    state = m.observe(facts)
+    shown, ready = state.value, False
+    if state is m.states.current:
+        prefix = dirs.control_prefix()
+        ours = launcher_text(dirs.checkout(), prefix / "bin" / "python").encode("utf-8", "surrogateescape")
+        ready = facts.launcher == ours
+        shown += (", femkit runs this checkout" if ready else ", no femkit command" if facts.launcher is None
+                  else ", femkit is not this checkout's")
+    return DoctorRow(subject="control environment", state=shown, ready=ready,
+                     next=[] if ready else list(m.next(state, dirs.CONTROL)))
 
 
 def _config_row(loaded: settings.Loaded) -> DoctorRow:
@@ -213,14 +240,14 @@ def _login_node(ctx: Context) -> list[Issue]:
 
 def entry_lines(ctx: Context, config: settings.UserConfig) -> list[view.Action]:
     """This machine's day-to-day entry (envs.md § 6.2): the preamble, the activation the person
-    stated for the real control prefix, the checkout, and the first command. A stated activation
-    is written with the manager's kind: refused while the invocation names none."""
+    stated for the real control prefix — which puts `femkit` on the path, for any folder — and
+    `femkit doctor`. A stated activation is written with the manager's kind: refused while the
+    invocation names none."""
     command = config.activation.command
     enter = [view.shell(line) for line in resolve(ctx).activation(dirs.control_prefix(), command)] if command else [
         a.model_copy(update={"note": f"activation.command is unset; {a.note}"})
         for a in stating(CONFIG_INIT, [settings.COMMAND])]
-    return [*(view.shell(line) for line in config.activation.preamble or []), *enter,
-            view.shell(f"cd {shlex.quote(str(dirs.checkout()))}"), view.command(DOCTOR)]
+    return [*(view.shell(line) for line in config.activation.preamble or []), *enter, view.command(DOCTOR)]
 
 
 @operation(ENV_BOOTSTRAP, result=BootstrapOutcome, changes=True,

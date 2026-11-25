@@ -259,11 +259,12 @@ table as they are declared; none is named here before it is.
 | `eigenvalues` | the frequencies and fields the structure supports without a source | none; it finds them | each mode: its frequency and its field | not built; named for the tree |
 | `transient` | a field in time | time | the field at each time | not built; named for the tree |
 
-Each kind states, as data: its sentence; the variable it supplies, which a
-material's data may vary with ([`materials.md`](materials.md) § 6); what it
-produces, which a later step of a study may take; and what a family that
-supports it must add — a `frequency` family, its phasor and amplitude
-conventions.
+Each kind states, as data, in `femkit/data/step_kinds.toml`: its sentence;
+the variables it supplies, which a material's data may vary with
+([`materials.md`](materials.md) §§ 2, 6) — built, with `stationary`, which
+supplies none; what it produces, which a later step of a study may take; and
+what a family that supports it must add — a `frequency` family, its phasor and
+amplitude conventions — each not declared yet (plan § 4, M9).
 
 ### 4.3 A family's declaration
 
@@ -645,12 +646,17 @@ changes a case or its ID.
 - **The case ID** is the SHA-256 of `case.json`'s canonical JSON — keys sorted,
   no whitespace, UTF-8 — so two spellings of one value give one ID. It serves
   `study expand` of the same study alone, to know a case it wrote already. Its
-  plan lists the cases it adds, those it keeps, and the study's preparations
+  plan lists the cases it adds — each that its materials' changed data makes
+  naming the case it renews ([`materials.md`](materials.md) § 6) — those it
+  keeps, and the study's preparations
   of cases it no longer produces, which become `orphaned` (§ 9.5) and are
   never deleted by it.
 - `case list` shows each study's cases under it, with their axis values,
   whether the study makes each now and, per environment, its match and
-  preparation state; a case may be named by a unique prefix of its ID.
+  preparation state; a case may be named by a unique prefix of its ID. The
+  cases the study makes come first, then those it no longer makes; within
+  each, in the study's own order — axis by axis as it declares them, each
+  value where its list puts it.
 - Execution benchmarks — ranks, threads — are job requests, not cases: the
   same case run on different resources must give the same answer.
 
@@ -1022,14 +1028,14 @@ write femkit's own outputs.
 
 | command | does | changes | declared in |
 |---|---|---|---|
-| `project new NAME --from SOURCE`, `project list` | a new project, a copy of one of femkit's templates or of one of the person's projects ([`projects.md`](projects.md) § 7); the projects under the root | the new project, and the root when it does not exist yet; nothing | `projects` |
+| `project new NAME --from SOURCE`, `project list` | a new project, a copy of one of femkit's templates or of one of the person's projects ([`projects.md`](projects.md) § 7); the projects under the root | the new project; the root when it does not exist yet; the root's global library, holding femkit's shipped materials and its record of them, when the root has none ([`materials.md`](materials.md) § 4); nothing | `projects` |
 | `project check` | every rule of § 3 and the formulation's; each study's pairing; kinds and coverage ([`geometry.md`](geometry.md) § 7) once a geometry exists; each finding with its file, its key and what would be right ([`core.md`](core.md) § 10) | nothing | `models` |
 | `project graph [--study S] [--environment E] [--mermaid]` | the project as a graph (§ 11.2), with findings and, with an environment, the worst match line per node | nothing | `models` |
 | `project view` | remembers where the page draws nodes, when the person asks; no project data ([`projects.md`](projects.md) § 2) | `.femkit/view.json` | `projects` |
-| `material add NAME [--from ENTRY]`, `material import SOURCE FILE --into library\|project [--as NAME]` | a material copied from the library; another source's data ([`materials.md`](materials.md) §§ 3, 7) | `materials/` | `materials` |
+| `material import SOURCE FILE --as NAME --into library\|project [--project P]` | a new material from another source's file, never over or into one ([`materials.md`](materials.md) § 7) | the new material's folder, in the library or the project's `materials/` | `materials` |
 | `study list` | a project's studies, each with whether it expands and, if not, why — the page's study chooser ([`web.md`](web.md) § 8.6) | nothing | `models` |
 | `study expand` | write a study's cases, in its own folder | `cases/<study>/` | `models` |
-| `case list` | each study's cases under it, their axis values, their match and preparation state per environment; a study that does not expand, and why | nothing | `models` |
+| `case list` | each study's cases under it, their axis values, whether the study makes each now and, for one it no longer makes, the material data that changed; each case's materials, where each name finds its material now, the dataset and its source ([`materials.md`](materials.md) §§ 4, 6); their match and preparation state per environment; a study that does not expand, and why | nothing | `models` |
 | `case match`, `study match` | the match report (§ 6.2) | nothing | `models` |
 | `case prepare`, `study prepare` | prepare (§ 9.3); how its steps run is designed with execution (plan § 4, X) | `runs/` | `models` |
 | `formulation verify`, `--record` | prepare a benchmark set; record proofs from its finished runs (§ 6.3) | the benchmark projects; the proof record | `results` |
@@ -1067,7 +1073,9 @@ never stored, and no surface draws it from a list of its own.
   marked whether its geometry exists yet; the physics, mesh recipes and
   observable sets; each study, with its cases prepared and done per
   environment; each analysis. Wires are the references
-  between parts.
+  between parts. A global library's material the project names is a node too,
+  `material:GLOBAL/<name>`, grouped as the library's, and an assignment's wire
+  reaches the material its name finds ([`materials.md`](materials.md) § 4).
 - **Detail.** Inside a component: the groups its contract promises and the
   materials assigned to them. Inside a physics: its groups and the conditions
   and sources on

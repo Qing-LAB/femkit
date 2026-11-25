@@ -2,7 +2,9 @@
 
 Every command is built from the registry: its options from the request model,
 its help from the docstring and field descriptions. Nothing here knows an
-operation.
+operation. A request the model refuses is said as the person types the command:
+each field by its argument or option (`STUDY`, `--as NAME`), with what it takes,
+a closed list's choices named, and the command again as its next step.
 """
 
 from __future__ import annotations
@@ -17,40 +19,95 @@ from pathlib import Path
 from typing import Any
 
 import click
+from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 
 from femkit.core import commandline, process, text, view
 from femkit.core.errors import ConsentDeclined, Refusal, UsageError
 from femkit.core.operations import Ask, Context, Operation, Plan, Result, Step
-from femkit.core.schema import described
-from femkit.registry import GROUPS, operations
+from femkit.core.schema import WANTED, closed, described, pointer
+from femkit.registry import GROUPS, Group, group, operations
 
 
 # ------------------------------------------------------------ fields to params
 
-def _param(name: str, field: FieldInfo) -> click.Parameter:
+def _manual(op: Operation) -> str | None:
+    """The chapter of the manual the command group of ``op`` declares (api.md § 4); None for an
+    operation of no declared group, a test's own."""
+    found = group(op.name)
+    return found.manual if found is not None else None
+
+
+class _Option(click.Option):
+    """A request field's option, its help the field's (api.md § 4.1), made when it is shown: the
+    names a declaration holds are read then, never when the command is built (core.md § 2,
+    `choices`)."""
+
+    def __init__(self, decls: list[str], field: FieldInfo, manual: str | None, **attrs: Any) -> None:
+        super().__init__(decls, **attrs)
+        self.field, self.manual = field, manual
+
+    def get_help_record(self, ctx: click.Context) -> tuple[str, str] | None:
+        self.help = described(self.field, self.manual)
+        return super().get_help_record(ctx)
+
+
+def _param(name: str, field: FieldInfo, manual: str | None = None) -> click.Parameter:
     """A field's parameter (api.md § 4.1). It takes the words as typed — no type, nothing
-    required — so every problem with them is the request model's, refused with its key path."""
+    required — so every problem with them is the request model's, said as it is typed
+    (`_refused`)."""
     s = commandline.spelling(name, field)
     if s.kind == "argument":   # its usage says what the request requires, which click is not asked to check
         shown = name.upper() if field.is_required() else f"[{name.upper()}]"
         return click.Argument([name], nargs=-1 if s.many else 1, required=False,
                               metavar=shown + ("..." if s.many else ""))
     if s.kind == "flag":
-        return click.Option([s.flag, name], is_flag=True, default=False, help=described(field))
-    return click.Option([s.flag, name], multiple=s.many, default=None, help=described(field),
-                        metavar={int: "INTEGER", float: "FLOAT"}.get(s.element))
+        return _Option([s.flag, name], field, manual, is_flag=True, default=False)
+    return _Option([s.flag, name], field, manual, multiple=s.many, default=None,
+                   metavar={int: "INTEGER", float: "FLOAT"}.get(s.element))
 
 
 def _help(op: Operation) -> str:
-    """The command's help: the operation's docstring, then each argument with its field's
-    description — a positional argument has no help of its own (api.md § 4.1)."""
-    arguments = [(name.upper(), described(field)) for name, field in op.request.model_fields.items()
+    """The command's help: the operation's docstring, then each argument with its field's help —
+    a positional argument has no help of its own (api.md § 4.1)."""
+    arguments = [(name.upper(), described(field, _manual(op))) for name, field in op.request.model_fields.items()
                  if commandline.spelling(name, field).kind == "argument"]
     if not arguments:
         return op.doc
     width = max(len(name) for name, _ in arguments)
     return op.doc + "\n\n\b\nArguments:\n" + "\n".join(f"  {name:<{width}}  {says}" for name, says in arguments)
+
+
+class _Ending:
+    """A command's or a group's help, ending with the chapter of the manual its group declares
+    (api.md § 4), read when the help is shown."""
+
+    manual: str | None = None
+
+    def format_epilog(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        self.epilog = pointer(self.manual) if self.manual else None
+        super().format_epilog(ctx, formatter)   # type: ignore[misc]
+
+
+class _Command(_Ending, click.Command):
+    """An operation's command: its help — the operation's docstring and each argument's help — made
+    when it is shown, so the names a declaration holds are read then (`_Option`)."""
+
+    def __init__(self, verb: str, op: Operation, **attrs: Any) -> None:
+        super().__init__(verb, **attrs)
+        self.op, self.manual = op, _manual(op)
+
+    def format_help_text(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        self.help = _help(self.op)
+        super().format_help_text(ctx, formatter)
+
+
+class _Group(_Ending, click.Group):
+    """A command group: its one sentence, as the registry declares it (api.md § 6)."""
+
+    def __init__(self, name: str, declared: Group | None) -> None:
+        super().__init__(name, help=declared.sentence if declared is not None else None)
+        self.manual = declared.manual if declared is not None else None
 
 
 def _again(op: Operation, req: Any) -> str:
@@ -59,8 +116,9 @@ def _again(op: Operation, req: Any) -> str:
 
 
 def _request(op: Operation, values: dict) -> Any:
-    """The request from the words given; a field given none is left to the model: its default, or
-    its refusal as missing."""
+    """The request from the words given, validated by the request model alone (api.md § 4.1); a
+    field given none is left to the model: its default, or its refusal as missing — said as the
+    person types the command (`_refused`)."""
     data = {}
     for name in op.request.model_fields:
         value = values.get(name)
@@ -69,7 +127,64 @@ def _request(op: Operation, values: dict) -> Any:
         if isinstance(value, tuple):
             value = list(value)
         data[name] = value
-    return op.request_from(data)
+    try:
+        return op.request.model_validate(data)
+    except ValidationError as exc:
+        raise _refused(op, data, exc.errors()) from None
+
+
+def _typed(name: str, field: FieldInfo) -> str:
+    """A request field as a person types it (api.md § 4.1): an argument by its name in capitals,
+    `STUDY`; an option with its value, `--as NAME`, or its choices, `--into library|project`; a
+    flag as itself."""
+    s = commandline.spelling(name, field)
+    if s.kind == "argument":
+        return name.upper() + ("..." if s.many else "")
+    if s.kind == "flag":
+        return s.flag
+    return f"{s.flag} {'|'.join(closed(s.element)) or name.upper()}"
+
+
+def _choices(name: str, field: FieldInfo) -> list[str]:
+    """The values a field's closed list allows; none for a field that takes any."""
+    return closed(commandline.spelling(name, field).element)
+
+
+def _refused(op: Operation, data: dict, errors: list[dict]) -> UsageError:
+    """The request's problems as the command line says them (api.md § 4.1; core.md § 9): each
+    field by its argument or option — missing, with what it takes; outside its closed list, with
+    its choices; of the wrong kind, with what it should be — and, as the next step, the command
+    again with what was given right, each field to give again still to fill, and, for a closed
+    list, one command for each of its choices. A `UsageError`, `invalid-request`, its subject the
+    operation, as the request model's own refusal is (`Operation.request_from`)."""
+    fields = op.request.model_fields
+    by_key = {field.alias or name: name for name, field in fields.items()}
+    said, wrong = [], []
+    for error in errors:
+        name = by_key.get(error["loc"][0]) if error["loc"] else None
+        reason = error["msg"].removeprefix("Value error, ")
+        if name is None:
+            said.append(reason)
+            continue
+        field, typed, given = fields[name], _typed(name, fields[name]), text.show(error.get("input"))
+        wrong.append(name)
+        if error["type"] == "missing":
+            said.append(f"{typed} is missing: {described(field, _manual(op))}")
+        elif _choices(name, field):
+            said.append(f"{typed.split()[0]} is `{given}`, and it takes "
+                        + " or ".join(f"`{c}`" for c in _choices(name, field)))
+        elif error["type"] in WANTED:
+            said.append(f"{typed} is `{given}`, and it should be {WANTED[error['type']]}: "
+                        f"{described(field, _manual(op))}")
+        else:
+            said.append(f"{typed} is `{given}`: {reason}")
+    wrong = list(dict.fromkeys(wrong))
+    given = {k: v for k, v in data.items() if k not in wrong and v != fields[k].default}
+    choosing = next((n for n in wrong if _choices(n, fields[n])), None)
+    fills = [view.Fill(field=n, label=described(fields[n])) for n in wrong if n != choosing]
+    again = [view.command(op.verb, fills=fills, **given, **({choosing: c} if choosing else {}))
+             for c in (_choices(choosing, fields[choosing]) if choosing else [None])]
+    return UsageError("\n  ".join(said), tuple(again), code="invalid-request", subject=op.name)
 
 
 # ------------------------------------------------------------------- output
@@ -317,7 +432,7 @@ def _execute(op: Operation, values: dict) -> int:
 
 
 def _command(verb: str, op: Operation) -> click.Command:
-    params = [_param(name, field) for name, field in op.request.model_fields.items()]
+    params = [_param(name, field, _manual(op)) for name, field in op.request.model_fields.items()]
     params.append(click.Option(["--json", "json_output"], is_flag=True, help="print one JSON document on stdout"))
     if op.changes:
         params.append(click.Option(["--dry-run"], is_flag=True, help="print the plan; change nothing"))
@@ -326,21 +441,23 @@ def _command(verb: str, op: Operation) -> click.Command:
     def callback(**values: Any) -> None:
         sys.exit(_execute(op, values))
 
-    return click.Command(verb, params=params, callback=callback, help=_help(op), short_help=op.doc.split(". ")[0])
+    return _Command(verb, op, params=params, callback=callback, short_help=op.doc.split(". ")[0])
 
 
 def build(ops: dict[str, Operation] | None = None) -> click.Group:
-    root = click.Group("femkit", help="femkit — a solver-neutral finite-element workbench.")
+    """femkit's command line: one group per name prefix, one command per operation (api.md § 4) —
+    femkit's own group, `""`, holding the commands of none."""
+    root = _Group("femkit", GROUPS.get(""))
     for name, op in (ops if ops is not None else operations()).items():
         group_name, _, verb = name.rpartition(".")
         if not group_name:
             root.add_command(_command(verb, op))
             continue
-        group = root.commands.get(group_name)
-        if group is None:
-            group = click.Group(group_name, help=GROUPS.get(group_name))
-            root.add_command(group)
-        group.add_command(_command(verb, op))
+        holding = root.commands.get(group_name)
+        if holding is None:
+            holding = _Group(group_name, GROUPS.get(group_name))
+            root.add_command(holding)
+        holding.add_command(_command(verb, op))
     return root
 
 

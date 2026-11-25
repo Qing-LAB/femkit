@@ -4,12 +4,16 @@ other number as its exact text. Each study's cases are its own, in its own folde
 `cases/<study>/<id>/case.json` (`path`), the ID the SHA-256 of the case's canonical JSON, by which
 `study expand` of the same study knows a case it wrote already; nothing is shared or compared
 between studies. `study expand` writes one for each point it lacks; it is refused while a part
-the study uses does not load, or `project check` has a finding on one."""
+the study uses does not load, or `project check` has a finding on one.
+
+A case holds each body's material by its name in its library, never `GLOBAL/`, and the data of
+each dataset it used, never where it was found (materials.md § 6): a case written before a
+material's data changed is told by comparing what it holds with what its material holds now
+(`held_now`) — shown by `case list`, and by the plan of `study expand` for each case it writes
+in its place."""
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from dataclasses import dataclass
 from decimal import Decimal
@@ -18,13 +22,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from femkit.core import view
+from femkit.core import persist, view
 from femkit.core.errors import Refused, Unstated
 from femkit.core.issues import Issue
-from femkit.core.schema import QUANTITIES, DefinitionError, Model, field_extras, validate
-from femkit.core.units import Quantity, UnitError, Units
+from femkit.core.schema import QUANTITIES, DefinitionError, Model, field_extras, key_path, validate
+from femkit.core.units import Quantity, UnitError, Units, decimal
 from femkit.models import axes
-from femkit.models.parts import Contract, called, contract, datasets, material, quantities
+from femkit.models.parts import PROPERTY, Contract, called, contract, datasets, material, quantities
 from femkit.models.requests import PROJECT_CHECK
 from femkit.models.study import Study, cites, used
 from femkit.projects import door, names
@@ -79,14 +83,10 @@ def plain(tree: Any) -> Any:
     return tree
 
 
-def canonical(data: dict) -> bytes:
-    """The canonical JSON: keys sorted, no whitespace, UTF-8 (models.md § 5.3)."""
-    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-
-
 def case_id(data: dict) -> str:
-    """A case's ID: the SHA-256 of its canonical JSON."""
-    return hashlib.sha256(canonical(data)).hexdigest()
+    """A case's ID: the SHA-256 of its canonical JSON — keys sorted, no whitespace, UTF-8
+    (models.md § 5.3)."""
+    return persist.canonical_sha256(data)
 
 
 def content(value: Any, names: dict[str, Quantity], units: Units, where: Address) -> Any:
@@ -160,8 +160,14 @@ def _value(c: Checking, study: Part, key: str, value: Any, applied: axes.Applied
 
 def _component(c: Checking, k: Contract, applied: axes.Applied, needed: list[str]) -> dict:
     """The component as a case holds it: its frame, its inputs' values, its files' digests, its
-    groups, and each body's material with the dataset of every property the physics read
-    (materials.md § 6) — a dataset its assignment leaves to choose among several is unstated."""
+    groups, and each body's material — the project's own, or the global library's, as its name
+    finds it (materials.md § 4) — by its name in its library, never `GLOBAL/`, so one material
+    written either way is one case, with the dataset of every property the physics read (§ 6),
+    never where it was found; a dataset its assignment leaves to choose among several is
+    unstated. A material found nowhere, or that does not load, has refused the expansion already:
+    the component's finding, or its own (`expand`); one held under an equivalent form is
+    refused, `Refused`, until a case converts it (plan § 4, M9) — `project check` has said so at
+    the assignment (`study.py`)."""
     where = k.part.address
     inputs = {}
     for name in k.inputs:
@@ -171,12 +177,8 @@ def _component(c: Checking, k: Contract, applied: axes.Applied, needed: list[str
         inputs[name] = exact(applied.parameters[name])
     assign = {}
     for group, assigned in k.assign.items():
-        held = material(c.opened, assigned.material) if assigned.material else None
-        if held is None:
-            raise Unstated(f"the material `{assigned.material}` of `{group}` is not the project's own, and the global "
-                           "material library is not read yet", code="material-unread",
-                           subject=f"{where}:assign.{group}.material")
-        sets, properties = datasets(c.opened, held), {}
+        held = material(c.opened, assigned.material)
+        sets, properties = datasets(c, held), {}
         for prop in needed:
             named = sets.get(prop, {})
             chosen = applied.datasets.get((group, prop)) or assigned.datasets.get(prop) or (
@@ -185,9 +187,13 @@ def _component(c: Checking, k: Contract, applied: axes.Applied, needed: list[str
                 raise Unstated(f"{group}'s material {assigned.material} holds {', '.join(named) or 'no dataset'} for "
                                f"{prop}, and the assignment names none of them", code="dataset-unstated",
                                subject=f"{where}:assign.{group}.datasets.{prop}")
-            properties[prop] = {"dataset": chosen, "data": content(named[chosen], applied.parameters, c.units,
+            if named[chosen].form != prop:
+                raise Refused(f"{group}'s dataset {chosen} is held as {named[chosen].form}, a form of the {prop} read, "
+                              f"and no case converts one yet: a dataset held as the {prop} itself would do",
+                              code="form-unconverted", subject=f"{where}:assign.{group}.datasets.{prop}")
+            properties[prop] = {"dataset": chosen, "data": content(named[chosen].data, applied.parameters, c.units,
                                                                    held.address)}
-        assign[group] = {"material": assigned.material, "properties": properties}
+        assign[group] = {"material": names.bare(held.address.name), "properties": properties}
     return {"frame": content(k.frame, applied.parameters, c.units, where), "inputs": inputs,
             "files": {h.name: h.sha256 for h in c.opened.held_by(where).values()},
             "groups": {g: str(d) for g, d in k.groups.items()}, "assign": assign}
@@ -254,10 +260,11 @@ def written(opened: door.Opened) -> dict[str, dict[str, Case | str]]:
 
 
 def read(text: str | None, file: str) -> Case:
-    """A case's file read by its schema; one that is no JSON, or not there, does not load."""
+    """A case's file read by its schema, its text by the core's JSON reading; one that is no JSON,
+    or not there, does not load."""
     try:
-        data = json.loads(text) if text is not None else None
-    except json.JSONDecodeError as exc:
+        data = persist.json_value(text) if text is not None else None
+    except ValueError as exc:
         raise DefinitionError(file, [("", f"not JSON: {exc}")]) from None
     if data is None:
         raise DefinitionError(file, [("", "there is no such file")])
@@ -269,10 +276,118 @@ def write(opened: door.Opened, study: str, case: Expanded) -> None:
     door.write_output(opened, path(study, case.id), case.data)
 
 
+class DataChange(Model):
+    """One way a dataset's data in a case differs from what its material holds now (materials.md
+    § 6), each value as a person reads it: `value`, `1`, `1.0006`."""
+
+    key: str = Field(description="the dataset's key where it differs, its dotted path; empty for the dataset as a "
+                                 "whole")
+    case: str = Field(description="the value there as the case holds it")
+    now: str = Field(description="the value there as the material holds it now; for the dataset as a whole, why "
+                                 "there is none to compare")
+
+    def __str__(self) -> str:
+        return f"{self.key} {self.case} → {self.now}" if self.key else self.now
+
+
+@dataclass(frozen=True)
+class Filled:
+    """One property of one body's material, as a case holds it (materials.md §§ 4, 6): the body
+    group, the material by its name in its library, the property, and the dataset used with its
+    source — from the case's own data, which holds it; where the material's name finds it now, by
+    the name that names it exactly, none where nothing does; and how the dataset's data differs
+    from what the material holds now — nothing, for a case its study makes now."""
+
+    group: str
+    material: str
+    property: str
+    dataset: str
+    source: str | None
+    found: str | None = None
+    differs: tuple[DataChange, ...] = ()
+
+
+def held_now(c: Checking, study: Part | None, case: Case) -> tuple[list[Filled], str]:
+    """Each body's material and each property's dataset as ``case`` holds them, each with where
+    its material is found now and how the dataset's data differs from what it holds now
+    (`Filled`); and the ID the case would have with each dataset's data as its material now holds
+    it — its own ID, where none differs (materials.md § 6; models.md § 5.3). The material a body's
+    name is now is the one ``study``'s component assigns that body now, where it is that material
+    written either way, and otherwise the one the name finds, the project's own first (§ 4)."""
+    data = case.model_dump(mode="json", by_alias=True)
+    out = []
+    for group, held in sorted(data["component"].get("assign", {}).items()):
+        part = _material_now(c, study, group, held["material"])
+        for prop, used in sorted(held["properties"].items()):
+            was = used["data"]
+            now, why = _data_now(c, part, prop, used["dataset"])
+            differs = ((DataChange(key="", case="", now=why),) if why is not None
+                       else tuple(_differs(was, now, c.units)))
+            out.append(Filled(group=group, material=held["material"], property=prop, dataset=used["dataset"],
+                              source=was.get("source") if isinstance(was, dict) else None,
+                              found=part.address.name if part is not None else None, differs=differs))
+            if now is not None:
+                used["data"] = now
+    return out, case_id(data)
+
+
+def _material_now(c: Checking, study: Part | None, group: str, name: str) -> Part | None:
+    """The material a case's ``name`` for ``group`` is now, loaded or not (`held_now`); None where
+    neither the project nor the global library holds it."""
+    kind = c.opened.layout.objects[PROPERTY].part
+    holder = cites(c, "component", study.data.component) if study is not None and study.data is not None else None
+    k = contract(c.opened, holder) if holder is not None else None
+    assigned = k.assign.get(group) if k is not None else None
+    if assigned is not None and assigned.material is not None and names.bare(assigned.material) == name:
+        return door.named(c.opened, kind, assigned.material)
+    return door.named(c.opened, kind, name)
+
+
+def _data_now(c: Checking, part: Part | None, prop: str, dataset: str) -> tuple[Any, str | None]:
+    """The data ``dataset`` of ``prop`` holds now in the material ``part``, as a case holds it
+    (`content`); or None, and why there is none to compare."""
+    if part is None:
+        return None, "the material is found nowhere now"
+    if part.data is None:
+        return None, "the material does not load now"
+    answers = datasets(c, part).get(prop, {})
+    if dataset not in answers:
+        return None, f"the material holds no dataset `{dataset}` of its {prop} now"
+    try:
+        return content(answers[dataset].data, {}, c.units, part.address), None
+    except Refused as exc:
+        return None, f"the dataset does not read now: {exc}"
+
+
+def _differs(was: Any, now: Any, units: Units, at: tuple[str, ...] = ()) -> list[DataChange]:
+    """Where two datasets' data, as a case holds it, differ: each key's value, a quantity whole."""
+    if isinstance(was, dict) and isinstance(now, dict) and not (_quantity(was) or _quantity(now)):
+        return [d for k in sorted(set(was) | set(now)) for d in _differs(was.get(k), now.get(k), units, (*at, k))]
+    return [] if was == now else [DataChange(key=key_path(at) or "data", case=_said(was, units),
+                                             now=_said(now, units))]
+
+
+def _quantity(value: Any) -> bool:
+    return isinstance(value, dict) and set(value) == {"value", "dimension"}
+
+
+def _said(value: Any, units: Units) -> str:
+    """A value a case holds, as a person reads it: a quantity as `shown`, a list in brackets, a
+    table in braces, none as `none`."""
+    if value is None:
+        return "none"
+    if isinstance(value, list):
+        return "[" + ", ".join(_said(v, units) for v in value) + "]"
+    if isinstance(value, dict) and not _quantity(value):
+        return "{" + ", ".join(f"{k} = {_said(v, units)}" for k, v in value.items()) + "}"
+    return shown(value, units)
+
+
 def shown(value: Any, units: Units) -> str:
-    """A value a case holds, for a person: a quantity in its canonical units, `1/10 m`."""
+    """A value a case holds, for a person: a quantity in its canonical units, exactly, its decimal
+    where it has one — `0.1 m` — else `p/q`, `1/3 m` (`units.decimal`)."""
     if isinstance(value, dict) and set(value) == {"value", "dimension"}:
         unit = " ".join((units.canonical(((n, 1),)) or n) + ("" if p == 1 else f"^{p}")
                         for n, p in value["dimension"].items())
-        return f"{value['value']} {unit}".strip()
+        return f"{decimal(Fraction(value['value']))} {unit}".strip()
     return str(value)

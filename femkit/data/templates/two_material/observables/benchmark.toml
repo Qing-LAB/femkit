@@ -1,12 +1,13 @@
-# The benchmark's observables (models.md § 5.2; docs/science/electrostatics.md § 9.1): the
-# potential at the middle of each layer and on the interface, and the energy in each layer.
+# The benchmark's observables (manual: 3 · Write each part; docs/science/electrostatics.md
+# § 9.1): the potential at the middle of each layer and on the interface, and the energy in each
+# layer.
 # Each point is an expression of the project's parameters, measured from the slab's lower-left
 # corner, so the reference values follow from the parameters wherever the interface lies.
 
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
 schema = 1
 
-# the set's observables, by name, unique across the sets a study reports (see models.md § 5.2)
+# the set's observables, by name, unique across the sets a study reports (manual: 3 · Write each part)
 [observables]
 
 # the potential halfway through the first layer

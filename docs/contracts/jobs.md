@@ -372,9 +372,9 @@ was shown. It writes nothing without `--write`.
 
 To prepare jobs on a workstation for a cluster:
 
-1. on the cluster: `python -m femkit job probe --write --name cluster-a`;
+1. on the cluster: `femkit job probe --write --name cluster-a`;
 2. copy `machines/cluster-a.toml` into the workstation's `<config>/machines/`;
-3. on the workstation: `python -m femkit job machines` shows it arrived and loads.
+3. on the workstation: `femkit job machines` shows it arrived and loads.
 
 - `job machines` shows every record in `<config>/machines/`: name, path, when
   and where it was measured, and a one-line summary (scheduler, node groups,

@@ -27,7 +27,7 @@ def test_every_shipped_definition_loads():
 def test_the_reference_pages_match_the_models():
     """Fails if docs/reference/ differs from what the models render (definitions.md § 2.3)."""
     plan = planned("schema.docs")[1]
-    assert plan.steps == (), "docs/reference/ is stale: run `python -m femkit schema docs`"
+    assert plan.steps == (), "docs/reference/ is stale: run `femkit schema docs`"
 
 
 def _load_problems(tmp_path, text: str) -> dict[str, str]:
@@ -328,6 +328,24 @@ def test_schema_check_refuses_a_page_declaration_that_names_what_is_not_served(d
     assert [(i.code, i.subject) for i in result.issues] == [("definition-invalid", str(page))]
     assert result.issues[0].message.startswith(f"{page}: workspaces[0].document:")    # where in the file, at its key path
 
+def test_a_formulation_names_its_properties_from_the_list_and_repeats_none_of_it(definitions):
+    """Fails if a formulation loads naming a property the property list lacks, or stating a
+    property's unit or sentence, which are the list's (models.md § 4.3: "the material properties
+    it reads, by their names in the property list, each needed real or allowed complex";
+    materials.md § 1: "it never defines a property of its own")."""
+    path = definitions / "formulations" / "electrostatics.toml"
+    shipped = tomllib.loads(path.read_text())
+    spec = shipped["properties"]["relative_permittivity"]
+    for change, at in (({"conductivity": spec}, "properties.conductivity"),
+                       ({"relative_permittivity": spec | {"unit": "1"}}, "properties.relative_permittivity.unit"),
+                       ({"relative_permittivity": spec | {"description": "d"}},
+                        "properties.relative_permittivity.description")):
+        write_toml(path, shipped | {"properties": shipped["properties"] | change})
+        with pytest.raises(CatalogueError) as caught:
+            catalogue.load_formulations()
+        assert [where for e in caught.value.errors for where, _ in e.problems] == [at]
+
+
 @pytest.mark.parametrize("change, at", [
     ({"provided_by": "comsol"}, "provided_by"),                 # no such environment
     ({"imports": []}, "imports"),                              # builds `import`, imports nothing
@@ -451,7 +469,7 @@ def test_a_place_is_known_from_a_groups_promised_dimension_as_far_as_it_tells():
 
 @pytest.mark.parametrize("change, at", [
     ({"unit": "furlong"}, "relative_permittivity.unit"),
-    ({"equivalents": ["refractive_index"]}, "relative_permittivity.equivalents[0]"),
+    ({"equivalents": ["conductivity"]}, "relative_permittivity.equivalents[0]"),
     ({"equivalents": ["relative_permittivity"]}, "relative_permittivity.equivalents[0]"),
     ({"values": "imaginary"}, "relative_permittivity.values"),
 ], ids=["a unit the table does not read", "an equivalent not on the list", "itself as its equivalent",

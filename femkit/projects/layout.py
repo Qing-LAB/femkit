@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
-from femkit.core.schema import Model, field_named, load_toml, refuse
+from femkit.core.schema import Model, chapter_name, field_named, load_toml, refuse
 from femkit.definitions.catalogue import data_root
 from femkit.projects import addresses, schemas
 from femkit.projects.addresses import Address
@@ -49,6 +49,10 @@ class PartKind(Model):
                                                      "with `GLOBAL/`")
     writer: Writer = Field(default="person", description="who writes its files")
     moves: Moves = Field(default="yes", description="whether it moves with the project, is regenerated, or stays local")
+    manual: str | None = Field(default=None, description="for a kind the person writes, the chapter of the user "
+                                                         "manual that explains it, by its file's name in "
+                                                         "`docs/manual/`, `6-materials.md`: the help of its keys ends "
+                                                         "with it (core.md § 2); none: its keys' help names none")
 
     @model_validator(mode="after")
     def _shape(self) -> "PartKind":
@@ -160,6 +164,9 @@ class Layout(Model):
                      for p in self.editor_files if not p or "/" in p]
         if self.listed is not None and not (self.listed in self.kinds and self.kinds[self.listed].named):
             problems.append((("listed",), f"{self.listed!r} is no part kind whose parts are named"))
+        problems += [(("kinds", k, "manual"), f"{v.manual!r} is no chapter of the manual: a file's name in "
+                                               "docs/manual/, ending in .md")
+                     for k, v in self.kinds.items() if v.manual is not None and not chapter_name(v.manual)]
         registered = (info.context or {}).get("schemas")
         problems += [(("kinds", k, "schema"), f"no package registered the schema {v.schema_!r}")
                      for k, v in self.kinds.items() if registered is not None and v.schema_ not in registered]

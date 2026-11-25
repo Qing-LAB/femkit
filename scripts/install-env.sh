@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/install-env.sh -- thin bootstrap shim for `python -m femkit env ...`
+# scripts/install-env.sh -- thin bootstrap shim for `femkit env ...`
 # (docs/contracts/envs.md § 7).
 #
 # It does ONE thing: solve "you cannot run `femkit env ...` until the control
@@ -7,19 +7,24 @@
 #   1. finds every conda / mamba / micromamba in reach and proposes the first femkit
 #      can drive; you choose (--yes takes the proposal);
 #   2. makes sure the control environment exists and is current
-#      (`bootstrap` creates or rebuilds it; every other verb requires it);
+#      (`bootstrap` creates or rebuilds it; every other verb requires it), and writes
+#      into it the `femkit` command, which runs femkit from this checkout;
 #   3. forwards "$@" verbatim to its own `python -m femkit env ...`.
 # Every flag after the verb is Python's: `bash scripts/install-env.sh <verb> --help`.
 #
-# Day to day femkit runs in the activated control environment, from this checkout;
+# Day to day you type `femkit ...` in any folder, in the activated control environment;
 # `bootstrap` ends by printing the lines that enter it on this machine.
 
 set -euo pipefail
+# A replacement in ${text//pattern/value} is taken as it stands: bash 5.2 would otherwise put the
+# pattern in place of each `&` of a path (bash before 5.2 has no such option, and does not).
+shopt -u patsub_replacement 2>/dev/null || true
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CHANNELS_TXT="$REPO_ROOT/femkit/data/channels.txt"   # the channel order, one name a line
 CONTROL_TXT="$REPO_ROOT/femkit/data/control.txt"     # the control environment's packages
+LAUNCHER_TXT="$REPO_ROOT/femkit/data/launcher.sh"   # the `femkit` command's text, filled by write_launcher
 
 # The control environment's place: <data>/environments/control (envs.md § 1),
 # the rule of femkit/core/dirs.py; tests/basic/test_entry.py holds the two together.
@@ -47,6 +52,7 @@ done
 MANAGER_ENV+=("HOME=$CACHE_DIR/manager-home" "CONDA_PKGS_DIRS=$CACHE_DIR/pkgs" "CONDA_REGISTER_ENVS=false"
               "TMPDIR=$CACHE_DIR/tmp")
 STAMP="$CONTROL/.femkit/control.sha256"
+LAUNCHER="$CONTROL/bin/femkit"   # the `femkit` command: activating the control environment puts it on PATH
 
 AUTO_YES=0
 DRY_RUN=0
@@ -56,7 +62,7 @@ NO_ACTION=0   # --dry-run / --help: look, never create or remove
 
 usage() {
     cat <<'EOF'
-femkit environment installer -- thin shim over `python -m femkit env ...`.
+femkit environment installer -- thin shim over `femkit env ...`.
 
 Needs conda or mamba on the system (micromamba is found, and listed, but
 femkit cannot drive it yet). Looks on PATH, at MAMBA_EXE / CONDA_EXE, above an
@@ -74,11 +80,13 @@ COMMON TASKS:
 With --yes nothing is asked: give --preamble LINE (once per line) or
 --no-preamble, --activation COMMAND, and --environments PATH, on the line instead.
 
-Every verb after `bootstrap` is forwarded verbatim to `python -m femkit env`;
+Every verb after `bootstrap` is forwarded verbatim to `femkit env`;
 its flags are Python's:  bash scripts/install-env.sh <verb> --help
 
-Day to day, activate the control environment and run femkit from this checkout;
-`bootstrap` ends by printing the lines that do it on this machine.
+Each run but a --dry-run or --help writes the `femkit` command into the control
+environment, naming this checkout. Day to day, activate the control environment
+and type `femkit ...` in any folder; `bootstrap` ends by printing the lines that
+do it on this machine.
 EOF
 }
 
@@ -316,6 +324,32 @@ recreate_control() {
     trap - EXIT
 }
 
+# ------------------------------------------------------------------ the `femkit` command (§ 7)
+
+shell_word() {  # $1 as one single-quoted shell word, each ' in it written '\'' -- as femkit/jobs/setup.py quotes it
+    local closed="'\\''"
+    printf "'%s'" "${1//\'/$closed}"
+}
+
+# The command the activated control environment puts on PATH: femkit/data/launcher.sh, its one
+# source, with {checkout} and then {python} each replaced by a shell word -- as doctor fills it
+# to see whether the command there names this checkout (femkit/jobs/setup.py). Written whole,
+# then moved into place, in the control prefix and nowhere else; said when it changed.
+write_launcher() {
+    local text="" checkout python
+    [[ -s "$LAUNCHER_TXT" ]] || { say "$LAUNCHER_TXT is not there; the femkit command is not written"; exit 1; }
+    IFS= read -r -d '' text < "$LAUNCHER_TXT" || true   # the whole file, its last newline kept
+    checkout="$(shell_word "$REPO_ROOT")"
+    python="$(shell_word "$CONTROL/bin/python")"
+    text="${text//\{checkout\}/$checkout}"
+    text="${text//\{python\}/$python}"
+    [[ -f "$LAUNCHER" && "$(cat "$LAUNCHER"; printf x)" == "${text}x" ]] && return 0
+    printf '%s' "$text" > "$LAUNCHER.tmp"
+    chmod 755 "$LAUNCHER.tmp"
+    mv -f "$LAUNCHER.tmp" "$LAUNCHER"
+    say "femkit command: $LAUNCHER   # runs femkit from $REPO_ROOT"
+}
+
 # ------------------------------------------------------------------ forwarding
 
 # The control environment's own python, never `<manager> run`: `run` would stand between
@@ -324,7 +358,7 @@ recreate_control() {
 # user site-packages load: none of the person's own Python packages reaches femkit.
 dispatch() {
     FEMKIT_ENV_MANAGER="$ENV_MGR" PYTHONPATH="$REPO_ROOT" PYTHONNOUSERSITE=1 \
-        "$CONTROL/bin/python" -m femkit env "$@"
+        "$CONTROL/bin/python" -P -m femkit env "$@"
 }
 
 # ------------------------------------------------------------------ main (§ 7.3)
@@ -370,13 +404,14 @@ case "$1" in
             outdated:*|broken:*|current:1)    recreate_control ;;
             current:0)                        ;;
         esac
+        ((NO_ACTION)) || write_launcher   # a look writes nothing
         dispatch "$@"
         ;;
     *)
         require_conda "$@"
         state="$(control_state)"
         case "$state" in
-            current) dispatch "$@" ;;
+            current) ((NO_ACTION)) || write_launcher; dispatch "$@" ;;
             *)       refuse "the control environment is $state: $CONTROL" "bash scripts/install-env.sh bootstrap" ;;
         esac
         ;;

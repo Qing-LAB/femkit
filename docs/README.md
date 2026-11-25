@@ -20,11 +20,12 @@ kind of document each is.
 |---|---|
 | *(root)* | this index; [`design.md`](design.md) — mission, design values, scientific-data rules, settled choices |
 | `contracts/` | one contract per package, named after it, with the exceptions [`contracts/framework.md`](contracts/framework.md) § 1 names |
-| `reference/` | pages generated from the schema models by `python -m femkit schema docs`; never edited by hand |
+| `reference/` | pages generated from the schema models by `femkit schema docs`; never edited by hand |
 | `science/` | equations, assumptions, validity limits, citations, observable definitions |
 | `decisions/` | ADRs, `NNNN-short-name.md`, one settled choice each |
 | `process/` | how work is done: the order of work, design discipline, rules for code |
 | `plans/` | one file, [`plans/plan.md`](plans/plan.md): everything not built yet |
+| `manual/` | the user manual: for the person using femkit — what to type, what to write, what femkit shows — rich in examples and diagrams |
 | `assets/` | images the documents and the README show |
 
 ## 2. Rules for documents
@@ -63,7 +64,7 @@ kind of document each is.
 | scientific background | equations, assumptions, validity limits, citations, observable definitions | software status |
 | reference | generated from the schema models | promises, or text written by hand |
 | process | how work is done, and the rules a review checks | rules of a single package |
-| guide | ordered instructions over current behavior | rules a contract does not state |
+| manual | for the person using femkit, in their words: what to type, write and see, step by step, each step an example the tests run, with diagrams | developer terms, femkit's internal names, a contract as the explanation, a rule no contract states |
 | ADR | one decision: context, alternatives, reason, consequences | living interface documentation |
 | plan | unfinished work, its order and its acceptance | claims that planned behavior exists; history |
 
@@ -84,6 +85,40 @@ kind of document each is.
   symbol and unit convention near its first use. A default, threshold or
   tolerance states where it comes from: a derivation, a citation or a
   measurement. A merge keeps that basis and fills it in where it is thin.
+
+### 3.1 The manual
+
+The manual is the one document written for the person using femkit, not for
+someone changing it. Beyond the rules above:
+
+- **M1 — The reader is a scientist using femkit.** It speaks their words: no
+  internal name of femkit's — an operation, the door, a schema, a part kind,
+  an address, a plan and its apply, canonical units — and every word femkit
+  prints is explained in plain words the first time the manual shows it
+  (`a case is one calculation: your study's settings at one point of its
+  sweep`). Physics is said in physics' own terms.
+- **M2 — Examples everywhere.** Every instruction is a command and what femkit
+  prints back; every file the person writes has a whole example, taken from a
+  template, and an example of a mistake with what femkit says about it.
+- **M3 — Diagrams everywhere.** Each chapter opens with a diagram of what it
+  covers, and a diagram goes wherever a flow, a folder tree or how the files
+  name each other is shown (E2).
+- **M4 — Accurate, by test.** Every example marked as run is run by the basic
+  tests in a temporary projects root, in its chapter's order, and must print
+  what the manual shows; every command and option the manual names exists;
+  every command femkit has appears in it; every link resolves
+  ([`contracts/testing.md`](contracts/testing.md) § 3). An example is not a
+  second home of a fact (D5): the tests hold it to femkit's real output. For
+  the full list of a file's keys it links the generated reference pages.
+- **M5 — The person's help points here.** A key's help — a template's
+  comment — and a command's help name the manual's chapter that explains
+  them, never a contract or the plan; a message says what is not built yet
+  in plain words, never by the plan's section
+  ([`contracts/core.md`](contracts/core.md) § 2).
+- **M6 — Current.** A change to what the person types, writes or sees changes
+  the manual in the same change
+  ([`process/conventions.md`](process/conventions.md) § 1); what is not built
+  yet is said plainly, in one sentence.
 
 ## 4. Moving or merging a document
 
@@ -116,6 +151,30 @@ Moving or merging a document is a review, not a file move:
 - [`process/conventions.md`](process/conventions.md) — the order of work,
   design discipline, rules for code and configuration, working practice.
 
+### Manual
+
+- [`manual/README.md`](manual/README.md) — what the manual is, the way from an
+  idea to a result, how to read its examples, and the words femkit uses.
+- [`manual/1-install.md`](manual/1-install.md) — installing femkit and its
+  engines, the commands typed every day, settings, where femkit keeps its
+  files, and every command for environments, the machine record and the web
+  page.
+- [`manual/2-start-a-project.md`](manual/2-start-a-project.md) — the projects
+  root, the templates, project names, and a copy of one of your projects.
+- [`manual/3-write-each-part.md`](manual/3-write-each-part.md) — each part of
+  a project, a whole example and a mistake for each: the project file, a
+  material, a component, the physics, a mesh recipe, observables, a study.
+- [`manual/4-check-it.md`](manual/4-check-it.md) — reading `project check`:
+  states, errors, warnings and notes, `right:` and the choices; the project
+  as a graph.
+- [`manual/5-studies-and-cases.md`](manual/5-studies-and-cases.md) — studies,
+  cases, `study expand` and `case list`, new cases from a changed file, axes
+  and their crossing.
+- [`manual/6-materials.md`](manual/6-materials.md) — a material's datasets — a
+  value, a table, a formula — refractive index or permittivity, data that
+  varies under a static study, the library and `GLOBAL/`, and importing from
+  refractiveindex.info.
+
 ### Contracts
 
 - [`contracts/framework.md`](contracts/framework.md) — packages and layers,
@@ -135,12 +194,11 @@ Moving or merging a document is a review, not a file move:
   validated and entered, and the install script.
 - [`contracts/projects.md`](contracts/projects.md) — the projects root, a
   project's tree and parts, addresses, the one door every read and write
-  passes through, and the check frame; built but the global library (plan
-  § 4, E).
+  passes through, and the check frame.
 - [`contracts/materials.md`](contracts/materials.md) — the property list, the
-  material format, the global and local libraries, importers; a project's own
-  materials with fixed values and the assignment built, the rest not yet
-  (plan § 4, E).
+  material format, the global and local libraries, importers; built but a
+  case taking a dataset at a variable's value (plan § 4, M9) and translation
+  (M6).
 - [`contracts/geometry.md`](contracts/geometry.md) — the geometry script, its
   contract, the pipeline's steps, mesh recipes, the mesh step and the
   hand-over to each engine; the contract and the recipes built, the rest not
@@ -175,6 +233,10 @@ Moving or merging a document is a review, not a file move:
 - [`science/electromagnetics.md`](science/electromagnetics.md) — the
   frequency-domain Maxwell problem, its validation ladder, and what a
   converged adaptive result requires.
+- [`science/material-data.md`](science/material-data.md) — what a material's
+  data means: the phasor conventions and the passive sign, the refractive
+  index as permittivity, the spectral variables and their exact relations,
+  tables, and the dispersion models.
 
 ### Decisions
 

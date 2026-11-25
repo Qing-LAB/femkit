@@ -7,8 +7,6 @@ the checkout but the bundle it ships.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 
 from pydantic import Field
@@ -67,9 +65,10 @@ def declared_sources(root: Path) -> list[Path]:
 
 
 def sources_hash(root: Path) -> dict:
+    """Each declared source's SHA-256, and the digest of them all: the one digest of a value
+    (`persist.canonical_sha256`)."""
     files = {str(p): persist.sha256(root / p) for p in declared_sources(root)}
-    whole = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
-    return {"files": files, "sha256": whole}
+    return {"files": files, "sha256": persist.canonical_sha256(files)}
 
 
 def bundle_hashes(static: Path) -> dict[str, str]:

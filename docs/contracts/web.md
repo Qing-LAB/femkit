@@ -246,7 +246,8 @@ progress and the documents are built.
   `package.json` and writes it into `frontend/`.
 - **The built bundle is shipped** in `femkit/web/static/`: generated, never
   edited by hand. `web build` writes `static/build.json`: the SHA-256 over the
-  declared source files, the Node.js and npm versions, and the SHA-256 of every
+  declared source files — the core's one digest of a value, `canonical_sha256`
+  of each file's digest by its path ([`core.md`](core.md) § 4) — the Node.js and npm versions, and the SHA-256 of every
   bundle file; and `static/THIRD-PARTY-LICENSES.txt`, each package the lock
   file installs for the page, with its license text. A basic test recomputes
   both hashes without Node.js, so a source changed without rebuilding and a

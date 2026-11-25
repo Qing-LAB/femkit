@@ -288,8 +288,8 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
     @app.get("/")
     def page():
         if not (STATIC / "index.html").is_file():
-            return Response("femkit: the front end is not built yet (web.md § 3); the /api routes serve.\n",
-                            mimetype="text/plain")
+            return Response("femkit: the web page's bundle is not here; `femkit web build` builds it. "
+                            "The /api routes serve meanwhile.\n", mimetype="text/plain")
         return send_from_directory(STATIC, "index.html")
 
     @app.get("/static/<path:name>")

@@ -15,6 +15,7 @@ from femkit.cli import build
 from femkit.core import text
 from femkit.core import view
 from femkit.core.errors import PlanStale, Refused, UsageError
+from tests import kit
 from tests.kit import refused
 from femkit.core.eventlog import EventLog, fold
 from femkit.core.operations import (Ask, Context, Outcome, Plan, Result, SilentObserver, Step, operation,
@@ -241,16 +242,45 @@ def test_an_arguments_description_is_in_the_commands_help():
     assert out.exit_code == 0 and "WORDS" in out.output and "what to say" in out.output
 
 
-@pytest.mark.parametrize("args, key", [((), "words"), (("x", "--times", "many"), "times")],
+@pytest.mark.parametrize("args, given, fills", [((), {}, ["words"]),
+                                                 (("x", "--times", "many"), {"words": ["x"]}, ["times"])],
                          ids=["a missing argument", "a word that is no number"])
-def test_a_word_the_request_refuses_is_a_refusal_with_its_key_and_its_json(args, key):
+def test_a_word_the_request_refuses_is_a_refusal_offering_the_command_again_and_its_json(args, given, fills):
     """Fails if the command line checks a word's presence or type itself, so its error skips the
-    request model: no key path, and no refusal's JSON under --json (api.md §§ 4.1–4.2)."""
+    request model and gives no refusal's JSON under --json; or if the refusal's next step is not
+    the command again, what was given right kept and each word to give again still to fill
+    (api.md §§ 4.1–4.2; core.md § 9: "its next steps say what to do")."""
     out = run("toy", "echo", *args, "--json")
     assert out.exit_code == 2
     answer = json.loads(out.stdout)
     assert (answer["refused"], answer["code"], answer["subject"]) == ("UsageError", "invalid-request", "toy.echo")
-    assert answer["message"].startswith(f"{key}: ")
+    assert [(a["call"], [f["field"] for f in a["fills"]]) for a in answer["next"]] == [
+        ({"operation": "toy.echo", "request": given}, fills)]
+
+
+def test_a_missing_option_or_a_wrong_choice_is_said_as_typed_with_the_command_again_for_each_choice():
+    """Fails if a required option or argument left out, or a value outside its closed list, is
+    refused otherwise than as the request's own refusal — `invalid-request`, exit 2 — or its next
+    steps are not the command again as the person types it: what was given right kept, each value
+    still to give a fill, and one command for each of a closed list's choices (api.md § 4.1:
+    "a missing argument … the request's problems like any other"; core.md § 9)."""
+    def refused(*args: str) -> dict:
+        out = CliRunner().invoke(build(), [*args, "--json"])
+        answer = json.loads(out.stdout)
+        assert (out.exit_code, answer["refused"], answer["code"]) == (2, "UsageError", "invalid-request")
+        return answer
+
+    answer = refused("material", "import")
+    assert [(a["call"]["request"], [f["field"] for f in a["fills"]], a["label"]) for a in answer["next"]] == [
+        ({"into": into}, ["source", "file", "name"], f"material import SOURCE FILE --as NAME --into {into}")
+        for into in ("library", "project")]
+    answer = refused("material", "import", "refractiveindex_info", "x.yml", "--as", "gold", "--into", "lib")
+    assert [(a["call"]["request"], a["fills"]) for a in answer["next"]] == [
+        ({"source": "refractiveindex_info", "file": "x.yml", "name": "gold", "into": into}, [])
+        for into in ("library", "project")]
+    (again,) = refused("study", "expand")["next"]
+    assert (again["call"], [f["field"] for f in again["fills"]], again["label"]) == (
+        {"operation": "study.expand", "request": {}}, ["study"], "study expand STUDY")
 
 
 @pytest.mark.parametrize("request_model", [LoudRequest, QuietRequest], ids=["defaulting to True", "required"])
@@ -282,7 +312,7 @@ def test_a_refusal_exits_2_with_its_next_commands():
     assert out.exit_code == 2
     (later,) = json.loads(out.stdout)["next"]
     assert later["call"] == {"operation": "toy.write", "request": {"word": "later"}} and "command" not in later
-    assert "python -m femkit toy write later" in run("toy", "write", "a", "--refuse", "--yes").output   # written from it
+    assert "femkit toy write later" in run("toy", "write", "a", "--refuse", "--yes").output   # written from it
     assert WRITTEN == []
 
 
@@ -397,8 +427,8 @@ def test_a_refusal_offers_the_command_as_typed_so_it_can_be_pasted():
     """Fails if the commands a refusal offers lose the person's arguments, so pasting
     them is a usage error (api.md § 4.4)."""
     out = run("toy", "write", "two words")  # no terminal, no --yes
-    assert "python -m femkit toy write 'two words' --dry-run" in out.output
-    assert "python -m femkit toy write 'two words' --yes" in out.output
+    assert "femkit toy write 'two words' --dry-run" in out.output
+    assert "femkit toy write 'two words' --yes" in out.output
 
 
 def test_a_plans_question_is_asked_on_a_terminal_and_never_under_yes():
@@ -416,7 +446,7 @@ def test_an_answer_that_is_not_text_or_is_refused_is_said_and_asked_again(first)
     (api.md § 3.1)."""
     code, written, said = on_a_terminal("toy", "sign", typed=f"{first}\nAda\ny\n")
     assert code == 0 and written == ["Ada"] and said.count("Who signs?") == 2
-    assert repr(first) in said or "pattern" in said
+    assert said.count("  ! ") == 1                         # said, visibly, once, before it is asked again
 
 
 def test_a_command_line_is_shown_as_typed_its_placeholders_bare_and_its_shell_words_quoted():
@@ -487,10 +517,64 @@ def test_an_apply_inside_another_records_each_step_log_once_and_in_its_own_run()
 
 
 def test_every_command_group_says_in_one_sentence_what_it_holds():
-    """Fails if a command group of femkit's has no sentence in `femkit --help`, or a sentence is
-    kept for a group no operation has (api.md § 6: the registry's one list of command groups)."""
+    """Fails if a command group of femkit's — its own, `""`, among them — has no sentence in
+    `femkit --help`, or a sentence is kept for a group no operation has (api.md § 6: the registry's
+    one list of command groups)."""
     from femkit import registry
-    groups = {name.rpartition(".")[0] for name in registry.operations()} - {""}
-    assert groups == set(registry.GROUPS) and all(registry.GROUPS.values())
-    listing = CliRunner().invoke(build(), ["--help"]).output
-    assert all(sentence[:40] in " ".join(listing.split()) for sentence in registry.GROUPS.values())
+    groups = {name.rpartition(".")[0] for name in registry.operations()}
+    assert groups == set(registry.GROUPS) and all(g.sentence for g in registry.GROUPS.values())
+    listing = " ".join(CliRunner().invoke(build(), ["--help"]).output.split())
+    assert all(g.sentence[:40] in listing for g in registry.GROUPS.values())
+
+
+def test_every_help_ends_with_its_groups_chapter_of_the_manual_and_cites_no_contract():
+    """Fails if `--help` — femkit's own, a command group's, a command's — does not end with the
+    chapter of the manual its group declares, by the chapter's title; or if any, the help of each
+    argument and option it lists among it, cites a contract or the plan (api.md § 4: "a command's
+    help ends with that chapter, `(manual: <chapter>)`"; docs/README.md § 3.1, M5)."""
+    from femkit import registry
+    from femkit.core.schema import chapter
+    from tests.basic.test_templates import CITED
+    cli = build()
+    places = [((), "")] + [((g,), g) for g in registry.GROUPS if g] + [
+        (path, ".".join(path[:-1])) for path in kit.commands()]
+    ends, cited = {}, {}
+    for path, group in places:
+        lines = CliRunner().invoke(cli, [*path, "--help"]).output.rstrip().splitlines()
+        ends[path] = lines[-1].strip()
+        cited |= {path: found[0]} if (found := CITED.search("\n".join(lines))) else {}
+    assert len(places) > 30 and cited == {}
+    assert ends == {path: f"(manual: {chapter(registry.GROUPS[group].manual)})" for path, group in places}
+
+
+def test_a_value_a_declaration_holds_is_named_in_its_help_and_its_refusal_as_declared_now(definitions):
+    """Fails if an argument or option whose values a declaration holds — `material import SOURCE`,
+    the importers; `env install NAMES`, the environments; `project new --from`, the templates —
+    does not name them in its help, or `SOURCE` or `NAMES` left out does not in its refusal; or if the names
+    are read when the command line is built, or at import, not when the help is made — so a help
+    misses a declaration of the definitions femkit is pointed at (core.md § 2, `choices`; api.md
+    § 4: "a value not among its choices, is said … with the choices")."""
+    import shutil
+    cli = build()                                                       # before the definitions change
+    shutil.copytree(definitions / "templates" / "laplace_square", definitions / "templates" / "square_too")
+    shutil.copy(definitions / "importers" / "refractiveindex_info.toml", definitions / "importers" / "another.toml")
+    kit.rewrite(definitions / "properties.toml", 'refractiveindex_info = "nk"',
+                'refractiveindex_info = "nk", another = "nk"')                # the new source's name for n and k
+    shutil.copy(definitions / "environments" / "web.toml", definitions / "environments" / "tools.toml")
+
+    def said(*args: str) -> str:
+        return " ".join(CliRunner().invoke(cli, list(args)).output.split())
+
+    def refusal(*args: str) -> str:
+        return json.loads(CliRunner().invoke(cli, [*args, "--json"]).output)["message"]
+
+    assert "SOURCE the source the file comes from, by its importer's name; the importers: `another`, " \
+           "`refractiveindex_info` (manual: 6 · Materials)" in said("material", "import", "--help")
+    assert "the environments to install; the environments: `elmer`, `elmer-cuda`, `ngsolve`, `ngsolve-cuda`, " \
+           "`tools`, `web`" in said("env", "install", "--help")
+    assert "your projects by its path from the projects root; the templates: `laplace_square`, `square_too`, " \
+           "`two_material`" in said("project", "new", "--help")
+    assert "SOURCE is missing: the source the file comes from, by its importer's name; the importers: `another`, " \
+           "`refractiveindex_info`" in refusal("material", "import")
+    assert refusal("env", "install") == ("name an environment, or --all; the environments: elmer, elmer-cuda, "
+                                         "ngsolve, ngsolve-cuda, tools, web")

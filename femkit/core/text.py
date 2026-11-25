@@ -19,13 +19,13 @@ MARK = {"error": "x", "warning": "!", "info": "-"}
 
 
 def show(value: Any) -> str:
-    """A value as a person would type it: no quotes, no brackets."""
+    """A value as a person would type it: no quotes, no brackets; a path as `path` writes it."""
     if value is None:
         return "unset"
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, Path):
-        return str(value)
+        return path(value)
     if isinstance(value, (list, tuple)):
         return "none" if not value else " ".join(word(v) for v in value)
     return str(value)
@@ -38,8 +38,14 @@ def path(value: str | Path) -> str:
 
 
 def count(n: int, noun: str) -> str:
-    """``n`` and ``noun``, plural unless it is one: `1 step`, `16 steps`."""
-    return f"{n} {noun}{'' if n == 1 else 's'}"
+    """``n`` and ``noun``, plural unless it is one, as English writes it: `1 step`, `16 steps`;
+    `-y` after a consonant becomes `-ies`, `2 studies`; after `s`, `x`, `z`, `ch` or `sh`, `-es`
+    is added, `2 meshes`. The one plural of a count a person reads."""
+    if n == 1:
+        return f"{n} {noun}"
+    if noun.endswith("y") and len(noun) > 1 and noun[-2] not in "aeiou":
+        return f"{n} {noun[:-1]}ies"
+    return f"{n} {noun}{'es' if noun.endswith(('s', 'x', 'z', 'ch', 'sh')) else 's'}"
 
 
 def table(rows: Iterable[Sequence[str]], indent: str = "  ") -> list[str]:
@@ -69,12 +75,13 @@ def next_block(sentence: str, steps: Sequence[Action]) -> list[str]:
 
 def findings(issues: Iterable[Issue]) -> list[str]:
     """Each finding on its line, indented and marked by severity; under it, where the person
-    opens it — its file and key — and what would be right, then its next steps (api.md § 4.4)."""
+    opens it — its file, a global library's from `~` where it lies under the home folder, and its
+    key — and what would be right, then its next steps (api.md § 4.4)."""
     out = []
     for issue in issues:
         out.append(f"  {MARK[issue.severity]} {issue.message}")
         if issue.file is not None:
-            out.append(f"  {PAD}{issue.file}" + (f": {issue.key}" if issue.key else ""))
+            out.append(f"  {PAD}{path(issue.file)}" + (f": {issue.key}" if issue.key else ""))
         if issue.right is not None:
             out.append(f"  {PAD}right: {issue.right}")
         if issue.choices:

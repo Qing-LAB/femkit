@@ -67,6 +67,17 @@ def test_mermaid_draws_each_part_with_its_objects_and_the_wires(laplace):
     assert result.text().splitlines() == lines
 
 
+def test_mermaid_counts_a_nodes_findings_as_every_count_is_written(laplace):
+    """Fails if `--mermaid` writes the count of a node's findings in another plural than every
+    count a person reads — `(1 findings)` (models.md § 11.2; api.md § 4.4)."""
+    kit.rewrite(laplace / "observables" / "midpoint.toml", 'unit = "V"', 'unit = "Vx"')
+    result = kit.run("project.graph", project="laplace_square", mermaid=True)
+    counted = {len(n.findings) for n in result.nodes if n.findings}
+    assert 1 in counted
+    assert all(f"({n} finding{'' if n == 1 else 's'})" in result.mermaid for n in counted)
+    assert "(1 findings)" not in result.mermaid
+
+
 def test_mermaid_prints_only_the_diagram_on_the_command_line(laplace):
     """Fails if `project graph --mermaid` on the command line prints anything but the Mermaid text —
     a tag such as `[project graph]` on its first line keeps it from being pasted as it is (web.md

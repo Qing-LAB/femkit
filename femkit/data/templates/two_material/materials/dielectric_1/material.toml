@@ -1,7 +1,7 @@
-# The benchmark's first material (materials.md § 3), filling the layer below the interface:
-# relative permittivity 1, the benchmark's choice.
+# The benchmark's first material (manual: 6 · Materials), filling the layer below the
+# interface: relative permittivity 1, the benchmark's choice.
 
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 6 · Materials)
 schema = 1
 
 # the name shown to a person; nothing refers to the material by it, since its folder's name is its name
@@ -10,10 +10,10 @@ display = "Dielectric 1"
 # its chemical formula, as `Au` or `SiO2`
 # formula = "SiO2"
 
-# other names a search of a library finds it by; nothing refers to the material by them
+# other names it goes by, for a person; nothing refers to the material by them
 # aliases = ["first layer"]
 
-# each property, by its name in femkit's list of material properties, holding its datasets, each named by its source (see materials.md § 3)
+# each property, by its name in femkit's list of material properties, holding its datasets, each named by its source (manual: 6 · Materials)
 [properties]
 
 # the material's relative permittivity, in 1
@@ -21,7 +21,7 @@ display = "Dielectric 1"
 
 # the dataset named `benchmark`
 [properties.relative_permittivity.benchmark]
-# a constant, with its unit where it has one
+# a real constant, with its unit where it has one
 value = "1"
 # the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)`
 convention = "real"

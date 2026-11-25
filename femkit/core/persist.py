@@ -14,7 +14,7 @@ import tempfile
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import IO, Any, Callable, Iterable
+from typing import IO, Any, Callable, Iterable, Mapping
 
 import tomlkit
 
@@ -119,28 +119,59 @@ def empty_folder(path: Path) -> Path:
     return Path(path)
 
 
-def copy_tree(source: Path, path: Path, only: Iterable[str] | None = None) -> Path:
-    """A copy of the folder ``source`` at ``path``, which is not there yet: copied beside it and
-    renamed in, whole — an interrupted copy leaves nothing at ``path`` (core.md § 4). ``only``:
-    just these files, each by its POSIX path from ``source``, in the folders that hold them."""
+def _new_folder(path: Path, fill: Callable[[Path], object]) -> Path:
+    """A folder at ``path``, which is not there yet, filled by ``fill`` beside it and renamed in,
+    whole: an interrupted fill leaves nothing at ``path``. A `FileExistsError` when something is
+    there already."""
     path = Path(path)
     if path.exists() or path.is_symlink():
         raise FileExistsError(f"{path} is there already")
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".{path.name}.", dir=path.parent) as scratch:
         fresh = Path(scratch) / path.name
-        if only is None:
-            shutil.copytree(source, fresh)
-        else:
-            fresh.mkdir()
-            for rel in only:
-                steps = PurePosixPath(rel).parts
-                if PurePosixPath(rel).is_absolute() or ".." in steps or not steps:
-                    raise ValueError(f"{rel!r} is no path inside {source}")
-                (fresh.joinpath(*steps[:-1])).mkdir(parents=True, exist_ok=True)
-                shutil.copy2(Path(source).joinpath(*steps), fresh.joinpath(*steps))
+        fill(fresh)
         os.rename(fresh, path)
     return path
+
+
+def _inside(folder: Path, rel: str) -> Path:
+    """``rel``, a POSIX path from ``folder``, as a path inside it; a ValueError for one leaving it."""
+    steps = PurePosixPath(rel).parts
+    if PurePosixPath(rel).is_absolute() or ".." in steps or not steps:
+        raise ValueError(f"{rel!r} is no path inside {folder}")
+    return Path(folder).joinpath(*steps)
+
+
+def copy_tree(source: Path, path: Path, only: Iterable[str] | None = None) -> Path:
+    """A copy of the folder ``source`` at ``path``, which is not there yet: copied beside it and
+    renamed in, whole — an interrupted copy leaves nothing at ``path`` (core.md § 4). ``only``:
+    just these files, each by its POSIX path from ``source``, in the folders that hold them."""
+
+    def fill(fresh: Path) -> None:
+        if only is None:
+            shutil.copytree(source, fresh)
+            return
+        fresh.mkdir()
+        for rel in only:
+            _inside(source, rel)
+            _inside(fresh, rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(_inside(source, rel), _inside(fresh, rel))
+
+    return _new_folder(path, fill)
+
+
+def write_folder(path: Path, files: Mapping[str, bytes]) -> Path:
+    """A new folder at ``path``, which is not there yet, holding ``files`` — each by its POSIX path
+    from it, with its bytes: written beside it and renamed in, whole, as `copy_tree` copies — an
+    interrupted write leaves nothing at ``path`` (core.md § 4)."""
+
+    def fill(fresh: Path) -> None:
+        fresh.mkdir()
+        for rel, data in files.items():
+            _inside(fresh, rel).parent.mkdir(parents=True, exist_ok=True)
+            _inside(fresh, rel).write_bytes(data)
+
+    return _new_folder(path, fill)
 
 
 def replace_folder(fresh: Path, path: Path) -> None:
@@ -170,8 +201,22 @@ def unpack_single(archive: Path, path: Path) -> bool:
     return True
 
 
+def json_text(data: Any) -> str:
+    """The text `write_json` writes: sorted keys, two-space indent, a final newline — for a file
+    written among others, as one folder written whole (`write_folder`)."""
+    return json.dumps(data, indent=2, sort_keys=True) + "\n"
+
+
 def write_json(path: Path, data: Any, *, private: bool = False) -> Path:
-    return atomic_write_text(path, json.dumps(data, indent=2, sort_keys=True) + "\n", private=private)
+    return atomic_write_text(path, json_text(data), private=private)
+
+
+def canonical_sha256(data: Any) -> str:
+    """The SHA-256 of ``data``'s canonical JSON — keys sorted, no whitespace, UTF-8 — so two
+    spellings of one value give one digest: the one digest of a value, as `sha256` is of a file
+    (a case's ID, a fingerprint, a plan's digest, a part's files; models.md § 5.3)."""
+    text = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def write_toml(path: Path, data: dict) -> Path:
@@ -186,6 +231,13 @@ def read_toml(path: Path) -> dict:
 def read_json(path: Path) -> Any:
     with open(path, encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def json_value(text: str) -> Any:
+    """A JSON text read already — one of femkit's outputs a project's door reads (projects.md § 6)
+    — as plain Python, as `read_json` reads a file; a ValueError saying why for one that is not
+    JSON."""
+    return json.loads(text)
 
 
 def _own_group(gid: int) -> bool:
@@ -474,6 +526,77 @@ def _headers_from_keys(item: Any) -> None:
     elif isinstance(item, tomlkit.items.AoT):
         for table in item.body:
             _headers_from_keys(table)
+
+
+@dataclass(frozen=True)
+class Shown:
+    """A key a person's file leaves unset, shown commented out under its help with ``value`` as
+    what it would take — an empty table: its header alone (projects.md § 7)."""
+
+    value: Any
+
+
+def commented_text(data: Mapping[str, Any], comment: Callable[[Key], str | None], prose: str = "") -> str:
+    """``data``, plain values, as the TOML text of a file a person reads and edits as their own
+    (projects.md § 7) — what `key_comments` reads back: ``prose``'s lines first, each a comment,
+    and a blank line; then each key under ``comment(path)``, its path from the root as
+    `key_comments` gives it — a list's index left out — as one comment line, none where it
+    gives None; a table under its own header, a list of tables each table under its own; a
+    `Shown` value commented out. A blank line stands before each key at the top and each
+    header; the keys of one table follow each other."""
+    doc = tomlkit.document()
+    for line in prose.splitlines():
+        doc.add(tomlkit.comment(line))
+    _commented(doc, (), data, comment)
+    _unindented(doc)
+    return tomlkit.dumps(doc)
+
+
+def _commented(table: Any, at: Key, data: Mapping[str, Any], comment: Callable[[Key], str | None]) -> None:
+    """``data``'s keys added to ``table``, the document or a table at ``at``, as `commented_text`
+    writes them."""
+    for key, value in data.items():
+        path, held = (*at, key), value.value if isinstance(value, Shown) else value
+        tables = isinstance(held, list) and bool(held) and all(isinstance(v, dict) for v in held)
+        header, said = isinstance(held, dict) or tables, comment(path)
+        if header and at or not at and len(table.body):
+            table.add(tomlkit.nl())
+        if said is not None:
+            table.add(tomlkit.comment(said))
+        if isinstance(value, Shown):
+            shown = f"[{'.'.join(tomlkit.key(k).as_string() for k in path)}]" if held == {} else \
+                f"{tomlkit.key(key).as_string()} = {inline_text(held)}"
+            table.add(tomlkit.comment(shown))
+        elif isinstance(held, dict):
+            own = tomlkit.table(is_super_table=False)
+            _commented(own, path, held, comment)
+            table.add(key, own)
+        elif tables:
+            each = tomlkit.aot()
+            for i, entry in enumerate(held):
+                own = tomlkit.table(is_super_table=False)
+                _commented(own, path, entry, comment)
+                if i < len(held) - 1:                # the next table's help stands at this one's end
+                    own.add(tomlkit.nl())
+                    if said is not None:
+                        own.add(tomlkit.comment(said))
+                each.append(own)
+            table.add(key, each)
+        else:
+            table.add(key, _inline(value))
+
+
+def _unindented(item: Any) -> None:
+    """Every header in ``item`` written where its line stands, with no blank line tomlkit puts
+    before it: `commented_text` writes its own, so a header stays directly under its help."""
+    if isinstance(item, tomlkit.items.AoT):
+        for table in item.body:
+            _unindented(table)
+        return
+    if isinstance(item, tomlkit.items.Table):
+        item.trivia.indent = ""
+    for _, child in _body(item).body if isinstance(item, (tomlkit.TOMLDocument, tomlkit.items.Table)) else ():
+        _unindented(child)
 
 
 def read_text(path: Path) -> str | None:

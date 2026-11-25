@@ -322,6 +322,36 @@ def test_an_observable_its_study_cannot_read_is_a_finding_at_the_observables_key
         (code, f"{observables}:{key}", file, key, choices)]
 
 
+@pytest.mark.parametrize("point", ['["side / 2", "side / 2"]', '["side / 2", "side"]'], ids=["alike", "unlike"])
+def test_lengths_of_a_point_wrong_one_way_are_one_finding_at_its_key(tmp_path, point):
+    """Fails if a point whose lengths are wrong one way — each using `side`, a parameter that is no
+    length — is said more than once at the point's key, whether its lengths read alike or not: one
+    finding per key and code, as a finding is told apart by them (core.md §§ 9, 10; models.md
+    § 5.2)."""
+    folder = kit.copy_template(tmp_path / "projects", "laplace_square")
+    kit.rewrite(folder / "project.toml", 'side = "1 m"', 'side = "1 V"')
+    kit.rewrite(folder / "observables" / "midpoint.toml", 'point = ["side / 2", "side / 2"]', f"point = {point}")
+    at = "observables:midpoint:observables.potential_middle.point"
+    assert [i.code for i in kit.run("project.check", project="laplace_square").issues if i.subject == at] == [
+        "wrong-dimension"]
+
+
+@pytest.mark.parametrize("file, old, new, subject", [
+    ("project.toml", 'bias = "1 V"', 'bias = "1 V"\nhalf = "sied / 2"', "project:parameters.half"),
+    ("observables/midpoint.toml", 'point = ["side / 2", "side / 2"]', 'point = ["sied / 2", "side / 2"]',
+     "observables:midpoint:observables.potential_middle.point"),
+], ids=["in the project file", "in an observable's point"])
+def test_a_misspelled_parameter_is_said_one_way_with_the_one_it_most_likely_means(tmp_path, file, old, new, subject):
+    """Fails if a name that is neither a unit nor a parameter — a parameter misspelled, in the
+    project file or in a value that may use the parameters — is said otherwise than one way: the
+    name once; "did you mean" the parameter closest to it; the parameters given (core.md § 11:
+    "a symbol that is neither a unit nor a name given"; models.md § 3)."""
+    (finding,) = [i for i in check(tmp_path, "laplace_square", file, old, new) if i.subject == subject]
+    assert finding.code == "bad-quantity"
+    assert finding.message.count("`sied`") == 1 and "did you mean `side`?" in finding.message
+    assert "`bias`" in finding.message
+
+
 def test_an_observable_name_two_sets_of_a_study_share_is_a_finding_on_the_study(tmp_path):
     """Fails if two observable sets one study reports may share an observable's name — a
     reference or an analysis names an observable by its name alone (models.md § 5.2)."""
@@ -384,15 +414,6 @@ def test_a_name_the_project_file_misspells_has_the_list_put_right_as_its_one_fin
     assert [(i.code, i.key, i.right, i.choices) for i in issues if i.severity != "info"] == [
         ("no-such-part", "studies", '["check"]', ())]
     assert issues[0].message.endswith("did you mean `check`?")
-
-
-def test_no_message_a_person_reads_speaks_of_femkits_development(tmp_path):
-    """Fails if what `project check` says of a material the global library may hold names a step
-    of femkit's plan rather than what is not read yet (materials.md § 4)."""
-    issues = check(tmp_path, "laplace_square", "components/square/component.toml", 'material = "vacuum"',
-                   'material = "GLOBAL/vacuum"')
-    (note,) = [i for i in issues if i.file == "components/square/component.toml"]
-    assert note.message == "`GLOBAL/vacuum` is not checked: the global material library is not read yet"
 
 
 def test_a_step_taking_from_no_other_step_offers_the_others_as_its_choices(tmp_path):

@@ -18,6 +18,7 @@ for code and configuration, and working practice;
 | The repository holds no user, machine or environment data | 4 |
 | Environment changes, cluster submissions and history are the person's decisions | 6 |
 | Work on disjoint files is split among helpers, each in its own worktree; the main line integrates and reviews; nothing edits a checkout a running check reads | 6 |
+| What the person types, writes or sees is in the manual, changed in the same change, its examples run by the tests | 1 |
 
 ## 1. The order of work
 
@@ -57,12 +58,18 @@ use of it.
 A change that crosses a public or persisted boundary then continues:
 
 5. Regenerate [`docs/reference/`](../reference/) with
-   `python -m femkit schema docs --yes`, and update guides and examples.
+   `femkit schema docs --yes`, and update the manual
+   ([`docs/manual/`](../manual/)): every chapter whose commands, files,
+   messages or output moved, its examples run again
+   ([`docs/README.md`](../README.md) § 3.1) — `python tools/manual.py` runs
+   each chapter and writes what femkit printed back into it, to be read as a
+   diff.
 6. Run the unit's tests and every test that touches what moved; the full suite
    when a surface moves.
 7. Review with fresh eyes, widening each pass: the unit against its contract,
    then its callers and readers, then the whole domain for duplicated facts and
-   leftovers. Every finding is fixed in the contract and the code.
+   leftovers. Every finding is fixed in the contract and the code. Each pass
+   reads the manual's chapters the change reaches against the behaviour.
    A milestone ends with an independent review: reviewers each given one
    aspect — the documents' rules and consistency, the fit with the framework,
    scientific soundness, security for anything that serves requests or runs a
@@ -243,3 +250,5 @@ Before a change lands:
 - Does each test check the contract rather than an incidental implementation,
   and did it fail with its rule broken?
 - Does each document say what is true now, and the plan only what is not yet?
+- Does the manual show what the person now types, writes and sees, in their
+  words, and do its examples run?

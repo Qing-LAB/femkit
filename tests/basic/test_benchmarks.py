@@ -30,9 +30,9 @@ def test_the_two_material_reference_follows_from_its_own_template():
     contract = parts.contract(opened, component)
 
     def permittivity(layer: str):
-        (dataset,) = parts.datasets(opened, parts.material(opened, contract.assign[layer].material))[
+        (dataset,) = parts.datasets(c, parts.material(opened, contract.assign[layer].material))[
             "relative_permittivity"].values()
-        return c.units.parse(held(dataset, "value")).value
+        return c.units.parse(held(dataset.data, "value")).value
 
     eps = {layer: permittivity(layer) for layer in ("low", "high")}
     eps0 = c.units.parse(f.constants["vacuum_permittivity"].value).value

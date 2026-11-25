@@ -1,7 +1,8 @@
 """The `project` verbs that need nothing above the door (models.md § 11.1): `project list`, the
 projects under the root (projects.md § 1), and `project new`, a copy of one of femkit's templates
 or of one of the person's projects — what the person writes, and nothing femkit or a run wrote
-(projects.md § 7)."""
+(projects.md § 7); on a root without its global library, it makes the library and copies femkit's
+shipped parts into it, under the library's lock (materials.md § 4)."""
 
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from femkit.projects import door, location, names
 from femkit.projects import layout as layouts
 from femkit.projects.door import Opened
 from femkit.projects.layout import Layout
-from femkit.projects.project import Project
+from femkit.projects.project import Library, Project
 from femkit.projects.requests import PROJECT_LIST, PROJECT_NEW, ListRequest, NewRequest
 
 
@@ -44,8 +45,7 @@ class ProjectList(Result):
 
 @operation(PROJECT_LIST, result=ProjectList)
 def project_list(req: ListRequest, ctx: Context) -> ProjectList:
-    """The projects under the projects root, each with its studies — the parts of the kind the
-    layout lists (projects.md §§ 1, 4)."""
+    """The projects under the projects root, each with its studies."""
     top = location.root(ctx)
     layout = layouts.read()
     return ProjectList(root=str(top), projects=[
@@ -91,7 +91,7 @@ def _source(ctx: Context, given: str | None, top: Path, name: str) -> Project:
     project = project if project == Project(top, given) else None
     template = Project(templates[given].parent, given) if given in templates else None
     if project is not None and template is not None:
-        raise UsageError(f"{given!r} names both femkit's template {given} and your project {project.folder}",
+        raise UsageError(f"{given!r} names both femkit's template {given} and your project {text.path(project.folder)}",
                          code="ambiguous-source", subject=given)
     if project is None and template is None:
         raise UsageError(f"no template or project is named {given!r}; the templates: {', '.join(templates) or 'none'}",
@@ -115,7 +115,7 @@ def _target(top: Path, name: str, layout: Layout) -> Project:
     for i in range(1, len(steps) + 1):
         there = Project(top, "/".join(steps[:i])).folder
         if there.is_symlink() or (there.exists() and (i == len(steps) or not there.is_dir())):
-            raise Refused(f"{there} is there already: a new project is never made over it", code="exists",
+            raise Refused(f"{text.path(there)} is there already: a new project is never made over it", code="exists",
                           subject=name)
     return target
 
@@ -135,8 +135,9 @@ def _written(opened: Opened) -> tuple[list[str], list[Issue]]:
     def writer(kind: str) -> str:
         return layout.kinds[kind].writer
 
-    theirs = [p for p in opened.parts.values() if writer(p.address.kind) == "person"]
-    kept = {p.file for p in theirs} | {h.file for h in opened.held.values() if writer(h.part.kind) == "person"}
+    theirs = [p for p in opened.parts.values() if writer(p.address.kind) == "person" and not p.library]
+    kept = {p.file for p in theirs} | {h.file for h in opened.held.values()
+                                       if writer(h.part.kind) == "person" and not door.in_library(h.part)}
     unread = tuple(p.folder + "/" for p in theirs if p.folder is not None and p.data is None)
     kept |= {f for f in opened.files if unread and f.startswith(unread)}
     kept |= {f for f in opened.files if "/" in f and (top := f.split("/")[0]) in layout.folders
@@ -159,36 +160,65 @@ def _written(opened: Opened) -> tuple[list[str], list[Issue]]:
     return sorted(kept), left
 
 
-def _planned(req: NewRequest, ctx: Context) -> tuple[Path, Project, Project, list[str], list[Issue]]:
-    """The root, the new project, what it copies, the files it copies, and each it leaves out."""
+def _seeds(top: Path, layout: Layout) -> list[tuple[Library, dict[str, door.Shipped]]]:
+    """Each global library the projects root ``top`` lacks — nothing at its folder — with femkit's
+    shipped parts of its kind, which a new project copies into it (materials.md § 4): never over
+    anything there."""
+    return [(library, door.shipped(layout, kind)) for kind, folder in layout.libraries().items()
+            if not ((library := Library(top, folder)).place.exists() or library.place.is_symlink())]
+
+
+def _seeding(library: Library) -> str:
+    """The step that seeds ``library``."""
+    return f"seed-{library.folder}"
+
+
+def _planned(req: NewRequest, ctx: Context) -> tuple[Path, Project, Project, list[str], list[Issue],
+                                                     list[tuple[Library, dict[str, door.Shipped]]]]:
+    """The root, the new project, what it copies, the files it copies, each it leaves out, and each
+    global library the root lacks with what femkit ships of it."""
     top = location.stated(ctx)
     if top.exists() and not top.is_dir():
-        raise Refused(f"the projects root {top} ({location.KEY}) is no folder", code="no-root", subject=str(top))
-    target = _target(top, req.name, layouts.read())
+        raise Refused(f"the projects root {text.path(top)} ({location.KEY}) is no folder", code="no-root",
+                      subject=str(top))
+    layout = layouts.read()
+    target = _target(top, req.name, layout)
     source = _source(ctx, req.source, top, req.name)
-    return top, target, source, *_written(door.open_project(source, ctx))
+    return top, target, source, *_written(door.open_project(source, ctx)), _seeds(top, layout)
 
 
 @operation(PROJECT_NEW, result=NewOutcome, changes=True, subject="plan")
 class ProjectNew:
     """Make a new project under the projects root, a copy of one of femkit's templates or of one of
     your projects: every part, the files each fixes and declares, and your own folder — nothing
-    femkit or a run wrote; the first makes the root (projects.md § 7)."""
+    femkit or a run wrote; the first makes the root. A root without its global material library
+    gets one, holding a copy of femkit's shipped materials, yours from then on."""
 
     def observe(self, req: NewRequest, ctx: Context) -> dict:
-        """Whether the root is there, and each file the copy takes with its digest."""
-        top, _, source, files, _ = _planned(req, ctx)
-        return {"root": top.is_dir(), "files": {f: persist.sha256(source.path(f)) for f in files}}
+        """Whether the root is there, each file the copy takes with its digest, and each library the
+        root lacks with the digest of each of femkit's shipped parts it would take."""
+        top, _, source, files, _, seeds = _planned(req, ctx)
+        return {"root": top.is_dir(), "files": {f: persist.sha256(source.path(f)) for f in files},
+                "libraries": {library.folder: {n: s.digest for n, s in copies.items()} for library, copies in seeds}}
 
     def plan(self, req: NewRequest, ctx: Context) -> Plan:
-        """The steps, and each file the copy leaves out with why, as a note (projects.md § 7)."""
-        top, target, source, files, left = _planned(req, ctx)
+        """The steps, and each file the copy leaves out with why, as a note (projects.md § 7); a
+        library the root lacks made and seeded first, under its lock (materials.md § 4)."""
+        top, target, source, files, left, seeds = _planned(req, ctx)
         steps = [] if top.is_dir() else [Step(id="root", describe=f"make the projects root {text.path(top)}")]
+        steps += [Step(id=_seeding(library), describe=f"make the global library {text.path(library.place)}, holding a "
+                                                      f"copy of femkit's shipped {library.folder}: "
+                                                      f"{', '.join(copies) or 'none'}")
+                  for library, copies in seeds]
         steps.append(Step(id="copy", describe=f"copy {text.count(len(files), 'file')} of {req.source} to "
                                               f"{text.path(target.folder)}"
                                               + (", leaving out what each note below names" if left else "")))
-        return Plan(subjects=(target.subject,), steps=tuple(steps), issues=left,
-                    holds={"root": str(top), "path": str(target.folder), "from": str(source.folder), "files": files})
+        libraries = {_seeding(library): {"folder": library.folder, "files": [f for s in copies.values() for f in s.files],
+                                         "copied": {n: s.digest for n, s in copies.items()}}
+                     for library, copies in seeds}
+        return Plan(subjects=(target.subject, *(library.subject for library, _ in seeds)), steps=tuple(steps),
+                    issues=left, holds={"root": str(top), "path": str(target.folder), "from": str(source.folder),
+                                        "files": files, "libraries": libraries})
 
     def apply(self, plan: Plan, ctx: Context, observer) -> NewOutcome:
         req, held = NewRequest.model_validate(plan.request), plan.holds
@@ -196,6 +226,10 @@ class ProjectNew:
         def do(step: Step, where: Path):
             if step.id == "root":
                 persist.make_folder(Path(held["root"]))
+            elif step.id in held["libraries"]:
+                seed = held["libraries"][step.id]
+                door.seed(Library(Path(held["root"]), seed["folder"]), door.shipped_library(seed["folder"]),
+                          seed["files"], seed["copied"])
             else:
                 persist.copy_tree(Path(held["from"]), Path(held["path"]), only=held["files"])
             return "done", None

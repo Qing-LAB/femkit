@@ -32,7 +32,14 @@ Its findings:
   its choices; `no-axis` (error), at the component's `frame.symmetry.axis`: an axisymmetric
   physics paired with a frame stating no axis of revolution — the axes, its choices;
   `no-such-quantity`, `wrong-point`, `wrong-side`, `wrong-unit` (error), at the observable's key;
-  `property-missing` (error), at the material's `properties.<p>`: a property a formulation reads.
+  `property-missing` (error), at the material's `properties.<p>`: a property a formulation reads,
+  held neither under it nor under an equivalent form of it; at the component's
+  `assign.<group>.datasets.<p>`, a dataset a step takes that no case can take yet (materials.md
+  § 6): `form-unconverted` (error), one held under an equivalent form, which no case converts
+  yet — the datasets held under the property itself its choices; `dataset-varies` (error), one
+  that varies with a variable the step's kind does not supply, or, under a kind that supplies
+  none, a `value` whose range is not `all` — naming the step and the variable, and what would be
+  right, the datasets the material holds that would do its choices.
 """
 
 from __future__ import annotations
@@ -50,11 +57,13 @@ from femkit.core.units import Quantity, UnitError
 from femkit.definitions.formulations import FormulationDefinition
 from femkit.geometry.component import AXISYMMETRIC, Symmetry
 from femkit.jobs.request import Resources
+from femkit.materials.material import Value, varies_with
 from femkit.models import axes
 from femkit.models.observables import AlongLine, OverGroup, points, support
-from femkit.models.parts import (PROPERTY, SIZE, Contract, called, cited, contract, datasets, listed, material, meant,
-                                 objects)
+from femkit.models.parts import (ASSIGNMENT, DATASETS, PROPERTY, SIZE, Contract, called, cited, contract, datasets,
+                                 listed, material, meant, objects)
 from femkit.models.physics import TABLES, Physics, kinds
+from femkit.projects import door
 from femkit.projects.addresses import Address
 from femkit.projects.checking import Checking
 from femkit.projects.door import Part
@@ -160,15 +169,16 @@ class Study(PartFile):
                                                     extra={"doc": "models.md § 5.1"})
 
 
-def declared(formulations: Mapping[str, FormulationDefinition]) -> Declared:
+def declared(formulations: Mapping[str, FormulationDefinition], manual: str | None = None) -> Declared:
     """The help of each key of a study that a declaration states, not its schema (core.md § 2): a
-    step's `kind`, one of the step kinds the formulations support (models.md § 4.2)."""
+    step's `kind`, one of the step kinds the formulations support (models.md § 4.2), ending with
+    ``manual``, the chapter of the manual its kind declares."""
     supported = list(dict.fromkeys(k for f in formulations.values() for k in f.kinds))
     field = Step.model_fields["kind"]
 
     def help_of(path: tuple[str, ...]) -> str | None:
         if len(path) == 3 and path[0] == "steps" and path[2] == "kind":
-            return help_text(field.description, supported, field_extras(field).get("doc"))
+            return help_text(field.description, supported, manual if field_extras(field).get("doc") else None)
         return None
 
     return help_of
@@ -190,7 +200,8 @@ def cites(c: Checking, field: str, name: str, model: type[Model] = Study) -> Par
 def used(c: Checking, study: Part) -> list[tuple[tuple[str, ...], Part]]:
     """Every part ``study`` uses, loaded or not, with the key of the study naming it: the project
     file, at none; its component, its steps' physics, its recipe and its observable sets; and the
-    project's own materials its component assigns, at `component` (models.md § 5.3)."""
+    materials its component assigns — the project's own, or the global library's — at `component`
+    (models.md § 5.3; materials.md § 4)."""
     data: Study = study.data
     found = [((), c.opened.parts.get(c.opened.layout.project_kind)),
              (("component",), named(c, "component", data.component)), (("mesh",), named(c, "mesh", data.mesh)),
@@ -199,7 +210,7 @@ def used(c: Checking, study: Part) -> list[tuple[tuple[str, ...], Part]]:
     holder = found[1][1]
     k = contract(c.opened, holder) if holder is not None else None
     for assigned in k.assign.values() if k else ():
-        held = c.opened.parts.get(str(Address(c.opened.layout.objects[PROPERTY].part, assigned.material))) \
+        held = door.named(c.opened, c.opened.layout.objects[PROPERTY].part, assigned.material) \
             if assigned.material else None
         found.append((("component",), held))
     return [(keys, p) for keys, p in found if p is not None]
@@ -218,7 +229,8 @@ def check(c: Checking, part: Part) -> Iterator[Issue]:
     for name in data.environments:
         if name not in c.environments:
             yield c.issue(part, "environments", name, code="no-such-environment", choices=sorted(c.environments),
-                          message=f"`{name}` is no engine environment femkit declares" + meant(name, c.environments))
+                          message=f"`{name}` is no engine environment femkit declares"
+                                  + meant(name, sorted(c.environments)))
     yield from _kinds(c, part, data)
     yield from _takes(c, part, data)
     yield from axes.check(c, part)
@@ -340,6 +352,7 @@ def _pairing(c: Checking, part: Part, data: Study) -> Iterator[Issue]:
         yield c.unchecked(part, "component", message=_uncertain(uncertain, k))
     yield from _observed(c, part, data, k, read)
     yield from _filled(c, part, k, read)
+    yield from _varies(c, part, data, k)
 
 
 def _placed(c: Checking, holder: Part, at: tuple[str, ...], k: Contract, group: str, here: str, what: str,
@@ -449,21 +462,120 @@ def _unit(c: Checking, held: Part, k: Contract, at: tuple[str, ...], name: str, 
 
 
 def _filled(c: Checking, part: Part, k: Contract, read: list[FormulationDefinition]) -> Iterator[Issue]:
-    """Each material of the project's own the component assigns holds every property the steps'
-    formulations read, said at the material's own key; one the project does not hold is the
-    component's own finding (materials.md § 4)."""
+    """Each material the component assigns — the project's own, or the global library's, as its
+    name finds it (materials.md § 4) — provides every property the steps' formulations read, held
+    under it or under an equivalent form of it (§ 1): said at the material's own key, in its own
+    file; one found nowhere is the component's own finding (`materials/assign.py`)."""
     needed = sorted({p for f in read for p in f.properties})
     for group, assigned in k.assign.items():
         m = material(c.opened, assigned.material) if assigned.material is not None else None
         if m is None:
             continue
-        held = datasets(c.opened, m)
+        held = datasets(c, m)
         for prop in needed:
             if not held.get(prop):
                 yield c.issue(m, "properties", prop, code="property-missing", label=prop,
                               message=f"the study `{part.address.name}` solves physics reading the {prop} of "
                                       f"`{group}` in `{k.part.address.name}`, which this material fills, and it "
-                                      f"holds no {prop}")
+                                      f"holds no {prop}, nor a form of it")
+
+
+def _varies(c: Checking, part: Part, data: Study, k: Contract) -> Iterator[Issue]:
+    """Each dataset a step would take that no case can take yet (materials.md § 6) — the dataset the
+    assignment names, or the one the property has, and each one an axis of the study names in its
+    place — an error at the component's `assign.<group>.datasets.<property>`:
+    - `form-unconverted`, said once: one held under an equivalent form of the property the
+      formulation reads, which no case converts yet (plan § 4, M9) — what would be right, a
+      dataset held under the property itself, its choices;
+    - `dataset-varies`: one that varies with a variable the step's kind does not supply — a table
+      or a model under a `stationary` step, which supplies none — or, under a kind that supplies
+      none, a `value` whose range is not `all`, which holds only where its range says, never at
+      zero frequency (material-data.md § 7); naming the step and the variable, saying what would
+      be right — under a kind that supplies none, a `value` of the property at zero frequency, its
+      range `all` — the datasets the material holds that would do its choices, and, where no kind
+      femkit declares supplies that variable, that none does yet.
+    What a kind supplies is its declaration's (`femkit/data/step_kinds.toml`)."""
+    assign = c.opened.layout.objects[ASSIGNMENT].keys
+    by_axes: dict[tuple[str, str], list[str]] = {}
+    for key, axis in data.axes.items():
+        found = axes.target(c, part, key)
+        if isinstance(found, axes.Target) and found.how == "dataset" and found.address.part == k.part.address:
+            by_axes.setdefault((found.address.path[-3], found.address.path[-1]), []).extend(map(str, axis.values))
+    anywhere = {v for kind in c.step_kinds.values() for v in _supplied(c, kind.supplies)}
+    said: set[tuple[str, str, str]] = set()
+    for name, step in data.steps.items():
+        f, kind = formulation(c, step)[1], c.step_kinds.get(step.kind)
+        if f is None or kind is None:
+            continue
+        supplied = _supplied(c, kind.supplies)
+        solves = (f"the study `{part.address.name}` solves its step `{name}` as a {step.kind} calculation, which "
+                  + (f"supplies {_variables(kind.supplies)}" if kind.supplies else "supplies no variable"))
+        for group, assigned in k.assign.items():
+            m = material(c.opened, assigned.material) if assigned.material is not None else None
+            held = datasets(c, m) if m is not None else {}
+            for prop in f.properties:
+                named = held.get(prop, {})
+                taken = [assigned.datasets.get(prop) or (next(iter(named)) if len(named) == 1 else None),
+                         *by_axes.get((group, prop), [])]
+                at = (*assign, group, DATASETS, prop)
+                for dataset in dict.fromkeys(d for d in taken if d in named):
+                    answer, of = named[dataset], f"the dataset `{dataset}` of `{assigned.material}`"
+                    if answer.form != prop and (group, prop, dataset) not in said:
+                        said.add((group, prop, dataset))
+                        yield c.issue(k.part, *at, code="form-unconverted", label=dataset,
+                                      choices=[d for d, a in named.items() if a.form == prop],
+                                      message=f"{of} is held as the {_words(answer.form)}, a form of the "
+                                              f"{_words(prop)} the study `{part.address.name}` reads, and no case "
+                                              f"converts one yet: a dataset held as the {_words(prop)} itself "
+                                              "would do")
+                    variable = varies_with(answer.data, c.dispersion)
+                    if variable is not None and variable not in supplied:
+                        why = f"{of} varies with the {_words(variable)}"
+                        yet = "" if variable in anywhere else \
+                            f"; no step femkit has yet supplies the {_words(variable)}"
+                    elif variable is None and not supplied and isinstance(answer.data, Value) \
+                            and answer.data.range not in (None, "all"):
+                        why = f"{of} is a value that holds only over its range, never at zero frequency"
+                        yet = "" if anywhere else "; no step femkit has yet supplies a variable"
+                    else:
+                        continue
+                    yield c.issue(k.part, *at, code="dataset-varies", label=dataset,
+                                  choices=[d for d, a in named.items()
+                                           if a.form == prop and _holds(c, a.data, supplied)],
+                                  message=f"{solves}, and {why}: {_would(kind.supplies, prop)}{yet}")
+
+
+def _would(supplies: list[str], prop: str) -> str:
+    """What would hold under a step supplying ``supplies`` (materials.md § 6)."""
+    if not supplies:
+        return f"a `value` of the {_words(prop)} at zero frequency, its range `all`, would hold there"
+    return f"a dataset of the {_words(prop)} that varies with {_variables(supplies)}, or with none, would hold there"
+
+
+def _supplied(c: Checking, variables: list[str]) -> set[str]:
+    """Every form of each variable in ``variables`` — the wavelength, the frequency and the photon
+    energy each state one spectral position (materials.md § 2)."""
+    return {form for v in variables if v in c.dispersion.variables for form in c.dispersion.forms(v)}
+
+
+def _holds(c: Checking, dataset: Any, supplied: set[str]) -> bool:
+    """Whether a dataset holds under a step supplying ``supplied``: it varies with one of them, or
+    with none — and, under a step supplying none, it is a value whose range is `all` (§ 6)."""
+    variable = varies_with(dataset, c.dispersion)
+    if variable is not None:
+        return variable in supplied
+    return bool(supplied) or not isinstance(dataset, Value) or dataset.range == "all"
+
+
+def _words(name: str) -> str:
+    """A declared name — a variable's, a property's — in a sentence, as words: `photon_energy`, the
+    photon energy."""
+    return name.replace("_", " ")
+
+
+def _variables(variables: list[str]) -> str:
+    """Variables in a sentence: `the wavelength`, `the wavelength and the frequency`."""
+    return listed(map(_words, variables), "the {}")
 
 
 KEY = "models.study"   # the key the layout names this schema by (projects.md § 4)

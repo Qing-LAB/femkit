@@ -21,7 +21,7 @@ class NewRequest(Model):
     name: str = Field(description="its name: its path from the projects root", json_schema_extra=ARGUMENT)
     source: str | None = Field(default=None, description="what it copies: a template by its bare name, or one of "
                                                          "your projects by its path from the projects root",
-                               json_schema_extra={"cli": "--from"})
+                               json_schema_extra={"cli": "--from", "choices": "templates"})
 
 
 # ------------------------------------------------------------------ the operations these requests are for

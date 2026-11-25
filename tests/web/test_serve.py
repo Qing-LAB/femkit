@@ -116,7 +116,7 @@ def test_a_running_server_holds_its_environment_until_it_stops(server):
     with refused(Busy, "held", "env-web") as caught:
         locks.require_free("env-web")
     assert f"the web server on 127.0.0.1:{server}" in str(caught.value)      # the holder named, as the person reads it
-    assert [n.command for n in caught.value.next] == [f"python -m femkit serve stop --port {server}"]
+    assert [n.command for n in caught.value.next] == [f"femkit serve stop --port {server}"]
     assert apply("serve.stop", port=server).ok()
     locks.require_free("env-web")
 

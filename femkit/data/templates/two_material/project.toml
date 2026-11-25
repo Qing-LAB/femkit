@@ -3,10 +3,10 @@
 # potential is linear in each layer, so first-order elements reproduce it on any mesh; the
 # formulation's reference values follow from the parameters below and the two materials.
 #
-# This is the project file (projects.md § 2). Every key's help is the comment directly above
-# it; a key shown commented out is one you may set.
+# This is the project file (manual: 3 · Write each part). Every key's help is the comment
+# directly above it; a key shown commented out is one you may set.
 
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2)
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
 schema = 1
 
 # what the project is, in a sentence or two
@@ -18,7 +18,7 @@ components = ["slab"]
 # the project's studies, by name: each the file `studies/<name>.toml`
 studies = ["benchmark"]
 
-# the shared parameters, by name: each a quantity with its unit, or an expression of other parameters with `+`, `-`, `*`, `/` and parentheses (see core.md § 11)
+# the shared parameters, by name: each a quantity with its unit, or an expression of other parameters with `+`, `-`, `*`, `/` and parentheses (manual: 3 · Write each part)
 [parameters]
 # the slab's extent along x, from the frame's origin
 length = "1 m"

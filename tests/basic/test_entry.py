@@ -1,4 +1,5 @@
-"""scripts/install-env.sh and the control environment's states (envs.md § 7).
+"""scripts/install-env.sh, the control environment's states, and the `femkit` command the
+script writes into it (envs.md § 7).
 
 The `manager` fixture (tests/basic/conftest.py) is a stand-in that records each
 call; the real managers run the same forms in the field tier.
@@ -7,26 +8,31 @@ call; the real managers run the same forms in the field tier.
 from __future__ import annotations
 
 import itertools
+import json
+import os
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from femkit.core import dirs
 from femkit.core.errors import UsageError
-from tests.kit import refused, run
+from tests.kit import laplace, refused, run  # noqa: F401 -- laplace: a fixture
 from femkit.core.schema import render
 from femkit.core.operations import Context
 from femkit.definitions.catalogue import control_digest, control_files, load_control, load_managers, load_states
 from femkit.envs.manager import resolve
+from tools import manual
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "install-env.sh"
 
 
-def install_env(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True,
+def install_env(*args: str, script: Path = SCRIPT) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", str(script), *args], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=60)
 
 
@@ -51,10 +57,11 @@ def declared(*names: str) -> list[list[str]]:
 
 
 def forwarded(call: list[str]) -> list[str]:
-    """The femkit arguments of the control environment's `python -m femkit env ...` (only
-    the stand-in control's python writes a `python` line)."""
-    assert call[:4] == ["python", "-m", "femkit", "env"]
-    return call[4:]
+    """The femkit arguments of the control environment's `python -P -m femkit env ...` (only
+    the stand-in control's python writes a `python` line) — `-P`, so the folder the script runs
+    in is never on Python's import path (envs.md § 7)."""
+    assert call[:5] == ["python", "-P", "-m", "femkit", "env"]
+    return call[5:]
 
 
 def make_outdated(prefix: Path) -> None:
@@ -117,17 +124,22 @@ def test_the_script_and_femkit_observe_the_control_environment_by_the_one_declar
     for way in ways:
         if way is not None:
             stand(prefix, *way)
-        row = next(r for r in run("doctor").rows if r.subject == "control environment")
+        row = control_row()
+        state = row.state.split(",")[0]   # a current one's row goes on to say what its femkit command is
         ran = install_env("list", "--yes")
         lines = ran.stderr.splitlines()
-        if row.state == "current":
-            assert ran.returncode == 0 and "refused" not in ran.stderr and row.next == [], (way, ran.stderr)
+        if state == "current":
+            assert ran.returncode == 0 and "refused" not in ran.stderr, (way, ran.stderr)
         else:
             assert ran.returncode == 2 and f"[femkit] refused: the control environment is {row.state}: {prefix}" \
                 in lines, (way, row.state, ran.stderr)
             assert lines[lines.index("next -- instead:") + 1:] == [f"    {n}" for n in row.next], (way, ran.stderr)
-        seen.add(row.state)
+        seen.add(state)
     assert seen == set(load_states()["control"].states)
+
+
+def control_row():
+    return next(r for r in run("doctor").rows if r.subject == "control environment")
 
 
 def test_plain_bootstrap_rebuilds_an_outdated_or_broken_control(manager):
@@ -310,3 +322,86 @@ def test_the_control_python_is_given_the_checkout_alone_and_no_user_packages(man
     monkeypatch.delenv("PYTHONNOUSERSITE", raising=False)
     assert install_env("bootstrap", "--yes").returncode == 0
     assert Path(f"{manager}.python").read_text().split() == [str(REPO), "1"]
+
+
+# ------------------------------------------------------------------ the `femkit` command (envs.md § 7)
+
+LAUNCHER = Path("bin") / "femkit"   # in the control prefix
+BOOTSTRAP = ["bash scripts/install-env.sh bootstrap"]
+
+
+def a_checkout(folder: Path) -> Path:
+    """A checkout of femkit's at ``folder``, as far as the install script and the `femkit` command
+    read one — the script, femkit's shipped data, femkit's `__main__` — and its script."""
+    shutil.copytree(REPO / "scripts", folder / "scripts")
+    shutil.copytree(REPO / "femkit" / "data", folder / "femkit" / "data")
+    shutil.copy2(REPO / "femkit" / "__main__.py", folder / "femkit" / "__main__.py")
+    return folder / "scripts" / "install-env.sh"
+
+
+def test_the_script_writes_the_femkit_command_doctor_reads_as_this_checkouts(manager, tmp_path):
+    """Fails if the install script leaves a current control environment without its `femkit`
+    command, or writes one that cannot be run or differs from femkit/data/launcher.sh filled for
+    this checkout and the control environment's own Python — as doctor and the manual's runner
+    fill it; or if doctor calls a control environment ready while that command is missing, or
+    names anything but the script's bootstrap for it (envs.md § 6.1, § 7)."""
+    stand(dirs.control_prefix(), True, 0o755, "its own")   # current, as a script before the command left it
+    row = control_row()
+    assert (row.state, row.ready, [n.command for n in row.next]) == ("current, no femkit command", False, BOOTSTRAP)
+    assert install_env("list").returncode == 0
+    written = dirs.control_prefix() / LAUNCHER
+    assert os.access(written, os.X_OK)
+    made = manual.launcher(tmp_path / "runner" / "femkit", str(dirs.control_prefix() / "bin" / "python"), REPO)
+    assert written.read_bytes() == made.read_bytes()
+    row = control_row()
+    assert (row.state, row.ready, row.next) == ("current, femkit runs this checkout", True, [])
+
+
+def test_the_femkit_command_runs_femkit_from_its_checkout_in_the_folder_it_is_typed_in(
+        manager, laplace, tmp_path, monkeypatch):
+    """Fails if the `femkit` command runs femkit on another Python than the control environment's,
+    with the person's own Python path or user site-packages, or other than in the folder it is
+    typed in — `femkit project check` typed inside a project would not name that project — with
+    that folder on Python's import path, so a file of the person's named like a module femkit
+    imports would be loaded in its place, or does not hand femkit its arguments as typed
+    (envs.md § 7; projects.md § 1)."""
+    assert install_env("bootstrap", "--yes").returncode == 0
+    femkit, python = dirs.control_prefix() / LAUNCHER, dirs.control_prefix() / "bin" / "python"
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "the-persons-packages"))
+    monkeypatch.delenv("PYTHONNOUSERSITE", raising=False)
+    assert subprocess.run([str(femkit), "env", "list"], timeout=60).returncode == 0   # the stand-in's python
+    assert calls(manager)[-1] == ["python", "-P", "-m", "femkit", "env", "list"]
+    assert Path(f"{manager}.python").read_text().splitlines()[-1].split() == [str(REPO), "1"]
+
+    python.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n')   # a Python that runs femkit
+    inside = laplace / "components"
+    (inside / "click.py").write_text('raise SystemExit("the folder typed in was put on the import path")\n')
+    checked = subprocess.run([str(femkit), "project", "check", "--json"], cwd=inside, capture_output=True,
+                             text=True, timeout=120)
+    assert json.loads(checked.stdout)["project"] == laplace.name, checked.stderr
+    typed = "no such 'one'"
+    named = subprocess.run([str(femkit), "project", "check", "--project", typed, "--json"], cwd=tmp_path,
+                           capture_output=True, text=True, timeout=120)
+    assert (named.returncode, json.loads(named.stdout)["subject"]) == (2, typed)
+
+
+def test_the_femkit_command_names_the_checkout_the_script_ran_from_and_refuses_once_it_is_gone(manager, tmp_path):
+    """Fails if a `femkit` command whose checkout is gone runs anything, or says other than one
+    plain line naming that checkout and the script's bootstrap, run from the new place; if the
+    script run from the checkout's new place leaves the command naming the old one; or if doctor
+    calls another checkout's command this one's (envs.md § 6.1, § 7)."""
+    old, moved = tmp_path / "old", tmp_path / "moved"
+    assert install_env("bootstrap", "--yes", script=a_checkout(old)).returncode == 0
+    femkit = dirs.control_prefix() / LAUNCHER
+    row = control_row()                                              # this test runs from another checkout
+    assert (row.state, row.ready, [n.command for n in row.next]) == (
+        "current, femkit is not this checkout's", False, BOOTSTRAP)
+    old.rename(moved)
+    manager.unlink()
+    gone = subprocess.run([str(femkit), "doctor"], capture_output=True, text=True, timeout=60)
+    assert (gone.returncode, gone.stdout, calls(manager)) == (2, "", [])
+    assert gone.stderr.splitlines() == [f"[femkit] refused: the femkit checkout {old.resolve()} is gone; "
+                                        "from its new place, run: bash scripts/install-env.sh bootstrap"]
+    assert install_env("list", script=moved / "scripts" / "install-env.sh").returncode == 0
+    assert subprocess.run([str(femkit), "env", "list"], timeout=60).returncode == 0
+    assert Path(f"{manager}.python").read_text().splitlines()[-1].split() == [str(moved.resolve()), "1"]

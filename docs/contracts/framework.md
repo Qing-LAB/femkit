@@ -34,11 +34,11 @@ femkit/
 ├── projects/      the projects root, a project's tree and the one door to it:
 │                  every path, every read; the check frame every part kind's check
 │                  is handed; what femkit writes into a project (projects.md) —
-│                  built but the global library (plan § 4, E)
+│                  built
 ├── materials/     the property list, the material format, libraries, importers,
-│                  a property's data for a case (materials.md) — a project's own
-│                  materials with fixed values and the assignment built; the rest
-│                  not yet (plan § 4, E)
+│                  a property's data for a case (materials.md) — built but a case
+│                  taking a dataset at a variable's value (plan § 4, M9) and
+│                  translation (M6)
 ├── geometry/      the geometry script's contract, mesh recipes, the mesh step,
 │                  kinds and coverage, the hand-over to each engine (geometry.md) —
 │                  the contract and the recipes built; the mesh step, whose code
@@ -72,8 +72,8 @@ tools/             developer tools that import nothing from femkit (testing.md �
 | registry | `registry.py`, `reference.py`, `page.py` | every domain |
 | surfaces | `cli`, `web` | everything below; never each other |
 
-**One way to do each thing.** Decided by the person; rules 4–6 wait for
-packages not built yet; under rule 7, every machine observed from facts is a
+**One way to do each thing.** Decided by the person; rule 6 waits for the
+translators (plan § 4, M6); under rule 7, every machine observed from facts is a
 table in `femkit/data/states/` ([`core.md`](core.md) § 7). Each rule below
 has one home, held by design where it can be — a module never given a
 project's folder cannot form a path in it — and
@@ -118,8 +118,8 @@ test reads code ([`testing.md`](testing.md) § 3):
 | shipped definitions and kinds | [`definitions.md`](definitions.md) |
 | configuration | [`config.md`](config.md) |
 | environments, installs, the install script | [`envs.md`](envs.md) |
-| a project's tree, its parts, addresses, the one door, the check frame, what femkit writes into a project | [`projects.md`](projects.md) — built but the global library (plan § 4, E) |
-| the property list, materials, libraries, importers | [`materials.md`](materials.md) — a project's own materials with fixed values and the assignment built; the rest not yet (plan § 4, E) |
+| a project's tree, its parts, addresses, the one door, the check frame, what femkit writes into a project | [`projects.md`](projects.md) |
+| the property list, materials, libraries, importers | [`materials.md`](materials.md) — built but a case taking a dataset at a variable's value (plan § 4, M9) and translation (M6) |
 | the geometry script's contract, the pipeline's steps, mesh recipes, the mesh step and the hand-over | [`geometry.md`](geometry.md) — the contract and the recipes built; the rest not yet (plan § 4, X) |
 | calculations: parameters, physics, studies, observables, cases, formulations, environment abilities and proofs, the match report, decisions, customizations, preparation, results and analyses | [`models.md`](models.md) — the parts, their checks, the cases and the graph built; the rest not yet (models.md, status; plan § 4, M5–M9) |
 | machine records and the probe, jobs, schedulers | [`jobs.md`](jobs.md) |

@@ -35,19 +35,31 @@ engine, with the results reduced and compared.
   environments built from pinned sources with their toolchain proven first and
   validated by their checks, the conda and mamba manager kinds (mamba 1.x and
   2.x), every manager command run in femkit's own places; the machine probe,
-  its record, `doctor`, per-machine activation settings;
+  its record, `doctor`, per-machine activation settings; the `femkit` command
+  the control environment puts on the path;
 - a project written by hand and checked before anything runs
   ([`../contracts/projects.md`](../contracts/projects.md),
   [`../contracts/models.md`](../contracts/models.md),
   [`../contracts/geometry.md`](../contracts/geometry.md),
   [`../contracts/materials.md`](../contracts/materials.md)): the shipped
   layout; every part kind's schema and check — the project file and its
-  parameters, a component's contract and its assignment, materials with fixed
-  values, physics, mesh recipes, observable sets, studies; one set of
-  templates, `laplace_square` and `two_material`, each passing `project check`
-  and its comments held to the schemas' help; `project new --from`, `project
-  list|check|graph`, `study list|expand`, `case list`; cases named by their
-  content;
+  parameters, a component's contract and its assignment, physics, mesh
+  recipes, observable sets, studies; one set of templates, `laplace_square`
+  and `two_material`, each passing `project check` and its comments held to
+  the schemas' help, which names the manual's chapter; `project new --from`,
+  `project list|check|graph`, `study list|expand`, `case list`; cases named by
+  their content;
+- materials ([`../contracts/materials.md`](../contracts/materials.md),
+  [`../science/material-data.md`](../science/material-data.md)): the property
+  list and its equivalent forms; datasets as values, tables with their digest,
+  and the `sellmeier` and `drude_lorentz` models, with their signs and their
+  passive data checked; the global library, seeded by the first `project new`,
+  `GLOBAL/` and project-first lookup, femkit's changed shipped materials
+  offered; a static step refusing data that varies; the conversions a
+  frequency step will use, exact; `material import` of refractiveindex.info's
+  files, each into a new material;
+- the user manual ([`../manual/`](../manual/README.md)), chapters 1–6, its
+  examples run against femkit's real output by the basic tests;
 - the web server: `serve`, its supervisor and rotated log, the routes in token
   mode; the first page — Operations, progress and the documents — and, not yet
   wired in, part of the page's kernel and elements;
@@ -57,7 +69,7 @@ mamba 2.9.0, builds and validates `elmer` (seven checks) and `ngsolve` (six),
 writes the machine record, and `doctor` reports the machine ready. The person's
 cluster runs are open (M1, M7.1).
 
-**Not built**: materials beyond fixed values; running anything from a run folder — geometry, mesh, jobs;
+**Not built**: a case taking a material's data at a wavelength (M9); running anything from a run folder — geometry, mesh, jobs;
 the match against an environment's abilities; translators; results; the
 rebuilt page; sign-in, TLS and uploads.
 
@@ -69,9 +81,9 @@ chain behind it is [`../contracts/models.md`](../contracts/models.md) § 1.
 | # | the person | femkit | built by |
 |---|---|---|---|
 | 1 | `bash scripts/install-env.sh bootstrap` | builds and proves the control, `elmer` and `ngsolve` environments, writes the machine record; `doctor` says ready | built; the cluster runs, M1 |
-| 2 | `config set paths.projects '"/data/projects"'` | sets the projects root | built, and `config init` asks for it; seeding its `materials/`, E |
-| 3 | `project new bowtie --from laplace_square`, a template, or `--from` a project of theirs | copies it whole, never over an existing project | built |
-| 4 | writes each part in their own editor | each key of a template carries its help as its schema states it | built (materials with fixed values); E (tables, the global library, refractiveindex.info files) |
+| 2 | `config set paths.projects '"/data/projects"'` | sets the projects root | built, and `config init` asks for it |
+| 3 | `project new bowtie --from laplace_square`, a template, or `--from` a project of theirs | copies it whole, never over an existing project; on a new root, seeds the global material library | built |
+| 4 | writes each part in their own editor, the manual beside them; `material import` brings a refractiveindex.info file in as a new material | each key of a template carries its help as its schema states it, naming the manual's chapter | built |
 | 5 | `project check` | each finding names the file, the key, what is wrong and what would be right; the first finding is the next step; what needs the built geometry is "not checked yet" | built; the same in the page, read-only, with templates to copy, G |
 | 6 | `study expand`, `case list` | one case per axis point; refused while findings stand | built |
 | 7 | — | runs the geometry script in a run folder in the `gmsh` environment, checks the promised groups, meshes with the recipe, checks each group's kind and coverage | X |
@@ -111,26 +123,21 @@ one line each:
 
 | when | what | by |
 |---|---|---|
-| every step | the unit against its contract, then its callers, then its domain; findings fixed; landed work removed from this plan | the author |
+| every step | the unit against its contract, then its callers, then its domain; the manual's chapters it reaches against the behaviour; findings fixed; landed work removed from this plan | the author |
 | every milestone's end | its acceptance and its tier green, then the independent review on separate aspects, and a review of the whole system | independent reviewers; the person agrees before work that depends on the milestone starts — milestones that depend on nothing run side by side |
 | before work that builds on existing code | a review of the whole system: every domain against its contract and the framework; each finding fixed, or scheduled at the start of the step that first works on its code | independent reviewers; the person agrees |
 | before a branch merges into `main` | the basic tier, the field tier where the change reaches it, and a consistency review of every merged document | the author; the person agrees |
 
 ## 4. The road
 
-*The order below, and its absorptions — local jobs (M3) into X; templates (F)
-into D and E; the page's display and use (F, H) into G — are the reviewer's
-proposal, awaiting the person's agreement.*
-
-A project is written and checked; next, E, X, M5 and G can each start, X
-first on the bowtie's path.
+A project is written and checked, its materials real data; next, X, M5 and G
+can each start, X first on the bowtie's path.
 Each later step is detailed when it starts; until then it carries its purpose,
 what it needs, its acceptance, and the open items no contract holds — among
 them findings that its start settles. Every step ends as § 3 says.
 
 ```mermaid
 flowchart LR
-    E["E · materials"]
     X["X · execution"]
     M5["M5 · matching"]
     G["G · the page, read-only"]
@@ -141,33 +148,10 @@ flowchart LR
     M1["M1 · the exact-answer<br/>check"] --> M6
     M6 --> M8["M8 · customizations,<br/>when a line needs one"]
     M6 --> M9["M9 · Maxwell<br/>and analysis"]
-    E --> M9
     M4 -.->|"cluster scale"| M9
     M9 --> B["the bowtie"]
     B --> R7["M7's remainder:<br/>sign-in, TLS, uploads"]
 ```
-
-### E — Materials
-
-**Purpose.** Real material data, with where it came from, reaches a case.
-**Needs** a YAML reader for the importer, an environment change, the
-person's.
-
-**Builds** what [`../contracts/materials.md`](../contracts/materials.md) marks
-not built. Carried from the reviews: a table's digest required at load; a
-range's variable supplied by the step kind; the phasor conventions and the
-passive sign declared once. Settled at E's start: `materials.md` § 7 has an
-import add a dataset to an existing material, and `models.md` § 11.1 has
-`material add` write a material, against `projects.md` § 7.
-
-**Acceptance.** The two-material template's materials read from their own files
-and `study expand` giving one case per point; a `GLOBAL/` name taking the
-global library's material and any other the project's first; each case's
-origin, dataset and source shown in `case list`'s and a result's text; a new
-projects root receiving femkit's shipped materials, and a changed shipped
-material offered, never applied; a dataset varying with a variable the step
-does not supply refused; an edited global material making new cases on
-expansion, the old ones kept and flagged by `case list`.
 
 ### X — Execution: run folders, the pipeline, local jobs
 
@@ -339,13 +323,19 @@ changed customization file making the preparation `stale`.
 ### M9 — Maxwell and analysis
 
 **Purpose.** Frequency-domain Maxwell in both engines, and the analyses a
-study needs. **Needs** M6, E; M4 for cluster scale; M8 if a match line needs a
+study needs. **Needs** M6; M4 for cluster scale; M8 if a match line needs a
 customization; whether absorbing layers are drawn by the geometry script or
 added by the mesh step, the person's (`geometry.md` § 8).
 
 **Carries**: `maxwell` — its data file and science document; the phasor sign
-and peak or RMS, with material conversion and the passivity check
-([`../science/electromagnetics.md`](../science/electromagnetics.md));
+and peak or RMS; the `frequency` step kind, supplying the wavelength or
+frequency, with which a case takes a material's table or model at its value —
+the interpolation, the models, the equivalent form, the convention and the
+passivity check, built as functions and checked
+([`../contracts/materials.md`](../contracts/materials.md) § 6); a complex
+constant as a dataset; whether refractiveindex.info's wavelengths are vacuum
+wavelengths, measured before its data enters a spectrum
+([`../science/material-data.md`](../science/material-data.md) § 4);
 `radiation` and each environment's truncation — NGSolve's perfectly matched
 layer, Elmer's first-order absorbing condition (its `VectorHelmholtz` has no
 layer); the plane-wave source and its normalization; the reductions Elmer
@@ -480,9 +470,6 @@ step that first needs it starts, or sooner if cheap.
 
 - **`schema docs` renders a state machine's table schema**, not each machine
   (`core.md` § 7), so a machine's declaration and its contract can drift.
-- **A formulation names its properties itself** (`materials.md` § 1): its
-  property specs repeat the property list's unit instead of naming the
-  list's entries — first needed by E.
 - **Nothing checks a schema's place names against `kinds.toml`**
   (`geometry.md` § 7).
 - **A study's expansion is no declared state machine** (`framework.md` § 3) —
