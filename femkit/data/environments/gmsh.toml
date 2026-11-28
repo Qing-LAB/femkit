@@ -1,0 +1,29 @@
+# Gmsh with its Python module: the environment the person's geometry scripts and Gmsh's meshing
+# run in (geometry.md § 4; ADR 0016). Conda-forge packages alone, nothing built, no engine
+# (definitions.md § 4.7). What a geometry script may import is what this file lists (geometry.md
+# § 2). Every project's geometries run here, so it is installed by default.
+description = "Gmsh with its Python module: geometry scripts and the mesh step"
+version = "4.15.2"
+version_command = ["gmsh", "--version"]
+default = true
+
+[packages]
+conda = ["python", "gmsh=4.15.2", "python-gmsh=4.15.2", "numpy"]
+
+[provides]
+executables = ["python", "gmsh"]
+modules = ["gmsh", "numpy"]
+
+# ---- its check (envs.md § 5): the Laplace square built from its template's script, checked by the
+# geometry's check, meshed by Gmsh's meshing and judged by the mesh's check, each region's measure
+# against the geometry's (femkit/engines/stages/environment_check.py). Four regions: the four groups the template's
+# contract promises — `domain`, `left`, `right`, `sides`. Straight sides: every measure is the
+# geometry's to rounding.
+
+[[checks]]
+id = "laplace-square"
+kind = "command"
+run = ["python", "-m", "femkit.engines.stages.environment_check", "{work}"]
+read = "summary"
+expect = { regions = { equals = 4 }, largest_difference = { max = 1e-9 } }
+timeout = 300

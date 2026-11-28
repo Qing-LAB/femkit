@@ -1,0 +1,59 @@
+# The stage kinds (workflow.md § 2.1): each step of a case's pipeline, declared once — the
+# documents femkit writes for it, the artifacts it reads and writes, each by the name its program
+# and its check call it, where the environment it runs in comes from — a fixed one by its name, or
+# `engine`, the environment the engine chosen to solve resolves to — its program and its check as argument
+# lists, the part whose fixed files a stage of it gets in its folder, the batch a meshing job holds
+# its stages in (workflow.md § 7), and whether it runs as one process. Each document is handed as
+# the file it names. `{python}` is the environment's own python; `{checked}` and `{outputs}` are
+# the run's records the check writes — its verdict and, when passed, each output's SHA-256; every
+# other placeholder names one of the stage's own files, and `{name?}` one it is handed only when
+# asked. A kind declared before its stages are made — the observe kind, until the solve's (M6) —
+# states where it runs and what it brings, and nothing it reads, writes or runs. The solve stage
+# joins with each engine's input writer.
+
+# The sequence `study prep` writes for a study, of the batches each kind's `batch` names, by the
+# name it takes before `-<study>-NNN` (workflow.md § 7).
+sequence = "mesh"
+
+# The file a stage's folder keeps what the stage is made from in, whose SHA-256 as canonical JSON
+# is its ID, and by which every reader finds a case's stages (workflow.md § 4): beside the request,
+# a maker's file of the calculation folder (jobs.md § 1.1).
+made_from = "stage.json"
+
+# The component's script builds the geometry (geometry.md § 2), and its contract's check judges
+# it (§ 3). It reads no stage's output: its inputs are the component's declared definitions and
+# files, which it brings with the script. It writes the shapes as BREP too when the mesher its
+# recipe states reads them, and a mesh when the component's contract declares one.
+[kinds.geometry]
+description = "the component's script builds the geometry, and its contract's check judges what it wrote"
+environment = "gmsh"
+documents = { inputs = "inputs.json", contract = "contract.json" }
+brings = "component"
+batch = "geometries"
+inputs = {}
+outputs = { output = "geometry/xao", groups = "geometry/groups" }
+asked = { brep = "geometry/brep", mesh = "mesh/msh-2.2" }
+program = ["{python}", "geometry.py", "{inputs}", "{output}", "{mesh?}"]
+check = ["{python}", "check_geometry.py", "{contract}", "{output}", "{groups}", "{checked}", "{outputs}", "{mesh?}",
+         "{brep?}"]
+one_process = true
+
+# A mesher meshes the geometry (workflow.md § 2.3): the environment, what it reads and writes, and
+# its program are the mesher's its mesh recipe states; one check judges every mesher's mesh, from
+# its region map and the recipe (geometry.md § 5).
+[kinds.mesh]
+description = "a mesher meshes the geometry, and one check judges every mesher's mesh"
+filled_by = "mesher"
+documents = { recipe = "recipe.json" }
+batch = "meshes"
+check = ["{python}", "check_mesh.py", "{recipe}", "{regions}", "{checked}", "{outputs}", "{mesh}"]
+one_process = true
+
+# Each observables part's script computes its observables from a case's finished solve, in
+# femkit's `postprocess` environment, which the part names not (models.md § 5.2): declared here so
+# that environment has one home — what `observe.py` may import is what it provides. What it reads,
+# writes and runs, and the job it rides, come with the solve (M6).
+[kinds.observe]
+description = "an observables part's script computes each case's observables from its finished solve"
+environment = "postprocess"
+brings = "observables"

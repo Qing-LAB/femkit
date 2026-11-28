@@ -1,0 +1,28 @@
+# The artifact types (workflow.md § 2.2): what flows between a case's stages, each typed — its
+# file's name, its format, and how it is opened. A wire joins a stage's output to a later stage's
+# input of the same type, so a mismatch is a finding before anything runs. `opened` names the
+# environment and the command that open it, `{file}` the file; a type without it is a document
+# femkit reads itself, or one whose opening is not measured yet.
+
+["geometry/xao"]
+file = "geometry.xao"
+format = "the OpenCASCADE shapes with their groups"
+opened = { environment = "gmsh", command = ["gmsh", "{file}"] }
+
+["geometry/brep"]
+file = "geometry.brep"
+format = "the shapes alone, for Netgen"
+opened = { environment = "gmsh", command = ["gmsh", "{file}"] }
+
+["geometry/groups"]
+file = "groups.json"
+format = "each promised group's pieces with their measures, and each face's bodies: what the geometry's check observed"
+
+["mesh/msh-2.2"]
+file = "mesh.msh"
+format = "Gmsh's MSH 2.2, as text"
+opened = { environment = "gmsh", command = ["gmsh", "{file}"] }
+
+["mesh/regions"]
+file = "regions.json"
+format = "the region map: each group's elements, its measure in the mesh against the geometry's, and its worst element"

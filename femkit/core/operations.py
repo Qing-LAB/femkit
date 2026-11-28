@@ -6,6 +6,7 @@ declarations and the surfaces serve them. Nothing here knows a domain.
 
 from __future__ import annotations
 
+import inspect
 import os
 import re
 from contextlib import ExitStack
@@ -14,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, Mapping, Protocol, TypeVar
 
-from pydantic import Field, ValidationError, model_serializer
+from pydantic import Field, ValidationError, computed_field
 
 from femkit.core import clock, commandline, dirs, persist, text, view
 from femkit.core.errors import PlanStale, UsageError
@@ -23,7 +24,7 @@ from femkit.core.issues import Issue
 from femkit.core.locks import SUBJECT, subject_lock
 from femkit.core.process import identify
 from femkit.core.view import Verb
-from femkit.core.schema import Model, problem_path
+from femkit.core.schema import WANTED, Model, closed, described, problems
 
 T = TypeVar("T")
 
@@ -37,6 +38,15 @@ class Context:
     env: Mapping[str, str]
     now: Callable[[], datetime] = clock.now
     _cache: dict[str, Any] = field(default_factory=dict, repr=False)
+    _release: Callable[[], None] | None = field(default=None, repr=False)
+
+    def release(self) -> None:
+        """End the runner's hold on the operation's subjects, once its writes are done, before
+        it waits — a launch waited on (api.md § 3; core.md § 5). Once is enough; outside an
+        apply, nothing is held."""
+        if self._release is not None:
+            release, self._release = self._release, None
+            release()
 
     def cached(self, key: str, factory: Callable[[], T]) -> T:
         if key not in self._cache:
@@ -55,27 +65,25 @@ class Context:
 # --------------------------------------------------------------------- results
 
 class Result(Model):
-    """Every operation's result (api.md § 2.3)."""
+    """Every operation's result (api.md § 2.3). Its report is a field of its schema, computed from its
+    fields: each result declares it as a property, which this one field serializes, so the JSON a
+    program or the page reads carries it and the page's type of it is generated (web.md § 7.7)."""
 
     issues: list[Issue] = Field(default_factory=list, description="findings a person should act on")
 
     def ok(self) -> bool:
         return not any(i.severity == "error" for i in self.issues)
 
+    @computed_field(description="what a person reads, as data: built from the result's fields alone, deciding "
+                                "nothing; its findings follow its blocks", json_schema_extra={"doc": "web.md § 7.7"})
+    @property
     def report(self) -> view.Report:
         """What a person reads, as data, built from the result's fields alone (api.md § 2.3)."""
         raise NotImplementedError(f"{type(self).__name__} builds no report")
 
     def text(self) -> str:
         """The report as the command line writes it: the one text of every result."""
-        return text.report(self.report(), self.issues)
-
-    @model_serializer(mode="wrap")
-    def _with_report(self, handler):
-        """The report goes with the result's JSON: the page draws it (web.md § 7.6)."""
-        data = handler(self)
-        data["report"] = self.report().model_dump(mode="json")
-        return data
+        return text.report(self.report, self.issues)
 
 
 class Step(Model):
@@ -96,45 +104,62 @@ class Plan(Model):
     operation: str = Field(default="", description="the operation's name; `Operation.plan` writes it")
     request: dict = Field(default_factory=dict, description="the request, as JSON; `Operation.plan` writes it")
     subjects: tuple[str, ...] = Field(default=(), description="the lock subjects apply holds alone: what it changes")
-    shared: tuple[str, ...] = Field(default=(), description="those it holds shared: what it uses and does not change "
-                                                            "(core.md § 5)")
+    shared: tuple[str, ...] = Field(default=(), description="those it holds shared: what it uses and does not change",
+                                    json_schema_extra={"doc": "core.md § 5"})
     basis: dict = Field(default_factory=dict, description="the facts the plan rests on, observed before it was made; "
-                                                          "apply refuses when they differ then (api.md § 3)")
+                                                          "apply refuses when they differ then",
+                        json_schema_extra={"doc": "api.md § 3"})
     holds: dict = Field(default_factory=dict, description="what the plan decided that apply uses as decided: values "
                                                           "measured, a record, other operations' plans")
     steps: tuple[Step, ...] = Field(default=(), description="every step, in order; empty: nothing to do")
     issues: list[Issue] = Field(default_factory=list, description="findings a person should know before consenting")
     asks: tuple[Ask, ...] = Field(default=(), description="request fields to ask for on a terminal; unanswered, "
                                                           "the plan stands as it is")
+    report: view.Report = Field(default_factory=view.Report, description="what its outcome would show, before "
+                                "anything is written — the page's Preview; the runner gives it from the outcome the "
+                                "operation's plan foresees, where it foresees one",
+                                json_schema_extra={"doc": "api.md § 3"})
 
     def text(self, brief: bool = False) -> str:
-        """The plan as a person reads it; ``brief``: the steps alone, without their command
-        lines and the findings (what `--yes` prints before applying, api.md § 4.2)."""
+        """The plan as a person reads it: its steps, with their command lines, then the report its
+        outcome would show and its findings; ``brief``: the steps alone (what `--yes` prints before
+        applying, api.md § 4.2)."""
         n = len(self.steps)
         lines = [f"plan: {text.count(n, 'step')}" if n else "plan: nothing to do"]
         for i, step in enumerate(self.steps, 1):
             lines.append(f"  {i}. {step.describe}")
             if step.argv and not brief:
                 lines.append(f"       $ {text.show(list(step.argv))}")
-        return "\n".join(lines + ([] if brief else text.findings(self.issues)))
+        shown = "" if brief else text.report(self.report, self.issues)
+        return "\n".join(lines + ([shown] if shown else []))
 
     def digest(self) -> str:
-        return persist.canonical_sha256(self.model_dump(mode="json"))
+        """The SHA-256 of its canonical JSON, the report left out: drawn from what the plan rests
+        on, it adds nothing an apply must match — its steps and its request are (api.md § 3)."""
+        return persist.canonical_sha256(self.model_dump(mode="json", exclude={"report"}))
 
 
 class PlanAnswer(Model):
-    """A changing operation's plan, and the digest its apply must carry."""
+    """A changing operation's plan, and the digest its apply must carry: the one answer of a plan,
+    as `--dry-run --json` prints it and the page's `/plan` answers it (api.md § 4.4)."""
 
     plan: Plan
     digest: str
     text: str = Field(description="the plan as a person reads it")
 
+    @classmethod
+    def of(cls, plan: Plan) -> "PlanAnswer":
+        return cls(plan=plan, digest=plan.digest(), text=plan.text())
+
 
 class Outcome(Result):
-    """The result of ``apply``."""
+    """The result of ``apply`` — or, `planned`, the outcome a plan foresees, before anything is
+    written, whose report says what is to be done and never that it was (api.md § 3, `report`)."""
 
     plan: Plan = Field(description="the plan that was applied")
-    status: Literal["done", "failed"] = Field(description="whether every step finished")
+    status: Literal["done", "failed", "planned"] = Field(
+        description="whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+        json_schema_extra={"doc": "api.md § 2.3"})
     log: str | None = Field(default=None, description="the operation directory holding its event log")
 
     def ok(self) -> bool:
@@ -303,6 +328,10 @@ def run_steps(
 
 # ----------------------------------------------------------------- declaration
 
+SURFACES = ("cli", "page")   # where an operation is offered, both by default (api.md § 2)
+PAGE_ALONE = ("page",)       # the page alone: a request that is a text a person typed there
+CLI_ALONE = ("cli",)         # the command line alone: what run from the page would stop or hold the server it talks to
+
 @dataclass(frozen=True)
 class Operation:
     """A declared operation. Surfaces call ``run`` / ``plan`` / ``apply``. A changing operation
@@ -311,28 +340,33 @@ class Operation:
 
     verb: Verb
     result: type[Result]
-    changes: bool
     doc: str
     impl: Any  # a function (read-only) or an instance with plan/apply (changing)
     subject: Callable[[Any], list[str]] | Literal["plan"] | None = None  # "plan": the plan names them
+    surfaces: tuple[str, ...] = SURFACES  # where it is offered (api.md § 2)
 
     @property
     def name(self) -> str:
         return self.verb.name
 
     @property
+    def changes(self) -> bool:
+        """Whether it is planned, shown and applied once the person agrees: its verb's effect is
+        not `reads` — the one home of it (api.md § 2)."""
+        return self.verb.effect != "reads"
+
+    @property
     def request(self) -> type[Model]:
         return self.verb.request
 
     def request_from(self, data: dict) -> Model:
-        """The request model from its JSON form; one that does not validate is a `UsageError`
-        naming each field's problem — on every surface alike."""
+        """The request from its values — the command line's words, the page's JSON — validated by
+        the request model alone (api.md § 4.1); one that does not validate is refused as `refused`
+        says it: the one refusal of a bad request, on every surface."""
         try:
             return self.request.model_validate(data)
         except ValidationError as exc:
-            problems = "; ".join(f"{problem_path(self.request, e['loc']) or 'request'}: {e['msg']}"
-                                 for e in exc.errors())
-            raise UsageError(problems, code="invalid-request", subject=self.name) from None
+            raise refused(self.verb, data, exc.errors()) from None
 
     def run(self, req: Model, ctx: Context) -> Result:
         assert not self.changes, f"{self.name} changes things: plan, then apply"
@@ -340,7 +374,9 @@ class Operation:
 
     def plan(self, req: Model, ctx: Context) -> Plan:
         """The implementation's plan, with what the declaration knows written in: the
-        operation's name, the request, and the subjects it locks."""
+        operation's name, the request, the subjects it locks — and, for an operation whose plan
+        foresees its outcome, `outcome(plan, ctx)`, the report that outcome would show (api.md § 3):
+        built here, once, by the outcome's own report, from the outcome its apply answers with too."""
         assert self.changes, f"{self.name} is read-only: run it"
         observed = self.impl.observe(req, ctx) if hasattr(self.impl, "observe") else None
         plan = self.impl.plan(req, ctx)
@@ -349,11 +385,16 @@ class Operation:
             known["basis"] = observed
         if self.subject != "plan":
             known["subjects"] = tuple(self.subject(req)) if self.subject else ()
-        return plan.model_copy(update=known)
+        plan = plan.model_copy(update=known)
+        if hasattr(self.impl, "outcome"):
+            plan = plan.model_copy(update={"report": self.impl.outcome(plan, ctx).report})
+        return plan
 
     def apply(self, plan: Plan, ctx: Context, observer: Observer | None = None) -> Outcome:
         """Hold every subject's lock — alone, or shared — refuse a plan whose facts changed since,
-        then apply (core.md § 5, api.md § 3)."""
+        then apply (core.md § 5, api.md § 3); the plan's findings carried into the outcome, here,
+        once, for every operation — the apply's own after them, none twice — never copied by an
+        apply (api.md § 4.4)."""
         assert self.changes, f"{self.name} is read-only: run it"
         with ExitStack() as stack:
             for subject in plan.subjects:
@@ -367,26 +408,79 @@ class Operation:
                                     (view.command(self.verb, **req.model_dump(mode="json", exclude_defaults=True)),),
                                     code="basis-changed", subject=", ".join(plan.subjects) or self.name)
             recording = observer if isinstance(observer, _Recording) else _Recording(observer or SilentObserver(), ctx.now)
-            return self.impl.apply(plan, ctx, recording)   # an apply inside another's records its steps once
+            outer, ctx._release = ctx._release, stack.close   # the apply may end the hold before it waits
+            try:                                                 # (api.md § 3)
+                outcome = self.impl.apply(plan, ctx, recording)   # an apply inside another's records its steps once
+            finally:
+                ctx._release = outer
+        return outcome.model_copy(update={"issues": [*plan.issues, *(i for i in outcome.issues if i not in plan.issues)]})
+
+
+def refused(verb: Verb, data: dict, errors: list[dict]) -> UsageError:
+    """A request ``verb``'s model refuses, as every surface says it (api.md § 4.1; core.md §§ 2, 9):
+    each field as the person writes it (`commandline.written`) — missing, with its help; outside its
+    closed list, with its choices; of the wrong kind, with what it should be and its help — and a key
+    the request does not take, or a problem of the whole request, in the plain words a file's problem
+    is said in (`schema.problems`), never pydantic's; and, as the next step, the request again with
+    what was given right, each field to give again still to fill, and, for a closed list, one request
+    for each of its choices. A `UsageError`, `invalid-request`, its subject the operation."""
+    request = verb.request
+    fields = request.model_fields
+    by_key = {field.alias or name: name for name, field in fields.items()}
+
+    def choices(name: str) -> list[str]:
+        return closed(commandline.spelling(name, fields[name]).element)
+
+    said, wrong = [], []
+    for error in errors:
+        name = by_key.get(error["loc"][0]) if error["loc"] else None
+        if name is None:
+            said += [p.reason for p in problems(request, data, [error])]
+            continue
+        field, typed, given = fields[name], commandline.written(name, fields[name]), text.show(error.get("input"))
+        wrong.append(name)
+        if error["type"] == "missing":
+            said.append(f"{typed} is missing: {described(field)}")
+        elif choices(name):
+            said.append(f"{typed.split()[0]} is `{given}`, and it takes "
+                        + " or ".join(f"`{c}`" for c in choices(name)))
+        elif error["type"] in WANTED:
+            said.append(f"{typed} is `{given}`, and it should be {WANTED[error['type']]}: {described(field)}")
+        else:
+            said.append(f"{typed} is `{given}`: {error['msg'].removeprefix('Value error, ')}")
+    wrong = list(dict.fromkeys(wrong))
+    given = {by_key[k]: v for k, v in data.items()
+             if k in by_key and by_key[k] not in wrong and v != fields[by_key[k]].default}
+    choosing = next((n for n in wrong if choices(n)), None)
+    fills = [view.Fill(field=n, label=described(fields[n])) for n in wrong if n != choosing]
+    again = [view.command(verb, fills=fills, **given, **({choosing: c} if choosing else {}))
+             for c in (choices(choosing) if choosing else [None])]
+    return UsageError("\n  ".join(said), tuple(again), code="invalid-request", subject=verb.name)
 
 
 def operation(
     verb: Verb,
     *,
     result: type[Result],
-    changes: bool = False,
     subject: Callable[[Any], list[str]] | Literal["plan"] | None = None,
+    surfaces: tuple[str, ...] = SURFACES,
 ) -> Callable[[Any], Operation]:
     """Declare an operation (api.md § 2): decorate a function, or a class with plan/apply. Its
-    name and request model are its `Verb`'s, declared beside the request."""
+    name and request model are its `Verb`'s, declared beside the request; whether it changes
+    anything is its verb's effect — one that only reads is one function, any other a class planned
+    and applied."""
     name, request = verb.name, verb.request
+    changes = verb.effect != "reads"
 
     def declare(target: Any) -> Operation:
         doc = " ".join((target.__doc__ or "").split())
         if not doc:
             raise TypeError(f"{name}: an operation's docstring is its help; write one")
+        if not isinstance(inspect.getattr_static(result, "report"), property):
+            raise TypeError(f"{name}: {result.__name__}'s report is no property: a result's report is a field of its "
+                            "schema, computed from its fields (web.md § 7.7)")
         if result.report is Result.report:
-            raise TypeError(f"{name}: {result.__name__} builds no report(); a result is read on a terminal too")
+            raise TypeError(f"{name}: {result.__name__} builds no report; a result is read on a terminal too")
         if result.text is not Result.text:
             raise TypeError(f"{name}: {result.__name__} writes a text of its own; a result's text is its report's")
         flags = [n for n, f in request.model_fields.items()
@@ -395,13 +489,18 @@ def operation(
             raise TypeError(f"{name}: a bool field is a flag and defaults to False (api.md § 4.1): {', '.join(flags)}")
         if changes:
             if not isinstance(target, type) or not all(hasattr(target, m) for m in ("plan", "apply")):
-                raise TypeError(f"{name}: a changing operation is a class with plan and apply")
+                raise TypeError(f"{name}: its verb {verb.effect}, so it is a class with plan and apply")
             impl = target()
             impl.verb = verb                # its request model, for reading a plan's request back
         else:
+            if isinstance(target, type):
+                raise TypeError(f"{name}: its verb only reads, so it is one function, run at once")
             if subject is not None:
                 raise TypeError(f"{name}: a read-only operation takes no lock")
             impl = target
-        return Operation(verb, result, changes, doc, impl, subject)
+        if tuple(surfaces) not in (SURFACES, PAGE_ALONE, CLI_ALONE):   # the three forms api.md § 2 names
+            raise TypeError(f"{name}: an operation is offered on both surfaces, on the page alone or on the command "
+                            f"line alone; not {surfaces!r}")
+        return Operation(verb, result, doc, impl, subject, tuple(surfaces))
 
     return declare

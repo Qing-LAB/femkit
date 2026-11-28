@@ -4,6 +4,13 @@
 # cluster's process manager need not agree (jobs.md § 7).
 mpi_launch = ["mpirun", "-np", "{ranks}"]
 interactive = "salloc"
+# What a job sees of its allocation, kept by a clean start (envs.md § 4.4): the MPI library and the
+# monitor read it inside the job.
+passes = ["SLURM_*"]
+# The shell function a site's preamble calls to load what its job needs, `module load …`: passed by a
+# clean start, as bash passes an exported function (envs.md § 4.4). Whether a site's module system
+# needs another function of its own exported beside it is not measured.
+functions = ["module"]
 
 [commands]
 submit = "sbatch"

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.kit import apply, ctx, hold, planned, refused, run
+from tests.kit import apply, ctx, hold, planned, refused, run, wait_until
 from femkit import registry
 from femkit.core import clock, dirs, locks
 from femkit.core.eventlog import EventLog
@@ -38,15 +38,6 @@ def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
-
-
-def wait_until(check, timeout: float = 15.0) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if check():
-            return True
-        time.sleep(0.1)
-    return False
 
 
 @pytest.fixture
@@ -73,7 +64,7 @@ def ended(name: str) -> None:
 def _pidfile(alive: bool, host: str = HERE) -> Pidfile:
     me = identify(os.getpid())
     supervisor = me if alive else Identity(me.pid, me.start + 1, me.boot)  # a recycled pid: another start time
-    return Pidfile(supervisor, None, host, Listen(port=8000), False)
+    return Pidfile(supervisor=supervisor, child=None, host=host, listen=Listen(port=8000), foreground=False)
 
 
 @pytest.mark.parametrize("locked, exists, pidfile, state", [
@@ -109,16 +100,18 @@ def test_start_serves_with_its_token_and_a_second_start_is_refused(server):
         apply("serve.start", port=server, tcp=True)
 
 
-def test_a_running_server_holds_its_environment_until_it_stops(server):
-    """Fails if the web environment can be changed under a running server — its supervisor not
-    holding `env-web` shared — or the refusal does not offer this server's stop, or the hold
-    outlives the server (web.md § 4, core.md § 5)."""
-    with refused(Busy, "held", "env-web") as caught:
-        locks.require_free("env-web")
+@pytest.mark.parametrize("subject", ["env-web", "control"])
+def test_a_running_server_holds_its_environments_until_it_stops(server, subject):
+    """Fails if the web environment, which runs the server's child, or the control environment,
+    which runs its supervisor, can be changed under a running server — its supervisor not holding
+    `env-web` and `control` shared — or the refusal does not offer this server's stop, or the hold
+    outlives the server (web.md § 4, envs.md § 7.3, core.md § 5)."""
+    with refused(Busy, "held", subject) as caught:
+        locks.require_free(subject)
     assert f"the web server on 127.0.0.1:{server}" in str(caught.value)      # the holder named, as the person reads it
     assert [n.command for n in caught.value.next] == [f"femkit serve stop --port {server}"]
     assert apply("serve.stop", port=server).ok()
-    locks.require_free("env-web")
+    locks.require_free(subject)
 
 
 def test_stop_ends_both_processes_and_removes_its_files(server):
@@ -235,7 +228,7 @@ def test_the_supervisor_runs_as_the_plan_showed_it():
         p = protocol.read_pidfile(protocol.pidfile(str(port)))
         ran = [a.decode() for a in Path(f"/proc/{p.supervisor.pid}/cmdline").read_bytes().split(b"\0")[:-1]]
         differ = {a: b for a, b in zip(shown, ran) if a != b}
-        assert len(ran) == len(shown) and set(differ) == {"<socket>", "<lock>", "<use>"}
+        assert len(ran) == len(shown) and set(differ) == {"<socket>", "<lock>", "<env-web>", "<control>"}
         assert all(b.isdigit() for b in differ.values())
     finally:
         ended(str(port))
@@ -324,14 +317,14 @@ def test_stop_is_refused_while_the_child_holds_an_operation_lock_unless_forced(s
         holders = locks.holders()
         assert holders.get("env-demo") == os.getpid()
         # the test process plays the child: the pidfile names it as the child
-        Pidfile(p.supervisor, identify(os.getpid()), p.host, p.listen, p.foreground).write()
+        Pidfile(supervisor=p.supervisor, child=identify(os.getpid()), host=p.host, listen=p.listen, foreground=p.foreground).write()
         with refused(Refused, "operation-running", str(server)) as caught:
             apply("serve.stop", port=server)
         assert "env-demo" in str(caught.value)                       # the lock it holds, named
         op, ctx = registry.operations()["serve.stop"], Context.from_process()
-        Pidfile(p.supervisor, p.child, p.host, p.listen, p.foreground).write()
+        Pidfile(supervisor=p.supervisor, child=p.child, host=p.host, listen=p.listen, foreground=p.foreground).write()
         planned = op.plan(op.request_from({"port": server}), ctx)  # planned while the child held nothing
-        Pidfile(p.supervisor, identify(os.getpid()), p.host, p.listen, p.foreground).write()
+        Pidfile(supervisor=p.supervisor, child=identify(os.getpid()), host=p.host, listen=p.listen, foreground=p.foreground).write()
         with refused(Refused, "operation-running", str(server)):     # and checked again when applying
             op.apply(planned, ctx)
         assert apply("serve.stop", port=server, force=True).ok()  # forced, it stops all the same
@@ -388,13 +381,16 @@ def test_a_server_another_command_is_starting_is_refused_naming_that_command(ver
 @pytest.mark.parametrize("verb", ["serve.start", "web.build"])
 def test_serving_and_building_refuse_a_web_environment_not_ready_alike(web_environment, verb):
     """Fails if `serve start` or `web build` plans while the web environment is not ready, or
-    the two refuse it differently: one check, offering the install that makes it ready (web.md
-    §§ 3–4)."""
+    the two refuse it differently: one check, offering what its state allows, as its table gives
+    it (web.md §§ 3–4; envs.md § 3.3)."""
     from femkit.envs import layout
+    from femkit.envs.state import observe, steps
     layout.manifest_file(web_environment.prefix).unlink()                 # no longer as an install leaves it
-    with refused(Refused, "environment-not-ready", "web") as caught:
+    c = ctx()
+    state = observe(c, "web")[1]
+    with refused(Refused, "not-allowed", "web") as caught:
         planned(verb, **({"port": free_port(), "tcp": True} if verb == "serve.start" else {}))
-    assert [n.call.request for n in caught.value.next if n.call] == [{"names": ["web"]}]
+    assert [n.command for n in caught.value.next] == [n.command for n in steps(c, "web", state)]
 
 
 def test_a_process_is_signalled_only_when_it_is_the_one_identified():
@@ -418,6 +414,20 @@ def test_the_log_is_private_capped_and_rotated(tmp_path):
     assert sorted(p.name for p in path.parent.iterdir()) == ["serve-1.log", "serve-1.log.1.gz", "serve-1.log.2.gz"]
     assert gzip.decompress((path.parent / "serve-1.log.1.gz").read_bytes()).startswith(b"line 008")
     assert gzip.decompress((path.parent / "serve-1.log.2.gz").read_bytes()).startswith(b"line 006")  # shifted up
+
+
+def test_a_rotated_archive_is_renamed_one_place_up_never_copied(tmp_path):
+    """Fails if rotating the log reads each older archive and writes it again, instead of
+    renaming it one place up: a copy costs as much as every archive kept, and one interrupted
+    leaves an archive cut short (web.md § 4, core.md § 4 `move`)."""
+    path = tmp_path / "logs" / "serve-1.log"
+    roll = LogRoll(path, max_bytes=100, keep=3)
+    roll.write(b"first " * 20)                                      # over the limit: rotated
+    first = (path.parent / "serve-1.log.1.gz").stat().st_ino
+    roll.write(b"second " * 20)                                     # rotated again: the first moves up
+    roll.close()
+    assert (path.parent / "serve-1.log.2.gz").stat().st_ino == first
+    assert gzip.decompress((path.parent / "serve-1.log.2.gz").read_bytes()).startswith(b"first")
 
 
 # ------------------------------------------------------------------ every request checked
@@ -484,6 +494,31 @@ def test_an_apply_without_its_request_is_refused_never_applied_as_the_default():
     assert not operations_root("demo-0").exists()                       # nothing ran
 
 
+def test_the_page_declaration_is_served_in_its_own_order(client):
+    """Fails if `GET /api/page` serves the groups of operations, or a table of the declaration, in
+    another order than the declaration lists them — the page would band the groups in an order of
+    the serializer's, not the person's order of work (web.md § 8.1: "in the order the declaration
+    lists them — the person's order of work")."""
+    from femkit import page
+    answer = client.get("/api/page", headers=AUTH)
+    assert answer.status_code == 200
+    declared = page.load(registry.offered(registry.operations(), "page"))
+    assert list(json.loads(answer.get_data(as_text=True))["groups"]) == list(declared.groups)   # keys as written
+
+
+def test_the_operations_carry_the_names_a_field_of_declared_values_holds_now(client):
+    """Fails if `GET /api/operations` does not give, for a request field whose values are declared
+    data — `project new`'s source, the templates — the names declared now, so the page could offer no
+    template to start from and the command line's help and the page would name different ones
+    (api.md § 4.1: "a field whose values are declared data names them as they are declared now";
+    web.md § 1)."""
+    from femkit.definitions import catalogue
+    from tests.kit import ctx
+    answer = {op["name"]: op for op in client.get("/api/operations", headers=AUTH).get_json()}
+    assert answer["project.new"]["choices"] == {"source": list(catalogue.templates(ctx()))}
+    assert answer["config.path"]["choices"] == {}
+
+
 def test_the_health_route_proves_the_server_without_the_token(client):
     """Fails if the health route needs the token, or answers with anything but the HMAC of the
     client's nonce keyed by the token (web.md § 5)."""
@@ -506,7 +541,46 @@ def test_apply_answers_with_the_run_address_first_and_refuses_a_stale_digest(cli
     first, last = json.loads(lines[0]), json.loads(lines[-1])
     assert first["operation"].startswith("config/") and last["ok"] is True
     events = client.get(f"/api/events/{first['operation']}", headers=AUTH).get_data(as_text=True).splitlines()
-    assert [json.loads(e)["kind"] for e in events][-1] == "operation-end"
+    assert json.loads(events[-1])["ended"] is True
+
+
+def test_the_event_stream_gives_the_logs_fold_each_time_it_changes_ending_with_the_run(client):
+    """Fails if the events route streams the event log's records for the page to fold, not the fold
+    itself — each line the log's state as the core folds it, its steps each with how it ended or
+    running — so the page would keep a second reader of the log's record kinds (core.md § 6; web.md
+    § 1)."""
+    from femkit.core.eventlog import LogState
+    headers = {**AUTH, "Content-Type": "application/json"}
+    request = {"key": "launch.mpi", "value": '["mpirun", "-np", "{ranks}"]'}
+    plan = client.post("/api/config/set/plan", headers=headers, data=json.dumps(request)).get_json()
+    first = json.loads(client.post("/api/config/set/apply", headers=headers, data=json.dumps(
+        {"request": request, "digest": plan["digest"]})).get_data(as_text=True).splitlines()[0])
+    lines = client.get(f"/api/events/{first['operation']}", headers=AUTH).get_data(as_text=True).splitlines()
+    states = [LogState.model_validate_json(line) for line in lines if line.strip()]
+    assert states[-1].ended and states[-1].outcome == "done"
+    assert [s.outcome for s in states[-1].steps] == ["done"]
+
+
+def test_the_operations_carry_their_group_their_command_and_their_values_to_fill(client):
+    """Fails if `GET /api/operations` does not give each operation its group, its command's words and
+    each request field as a value to fill built by the one builder — so the page would parse an
+    operation's name, or build a fill of its own (web.md § 1; api.md §§ 4.1, 6)."""
+    from femkit.core.view import Fill
+    answer = {op["name"]: op for op in client.get("/api/operations", headers=AUTH).get_json()}
+    new, doctor = answer["project.new"], answer["doctor"]
+    assert (new["group"], new["words"], doctor["group"], doctor["words"]) == ("project", ["project", "new"], "", ["doctor"])
+    ops = registry.operations()
+    assert new["fills"] == [Fill.of(ops["project.new"].request, n).model_dump(mode="json")
+                            for n in ops["project.new"].request.model_fields]
+
+
+def test_a_reads_answer_carries_its_result_whole_its_report_and_findings_typed(client):
+    """Fails if a read-only operation's answer drops a field of its result, or does not carry its report
+    and its findings where the page reads them (web.md § 7.7; api.md § 2.3)."""
+    headers = {**AUTH, "Content-Type": "application/json"}
+    answer = client.post("/api/config/path", headers=headers, data="{}").get_json()
+    result = registry.operations()["config.path"].result
+    assert {"report", "issues"} <= set(answer["result"]) and set(result.model_fields) <= set(answer["result"])
 
 
 # ------------------------------------------------------------------ stopping and streams
@@ -521,7 +595,7 @@ def test_stop_is_prompt_with_an_event_stream_open(server):
     conn = http.client.HTTPConnection("127.0.0.1", server, timeout=30)
     conn.request("GET", f"/api/events/{address}", headers={"Authorization": f"Bearer {token}"})
     response = conn.getresponse()
-    assert json.loads(response.readline())["kind"] == "operation-start"
+    assert json.loads(response.readline())["started"] is True
     began = time.monotonic()
     assert apply("serve.stop", port=server).ok()
     assert time.monotonic() - began < GRACE + 3
@@ -546,6 +620,7 @@ class _NoInputs(Model):
 class _Done(Outcome):
     """A test operation's outcome: every result builds its report (api.md § 2.3)."""
 
+    @property
     def report(self) -> view.Report:
         return view.Report(blocks=[view.Text(text=f"{self.status}")])
 
@@ -582,7 +657,8 @@ def fake_operation(runs: int, step_log: bool = False):
                 run_steps(plan.model_copy(update={"subjects": (f"demo-{i}",)}), ctx, observer, do)
             return _Done(plan=plan, status="done")
 
-    return Operation(Verb("demo.multi", _NoInputs), _Done, True, "a test operation", Impl()), release
+    return Operation(Verb("demo.multi", _NoInputs, on_machine=False, effect="changes"), _Done, "a test operation",
+                     Impl()), release
 
 
 def test_an_apply_over_several_runs_reports_each_and_ends():
@@ -612,7 +688,8 @@ def test_a_defect_anywhere_in_a_route_is_answered_in_json_with_no_trace(route):
         def run(self, req, ctx): return Result()
 
     changes = route.endswith("/plan")
-    op = Operation(Verb("demo.broken", _BrokenRequest), Result, changes, "a test operation", Impl())
+    op = Operation(Verb("demo.broken", _BrokenRequest, on_machine=False, effect="changes" if changes else "reads"),
+                   Result, "a test operation", Impl())
     client = create_app("t", Listen(port=8000), operations={**registry.operations(), op.name: op}).test_client()
     answer = client.post(route, headers={"Authorization": "Bearer t", "Host": "127.0.0.1:8000",
                                          "Content-Type": "application/json"}, data="{}")
@@ -651,7 +728,7 @@ def test_a_run_on_a_subject_named_with_capitals_can_be_followed(client):
     log.append("step-start", step="probe")
     log.append("operation-end", outcome="done")
     lines = client.get(f"/api/events/{address}", headers=AUTH).get_data(as_text=True).splitlines()
-    assert json.loads(lines[-1])["kind"] == "operation-end"
+    assert json.loads(lines[-1])["ended"] is True
     assert client.get(f"/api/tail/{address}/probe", headers=AUTH).status_code == 200
 
 
@@ -666,7 +743,7 @@ def test_unread_event_streams_hold_no_slot(client):
     for _ in range(STREAMS + 2):
         client.head(f"/api/events/{address}", headers=AUTH)
     lines = client.get(f"/api/events/{address}", headers=AUTH).get_data(as_text=True).splitlines()
-    assert json.loads(lines[-1])["kind"] == "operation-end"
+    assert json.loads(lines[-1])["ended"] is True
 
 
 def test_an_event_stream_past_the_cap_is_refused_busy_naming_its_route(client):
@@ -679,7 +756,7 @@ def test_an_event_stream_past_the_cap_is_refused_busy_naming_its_route(client):
     opened = [client.get(f"/api/events/{address}", headers=AUTH, buffered=False) for _ in range(STREAMS + 1)]
     try:
         first = [json.loads(next(iter(r.response))) for r in opened]  # read: each takes its slot
-        assert [line.get("kind") for line in first[:STREAMS]] == ["operation-start"] * STREAMS
+        assert [line.get("started") for line in first[:STREAMS]] == [True] * STREAMS
         assert (first[-1]["refused"], first[-1]["code"], first[-1]["subject"]) == ("Busy", "streams",
                                                                                  f"/api/events/{address}")
     finally:
@@ -789,3 +866,35 @@ def test_a_socket_file_left_by_an_ended_server_is_cleared_and_a_live_one_refused
     finally:
         ended(protocol.SOCKET_NAME)
         shutil.rmtree(short)
+
+
+def test_foreground_on_a_socket_offers_its_forwarding_line_as_an_action(monkeypatch, tmp_path):
+    """Fails if `serve foreground` on a Unix socket shows the line to run on the person's own
+    machine as a text of its own rather than as an action of the report `start` ends with: an
+    action is how every surface shows a command to run, so the command line writes it as a
+    `next --` block (web.md §§ 7.2, 7.6; api.md § 4.4)."""
+    import shutil
+    import subprocess
+    import sys
+    import tempfile
+    from femkit.server.operations import forwarding
+    short = Path(tempfile.mkdtemp(prefix="fk", dir="/tmp"))  # a socket's path has a length limit
+    monkeypatch.setenv(dirs.VARIABLES["runtime"], str(short))
+    action = str(view.shell(forwarding(Listen.unix())))
+    said = tmp_path / "said"
+    with open(said, "w") as progress:                         # the person's terminal, as a file read while it runs
+        terminal = subprocess.Popen([sys.executable, "-m", "femkit", "serve", "foreground", "--yes"],
+                                    stdout=subprocess.DEVNULL, stderr=progress, cwd=Path(__file__).resolve().parents[2])
+    try:
+        assert wait_until(lambda: action in said.read_text(), timeout=30), said.read_text()
+        assert apply("serve.stop", socket=True).ok()                     # from another terminal
+        assert terminal.wait(timeout=30) == 0
+    finally:
+        if terminal.poll() is None:
+            terminal.kill()
+            terminal.wait()
+        ended(protocol.SOCKET_NAME)
+        shutil.rmtree(short)
+    lines = [line.strip() for line in said.read_text().splitlines()]
+    assert action in lines, said.read_text()                            # the action's command, on its own line
+    assert lines[lines.index(action) - 1].startswith("next -- ")        # under the block that offers it

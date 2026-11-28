@@ -25,16 +25,14 @@ export function optional(schema: Schema, root: Schema = {}): { inner: Schema; op
   return { inner: s, optional: false };
 }
 
-export type Kind = "fixed" | "choice" | "boolean" | "integer" | "number" | "quantity" | "text" | "list" | "record" | "map" | "json";
+export type Kind = "fixed" | "choice" | "boolean" | "integer" | "number" | "text" | "list" | "record" | "map" | "json";
 
-/** What input a value takes: held (a const), a choice of a closed list, a quantity with its
- *  units, a number, a text, a list of these, a record of fields, or JSON as the last resort. */
+/** What input a value takes: held (a const), a choice of a closed list, a number, a text, a list of
+ *  these, a record of fields, or JSON as the last resort. */
 export function kindOf(schema: Schema, root: Schema = {}): Kind {
   const s = resolve(schema, root);
   if ("const" in s) return "fixed";
   if (s.enum) return "choice";
-  if (s.quantity || s.units) return "quantity";
-  if (s.anyOf && (s.anyOf as Schema[]).every((a) => ["integer", "number", "string"].includes(a.type))) return "quantity";
   if (s.type === "boolean") return "boolean";
   if (s.type === "integer") return "integer";
   if (s.type === "number") return "number";

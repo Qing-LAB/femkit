@@ -1,2 +1,8 @@
-.icon { flex: none; vertical-align: middle; }
-.icon--missing { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--text-faint); }
+/* Icon: its size by token, its colour its text's. */
+.icon { flex: none; }
+.icon--md { width: var(--size-icon); height: var(--size-icon); }
+.icon--xs { width: var(--size-icon-xs); height: var(--size-icon-xs); }
+.icon--sm { width: var(--size-icon-sm); height: var(--size-icon-sm); }
+.icon--lg { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+.icon--xl { width: var(--size-icon-xl); height: var(--size-icon-xl); }
+.icon--missing { display: inline-block; }

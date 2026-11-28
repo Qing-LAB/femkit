@@ -1,9 +1,9 @@
+/* Badge: a word and its dot, in the colour its word or severity is bound to. */
 .badge {
-  display: inline-flex; align-items: center; gap: var(--space-1); height: 20px; padding: 0 var(--space-2);
-  border-radius: var(--radius-pill); font-size: var(--text-2xs); font-weight: var(--weight-strong);
-  letter-spacing: var(--tracking-caps); text-transform: uppercase; background: var(--surface-sunken); color: var(--text-muted);
+  display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--size-badge);
+  padding: 0 var(--space-2); font-size: var(--type-size-2xs); font-weight: var(--type-weight-strong);
+  letter-spacing: var(--type-tracking-caps); text-transform: uppercase; white-space: nowrap;
+  color: var(--color-text-muted); background: var(--color-surface-sunken); border-radius: var(--size-radius-pill);
 }
-.badge--ok { background: var(--ok-soft); color: var(--ok); }
-.badge--warn { background: var(--warn-soft); color: var(--warn); }
-.badge--bad { background: var(--bad-soft); color: var(--bad); }
-.badge--info { background: var(--info-soft); color: var(--info); }
+.badge--toned { color: var(--shows, var(--severity, var(--outcome))); background: var(--color-surface); box-shadow: inset 0 0 0 var(--size-hairline) var(--color-line); }
+.badge__dot { width: var(--size-dot); height: var(--size-dot); border-radius: var(--size-radius-pill); background: currentColor; }

@@ -31,6 +31,31 @@ when = "supervisor_alive"
 state = "starting"
 when = "otherwise"
 
+# What femkit's code does to a server (web.md § 4), each task with the sentence its plan says: a
+# stale server's files removed, a child it left ended; the server started — it listens, writes its
+# access token and starts its supervisor; stopped; restarted, its supervisor asked for a new child.
+# Each of `serve start`, `stop` and `restart` does the tasks of its own the state lists — `start`
+# cleans and starts, `stop` cleans and stops, `restart` restarts — where the state allows it, and
+# nothing where it lists none of them.
+[tasks.clean]
+describe = "removes the stale server's files, ending a child it left"
+
+[tasks.start]
+describe = "listens, writes the access token and starts the supervisor, which runs the web application"
+
+[tasks.stop]
+describe = "stops the supervisor, which stops its child"
+
+[tasks.restart]
+describe = "asks the supervisor for a new child"
+
+[does]
+elsewhere = []
+stopped = ["start"]
+stale = ["clean", "start"]
+running = ["stop", "restart"]
+starting = []
+
 # What each state allows, by the verb (web.md § 4); a request names the server by its port, or
 # its socket. `elsewhere` and `starting` allow nothing, and their refusals say why.
 [actions.elsewhere]

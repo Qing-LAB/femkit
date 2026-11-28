@@ -4,9 +4,9 @@ between them. It names the groups its contract (component.toml) promises — the
 and `high`, the face `middle` between them, and the outer sides `left` (x = 0), `right`
 (x = length) and `sides` (the top and the bottom of both layers).
 
-femkit runs it as `python geometry.py INPUTS OUTPUT` (geometry.md § 2). INPUTS is a JSON
-file, {"schema": 1, "parameters": {"length": 1.0, "height": 1.0, "interface": 0.5}}: each
-parameter the contract declares, a length in the frame's unit — metres here. OUTPUT is the
+femkit runs it as `python geometry.py INPUTS OUTPUT` (manual: 3 · Write each part). INPUTS is
+a JSON file, {"schema": 2, "definitions": {"length": 1.0, "height": 1.0, "interface": 0.5}}: each
+definition the contract declares, a length in the frame's unit — metres here. OUTPUT is the
 file to write the geometry to; its format is femkit's choice, by its extension. The script
 builds the shapes and names the groups; it does not mesh, since meshing is femkit's next
 step. Run it by hand the same way, with an INPUTS file of your own.
@@ -20,8 +20,8 @@ import gmsh
 
 def main(inputs: str, output: str) -> None:
     with open(inputs) as f:
-        parameters = json.load(f)["parameters"]
-    length, height, interface = parameters["length"], parameters["height"], parameters["interface"]
+        definitions = json.load(f)["definitions"]
+    length, height, interface = definitions["length"], definitions["height"], definitions["interface"]
     if not 0 < interface < length or not height > 0:
         sys.exit(f"the interface must lie inside the slab, 0 < {interface} < {length}, "
                  f"and its height must be positive, not {height}")

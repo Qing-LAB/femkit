@@ -1,10 +1,21 @@
-.tabs { display: flex; gap: var(--space-1); }
-.tabs__tab { display: inline-flex; align-items: center; gap: var(--space-2); height: 34px; padding: 0 var(--space-3); border: none;
-  border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font: inherit; font-size: var(--text-sm);
-  font-weight: var(--weight-medium); cursor: pointer; transition: background var(--motion), color var(--motion); }
-.tabs__tab:hover { color: var(--text); background: var(--surface-hover); }
-.tabs__tab[aria-selected="true"] { color: var(--accent); background: var(--accent-soft); }
-.tabs__tab:focus-visible { outline: none; box-shadow: var(--focus); }
-.tabs__count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-pill); background: var(--surface-sunken);
-  color: var(--text-muted); font-size: var(--text-2xs); display: inline-grid; place-items: center; }
-.tabs__tab[aria-selected="true"] .tabs__count { background: var(--surface); color: var(--accent); }
+/* Tabs: a strip of choices, the chosen one underlined in the accent. */
+.tabs { display: flex; align-items: stretch; gap: var(--space-1); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs__tab {
+  position: relative; display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); border: none; border-radius: var(--size-radius-sm);
+  font: inherit; font-size: var(--type-size-sm); font-weight: var(--type-weight-medium); white-space: nowrap;
+  color: var(--color-text-muted); background: transparent; cursor: pointer;
+  transition: color var(--motion-quick) var(--motion-ease-standard), background var(--motion-quick) var(--motion-ease-standard);
+}
+.tabs__tab:hover { color: var(--color-text); background: var(--color-surface-hover); }
+.tabs__tab:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-ring) var(--color-ring); }
+.tabs__tab[aria-selected="true"] { color: var(--color-accent-text); background: var(--color-accent-soft); }
+.tabs--quiet .tabs__tab[aria-selected="true"] { background: transparent; }
+.tabs--quiet .tabs__tab[aria-selected="true"]::after {
+  content: ""; position: absolute; left: var(--space-3); right: var(--space-3); bottom: 0;
+  height: var(--size-rule); border-radius: var(--size-radius-pill); background: var(--color-accent);
+}
+.tabs__count {
+  min-width: var(--size-badge); padding: 0 var(--space-1); font-size: var(--type-size-2xs); text-align: center;
+  color: var(--color-text-muted); background: var(--color-surface-sunken); border-radius: var(--size-radius-pill);
+}

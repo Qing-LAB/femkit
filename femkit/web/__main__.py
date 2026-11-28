@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import ctypes
 import faulthandler
-import json
 import os
 import signal
 import sys
@@ -35,11 +34,11 @@ def main(argv: list[str] | None = None) -> int:
     _end_with_parent(args.parent)
 
     from femkit.core.operations import Context
-    from femkit.core.persist import open_private, read_text
+    from femkit.core.persist import json_value, open_private, read_text
     from femkit.server import protocol
     from femkit.server.protocol import Listen
 
-    listen = Listen.from_json(json.loads(args.listen))
+    listen = Listen.from_json(json_value(args.listen))
     stacks = open_private(protocol.stacks_log(listen.name), "a")
     faulthandler.register(signal.SIGUSR1, file=stacks, all_threads=True)  # `kill -USR1`: every thread's stack
 

@@ -19,11 +19,12 @@ BACKENDS = ("mumps", "hypre")
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[1] not in BACKENDS:
-        print("usage: python -m femkit.engines.ngsolve.checks.linear_backend WORK {mumps|hypre}", file=sys.stderr)
+    if len(argv) != 3 or argv[1] not in BACKENDS or not argv[2].isdigit():
+        print("usage: python -m femkit.engines.ngsolve.checks.linear_backend WORK {mumps|hypre} THREADS",
+              file=sys.stderr)
         return 2
     work, backend = Path(argv[0]), argv[1]
-    comm, _ = start()
+    comm = start(int(argv[2]))
 
     import netgen.meshing
     from netgen.csg import unit_cube

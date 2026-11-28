@@ -1,0 +1,152 @@
+# The states of a calculation folder — or a launch folder (jobs.md § 5.5), observed from the facts
+# femkit/jobs/folders.py gathers and names: `prepared`, prepared.json there and reading; `stale`, a
+# file prepared.json records differs from it; `held`, a job still going holds it, its run not
+# started (jobs.md § 5.4); `launched`, a launch folder's launch.json is there; `regrouped`, a launch
+# folder a member or part it names — or one of theirs, down its parts — is prepared apart from since;
+# `in_launch`, it is prepared with a launch folder not launched yet that is there and whole, and so
+# is each launch folder above it — the one its prepared.json names, or, for a part of a sequence,
+# that sequence (jobs.md § 1.2); `no_run`, it has no run; `newest_<state>`, its newest run is in
+# that state, as the run door observes it (§ 5.2). The first rule that holds gives the state: past
+# the folder's own, its newest run's.
+
+[states]
+unprepared = "no prepared.json, or one that does not read"
+stale = "a file prepared.json records differs from it"
+held = "a job still going holds it, its run not started"
+launched = "a launch folder, launched: its members' states say how it goes"
+regrouped = "a launch folder not launched yet, a member or part it names prepared apart from it since: its members changed"
+in_launch = "prepared with a launch folder not launched yet: it goes whole with that one, whatever runs it made before"
+prepared = "prepared, and no run yet"
+unreadable = "its newest run's launch record does not read"
+queued = "its newest run is launched, not started"
+running = "its newest run has started, and nothing says it is over"
+finished = "its newest run finished"
+failed = "its newest run failed"
+pending = "otherwise: its newest run was opened and never launched"
+
+[[rules]]
+state = "unprepared"
+when = "not prepared"
+
+[[rules]]
+state = "stale"
+when = "stale"
+
+[[rules]]
+state = "held"
+when = "held"
+
+[[rules]]
+state = "launched"
+when = "launched"
+
+[[rules]]
+state = "regrouped"
+when = "regrouped"
+
+[[rules]]
+state = "in_launch"
+when = "in_launch"
+
+[[rules]]
+state = "prepared"
+when = "no_run"
+
+[[rules]]
+state = "unreadable"
+when = "newest_unreadable"
+
+[[rules]]
+state = "queued"
+when = "newest_queued"
+
+[[rules]]
+state = "running"
+when = "newest_running"
+
+[[rules]]
+state = "finished"
+when = "newest_finished"
+
+[[rules]]
+state = "failed"
+when = "newest_failed"
+
+[[rules]]
+state = "pending"
+when = "otherwise"
+
+# Each state's word, the one a block of a stage past its own states shows (jobs.md § 5.5; web.md
+# § 7.6): a job holding it, or its run queued, waits; to prepare, or prepared and not run, it needs
+# update; launched or running, it runs; its newest run finished is up to date.
+[shows]
+unprepared = "needs update"
+stale = "needs update"
+held = "waiting"
+launched = "running"
+regrouped = "needs update"
+in_launch = "needs update"
+prepared = "needs update"
+unreadable = "needs attention"
+queued = "waiting"
+running = "running"
+finished = "up to date"
+failed = "failed"
+pending = "needs update"
+
+# What each state allows (jobs.md § 5.5): `prepare` and `launch` of the folder, `{dir}`; while a
+# job still goes that holds it, its listing and the cancel of that job, `{job}`; while it goes
+# whole with a launch folder not launched yet, no launch of its own but that one's, `{launch}` — a
+# group goes whole the first time, a member is launched alone only again (§ 1.2) — and a prepare
+# that takes it apart, which that launch then refuses; a launch folder launched, or whose members
+# changed, the action its maker.json names — a row with no operation of its own, whose operation is
+# its subject's (`subject = true`): what wrote it writes it again, whatever that was (§ 1.2); past
+# the folder's own states, its newest run's (§ 5.3), and prepare while no run goes. Each action is a
+# next step: what code does to a folder in a state is never one (core.md § 7).
+[actions.unprepared]
+prepare = { describe = "prepare it", operation = "job.prepare", request = { dir = "{dir}" } }
+
+[actions.stale]
+prepare = { describe = "prepare it again", operation = "job.prepare", request = { dir = "{dir}" } }
+
+[actions.held]
+list = { describe = "the jobs launched from this machine", operation = "job.list" }
+cancel = { describe = "cancel the job that holds it", operation = "job.cancel", request = { id = "{job}" } }
+
+[actions.launched]
+status = { describe = "its members' states", operation = "job.status", request = { dir = "{dir}" } }
+again = { describe = "write what is left again as a new launch folder, by what wrote it", subject = true }
+
+[actions.regrouped]
+again = { describe = "form the job again, by what wrote it", subject = true }
+
+[actions.in_launch]
+holder = { describe = "launch the job that holds it, whole", operation = "job.launch", request = { dir = "{launch}" } }
+prepare = { describe = "prepare it again, apart from the job that holds it", operation = "job.prepare", request = { dir = "{dir}" } }
+
+[actions.prepared]
+launch = { describe = "launch it", operation = "job.launch", request = { dir = "{dir}" } }
+prepare = { describe = "prepare it again", operation = "job.prepare", request = { dir = "{dir}" } }
+
+[actions.unreadable]
+status = { describe = "its runs' states", operation = "job.status", request = { dir = "{dir}" } }
+
+[actions.queued]
+status = { describe = "its runs' states", operation = "job.status", request = { dir = "{dir}" } }
+
+[actions.running]
+status = { describe = "its runs' states", operation = "job.status", request = { dir = "{dir}" } }
+
+[actions.finished]
+launch = { describe = "launch a new run", operation = "job.launch", request = { dir = "{dir}" } }
+prepare = { describe = "prepare it again", operation = "job.prepare", request = { dir = "{dir}" } }
+status = { describe = "its runs' states", operation = "job.status", request = { dir = "{dir}" } }
+
+[actions.failed]
+launch = { describe = "launch a new run", operation = "job.launch", request = { dir = "{dir}" } }
+prepare = { describe = "prepare it again", operation = "job.prepare", request = { dir = "{dir}" } }
+status = { describe = "its runs' states", operation = "job.status", request = { dir = "{dir}" } }
+
+[actions.pending]
+launch = { describe = "fill its newest run again, and launch it", operation = "job.launch", request = { dir = "{dir}" } }
+prepare = { describe = "prepare it again", operation = "job.prepare", request = { dir = "{dir}" } }

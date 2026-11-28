@@ -2,7 +2,10 @@
 
 **Role:** ADR
 
-**Status:** accepted
+**Status:** accepted; OpenCASCADE selected for Netgen by
+[ADR 0017](0017-netgen-curves-ngsolve-geometry.md) (2026-11-25), so NGSolve curves
+its meshes from the geometry step's shapes — a capability of NGSolve's own, not
+one another engine uses
 
 **Authority:** the reasons only; the pins, options and checks live in
 [`femkit/data/environments/ngsolve.toml`](../../femkit/data/environments/ngsolve.toml),
@@ -178,8 +181,9 @@ ngsolve: the selected NGSolve release
 ScaLAPACK is not requested directly; the MUMPS package's solution supplies what
 it needs. The Python validation packages serve femkit's checks; upstream
 NGSolve does not need meshio or CUDA Python bindings to solve.
-GUI/OpenCASCADE, MKL/Pardiso, Metal, ROCm and AmgX are not selected
-capabilities; none is added because another engine uses it.
+The GUI, MKL/Pardiso, Metal, ROCm and AmgX are not selected capabilities;
+none is added because another engine uses it. OpenCASCADE is, for Netgen
+alone (ADR 0017).
 
 | Selection edge | Requirement or compatibility question | Current selection and upgrade consequence |
 |---|---|---|

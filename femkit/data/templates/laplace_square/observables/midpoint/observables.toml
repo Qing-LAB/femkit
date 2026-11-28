@@ -1,0 +1,31 @@
+# The Laplace check's observables (manual: 3 · Write each part): what each case of the study gives
+# once it is solved, each computed by its function in observe.py beside this file, from the
+# solve's output. The solve is not built yet, so no value is computed yet. The potential at the
+# square's centre is half the bias, exactly, at any mesh.
+
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `2` (manual: 3 · Write each part)
+schema = 2
+
+# the studies it reads, by name: any whose components promise the groups it takes (manual: 3 · Write each part)
+studies = ["check"]
+
+# its observables, by name, unique across the parts reading one study: each computed by its function (manual: 3 · Write each part)
+[observables]
+
+# the potential at the square's centre: half the bias, exactly, at any mesh
+[observables.potential_middle]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "potential_middle"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "V"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.potential_middle.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+definitions = ["side"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+# groups = ["left"]

@@ -11,8 +11,11 @@ import shutil
 import stat
 import tarfile
 import tempfile
+import threading
 import tomllib
 from dataclasses import dataclass
+from decimal import Decimal
+from fractions import Fraction
 from pathlib import Path, PurePosixPath
 from typing import IO, Any, Callable, Iterable, Mapping
 
@@ -174,6 +177,17 @@ def write_folder(path: Path, files: Mapping[str, bytes]) -> Path:
     return _new_folder(path, fill)
 
 
+def move(source: Path, path: Path) -> Path:
+    """The file ``source`` renamed to ``path``, replacing what is there: one rename, so a reader
+    finds the file whole at one place or the other, and its bytes are never read or written
+    again. Across file systems a rename is impossible, and the error says so: copying instead
+    would be a second, non-atomic way to write (core.md § 4)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(source, path)
+    return path
+
+
 def replace_folder(fresh: Path, path: Path) -> None:
     """``fresh`` takes ``path``'s place whole: the old folder moved aside, the fresh one renamed in,
     the old one removed — a reader finds the old folder or the new, never a part of either, and the
@@ -215,12 +229,24 @@ def canonical_sha256(data: Any) -> str:
     """The SHA-256 of ``data``'s canonical JSON — keys sorted, no whitespace, UTF-8 — so two
     spellings of one value give one digest: the one digest of a value, as `sha256` is of a file
     (a case's ID, a fingerprint, a plan's digest, a part's files; models.md § 5.3)."""
-    text = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return digest(json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False))
+
+
+def digest(held: bytes | str) -> str:
+    """The SHA-256 of bytes held in memory, or of a text's UTF-8: the one digest of what is not a
+    file yet, or no longer — a text about to be written, a file's bytes read once, a path named as a
+    lock's subject — as `sha256` is of a file and `canonical_sha256` of a value."""
+    return hashlib.sha256(held.encode("utf-8") if isinstance(held, str) else held).hexdigest()
+
+
+def toml_text(data: dict) -> str:
+    """The text `write_toml` writes, for a file written among others, as one folder written whole
+    (`write_folder`)."""
+    return tomlkit.dumps(data)
 
 
 def write_toml(path: Path, data: dict) -> Path:
-    return atomic_write_text(path, tomlkit.dumps(data))
+    return atomic_write_text(path, toml_text(data))
 
 
 def read_toml(path: Path) -> dict:
@@ -238,6 +264,78 @@ def json_value(text: str) -> Any:
     — as plain Python, as `read_json` reads a file; a ValueError saying why for one that is not
     JSON."""
     return json.loads(text)
+
+
+@dataclass(frozen=True)
+class Read:
+    """A file femkit writes, as found (`read_record`): there or not, what it holds when it reads,
+    and why it does not."""
+
+    there: bool
+    value: Any = None
+    problem: str | None = None
+
+    @property
+    def reads(self) -> bool:
+        return self.there and self.problem is None
+
+
+#: A file of the one store — a study's kept definitions, a case's observables, what an output
+#: translator gives — is netCDF, and named so (core.md § 4; models.md § 3).
+NETCDF = ".nc"
+#: Held around every call into the netCDF-C library in this process, so no two threads — the web
+#: server's — are inside it at once: the person's earlier tool measured two threads there crashing
+#: the process (core.md § 4).
+NETCDF_LOCK = threading.Lock()
+
+
+def read_record(file: Path, model: type) -> Read:
+    """A file femkit writes, by its model — the one reader of every such file (core.md § 4): absent,
+    read, or there and not reading, with why — one that is no JSON, or whose shape is not the
+    model's: a file stating another `schema` among them. A file of the one store (`NETCDF`) is read
+    through netCDF4, under `NETCDF_LOCK`, as its model describes it: `{"attributes": {...},
+    "variables": {name: {"dimensions": [...], "attributes": {...}, "values": [...]}}}`, each value
+    a plain number of its stored type; its `schema` is among its attributes, held to its model as
+    a record's is."""
+    from femkit.core.schema import DefinitionError, validate   # the schema reads its files through this module
+    if Path(file).suffix == NETCDF:
+        return _read_netcdf(Path(file), model, validate, DefinitionError)
+    held = read_text(file)
+    if held is None:
+        return Read(False)
+    try:
+        return Read(True, validate(model, json_value(held), file))
+    except DefinitionError as exc:
+        return Read(True, None, exc.summary())
+    except ValueError as exc:
+        return Read(True, None, f"is not JSON: {exc}")
+
+
+def _read_netcdf(file: Path, model: type, validate: Callable, error: type[Exception]) -> Read:
+    """A file of the one store, read through netCDF4 under `NETCDF_LOCK` (`read_record`)."""
+    data = read_bytes(file)
+    if data is None:
+        return Read(False)
+    import netCDF4                                       # the control environment's, without xarray
+    import numpy
+    try:
+        with NETCDF_LOCK, netCDF4.Dataset(file.name, memory=data, auto_complex=True) as ds:
+            held = {"attributes": {k: _plain(ds.getncattr(k)) for k in ds.ncattrs()},
+                    "variables": {name: {"dimensions": list(v.dimensions),
+                                         "attributes": {k: _plain(v.getncattr(k)) for k in v.ncattrs()},
+                                         "values": numpy.ma.getdata(v[:]).tolist()}
+                                  for name, v in ds.variables.items()}}
+    except OSError as exc:
+        return Read(True, None, f"is not netCDF: {exc}")
+    try:
+        return Read(True, validate(model, held, file))
+    except error as exc:
+        return Read(True, None, exc.summary())
+
+
+def _plain(value: Any) -> Any:
+    """An attribute as netCDF4 gives it, as plain Python: a numpy number its value."""
+    return value.item() if hasattr(value, "item") and getattr(value, "shape", None) == () else value
 
 
 def _own_group(gid: int) -> bool:
@@ -312,15 +410,54 @@ def open_private(path: Path, mode: str) -> IO:
 # keys are read with the comments above them, their help (projects.md § 7).
 
 Key = tuple[str, ...]
+#: A TOML text read as a document: its comments, its order and its layout kept.
+TOMLDocument = tomlkit.TOMLDocument
 
 
-def read_document(path: Path, empty: str = "") -> tomlkit.TOMLDocument:
+def exact_number(text: str) -> Decimal | float:
+    """A TOML float, from the text the person wrote — `0.1`, `-3.0`, `1e-9`, `1_000.5` — as the
+    exact rational it states, a decimal held exactly: `0.1` is 1/10, never a binary float's value
+    (core.md § 11, "Exact"). TOML's `inf` and `nan` state no rational, and stay the binary floats
+    they name, which no number of a quantity is. The one reading of a TOML number's text: every
+    declared file's floats reach their model through it (`schema.load_text`)."""
+    held = Decimal(text)
+    return held if held.is_finite() else float(text)
+
+
+def number_text(value: Fraction) -> str | None:
+    """An exact number's decimal text, exactly — `1/40` is `0.025`, `-3/2` is `-1.5`, `5` is `5` —
+    what `exact_number` reads back as the same number; None for one with no decimal, whose
+    denominator has a prime but 2 and 5, as 1/3."""
+    rest, twos, fives = value.denominator, 0, 0
+    while rest % 2 == 0:
+        rest, twos = rest // 2, twos + 1
+    while rest % 5 == 0:
+        rest, fives = rest // 5, fives + 1
+    if rest != 1:
+        return None
+    places = max(twos, fives)
+    digits = str(abs(value.numerator) * 10 ** places // value.denominator).rjust(places + 1, "0")
+    whole, part = digits[:len(digits) - places], digits[len(digits) - places:]
+    return ("-" if value < 0 else "") + whole + ("." + part if places else "")
+
+
+def read_document(path: Path, empty: str = "") -> TOMLDocument:
     """``path`` as an editable document, its comments kept; ``empty`` when it does not exist."""
     path = Path(path)
-    return tomlkit.parse(path.read_text(encoding="utf-8") if path.exists() else empty)
+    return toml_document(path.read_text(encoding="utf-8") if path.exists() else empty)
 
 
-def write_document(path: Path, doc: tomlkit.TOMLDocument) -> Path:
+def toml_document(text: str) -> TOMLDocument:
+    """A TOML text as `read_document` reads a file, its comments and order kept — the door's text a
+    person typed, read here alone (core.md § 4); a ValueError, with why, for a text that is not
+    TOML."""
+    try:
+        return tomlkit.parse(text)
+    except tomlkit.exceptions.ParseError as exc:
+        raise ValueError(str(exc)) from None
+
+
+def write_document(path: Path, doc: TOMLDocument) -> Path:
     return atomic_write_text(path, tomlkit.dumps(doc))
 
 
@@ -457,6 +594,56 @@ def key_comments(text: str) -> list[KeyComment]:
     return found
 
 
+_STEP = re.compile(rf'\s*(?:\.\s*)?(?:({_PART})|\[(\d+)\])')
+
+
+def _steps(key: str) -> tuple[str | int, ...] | None:
+    """A key path as a file writes it (core.md § 2: `builds[1].options`, `axes."mesh:fine:size"`) as
+    its steps: each key as TOML reads it, each list's item by its index; None where it is none."""
+    steps: list[str | int] = []
+    at = 0
+    while at < len(key):
+        found = _STEP.match(key, at)
+        if found is None:
+            return None
+        name, index = found.groups()
+        steps.append(int(index) if index is not None else next(iter(tomllib.loads(f"{name} = 0"))))
+        at = found.end()
+    return tuple(steps)
+
+
+def key_line(text: str, key: str) -> int | None:
+    """The line, from 1, a TOML text writes the key ``key`` at — a key path as a file writes it — or,
+    where it writes no line of its own for it (a key of an inline table, a key its table leaves out),
+    the line of the nearest key or table along its path that it writes: where a finding at that key
+    is opened (core.md § 10). None where it writes none of them."""
+    steps = _steps(key) if key else None
+    if not steps:
+        return None
+    lines = text.splitlines()
+    best, depth = None, 0
+    raw: Key = ()
+    table: tuple[str | int, ...] = ()
+    lists: dict[Key, int] = {}
+    for found in key_comments(text):
+        if found.shown:
+            continue
+        if found.header:
+            raw = found.path
+            if lines[found.line - 1].lstrip().startswith("[["):     # a list of tables: its next item
+                lists[raw] = lists.get(raw, -1) + 1
+                table = (*raw, lists[raw])
+            else:                                                    # a table inside a list's newest item
+                inner = max((k for k in lists if raw[:len(k)] == k), key=len, default=None)
+                table = (*inner, lists[inner], *raw[len(inner):]) if inner is not None else raw
+            path = table
+        else:
+            path = (*table, *found.path[len(raw):])
+        if len(path) > depth and steps[:len(path)] == path:
+            best, depth = found.line, len(path)
+    return best
+
+
 def _written(statement: str) -> tuple[Key, bool, Any] | None:
     """The keys ``statement`` writes, whether it is a table header, and its value; None when
     it is no TOML key or header."""
@@ -512,6 +699,13 @@ def _inline(value: Any) -> Any:
         array = tomlkit.array()
         array.extend(_inline(v) for v in value)
         return array
+    if isinstance(value, (Fraction, Decimal)):     # an exact number, as the TOML number it is
+        text = str(value) if isinstance(value, Decimal) and value.is_finite() else number_text(Fraction(value))
+        if text is None:
+            raise ValueError(f"{value} has no decimal, and a TOML number is written as one")
+        if not any(mark in text for mark in ".eE"):            # a decimal as written: `1.9370`, `1E-9`
+            return tomlkit.items.Integer(int(text), tomlkit.items.Trivia(), text)
+        return tomlkit.items.Float(float(text), tomlkit.items.Trivia(), text)
     return tomlkit.item(value)
 
 
@@ -536,14 +730,22 @@ class Shown:
     value: Any
 
 
+@dataclass(frozen=True)
+class Inline:
+    """A table written on its key's line, `{value = 0.5, unit = "um"}` — a quantity, as a person
+    writes one (core.md § 11) — never under a header of its own."""
+
+    value: Mapping[str, Any]
+
+
 def commented_text(data: Mapping[str, Any], comment: Callable[[Key], str | None], prose: str = "") -> str:
     """``data``, plain values, as the TOML text of a file a person reads and edits as their own
     (projects.md § 7) — what `key_comments` reads back: ``prose``'s lines first, each a comment,
     and a blank line; then each key under ``comment(path)``, its path from the root as
     `key_comments` gives it — a list's index left out — as one comment line, none where it
-    gives None; a table under its own header, a list of tables each table under its own; a
-    `Shown` value commented out. A blank line stands before each key at the top and each
-    header; the keys of one table follow each other."""
+    gives None; a table under its own header, a list of tables each table under its own, an
+    `Inline` one on its key's line; a `Shown` value commented out. A blank line stands before
+    each key at the top and each header; the keys of one table follow each other."""
     doc = tomlkit.document()
     for line in prose.splitlines():
         doc.add(tomlkit.comment(line))
@@ -567,6 +769,8 @@ def _commented(table: Any, at: Key, data: Mapping[str, Any], comment: Callable[[
             shown = f"[{'.'.join(tomlkit.key(k).as_string() for k in path)}]" if held == {} else \
                 f"{tomlkit.key(key).as_string()} = {inline_text(held)}"
             table.add(tomlkit.comment(shown))
+        elif isinstance(value, Inline):
+            table.add(key, _inline(dict(value.value)))
         elif isinstance(held, dict):
             own = tomlkit.table(is_super_table=False)
             _commented(own, path, held, comment)

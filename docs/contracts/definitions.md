@@ -32,10 +32,21 @@ femkit/data/
 ├── channels.txt               the channel order every environment is solved with
 ├── control.txt                the control environment's packages, as `conda create --file` reads them
 ├── launcher.sh                the `femkit` command's text, which the install script fills and writes (envs.md § 7)
-├── environments/<name>.toml   one per engine environment
+├── process.toml               how every process femkit starts for an environment begins — femkit's own Python too: the variables it passes and removes, how a shell function a scheduler kind declares is passed, the system PATH, what it sets (envs.md § 4.4)
+├── naming.toml                every environment's name with the package manager: `femkit`, `femkit-<name>` (envs.md § 1)
+├── environments/<name>.toml   one per environment, an engine's or a tool's (§ 4.7): today ngsolve,
+│                              elmer, and the tools gmsh — geometry scripts and Gmsh's meshing —
+│                              model_prep — a project's definitions.py, and nothing else — postprocess
+│                              — every observables part's observe.py — and web
 ├── formulations/<family>.toml a formulation family, stated for every engine (models.md § 4)
-├── meshers/<id>.toml          a mesher and what it builds; decided: `gmsh.toml` alone, with the
-│                              hand-over to each engine (geometry.md § 8)
+├── meshers/<id>.toml          a mesher, a program of the mesh stage, which a mesh recipe names (workflow.md
+│                              § 2.3): gmsh and given; netgen with its measurement (plan § 4, X)
+├── stages.toml                the meshing sequence's name, a stage folder's made-from file, and the stage kinds —
+│                              each with where its environment comes from and the part whose files it brings (workflow.md § 2.1)
+├── programs.toml              every femkit program that runs inside an environment: its entry, time limit and variables, and its environment but a stage's, which its stage kind declares (envs.md § 4.4; `femkit/definitions/programs.py`)
+├── artifacts.toml             the artifact types between stages (workflow.md § 2.2)
+├── handovers/<name>.toml      a mesh's hand-over to an engine, keyed by the type it reads (geometry.md § 8)
+├── jobs/files.toml            every file of a calculation folder, a launch folder and a run (jobs.md § 1.1)
 ├── managers/<kind>.toml       how to drive a package manager (conda, mamba)
 ├── schedulers/<kind>.toml     how to talk to a scheduler (local, slurm)
 ├── units.toml                 the units a value may be written in, with exact factors (core.md § 11)
@@ -48,19 +59,19 @@ femkit/data/
 ├── states/<machine>.toml      each state machine declared as data (core.md § 7)
 ├── project/layout.toml        a project's parts, folders and object types (projects.md § 4)
 ├── web/page.toml              the web page's own structure (web.md § 8.1)
+├── web/theme.toml             every design value of the page, both themes (web.md § 10.1)
 └── templates/                 the settings file's template, and the project templates (projects.md § 7)
 ```
 
 `step_kinds.toml` holds `stationary` alone; its `frequency` kind joins with
-Maxwell (plan § 4, M9). Not built yet, decided by the person (ADRs
-[0011](../decisions/0011-project-structure.md)–[0014](../decisions/0014-materials.md)):
-couplings (after M9) and the mesh step's environment (X, where it is still
-open):
+Maxwell (plan § 4, M9). Not built yet, decided by the person: couplings
+(after M9; ADRs [0011](../decisions/0011-project-structure.md)–[0014](../decisions/0014-materials.md)),
+and output translators (M6; [ADR 0025](../decisions/0025-one-engine-per-study-observables-after.md)):
 
 ```text
 femkit/data/
-├── environments/gmsh.toml     the mesh step's tool environment, Gmsh with its Python interface — proposed, open with X (geometry.md § 5)
-└── couplings/<coupling>.toml  a coupling joining formulation families (models.md § 4.5)
+├── couplings/<coupling>.toml  a coupling joining formulation families (models.md § 4.5)
+└── translators/<name>         a standard output translator: its declaration and its script (workflow.md § 2.4)
 ```
 
 A definition changes only when femkit changes: it is reviewed, versioned
@@ -76,13 +87,18 @@ Engine code lives in `femkit/engines/<engine>/` and provides only:
 
 - **readers** — turn the engine's own output (a solver log, a result file) into
   named quantities, each registered under an ID;
-- **version probe** — report the installed solver version;
+- **a version reader**, `read_version` — only for an engine whose version
+  command prints its version too irregularly for its last line to be it,
+  Elmer's; the command itself is data (§ 4);
 - **check programs** — small numerical problems that run inside the engine's
-  environment and write the common summary (§ 5.3).
-- **translators, parsers and finalizers** — not built yet (plan § 4, M6): per formulation
-  the engine declares, turn a case into input files, a run's output into
-  observations, and apply each kind of customization
-  ([`models.md`](models.md) § 9.1). An environment definition also declares
+  environment and write the common summary (§ 5.3);
+- **a hand-over** — turns the mesh stage's mesh into the engine's own, run
+  inside its environment ([`geometry.md`](geometry.md) § 8);
+- **input writers, a solve's log reader and finalizers** — not built yet
+  (plan § 4, M6): per formulation the engine declares, turn a case into its
+  solver's input files, say from a solve's log and status whether it
+  finished and whether it converged — never reading a field's values — and
+  apply each kind of customization ([`models.md`](models.md) § 9.1). An environment definition also declares
   its abilities, extension points and engine-only options —
   not built yet (plan § 4, M5) ([`models.md`](models.md) § 6.1).
 
@@ -103,9 +119,10 @@ catalogue — the place kinds' (`places.py`) and the property list's
 rules — since the catalogue sits below those packages ([`framework.md`](framework.md)
 § 1); a state table's is the core's (`StateTable`). A template has no model of
 its own: it is a project, read through the part schemas
-([`projects.md`](projects.md) § 7). The layout's model and the page's live in
-the packages above that read them (`projects`, `page.py`), so `schema check`
-loads those two files beside the table rather than from it. A definition's identity is its file stem —
+([`projects.md`](projects.md) § 7). The layout's model, the page's, the theme's
+and the jobs catalogue's live in the packages that read them (`projects`,
+`page.py`, `jobs/layout.py`), so `schema check` loads those four files beside
+the table rather than from it; each loads once per invocation (`ctx.cached`). A definition's identity is its file stem —
 `environments/ngsolve.toml` defines the environment `ngsolve` — and the stem is
 not repeated inside the file.
 
@@ -116,10 +133,25 @@ file, the key path and the reason. It fails when:
 
 - a key is unknown, a value has the wrong type, or a required key is missing;
 - a reference names nothing: a build's source, a check's build or source, a
-  reader or engine ID no adapter registered, an agreement group with one member;
+  reader or engine ID no adapter registered, a hand-over's program its
+  engine's package does not hold, a stage or mesher program femkit's stage
+  programs do not hold, a stage kind's `environment` that is neither an
+  environment's name nor `engine`, an artifact type `artifacts.toml` does not
+  declare, a place no `kinds.toml` declares, an agreement group with one
+  member;
 - an ID repeats within its file, or a placeholder is not one its field
   accepts (§ 4.3);
-- a mesher builds `import` and names no format it imports.
+- two hand-overs give one engine the same mesh type at the same geometry
+  order, so the order a case asks for would not choose one
+  ([`geometry.md`](geometry.md) § 8);
+- two engine environments' definitions declare one engine, so the engine
+  `study prep --engine` names would not name one environment — the catalogue resolves an engine
+  to its definition's environment alone ([`framework.md`](framework.md) § 5);
+- two tool environments' definitions both take the packages projects
+  declare (`projects`), since a project's scripts run in one environment
+  (§ 4.7);
+- the clean start removes a variable no pattern of its own pass list takes —
+  such an entry removes nothing (`process.toml`, [`envs.md`](envs.md) § 4.4).
 
 Loading reads only definition files, and the science documents a formulation
 names (`models.md` § 4.3). It probes nothing, starts no process and
@@ -135,7 +167,11 @@ guides and help text link to the reference instead of restating fields.
 `femkit schema check` loads every shipped definition; a test runs it.
 Beside the table, it checks what only the registry can: each state table's
 operations, by their names and their requests' fields; the layout by its own
-rules ([`projects.md`](projects.md) § 4); each template a project named by one
+rules ([`projects.md`](projects.md) § 4); each stage kind against the layout,
+as its one reader reads it — the part kind it `brings` one the layout
+declares, the file its program runs a stage program of femkit's or one every
+such part holds — since the layout's model and reader are the projects
+domain's, above the catalogue; each template a project named by one
 step of the name rule; the page's declaration ([`web.md`](web.md) § 8.1).
 
 ## 3. `channels.txt` and `control.txt`
@@ -163,15 +199,17 @@ conda-forge           # comments and blank lines allowed
   line), which every engine environment shares.
 
 The control environment is made by the manager kind's `create` like any engine
-environment — the declared channels only, none of the person's own conda
-settings ([`envs.md`](envs.md) § 4.4) — with `--file control.txt` for its
-packages.
+environment, by its name, `femkit` ([`envs.md`](envs.md) § 1) — the declared
+channels named on its command line, each by its full address as the kind's
+`channel` writes one, none of the person's own ([`envs.md`](envs.md) § 4.4) —
+with `--file control.txt` for its packages.
 
 ## 4. Engine environment
 
 ```toml
 engine = "ngsolve"                     # registered engine adapter ID
-version = "6.2.2606"                   # what the version probe must report
+version = "6.2.2606"                   # what its version command must state
+version_command = ["python", "-c", "import ngsolve; print(ngsolve.__version__)"]
 description = "Netgen/NGSolve with MPI and threads"
 default = true                         # part of `env install --all`
 thread_variables = ["NGS_NUM_THREADS"]   # set to a run's threads per rank
@@ -179,7 +217,6 @@ fixed_variables = { OMP_NUM_THREADS = "1" }   # set to these values in every che
 
 [packages]                             # besides its toolchain's
 conda = ["openmpi", "mumps-mpi", "hypre", "..."]
-pip = []
 forbid = ["elmer", "amgx", "rocm"]     # families that must be absent from the solved lock
 
 [toolchain]                            # its own compilers and build tools (§ 4.6)
@@ -188,7 +225,7 @@ tools = ["cmake", "make", "..."]
 compilers = { c = "CC", cxx = "CXX", fortran = "FC" }
 mpi = { c = "mpicc", cxx = "mpicxx", fortran = "mpifort" }
 
-[provides]                             # what the install's audit step finds inside the prefix
+[provides]                             # what the audit finds inside the prefix, beyond the toolchain's tools
 executables = ["python", "mpirun"]
 modules = ["ngsolve", "netgen"]
 
@@ -221,6 +258,15 @@ NETGEN_DIR = "{prefix}/lib/cmake/netgen"
 USE_CUDA = true
 ```
 
+Every environment, an engine's or a tool's (§ 4.7), states its
+`version_command`: the command, run in its prefix, that states its version.
+The install's `manifest` step runs it and requires `version`
+([`envs.md`](envs.md) § 4.1): what it states is the last non-empty line it
+prints — unless its engine registers a version reader for output too irregular
+for that, Elmer's `ElmerSolver -v`, whose `Version: 26.2-…` line is no last
+line. `provides` lists what the audit finds beyond the toolchain's tools,
+which the `toolchain` step proves (§ 4.6).
+
 ### 4.1 Where each part comes from
 
 An environment holds what its file lists, and nothing from the host. Each part
@@ -232,7 +278,8 @@ has one source:
 | libraries, MPI, Python and its packages | `[packages] conda` | the package manager, in the same solve | conda-forge |
 | the GPU compilers and libraries of the CUDA environment | `[cuda] packages` (§ 4.5) | the package manager, in the same solve | conda-forge |
 | each engine, and anything femkit needs at a version, option or patch conda-forge does not offer | `[[sources]]`, `[[builds]]` (§ 4.2) | femkit's build steps, inside the prefix, with its toolchain | an archive pinned by its commit and SHA-256 |
-| a Python package conda-forge does not have | `[packages] pip` | not built yet: an environment that lists one is refused; designed with how a script's imports are provided (plan § 4, X) | — |
+| a package a project's observables scripts need, in `postprocess` (§ 4.7) | the project file's `[postprocess] packages` ([`models.md`](models.md) § 2) | the package manager, on each machine: in the create's solve, or into the prefix as it stands when a project adds it ([`envs.md`](envs.md) § 4.1) | conda-forge |
+| a Python package conda-forge does not have | `[packages] pip` | nothing: an environment that lists one is refused. What a geometry script imports is what the `gmsh` environment's definition lists ([`geometry.md`](geometry.md) § 2) | — |
 
 The rule: everything comes from conda-forge, solved once and together, unless
 femkit must build it. pip itself is in every environment with Python, but
@@ -264,13 +311,13 @@ absent from it, and is checked against that lock, never against the host.
 
 ### 4.3 Placeholders
 
-One grammar everywhere, `{name}` or `{name:argument}` ([`core.md`](core.md)
-§ 2.1). Each templated field declares the names it accepts on its schema model
+The core's one grammar ([`core.md`](core.md) § 2.1). Each templated field
+declares the names it accepts on its schema model
 (`placeholders`), and `docs/reference/` lists them per field — build options
 take `{prefix}`, `{source:<id>}` and `{build:<id>}`, for example. Any other
 name fails at load, and an `<id>` must name a declared source or build. A
-manager command must also pass each name it is rendered with — `{prefix}` on
-a prefix, `{file}` for a create from a lock — or it fails at load.
+manager command must also pass each name it is rendered with — `{name}` on
+an environment, `{file}` for a create from a lock — or it fails at load.
 
 ### 4.4 Threads
 
@@ -321,7 +368,9 @@ What loading refuses:
   `device` may not name a `[cuda]` build or source, and a build's plain
   `options` may not name one (its `cuda_options` may);
 - a definition named `control`, the control environment's name
-  ([`envs.md`](envs.md) § 1), or ending in `-cuda`.
+  ([`envs.md`](envs.md) § 1), or `engine`, the word a stage kind's
+  `environment` takes for the engine chosen to solve's ([`workflow.md`](workflow.md)
+  § 2.1), or ending in `-cuda`.
 
 The two are separate prefixes with their own fingerprints and states;
 `build.cuda_architectures` enters only the CUDA one's. A job that asks for a GPU
@@ -350,8 +399,10 @@ processor — and CMake to its 4.5 series (ADR 0006).
 ### 4.7 A tool environment
 
 An environment that runs no engine — what femkit's own surfaces need, such as
-the web server and the tool its page is built with ([`web.md`](web.md)) —
-states no `engine`; it states the command that reports its version instead:
+the web server and the tool its page is built with ([`web.md`](web.md)), or
+Gmsh, for the geometry stage and Gmsh's meshing ([`workflow.md`](workflow.md) § 2) — states no `engine`;
+its `version_command`, as every environment's (§ 4), states its version, read
+by its last line:
 
 ```toml
 description = "the web surface: femkit's server, and Node.js to build its page"
@@ -367,19 +418,65 @@ executables = ["python", "node", "npm"]
 modules = ["flask"]
 ```
 
-- Exactly one of `engine` and `version_command` is given.
+- A check program of its own states its version under the environment's own
+  name — `gmsh`'s, `{"gmsh": …}` — since there is no engine to name it by (§ 5.3).
 - `control_packages = true` takes the control environment's packages
   (`control.txt`), solved with its own: a tool environment that runs femkit's
   own code — `web` runs femkit's server — needs femkit's own libraries, and
   taking them by reference keeps the two lists one. A change of `control.txt`
   changes its install fingerprint.
-- A tool environment has no `toolchain`, `sources`, `builds`, `checks`,
-  `agreements`, `cuda`, thread or fixed variables, and is never `default`: it is
-  installed when a person asks (`env install web`).
-- It installs as any environment does — the declared channels, a solved and
-  saved lock, the audit of `provides`, the version probe — in the manager's
-  femkit places ([`envs.md`](envs.md) § 4.4), and is `ready` once its manifest is
-  written: it has no checks to run.
+- A femkit program that runs in a tool environment — the definitions' in
+  `model_prep`, the observe stage's in `postprocess` (with M6), the page's build in
+  `web` — is declared in `programs.toml`, with its time limit there, never
+  in the environment's file ([`envs.md`](envs.md) § 4.4); a stage's program
+  — the observe stage's — takes its environment from its stage kind alone
+  ([`workflow.md`](workflow.md) § 2.1).
+- A tool environment whose definition states `projects = true` —
+  `postprocess` — takes, beside its own, every package the projects under
+  the projects root declare for their scripts, in their project files'
+  `[postprocess] packages` ([`models.md`](models.md) § 2): each a conda
+  constraint as the project writes it, every one once, from the declared
+  channels on each machine — solved with its own when it is built, and a
+  package a project adds later delivered into it as it stands by `env
+  install` ([`envs.md`](envs.md) § 4.1) — so they enter its lock and its
+  manifest records them, but never its install fingerprint, which is
+  femkit's own set ([`envs.md`](envs.md) §§ 2, 4.3): a project's package
+  never makes it `outdated`. Only new packages are taken: what goes into it
+  is femkit's recipe alone ([`envs.md`](envs.md) § 4.4), so an entry naming a
+  package its recipe declares or pins — its own constraints, the control
+  environment's where it takes them, and Python (`EnvironmentDefinition.held`)
+  — is never delivered, and the project file's check says so at that entry,
+  `package-held`: a warning for the name alone, which the environment holds
+  already; an error for a version it is held to, which the recipe decides. Each project file's `[postprocess]` is read
+  alone, through the project file's schema, never by opening the project,
+  by the models domain's one function (`models/project.py`, `declared`): a
+  project whose other parts or keys do not load still declares its packages,
+  and a project file whose table does not read adds none, noted in the
+  install's report. With none declared, it is its definition alone. A project names, beside a package its scripts import by another
+  name, that name (`{ conda = "scikit-image", module = "skimage" }`): what
+  `observe.py` may import is the modules `postprocess` provides and those its
+  own project's packages name — never another project's. The projects lie
+  above the envs domain, so femkit's start hands it what reads them
+  ([`api.md`](api.md) § 6). No other environment takes any — an engine's
+  definition that states `projects` is refused, and a solver's, a geometry
+  script's and `definitions.py`'s stay as femkit ships them.
+- A tool environment has no `toolchain`, `sources`, `builds`, `agreements`,
+  `cuda`, thread or fixed variables. It is `default` when every project needs
+  it — `gmsh`, which every geometry and every Gmsh mesh runs in, and
+  `model_prep` and `postprocess`, where the person's Python runs — and
+  otherwise installed when a person asks (`env install web`).
+- It installs as any environment does — the declared channels, the Python
+  minor `control.txt` names (§ 3) when it provides `python`, a solved and saved lock, the audit of
+  `provides`, its version command — by the manager, as every environment is
+  ([`envs.md`](envs.md) § 4.4): femkit's own programs run in it as in an
+  engine's — Gmsh's meshing in `gmsh` — so it shares their Python. Measured
+  2026-11-25: `gmsh` declared with Python unpinned was solved to Python 3.15.2,
+  beside 3.12.16 everywhere else. With no checks it is `ready` once
+  its manifest is written; its checks, when it declares them, are `command`
+  checks read by the generic readers (§ 5), since there is no engine adapter to
+  read them: `gmsh`'s builds the Laplace square from its template's script,
+  meshes it with Gmsh's meshing program, and compares each region's area with the
+  geometry's.
 
 ## 5. Checks
 
@@ -390,11 +487,11 @@ numbers it must produce. The runner is generic; only readers know an engine.
 [[checks]]
 id = "hcurl-mpi"
 kind = "command"
-run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}"]   # distributes when ranks > 1
+run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}", "{threads}"]   # distributes when ranks > 1
 ranks = 2
 threads = 1
 read = "summary"                       # reader ID
-expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 2 } }
+expect = { relative_residual = { max = 1e-9 } }   # the ranks and threads reported: the runner's to compare
 agree = "hcurl-field"                  # agreement group, § 5.2
 timeout = 300
 
@@ -418,7 +515,7 @@ rtol = 1e-9
 | kind | runs |
 |---|---|
 | `command` | `run`, through `launch.mpi` ([`config.md`](config.md) § 3.1) when `ranks > 1` |
-| `ctest` | one named test from a build's test tree, located through CTest's own JSON listing; its working directory must lie inside the build tree. The test launches its own ranks; `ranks` states what its log must report. With `upstream_verdict = false` the test's own pass or fail is set aside and only `expect` and its agreement judge it — for a test whose stored reference does not hold for the pinned libraries, which the definition says |
+| `ctest` | one named test from a build's test tree, located through CTest's own JSON listing; its working directory must lie inside the build tree. The test launches its own ranks; `ranks` states what its log must report (§ 5.2). With `upstream_verdict = false` the test's own pass or fail is set aside and only `expect` and its agreement judge it — for a test whose stored reference does not hold for the pinned libraries, which the definition says |
 | `pytest` | named upstream test nodes, given relative to the source tree, from the deepest folder holding them all, with plugin autoloading and the invocation's pytest options off and the declared `plugins` loaded first (`-p`; e.g. `mpi4py.MPI`, so MPI starts before the tests import an MPI build); judged from their JUnit report |
 
 Every check runs inside its environment through the manager, in a fresh
@@ -437,6 +534,12 @@ otherwise its quantities are judged (§ 5.2).
 
 ### 5.2 What a check proves
 
+- The run is the one asked for: the runner compares the `ranks` and `threads`
+  the reader reports with the check's own. A check on more than one rank or
+  thread fails unless they are reported, and any reported must equal the
+  check's — so its outcome proves what was asked ran
+  ([`framework.md`](framework.md) § 4). `expect` never names them; loading
+  refuses it.
 - Every `expect` entry is compared with the reader's quantities; a quantity the
   reader did not produce fails the check.
 - Checks sharing an `agree` group must give the declared quantity within `rtol`
@@ -457,17 +560,20 @@ otherwise its quantities are judged (§ 5.2).
 ### 5.3 Readers
 
 A reader turns one finished check's output into quantities, or refuses it
-with the reason. It is given the check's `{work}` folder and log, the test's
-working directory for a `ctest`, the time the check started, and its ranks,
-threads and the pinned `version`. Output older than the start is not this
-run's; for a `ctest` the start is the time of a marker the runner writes into
-the test's working directory, so both times come from the file system holding
-the outputs. A reader refuses output that reports another version of the
-engine than the pinned one.
+with the reason. It opens no file: the runner reads for it, through the core
+([`framework.md`](framework.md) § 1 rule 1), the files the check wrote in this
+run that it asks for by name or pattern — in the folder the check writes into,
+its `{work}` folder or a `ctest`'s working directory — and gives it the check's
+ranks, threads and named tests, and the pinned `version` with what it is a
+version of: the engine, or a tool environment's own name. Output older than
+the start is not this run's: the start is the time of a marker the runner
+writes into that folder, so both times come from the file system holding the
+outputs. A reader refuses output that reports another version than the pinned
+one.
 
 | reader | owned by | reads |
 |---|---|---|
-| `summary` | the runner | `{work}/summary.json`, written by a check program for femkit: `quantities` as finite numbers or lists of them, plus the runtime `versions` it observed, whose entry for the engine must be the pinned version (`femkit/engines/summary.py`) |
+| `summary` | the runner | `{work}/summary.json`, written by a check program for femkit: `quantities` as finite numbers or lists of them, plus the runtime `versions` it observed, whose entry for the engine — for a tool environment, its own name — must be there and be the pinned version (`femkit/engines/summary.py`) |
 | `junit` | the runner | the `pytest` kind's JUnit report: exactly the named tests, once each, none failed, errored or skipped |
 | an engine's | its package, as `READERS` | output femkit does not write, such as a solver's own test log; an environment may name only its engine's readers and the runner's |
 
@@ -480,12 +586,12 @@ by ID and named in the kind.
 
 | directory | one file per | declares |
 |---|---|---|
-| `managers/` | conda; mamba, 1.x and 2.x (every form measured on 1.5.9 and 2.9.0); micromamba once measured (plan § 4, M1) | create from constraints (the control environment's: `--file control.txt`), overriding the person's own conda channels and, where the manager can, default packages / from a lock; run in a prefix (and, not built yet, the text its `run` prints when it cannot start a command, [`envs.md`](envs.md) § 4.4); export the lock; create from a lock and remove, each naming the declared channels as a create does where the kind needs them (`channels_named`: conda does, mamba refuses them on a removal) ([`envs.md`](envs.md) § 4.4); report version, root and platform; `activate`: the kind's two ways a shell enters a prefix, between which this machine's `activation.command` chooses ([`config.md`](config.md) § 3.1) — the shell function, with the hook file under `{root}` that defines it (for conda `{root}/etc/profile.d/conda.sh`, checked on disk, never derived from the binary's path, which on a cluster may be a module's wrapper), and the activate script (`source activate {prefix}`) ([`envs.md`](envs.md) § 6.2) |
-| `schedulers/` | local, slurm | the parts of the `SchedulerKind` model (`docs/reference/`); [`jobs.md`](jobs.md) § 7 says what each is for |
+| `managers/` | conda; mamba, 1.x and 2.x (every form measured on 1.5.9 and 2.9.0 by prefix; by name, the `environments` and `envs_dirs` queries, its shell hook and channels by their full addresses, not measured yet, plan § 4, X); micromamba once measured (plan § 4, M1) | each command on one environment by its name, `{name}` — the manager decides where it lies ([`envs.md`](envs.md) § 1): create from constraints (the control environment's: `--file control.txt`) / from a lock; run in an environment (and, not built yet, the text its `run` prints when it cannot start a command, [`envs.md`](envs.md) § 4.4); export the lock; create from a lock and remove, each naming the declared channels as a create does where the kind needs them (`channels_named`: conda does, mamba refuses them on a removal) ([`envs.md`](envs.md) § 4.4); `channel`, how one declared channel is named — by its full address, `https://conda.anaconda.org/{channel}`, which no channel alias or custom channel of the person's re-routes; report version, root and platform; `environments`: every environment the manager lists, by prefix, as JSON; `names`, where the manager says its own name for each (conda's `envs_details`), and `envs_dirs`, the folders where it keeps environments by their names — together where femkit takes an environment's prefix, the one the manager names so, and where it finds a folder in the way it does not list ([`envs.md`](envs.md) §§ 1, 3); `install`: the constraints that follow installed into an environment as it stands, naming the declared channels — what delivers a package a project adds into `postprocess` ([`envs.md`](envs.md) § 4.1; not measured yet on either kind); `settings`: the manager's own answer of which of the person's settings it read where (conda's `config --show-sources --json`), each of those that would change what goes into an environment set aside by the flags its solving commands carry (`neutralised`, saying how) or refused before any create (`refused`, with the value refused and what to change) ([`envs.md`](envs.md) § 4.4; none declared for mamba, not measured); `activate`: the kind's two ways a shell enters an environment by its name, between which this machine's `activation.command` chooses ([`config.md`](config.md) § 3.1) — the shell function, with the manager's own command that prints its hook for bash (`{exe} shell.bash hook` for conda), evaluated first, never a file derived from the binary's path, which on a cluster may be a module's wrapper; and the activate script (`source activate {name}`) and the `script` it finds on `PATH` ([`envs.md`](envs.md) § 6.2); and `active`, the variable either form sets to the prefix it entered, which a run script reads to verify it entered the environment it was prepared for ([`jobs.md`](jobs.md) § 4) — `CONDA_PREFIX` for both kinds, the variable conda's activation sets; that mamba's forms set it is not measured. A kind sets none of the manager's own variables: the manager runs as the person set it up ([`envs.md`](envs.md) § 4.4) |
+| `schedulers/` | local, slurm | the parts of the `SchedulerKind` model (`docs/reference/`) — its `passes` among them, the variables a job of the kind sees that a clean start passes, and its `functions`, the shell functions it needs passed ([`envs.md`](envs.md) § 4.4); [`jobs.md`](jobs.md) § 7 says what each is for |
 
 The manager in use and the scheduler a machine has are facts of that machine
 ([`jobs.md`](jobs.md) § 9); the language each one speaks is
 here, once, for every machine of that kind. A manager kind assumes the conda
-family's shape — a prefix given by `-p`, constraints on one command line, a lock
-printed to standard output; a manager of another shape (pixi, say, which the
-plan excludes) would change this model, not just add a file.
+family's shape — an environment named by `-n`, constraints on one command line,
+a lock printed to standard output; a manager of another shape (pixi, say, which
+the plan excludes) would change this model, not just add a file.

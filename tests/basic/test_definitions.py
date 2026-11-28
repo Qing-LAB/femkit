@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.kit import planned, refused, run
+from tests import kit
+from tests.kit import ctx as kit_ctx, planned, refused, run
 from femkit.core.dirs import CONTROL
 from femkit.core.errors import UsageError
-from femkit.core.persist import write_toml
+from femkit.core.persist import exact_number, write_toml
 from femkit.core.schema import DefinitionError, load_toml, validate
 from femkit.definitions import catalogue
 from femkit.core.view import RefusalAnswer
@@ -31,13 +32,24 @@ def test_the_reference_pages_match_the_models():
 
 
 def _load_problems(tmp_path, text: str) -> dict[str, str]:
+    """An environment definition's problems, as the catalogue loads it."""
     path = tmp_path / "environment.toml"
     path.write_text(text)
     try:
-        load_toml(path, EnvironmentDefinition)
+        load_toml(path, EnvironmentDefinition, catalogue.environment_context())
     except DefinitionError as exc:
         return dict(exc.problems)
     return {}
+
+
+def test_an_environments_engine_is_checked_against_the_engines_its_context_gives():
+    """Fails if an environment definition's validator reads the registered engines from a global
+    instead of the context its loader gives it — an engine that context does not register then
+    loads (core.md § 2)."""
+    data = tomllib.loads(_shipped("ngsolve"))
+    with pytest.raises(DefinitionError) as caught:
+        validate(EnvironmentDefinition, data, "ngsolve.toml", {"engines": {"elmer": frozenset()}})
+    assert "engine" in [path for path, _ in caught.value.problems]
 
 
 def _shipped(name: str) -> str:
@@ -212,23 +224,44 @@ TOOL = {"description": "a tool", "version": "v1", "version_command": ["tool", "-
 
 
 @pytest.mark.parametrize("change, at", [
-    ({"engine": "ngsolve"}, "engine"),                       # an engine and a tool's version command
-    ({"version_command": None}, "engine"),                   # neither
+    ({"version_command": None}, "version_command"),          # no command to state its version
     ({"fixed_variables": {"OMP_NUM_THREADS": "1"}}, "fixed_variables"),
-    ({"default": True}, "default"),
     ({"thread_variables": ["X"]}, "thread_variables"),
 ])
-def test_a_tool_environment_runs_no_engine_and_is_never_a_default(change, at):
-    """Fails if a definition states both an engine and a tool's version command, or neither, or
-    a tool environment carries variables for an engine's runs or a default install
-    (definitions.md § 4.7)."""
+def test_a_tool_environment_runs_no_engine(change, at):
+    """Fails if a definition states no command that states its version — every environment's,
+    an engine's too (definitions.md § 4) — or a tool environment carries variables for an
+    engine's runs (definitions.md § 4.7)."""
     from femkit.core.schema import validate
     data = {**TOOL, **change}
     if data.get("version_command") is None:
         data.pop("version_command")
     with pytest.raises(DefinitionError) as caught:
         validate(EnvironmentDefinition, data, "tool.toml")
-    assert at in [path for path, _ in caught.value.problems]
+    assert any(path == at or f"`{at}`" in reason for path, reason in caught.value.problems), caught.value.problems
+
+
+TOOL_CHECK = {"id": "c", "kind": "command", "run": ["python", "-m", "a.check", "{work}"], "read": "summary"}
+
+
+@pytest.mark.parametrize("change, at", [
+    ({}, None),                                                       # a default with a command check: loads
+    ({"read": "elmer-solver-log"}, "checks[0].read"),                 # an engine's reader: it has no engine
+    ({"kind": "ctest", "build": "b", "test": "t", "run": None}, "checks[0].kind"),   # nothing built to test
+])
+def test_a_tool_environment_may_be_a_default_checked_by_commands_the_generic_readers_read(change, at):
+    """Fails if a tool environment every project needs cannot be installed by default with a
+    check of its own — the mesh step's `gmsh` — or loads with a check no generic reader reads, or
+    of a kind that tests a build it does not have (definitions.md § 4.7)."""
+    from femkit.core.schema import validate
+    data = {**TOOL, "default": True, "checks": [{**TOOL_CHECK, **change}]}
+    if at is None:
+        env = validate(EnvironmentDefinition, data, "tool.toml")
+        assert env.default and env.tool and [c.id for c in env.checks] == ["c"]
+        return
+    with pytest.raises(DefinitionError) as caught:
+        validate(EnvironmentDefinition, data, "tool.toml")
+    assert at in [path for path, _ in caught.value.problems], caught.value.problems
 
 
 def test_the_web_environment_takes_the_control_environments_packages_by_reference(manager):
@@ -244,8 +277,8 @@ def test_the_web_environment_takes_the_control_environments_packages_by_referenc
 
 
 def test_a_tool_environment_without_control_packages_holds_only_its_own(manager, definitions):
-    """Fails if the create planned for a tool environment that does not ask for femkit's
-    libraries installs them, or the Python femkit's own programs need (definitions.md § 4.7)."""
+    """Fails if the create planned for a tool environment that neither asks for femkit's libraries
+    nor provides Python installs them, or a Python (definitions.md § 4.7)."""
     data = definitions
     (data / "environments" / "tool.toml").write_text(
         'description = "a tool"\nversion = "v1"\nversion_command = ["tool", "--version"]\n'
@@ -256,18 +289,30 @@ def test_a_tool_environment_without_control_packages_holds_only_its_own(manager,
     assert not set(catalogue.load_control().dependencies) & set(create)
 
 
+def test_a_tool_environment_that_provides_python_holds_the_python_every_environment_shares(manager, definitions):
+    """Fails if a tool environment that provides Python — the mesh step's, which runs femkit's own
+    programs — is solved to whatever Python the solver picks: measured 2026-11-25, `gmsh` unpinned
+    took Python 3.15.2 beside 3.12.16 everywhere else (definitions.md § 4.7)."""
+    (definitions / "environments" / "pytool.toml").write_text(
+        'description = "a tool with Python"\nversion = "v1"\nversion_command = ["tool", "--version"]\n'
+        '[packages]\nconda = ["tool=1"]\n[provides]\nexecutables = ["python", "tool"]\n')
+    plan = planned("env.install", names=["pytool"])[1]
+    create = list(next(s for s in plan.steps if s.id.endswith("/create")).argv)
+    assert f"python={catalogue.load_control().python_minor}" in create
+
+
 def test_conda_names_the_declared_channels_on_a_create_from_a_lock_and_a_removal_and_mamba_on_neither():
     """Fails if conda's create from a saved lock or its removal leaves out the declared channels —
-    under femkit's HOME it would stop on the terms of the base configuration's `defaults`, channels
-    femkit never uses — or mamba's names them, which mamba 2.9.0 refuses on a removal (envs.md
-    § 4.4; measured forms)."""
+    it would stop on the terms of the base configuration's `defaults`, channels femkit never uses —
+    or mamba's names them, which mamba 2.9.0 refuses on a removal (envs.md § 4.4; measured forms)."""
     from femkit.definitions.catalogue import load_control, load_managers
     from femkit.envs.manager import Manager
     kinds, channels = load_managers(), load_control().channels
     for kind, named in (("conda", True), ("mamba", False)):
         m = Manager(Path(f"/m/{kind}"), kind, kinds[kind], {})
-        for argv in (m.create_from_lock(Path("/p"), Path("/lock.txt"), channels), m.remove(Path("/p"), channels)):
-            assert (argv[-len(channels) * 2:] == [a for c in channels for a in ("-c", c)]) is named, (kind, argv)
+        each = [m.argv(kinds[kind].channel, channel=c) for c in channels]   # as the kind names one
+        for argv in (m.create_from_lock("femkit-x", Path("/lock.txt"), channels), m.remove("femkit-x", channels)):
+            assert (argv[-len(channels) * 2:] == [a for c in each for a in c]) is named, (kind, argv)
             assert ("--override-channels" in argv) is named, (kind, argv)
 
 
@@ -313,7 +358,8 @@ def test_a_formulation_that_misstates_itself_does_not_load(change, at):
     from femkit.core.units import Units
     from femkit.definitions.catalogue import load_places, load_units
     from femkit.definitions.formulations import FormulationDefinition
-    data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text()) | change
+    data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text(),
+                         parse_float=exact_number) | change
     with pytest.raises(DefinitionError) as caught:
         validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units()), "places": frozenset(load_places())})
     assert at in [path for path, _ in caught.value.problems]
@@ -346,34 +392,273 @@ def test_a_formulation_names_its_properties_from_the_list_and_repeats_none_of_it
         assert [where for e in caught.value.errors for where, _ in e.problems] == [at]
 
 
+def _shipped_toml(relative: str) -> dict:
+    return tomllib.loads((data_root() / relative).read_text())
+
+
+def _context() -> dict:
+    """What the catalogue gives a stage kind, an artifact type, a mesher or a hand-over beside its
+    file (core.md § 2): the environments femkit declares, the artifact types, femkit's stage programs, the
+    documents a stage is handed, the places, the engines' packages and the project layout's part
+    kinds with the files each holds by a fixed name."""
+    from femkit.definitions.catalogue import load_artifacts, load_places, stage_programs
+    from femkit.engines import package_dir, registered
+    from femkit.engines.stages import documents
+    from femkit.definitions.catalogue import load_environments
+    from femkit.projects import layout
+    return {"environments": set(load_environments()), "artifacts": frozenset(load_artifacts()),
+            "programs": stage_programs(), "documents": frozenset(documents.SHAPES), "places": frozenset(load_places()),
+            "engine_packages": {engine: package_dir(engine) for engine in registered()}, "parts": layout.read().fixed()}
+
+
 @pytest.mark.parametrize("change, at", [
-    ({"provided_by": "comsol"}, "provided_by"),                 # no such environment
-    ({"imports": []}, "imports"),                              # builds `import`, imports nothing
+    ({"provided_by": "nosuch"}, "provided_by"),                            # no such environment
+    ({"program": "nowhere.py"}, "program"),                                # no stage program of femkit's
+    ({"reads": {"geometry": "geometry/step"}}, "reads.geometry"),          # no such artifact type
+    ({"reads": {"mesh": "geometry/xao"}, "arguments": ["{recipe}", "{mesh}", "{regions}"]}, "reads.mesh"),
+    ({"arguments": ["{recipe}", "{geometry}", "{mesh}", "{out}"]}, "arguments"),   # a file it is not handed
+    ({"arguments": ["{recipe}", "{geometry}", "{mesh}"]}, "arguments"),    # its region map, written nowhere
+    ({"arguments": ["{recipe}", "{geometry}", "{mesh?}", "{regions}"]}, "arguments"),   # a file it may lack
+    ({"arguments": ["{recipe}", "{geometry}", "{writes:mesh}", "{regions}"]}, "arguments"),
+    ({"writes": {"mesh": "mesh/msh-2.2", "regions": "mesh/regions", "recipe": "mesh/regions"}}, "writes.recipe"),
+    ({"order": "script"}, "order"),                                        # neither the recipe's nor the contract's
+    ({"routes": {}}, "routes"),                                            # hand-overs are files of their own
+    ({"builds": ["rectangle"]}, "builds"),                                 # a shape kind: no key of a mesher
 ])
 def test_a_mesher_that_misstates_itself_does_not_load(change, at):
-    """Fails if a mesher names an environment that does not exist, or builds `import` with no
-    format (definitions.md § 2.2)."""
-    from femkit.core.schema import validate
+    """Fails if a mesher names an environment that does not exist, a program femkit's stage
+    programs do not hold, or an artifact type no `artifacts.toml` declares; calls a file it reads
+    and one it writes by one name, or one like a document or a check's record; hands its program a
+    file it neither reads nor writes, leaves one
+    it writes unnamed, or names one as optional or by an argument; takes its mesh's geometry order
+    from neither the recipe nor the contract; or keeps the hand-overs, or a list of shape kinds,
+    which no model of it has (definitions.md § 2.2; workflow.md § 2.3; ADR 0013)."""
     from femkit.definitions.meshers import MesherDefinition
-    data = tomllib.loads((data_root() / "meshers" / "gmsh.toml").read_text()) | change
+    data = _shipped_toml("meshers/gmsh.toml") | change
     with pytest.raises(DefinitionError) as caught:
-        validate(MesherDefinition, data, "m.toml", {"environments": {"elmer", "ngsolve"}})
-    assert at in [path for path, _ in caught.value.problems]
+        validate(MesherDefinition, data, "m.toml", _context())
+    assert at in [path for path, _ in caught.value.problems], caught.value.problems
+
+
+@pytest.mark.parametrize("change, at", [
+    ({"engine": "nosuch"}, "engine"),                                      # no such engine
+    ({"program": "nowhere.py"}, "program"),                                # no such file in its package
+    ({"names": ["body", "volume"]}, "names"),                              # no such place
+    ({"reads": "mesh/vtk"}, "reads"),                                      # no such artifact type
+    ({"arguments": ["{mesh}", "mesh"]}, "arguments"),                      # the groups it hands, read nowhere
+    ({"arguments": ["{mesh}", "{handover}", "{out}"]}, "arguments"),       # no such placeholder
+])
+def test_a_hand_over_that_misstates_itself_does_not_load(change, at):
+    """Fails if a hand-over names an engine no adapter registers, a program its engine's package
+    does not hold, a place that is none, or an artifact type no `artifacts.toml` declares; or
+    arguments that do not name the mesh and the groups it hands, or name another file
+    (definitions.md § 2.2; geometry.md § 8)."""
+    from femkit.definitions.meshers import HandOver
+    data = _shipped_toml("handovers/elmergrid.toml") | change
+    with pytest.raises(DefinitionError) as caught:
+        validate(HandOver, data, "h.toml", _context())
+    assert at in [path for path, _ in caught.value.problems], caught.value.problems
+
+
+@pytest.mark.parametrize("kind, change, at", [
+    ("geometry", {"environment": "nosuch"}, "geometry.environment"),             # no such environment
+    ("geometry", {"outputs": {"output": "geometry/step"}}, "geometry.outputs.output"),   # no such artifact type
+    ("geometry", {"documents": ["inputs", "drawing"]}, "geometry.documents"),    # no such document
+    ("geometry", {"check": ["{python}", "nowhere.py", "{contract}"]}, "geometry.check"),   # no stage program
+    ("geometry", {"check": ["check_geometry.py", "{contract}"]}, "geometry.check"),      # not on its own python
+    ("geometry", {"program": ["{python}", "geometry.py", "{inputs}", "{output}", "{shape}"]}, "geometry.program"),
+    ("geometry", {"program": ["{python}", "geometry.py", "{inputs}", "{output}", "{mesh}"]}, "geometry.program"),
+    ("geometry", {"program": ["{python}", "geometry.py", "{inputs}", "{output?}", "{mesh?}"]}, "geometry.program"),
+    ("geometry", {"program": None}, "geometry"),                                 # no filler, and no program
+    ("geometry", {"asked": {"brep": "geometry/brep", "outputs": "mesh/msh-2.2"}}, "geometry.asked.outputs"),
+    ("mesh", {"environment": "gmsh"}, "mesh"),                                   # a slot its mesher fills
+    ("mesh", {"filled_by": "engine"}, "mesh.filled_by"),                         # no such filler
+    ("geometry", {"environment": "the engine"}, "geometry.environment"),         # neither one nor `engine`
+    ("geometry", {"brings": "script"}, "geometry.brings"),                       # no part kind of the layout
+    ("geometry", {"brings": "physics"}, "geometry.program"),                     # a file no physics holds
+])
+def test_a_stage_kind_that_misstates_itself_does_not_load(kind, change, at):
+    """Fails if a stage kind names an environment, an artifact type or a document that does not
+    exist; a check that is not one of femkit's stage programs on the environment's own python; a
+    file named like a document or a check's record, so one placeholder would name two; a
+    placeholder naming none of its files, documents or records, a file it writes only when asked
+    as one it is always handed, or one always written as one it may lack; or if a kind no filler
+    fills leaves a slot unset, or one its mesher fills states it — two homes for one fact
+    (definitions.md § 2.2; workflow.md § 2.1)."""
+    from femkit.definitions.stages import Stages
+    data = _shipped_toml("stages.toml")
+    data["kinds"][kind] = {k: v for k, v in (data["kinds"][kind] | change).items() if v is not None}
+    with pytest.raises(DefinitionError) as caught:
+        validate(Stages, data, "stages.toml", _context())
+    assert f"kinds.{at}" in [path for path, _ in caught.value.problems], caught.value.problems
+
+
+@pytest.mark.parametrize("brings, at", [("physics", "kinds.geometry.program"), ("script", "kinds.geometry.brings")])
+def test_schema_check_holds_each_stage_kind_to_the_layout_as_its_one_reader_reads_it(definitions, brings, at):
+    """Fails if `schema check` passes a stage kind that brings a part kind the project layout does
+    not declare, or runs a file no part of the kind it brings holds — the layout read by its one
+    reader, the projects domain's, above the catalogue (definitions.md §§ 2.2, 2.3)."""
+    stages = definitions / "stages.toml"
+    stages.write_text(stages.read_text().replace('brings = "component"', f'brings = "{brings}"', 1))
+    found = kit.run("schema.check").issues
+    assert any("stages.toml" in str(i.subject) and at in i.message for i in found), [i.message for i in found]
+
+
+def test_the_meshing_sequence_takes_no_name_a_kinds_batch_takes():
+    """Fails if `stages.toml` names a study's meshing sequence as a kind names its batch: the two
+    launch folders of one job would be one folder (workflow.md § 7)."""
+    from femkit.definitions.stages import Stages
+    data = _shipped_toml("stages.toml")
+    data["sequence"] = data["kinds"]["mesh"]["batch"]
+    with pytest.raises(DefinitionError) as caught:
+        validate(Stages, data, "stages.toml", _context())
+    assert "sequence" in [path for path, _ in caught.value.problems], caught.value.problems
+
+
+def test_a_stage_kind_declared_before_a_kind_it_takes_from_does_not_load():
+    """Fails if `stages.toml` may declare a kind before a kind whose output it reads: a study's
+    meshing sequence runs its batches in the kinds' order, so one would run before the batch it
+    takes from (workflow.md § 7: "each kind taking only from kinds before it, which the catalogue
+    checks when it loads")."""
+    from femkit.definitions.stages import Stages
+    data = _shipped_toml("stages.toml")
+    view = {**data["kinds"]["geometry"], "batch": "views", "inputs": {"shapes": "geometry/xao"}}
+    data["kinds"] = {"view": view, **data["kinds"]}
+    with pytest.raises(DefinitionError) as caught:
+        validate(Stages, data, "stages.toml", _context())
+    assert [path for path, _ in caught.value.problems] == ["kinds.view.inputs.shapes"], caught.value.problems
+
+
+def test_the_mesh_kind_declared_before_the_geometry_its_meshers_read_does_not_load(definitions):
+    """Fails if `stages.toml` may declare the kind a mesher fills before the kind whose outputs its
+    meshers read — the meshes' batch would run before the geometries' — or the catalogue says so
+    elsewhere than at that kind in `stages.toml` (workflow.md § 7: "each kind taking only from kinds
+    before it, which the catalogue checks when it loads")."""
+    stages = definitions / "stages.toml"
+    text = stages.read_text()
+    geometry, mesh = text.index("# The component's script builds"), text.index("# A mesher meshes")
+    stages.write_text(text[:geometry] + text[mesh:].rstrip("\n") + "\n\n" + text[geometry:mesh])
+    assert _refused_in(definitions, catalogue.load_meshers) == {"stages.toml": ["kinds.mesh"]}
+
+
+@pytest.mark.parametrize("change, at", [
+    ({"mesh": {"file": "mesh.msh", "format": "f"}}, "mesh"),                          # a type with no form
+    ({"mesh/msh-2.2": {"file": "meshes/mesh.msh", "format": "f"}}, '"mesh/msh-2.2".file'),   # a file in a folder
+    ({"mesh/msh-2.2": {"file": "mesh.msh", "format": "f", "opened": {"environment": "nosuch",
+                                                                     "command": ["c", "{file}"]}}},
+     '"mesh/msh-2.2".opened.environment'),
+    ({"mesh/msh-2.2": {"file": "mesh.msh", "format": "f", "opened": {"environment": "gmsh",
+                                                                     "command": ["gmsh", "{path}"]}}},
+     '"mesh/msh-2.2".opened.command'),
+])
+def test_an_artifact_type_that_misstates_itself_does_not_load(change, at):
+    """Fails if an artifact type is named otherwise than `<what>/<form>`, its file is not one name
+    in its stage's run, or it is opened in an environment that does not exist or by a command
+    naming another placeholder than its file (workflow.md § 2.2)."""
+    from femkit.definitions.stages import ArtifactList
+    data = _shipped_toml("artifacts.toml") | change
+    with pytest.raises(DefinitionError) as caught:
+        validate(ArtifactList, data, "artifacts.toml", _context())
+    assert at in [path for path, _ in caught.value.problems], caught.value.problems
+
+
+def _refused_in(definitions: Path, load) -> dict[str, list[str]]:
+    """The catalogue's refusal of what ``load`` loads: each file, by its path from the definitions,
+    with the key paths at fault."""
+    with pytest.raises(CatalogueError) as caught:
+        load()
+    return {Path(e.file).relative_to(definitions).as_posix(): [where for where, _ in e.problems]
+            for e in caught.value.errors}
+
+
+def test_two_engine_definitions_declaring_one_engine_are_refused_each_in_its_file(definitions):
+    """Fails if two environments' definitions, each in its own file, may both declare one engine — a
+    study's `engine` would not name one environment, the catalogue resolving an engine to its
+    definition's alone — or the refusal names but one of them, or not at its `engine`
+    (definitions.md § 2.2; framework.md § 5)."""
+    (definitions / "environments" / "again.toml").write_text(_shipped("ngsolve"))
+    assert _refused_in(definitions, load_environments) == {"environments/again.toml": ["engine"],
+                                                          "environments/ngsolve.toml": ["engine"]}
+
+
+def test_two_environments_taking_the_projects_packages_are_refused_each_in_its_file(definitions):
+    """Fails if two tool environments' definitions may both take the packages projects declare —
+    a project's scripts run in one environment, where its packages are installed and against whose
+    modules `observe.py` is checked — or the refusal names but one, or not at its `projects`
+    (definitions.md §§ 2.2, 4.7; models.md § 5.2)."""
+    (definitions / "environments" / "again.toml").write_text(_shipped("postprocess"))
+    assert _refused_in(definitions, load_environments) == {"environments/again.toml": ["projects"],
+                                                          "environments/postprocess.toml": ["projects"]}
+
+
+def test_a_studys_engine_resolves_to_its_definitions_environment_or_its_cuda_twin_where_gpus_are_asked():
+    """Fails if an engine is not resolved to the environment whose definition declares it, its
+    `-cuda` twin where the study's solve asks GPUs, or a name no definition declares — a tool's — to
+    one (framework.md § 5; models.md § 5.1)."""
+    c = kit_ctx()
+    engines = catalogue.engines(c)
+    assert [catalogue.with_gpus(c, engines[e], g) for e, g in (("elmer", 0), ("ngsolve", 0), ("ngsolve", 1))] == [
+        "elmer", "ngsolve", "ngsolve-cuda"]
+    assert "gmsh" not in engines and set(engines) == {"elmer", "ngsolve"}
+
+
+def test_two_hand_overs_for_one_engine_type_and_order_are_refused_across_files(definitions):
+    """Fails if two hand-overs, each in its own file, may both give one engine the same mesh type
+    at one geometry order — the order a case asks for would not choose one — or the refusal names
+    but one of them (definitions.md § 2.2; geometry.md § 8)."""
+    elmergrid = (definitions / "handovers" / "elmergrid.toml").read_text()
+    (definitions / "handovers" / "again.toml").write_text(elmergrid.replace("orders = [1, 2]", "orders = [2]"))
+    assert _refused_in(definitions, catalogue.load_handovers) == {
+        "handovers/again.toml": ["orders"], "handovers/elmergrid.toml": ["orders"]}
+
+
+GIVEN_ARGUMENTS = 'arguments = ["{given}", "{groups}", "{mesh}", "{regions}"]'
+GIVEN_WRITES = 'writes = { mesh = "mesh/msh-2.2", regions = "mesh/regions" }'
+
+
+@pytest.mark.parametrize("changes, at", [
+    ([(GIVEN_ARGUMENTS, GIVEN_ARGUMENTS.replace("regions", "map")),
+      (GIVEN_WRITES, GIVEN_WRITES.replace("regions =", "map ="))], "writes"),
+    ([(GIVEN_ARGUMENTS, GIVEN_ARGUMENTS.replace('"]', '", "{contract}"]'))], "arguments"),
+], ids=["a file the mesh check reads, written by no name it knows", "a document its stage is not handed"])
+def test_a_mesher_is_held_to_the_stage_kind_it_fills(definitions, changes, at):
+    """Fails if a mesher may write no file the mesh stage's check names — the region map it reads,
+    the mesh it records — or hand its program a document its stage is not handed (workflow.md
+    §§ 2.1, 2.3)."""
+    for old, new in changes:
+        kit.rewrite(definitions / "meshers" / "given.toml", old, new)
+    assert _refused_in(definitions, catalogue.load_meshers) == {"meshers/given.toml": [at]}
+
+
+def test_an_engine_may_have_a_hand_over_per_geometry_order():
+    """Fails if a second hand-over for an engine, at an order no other of its hand-overs reads its
+    type at — Netgen's for NGSolve beside femkit's layer (ADR 0017) — is refused, or the order
+    asked does not choose it (geometry.md § 8)."""
+    from femkit.definitions.meshers import HandOver, handover
+    handovers = dict(catalogue.handovers(kit_ctx()))
+    handovers["netgen"] = validate(HandOver, _shipped_toml("handovers/layer.toml") | {"orders": [2]}, "n.toml")
+    msh = ["mesh/msh-2.2"]
+    assert [handover(handovers, "ngsolve", order, msh) for order in (1, 2)] == ["layer", "netgen"]
+    assert handover(handovers, "elmer", 2, msh) == "elmergrid" and handover(handovers, "nosuch", 1, msh) is None
+    assert handover(handovers, "elmer", 1, ["mesh/netgen-vol"]) is None     # keyed by the type it reads too
 
 
 @pytest.mark.parametrize("change, at", [
     ({"exercises": ["potential", "tunneling"]}, "benchmarks.two_material.exercises[1]"),   # no such kind
     ({"project": "nowhere"}, "benchmarks.two_material.project"),                          # no such template
-    ({"reference": {"potential_low": "2/5 VV"}}, "benchmarks.two_material.reference.potential_low"),
+    ({"reference": {"potential_low": {"value": 2, "unit": "VV"}}},
+     "benchmarks.two_material.reference.potential_low.unit"),
+    ({"reference": {"potential_low": "2/5 V"}}, "benchmarks.two_material.reference.potential_low"),
 ])
 def test_a_benchmark_that_misstates_itself_does_not_load(change, at):
     """Fails if a benchmark exercises a kind its formulation lacks, names a project that does not
-    exist, or a reference value the unit grammar does not read (models.md § 4)."""
+    exist, or a reference value whose unit the unit grammar does not read, or written as a text
+    (models.md § 4; core.md § 11)."""
     from femkit.core.schema import validate
     from femkit.core.units import Units
     from femkit.definitions.catalogue import load_places, load_templates, load_units
     from femkit.definitions.formulations import FormulationDefinition
-    data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text())
+    data = tomllib.loads((data_root() / "formulations" / "electrostatics.toml").read_text(), parse_float=exact_number)
     data["benchmarks"]["two_material"] |= change
     with pytest.raises(DefinitionError) as caught:
         validate(FormulationDefinition, data, "f.toml", {"units": Units(load_units()), "places": frozenset(load_places()),
@@ -411,10 +696,10 @@ def test_a_mesher_is_checked_against_the_environments_as_loaded_and_a_broken_one
     from femkit.definitions.catalogue import load_meshers
     mesher = definitions / "meshers" / "gmsh.toml"
     shipped = mesher.read_text()
-    mesher.write_text(shipped.replace('provided_by = "elmer"', 'provided_by = "elmer-cuda"', 1))
+    mesher.write_text(shipped.replace('provided_by = "gmsh"', 'provided_by = "elmer-cuda"', 1))
     assert load_meshers()["gmsh"].provided_by == "elmer-cuda"
     (definitions / "environments" / "web.toml").write_text("this is [ no TOML\n")
-    mesher.write_text(shipped.replace('provided_by = "elmer"', 'provided_by = "nowhere"', 1))
+    mesher.write_text(shipped.replace('provided_by = "gmsh"', 'provided_by = "nowhere"', 1))
     with pytest.raises(CatalogueError) as caught:
         load_meshers()
     assert [Path(e.file).name for e in caught.value.errors] == ["gmsh.toml"]
@@ -493,12 +778,24 @@ def test_a_property_that_misstates_itself_does_not_load(definitions, change, at)
     ("states/part.toml", 'state = "complete"\nwhen = "otherwise"', 'state = "complete"\nwhen = "loads"',
      "rules[3].when"),
     ("project/layout.toml", 'folder = "physics"', 'folder = "studies"', "folders"),
+    ("states/stage.toml", 'pending = ["restate", "place"]', 'pending = ["restate", "place"]\nmended = ["place"]',
+     "does.mended"),
+    ("states/stage.toml", 'pending = ["restate", "place"]\n', "", "does"),
+    ("states/stage.toml", 'prepared = ["restate", "place"]', 'prepared = ["launch"]', "does.prepared"),
+    ("states/stage.toml", 'when = "not held_back"', 'when = "not behind"', "tasks.place.when"),
 ], ids=["an action naming no registered operation", "a machine that could fall through",
-        "a layout putting two kinds in one folder"])
+        "a layout putting two kinds in one folder", "what prep does in a state no table of the chain has",
+        "what prep does in one of its folder's states unnamed",
+        "prep doing its folder's action in a state, not its own task", "a task's guard naming no fact of a stage's"])
 def test_schema_check_refuses_a_state_table_or_a_layout_breaking_its_rules(definitions, file, old, new, at):
     """Fails if `schema check` passes a machine's table naming an operation that is not registered
-    or breaking its own rules, or a layout breaking its own — each reported in its file at its key
-    path (core.md § 7; projects.md § 4; definitions.md § 2.3)."""
+    or breaking its own rules — what `study prep` does in a stage's states keyed by a state no
+    table of its chain has, leaving one of its folder's table's states unnamed, or doing an action of the
+    folder's table rather than one of the stage table's own tasks, or a task's guard naming no fact
+    a stage's code gives, among them — or a layout breaking its own, each reported in its file at its
+    key path (core.md § 7: "`[does]` … each state of the tables down the `past` chain — every one
+    named … each key and task checked at load"; workflow.md § 6; projects.md § 4; definitions.md
+    § 2.3)."""
     path = definitions / file
     assert old in path.read_text()
     path.write_text(path.read_text().replace(old, new, 1))
@@ -518,3 +815,36 @@ def test_schema_check_refuses_a_template_that_is_no_project_named_bare(definitio
         (folder / rel).write_text(text)
     result = run("schema.check")
     assert [(i.code, i.subject) for i in result.issues] == [("definition-invalid", str(folder))]
+
+
+def test_femkits_own_data_writes_each_quantity_in_the_one_form_read_exactly():
+    """Fails if a quantity in femkit's own definitions — a dispersion list's constant, a
+    formulation's constant or a benchmark's reference value — is written as a text, or reaches its
+    model through a binary float, or a benchmark's tolerance, a plain number, is not one (core.md
+    § 11: "One quantity form, everywhere a quantity is written — … and femkit's own data"; "Exact":
+    "a TOML number by the text the person wrote")."""
+    from fractions import Fraction
+
+    def held(measure) -> tuple:
+        return measure.value, measure.unit
+
+    c = kit_ctx()
+    constants = catalogue.dispersion(c).constants
+    assert held(constants["planck"].value) == (Fraction(662607015, 10 ** 42), "J s")
+    assert held(constants["speed_of_light"].value) == (299792458, "m/s")
+    f = catalogue.formulations(c)["electrostatics"]
+    assert held(f.constants["vacuum_permittivity"].value) == (Fraction(88541878188, 10 ** 22), "F/m")
+    bench = f.benchmarks["two_material"]
+    assert bench.tolerance == Fraction(1, 10 ** 9) and not isinstance(bench.tolerance, float)
+    assert held(bench.reference["potential_low"]) == (Fraction(2, 5), "V")
+
+
+def test_a_clean_start_that_removes_what_no_pattern_passes_is_refused_when_it_loads(definitions):
+    """Fails if process.toml loads with a `removes` entry no pattern of its `passes` takes — a variable
+    no pattern passes is never kept, so the entry removes nothing and reads as a protection it is not
+    (envs.md § 4.4; definitions.md § 2.2)."""
+    from femkit.definitions.models import ProcessStart
+    kit.rewrite(definitions / "process.toml", 'removes = [', 'removes = ["LD_PRELOAD", ')
+    with pytest.raises(DefinitionError) as caught:
+        load_toml(definitions / "process.toml", ProcessStart)
+    assert any("LD_PRELOAD" in reason for _, reason in caught.value.problems), caught.value.problems

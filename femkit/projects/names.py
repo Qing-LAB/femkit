@@ -1,17 +1,15 @@
 """The name rule (projects.md § 3): a part's name is its path inside its kind's folder, each
 step matching `[a-z][a-z0-9_]*`, the steps joined by `/`; a global material's opens with
-`GLOBAL/`. One rule for every name a request takes, a folder holds or `new` makes — and one
-reading of what a name most likely meant: the closest of the names there are (`nearest`), or, for
-one the rule refuses, what in it breaks the rule and the name it would be (`broken`, `mended`)."""
+`GLOBAL/`. One rule for every name a request takes, a folder holds or `new` makes; for a name the
+rule refuses, what in it breaks the rule and the name it would be (`broken`, `mended`); and a name
+compared by its whole and by its last step (`whole_or_last`), a form the core's one reading of
+what a name most likely meant compares it by (`schema.nearest`)."""
 
 from __future__ import annotations
 
 import re
-from difflib import SequenceMatcher
-from typing import Callable, Iterable
 
 from femkit.core.errors import UsageError
-from femkit.core.schema import NEAR
 
 STEP = r"[a-z][a-z0-9_]*"
 NAME = re.compile(rf"{STEP}(?:/{STEP})*")
@@ -56,19 +54,6 @@ def bare(name: str) -> str:
 
 
 # ------------------------------------------------------------------ what a name most likely meant
-
-def nearest(name: str, among: Iterable[str], forms: Callable[[str], Iterable[str]] = lambda c: (c,)) -> str | None:
-    """The one of ``among`` closest to ``name`` — what a misspelling most likely meant — or None
-    where none is close: each compared by each of its ``forms`` (itself, unless given), by the
-    standard library's measure and at least as alike as a schema's own suggestion asks
-    (`schema.NEAR`); the first of equals, so ``among`` in the order a person looks wins a tie."""
-    best, score = None, NEAR
-    for candidate in among:
-        alike = max((SequenceMatcher(None, name, form).ratio() for form in forms(candidate)), default=0.0)
-        if alike > score or (best is None and alike >= score):
-            best, score = candidate, alike
-    return best
-
 
 def whole_or_last(name: str) -> tuple[str, ...]:
     """A name compared by its whole name and by its last step, `GLOBAL/` aside — `metals/gold`

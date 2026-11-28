@@ -16,7 +16,7 @@ How a chapter marks what runs — nothing of it shows on GitHub but the blocks t
   line what it prints. A typed line is `femkit …`, run from the folder the session is in through
   the `femkit` command the install script writes — made from the same source,
   `femkit/data/launcher.sh`, in the session's home, running femkit from this checkout on this
-  Python; `cd FOLDER`, which moves the session; or one of the shell commands `SHELL` names, run
+  Python, the session's own variables in place of its clean start; `cd FOLDER`, which moves the session; or one of the shell commands `SHELL` names, run
   by bash. A session starts in its home folder, `~`, as a person's shell does.
 - A file the story writes or changes is the block after an HTML comment:
   `<!-- write PATH -->` before a block that is the file's whole text, and `<!-- edit PATH -->`
@@ -67,8 +67,8 @@ SHOWN_HOME = "/home/you"
 #: The `femkit` command's one source, which the install script fills (envs.md § 7): read here as a
 #: file — this tool imports nothing from femkit — and filled as the script fills it.
 LAUNCHER = REPO / "femkit" / "data" / "launcher.sh"
-#: The folder of the session's home that stands for the activated control environment's `bin/`:
-#: it holds the session's `femkit` command.
+#: The folder of the session's home that stands for `~/.local/bin`, where the install script links the
+#: `femkit` command: it holds the session's `femkit` command.
 ON_PATH = ".control-bin"
 SEPARATORS = ("&&", "||", ";", "|", "&")         # what ends a command on a shell line
 ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=")       # `NAME=value` before a command, which it runs with
@@ -264,9 +264,12 @@ def shell_word(value: str) -> str:
 def launcher(path: Path, python: str, checkout: Path) -> Path:
     """The `femkit` command the install script writes, made at ``path`` from its one source as the
     script fills it — `{checkout}`, then `{python}`, each a shell word — running femkit from
-    ``checkout`` on ``python``."""
+    ``checkout`` on ``python``; its clean start, `{start}`, left out: a session's variables are the
+    ones `environment` sets for it, a terminal's, its output unbuffered and in order as a terminal
+    shows it."""
     text = LAUNCHER.read_bytes().decode("utf-8")
     text = text.replace("{checkout}", shell_word(str(checkout))).replace("{python}", shell_word(python))
+    text = text.replace("{start}\n", "")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(text.encode("utf-8"))
     path.chmod(0o755)
@@ -296,15 +299,16 @@ def home() -> Iterator[Path]:
 
 
 #: Variables a session's commands never inherit: femkit's own directories and the XDG ones, so
-#: femkit finds each in the session's home by its default rule (config.md § 2); a Python path,
-#: which the `femkit` command sets to its checkout.
+#: femkit finds each in the session's home by its default rule (config.md § 2); a Python path or
+#: home of the shell the runner was started from, which no command of a session may read.
 UNSET = re.compile(r"^(FEMKIT_\w+_DIR|XDG_\w+|PYTHONPATH|PYTHONHOME)$")
 
 
 def environment(base: dict[str, str], home_folder: Path) -> dict[str, str]:
     """The variables a session's commands run with: ``base`` without `UNSET`'s, the session's
-    home, a terminal 80 columns wide — what click wraps a help text to — and Python writing each
-    line as it prints it, in UTF-8, with no user site and no cached bytecode in the checkout."""
+    home, a terminal 80 columns wide — what click wraps a help text to — and UTF-8. The Python
+    settings reach a session's Python commands other than `femkit`, which runs isolated and reads
+    none of them (envs.md § 7); click writes each line as it prints it."""
     env = {k: v for k, v in base.items() if not UNSET.match(k)}
     env.update(HOME=str(home_folder), COLUMNS="80", LC_ALL="C.UTF-8", PYTHONNOUSERSITE="1",
                PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1")

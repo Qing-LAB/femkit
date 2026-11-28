@@ -7,30 +7,40 @@ declarable).
 
 from __future__ import annotations
 
-import json
 import tarfile
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Mapping
 
 from femkit.config import settings
 from femkit.core import clock, paths, persist, process, text
+from femkit.core.errors import Refused
 from femkit.core.eventlog import StepOutcome
+from femkit.core.issues import Issue
 from femkit.core.operations import Context, Step
-from femkit.core.persist import atomic_write_text, write_json
+from femkit.core.persist import atomic_write_text, read_record, write_json
 from femkit.core.schema import render
 from femkit.definitions import catalogue
 from femkit.definitions.models import FRAMEWORK_OPTIONS, Build, EnvironmentDefinition
+from femkit.definitions.programs import Program
 from femkit import engines
-from femkit.envs import layout, manager, toolchain
+from femkit.engines import audit
+from femkit.envs import layout, toolchain
+from femkit.envs.inside import Inside
 from femkit.envs.manager import Manager, resolve
 from femkit.envs.records import Manifest
 
+#: The time limit of an environment's version command, in seconds (envs.md § 4.1: a quick step): the
+#: limit femkit has kept for it, not measured.
+VERSION_TIMEOUT = 120
+
 Say = Callable[[str], None]  # hears what a step reports while it runs
+#: femkit's programs an install runs inside the prefix, by their names in programs.toml (envs.md § 4.4).
+AUDIT, TOOLCHAIN = "audit", "toolchain"
 
 COMPILER_KEYS = ("CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER", "CMAKE_Fortran_COMPILER", "CMAKE_CUDA_COMPILER",
                  "CMAKE_CUDA_HOST_COMPILER")
@@ -41,22 +51,40 @@ class Target:
     """Everything a step of one environment's install reads."""
 
     name: str
+    managed: str                              # its name with the manager, by which every command names it (envs.md § 1)
     env: EnvironmentDefinition
-    prefix: Path
+    prefix: Path | None                       # as the manager lists it (envs.md § 1); none before its create
     manager: Manager
     channels: list[str]
     python_minor: str
     cuda_architectures: list[str] | None
     jobs: int
     install_fingerprint: str
+    programs: Mapping[str, Program]           # femkit's programs an install runs inside the prefix (envs.md § 4.4)
     launcher: list[str] | None = None        # launch.mpi: the toolchain check's MPI runs with it
     now: Callable[[], datetime] = clock.now   # the invocation's clock (core.md § 6): what the manifest is stamped with
+    projects: list[str] = field(default_factory=list)   # the packages the projects declare, beside its own (envs.md § 4.3)
+    lacking: list[str] = field(default_factory=list)    # of them, those its manifest does not record (envs.md § 4.1)
+    settings: dict[str, list[str]] | None = None        # the person's settings its commands set aside, each with where
+                                                        # the manager read it; none where they cannot be read (§ 4.4)
+
+    @property
+    def at(self) -> Path:
+        """Its prefix: as the manager lists it, or — in a plan made before the environment exists —
+        `<prefix of femkit-NAME>`, which each step that needs it runs with the listed one in place
+        of (`rendered`, envs.md § 4.1)."""
+        return self.prefix if self.prefix is not None else layout.unmade(self.managed)
+
+    @property
+    def inside(self) -> Inside:
+        """The environment, entered through the one door (envs.md § 4.4): every step that runs in it."""
+        return Inside(self.name, self.managed, self.prefix, self.manager)
 
     def source_dir(self, source_id: str) -> Path:
-        return layout.source_dir(self.prefix, self.env, source_id)
+        return layout.source_dir(self.at, self.env, source_id)
 
     def build_dir(self, build_id: str) -> Path:
-        return layout.build_dir(self.prefix, build_id)
+        return layout.build_dir(self.at, build_id)
 
     @property
     def lock(self) -> Path:
@@ -65,37 +93,49 @@ class Target:
 
 def target(ctx: Context, name: str) -> Target:
     """An install of ``name`` by the manager the invocation names, fingerprinted as that manager
-    builds it — what its manifest records."""
-    from femkit.envs.state import definition, install_fingerprint
-    cat = catalogue.load(ctx)
+    builds it — what its manifest records — at the prefix the manager lists for it now (envs.md § 1)."""
+    from femkit.envs.state import added, definition, install_fingerprint, lacking
+    control = catalogue.control(ctx)
     config = settings.load(ctx).config
     m = resolve(ctx)
+    managed = catalogue.managed(ctx, name)
+    where = m.prefix(managed)
+    found = m.settings()
     return Target(
-        name=name, env=definition(ctx, name), prefix=layout.prefix(ctx, name), manager=m,
-        channels=cat.control.channels, python_minor=cat.control.python_minor,
+        name=name, managed=managed, env=definition(ctx, name), prefix=where, manager=m,
+        channels=control.channels, python_minor=control.python_minor,
         cuda_architectures=config.build.cuda_architectures, jobs=settings.build_jobs(config),
-        install_fingerprint=install_fingerprint(ctx, name, m.kind_name),
-        launcher=config.launch.mpi, now=ctx.now,
+        install_fingerprint=install_fingerprint(ctx, name, m.kind_name), programs=catalogue.programs(ctx),
+        launcher=config.launch.mpi, now=ctx.now, projects=added(ctx, name),
+        lacking=lacking(ctx, name, read_record(layout.manifest_file(where), Manifest).value if where else None),
+        settings=found.neutralised if found.read else None,
     )
+
+
+def refuse_settings(t: Target) -> None:
+    """Refused before any create or delivery, while a setting of the person's that nothing the
+    manager's commands carry sets aside is set so (envs.md § 4.4): each named, with the file the
+    manager read it from and what to change there."""
+    refused = t.manager.settings().refused
+    if not refused:
+        return
+    issues = [Issue(severity="error", code="setting-refused", subject=r.source, file=r.source,
+                    message=f"your setting {r.key} ({persist.inline_text(r.value)}), in {r.source}: {r.change}")
+              for r in refused]
+    raise Refused(f"{t.managed} is not made while your own settings would change what goes into it: "
+                  f"{', '.join(f'{r.key} in {r.source}' for r in refused)}", code="setting-refused",
+                  subject=refused[0].source, issues=issues)
 
 
 # ------------------------------------------------------------------ CMake
 
 def cmake_options(t: Target, build: Build) -> list[tuple[str, str, str]]:
     """(key, type, value): the framework's options, then the declared ones (definitions.md § 4.2)."""
-    p = str(t.prefix)
-    set_here = {
-        "CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON",
-        "CMAKE_INSTALL_PREFIX": p, "CMAKE_PREFIX_PATH": p, "CMAKE_FIND_ROOT_PATH": p,
-        "CMAKE_FIND_ROOT_PATH_MODE_PACKAGE": "ONLY", "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY": "ONLY",
-        "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE": "ONLY", "CMAKE_FIND_ROOT_PATH_MODE_PROGRAM": "ONLY",
-        "CMAKE_FIND_USE_PACKAGE_REGISTRY": "OFF", "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY": "OFF",
-        "CMAKE_INSTALL_RPATH_USE_LINK_PATH": "ON",
-        "CMAKE_INSTALL_RPATH": ";".join(str(t.prefix / r) for r in build.rpath),
-    }
-    if build.cuda_architectures:
-        set_here["CMAKE_CUDA_ARCHITECTURES"] = ";".join(t.cuda_architectures or [])
-    options = [(k, FRAMEWORK_OPTIONS[k], v) for k, v in set_here.items()]   # each one's type is the table's
+    p = str(t.at)
+    framework = {"prefix": p, "rpath": ";".join(str(t.at / r) for r in build.rpath),
+                 "cuda_architectures": ";".join(t.cuda_architectures or [])}
+    options = [(k, o.type, render(o.value, framework)) for k, o in FRAMEWORK_OPTIONS.items()
+               if o is not None and (build.cuda_architectures or not o.cuda)]
     values = {"prefix": p}
     values.update({f"source:{s.id}": str(t.source_dir(s.id)) for s in t.env.sources})
     values.update({f"build:{b.id}": str(t.build_dir(b.id)) for b in t.env.builds})
@@ -150,24 +190,31 @@ def _order_builds(builds: list[Build]) -> list[Build]:
 
 
 def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Step]:
-    m, p = t.manager, t.prefix
+    m, p = t.manager, t.at
     steps: list[Step] = []
     if remove_first:
-        steps.append(Step(id="remove", describe=f"remove {text.path(p)}", argv=tuple(m.remove(p, t.channels))))
+        steps.append(Step(id="remove", describe=f"remove {t.managed}, at {text.path(p)}",
+                          argv=tuple(m.remove(t.managed, t.channels))))
     if discard_lock:
         steps.append(Step(id="discard-lock", describe=f"discard the saved lock {text.path(t.lock)}"))
-    if t.lock.exists() and not discard_lock:
-        create = m.create_from_lock(p, t.lock, t.channels)
+    from_lock = t.lock.exists() and not discard_lock
+    if from_lock:
+        create = m.create_from_lock(t.managed, t.lock, t.channels)
         how = "from the saved lock"
     else:
-        # femkit's own programs run inside an engine's prefix on the Python every environment shares;
-        # a tool environment runs none (definitions.md § 4.7)
-        python = [] if t.env.tool else [f"python={t.python_minor}"]
-        create = m.create(p, t.channels, [*t.env.packages.conda, *python])
+        # every environment that holds Python holds the minor control.txt names: femkit's own programs
+        # run in an engine's prefix and in the mesh step's alike. One that takes the control
+        # environment's packages has that line already; a tool that provides no Python gets none
+        # (definitions.md §§ 3, 4.7). The install fingerprint holds both facts (envs.md § 2); the
+        # packages the projects declare are solved with its own, outside it (definitions.md § 4.7).
+        python = [f"python={t.python_minor}"] if t.env.holds_python and not t.env.control_packages else []
+        create = m.create(t.managed, t.channels, [*t.env.packages.conda, *t.projects, *python])
         how = "from the declared constraints"
-    steps.append(Step(id="create", describe=f"create {text.path(p)} {how}", argv=tuple(create)))
-    steps.append(Step(id="lock", describe=f"save the exact package list to {text.path(t.lock)}",
-                      argv=tuple(m.argv(m.kind.export_lock, prefix=str(p)))))
+    steps.append(Step(id="create", describe=f"create {t.managed}, where the manager keeps environments, {how}",
+                      argv=tuple(create)))
+    if from_lock and t.projects:      # a lock saved before a project declared a package may lack it
+        steps.append(_deliver(t, t.projects))
+    steps.append(_lock(t))
     steps.append(Step(id="forbid", describe=f"refuse a lock holding {', '.join(t.env.packages.forbid) or 'nothing forbidden'}"))
     if t.env.proven_toolchain:  # before any source is fetched (envs.md § 4.1)
         steps.append(Step(id="toolchain", describe=toolchain.describe(t.env.proven_toolchain)))
@@ -175,21 +222,41 @@ def plan_steps(t: Target, *, remove_first: bool, discard_lock: bool) -> list[Ste
         steps.append(Step(id=f"fetch:{s.id}", describe=f"download {s.id} {s.release} and verify its SHA-256"))
     for s in sorted(t.env.sources, key=lambda s: len(PurePosixPath(s.into).parts)):
         steps.append(Step(id=f"unpack:{s.id}", describe=f"unpack {s.id} into {text.path(t.source_dir(s.id))}"))
+    inside = t.inside
     for b in _order_builds(t.env.builds):
         steps.append(Step(id=f"configure:{b.id}", describe=f"configure {b.id}",
-                          argv=tuple(m.in_prefix(p, configure_argv(t, b)))))
+                          argv=tuple(inside.argv(configure_argv(t, b)))))
         steps.append(Step(id=f"compile:{b.id}", describe=f"compile {b.id} with {text.count(t.jobs, 'job')}",
-                          argv=tuple(m.in_prefix(p, ["cmake", "--build", str(t.build_dir(b.id)), "--parallel", str(t.jobs)]))))
+                          argv=tuple(inside.argv(["cmake", "--build", str(t.build_dir(b.id)), "--parallel", str(t.jobs)]))))
         steps.append(Step(id=f"install:{b.id}", describe=f"install {b.id} into {text.path(p)}",
-                          argv=tuple(m.in_prefix(p, ["cmake", "--install", str(t.build_dir(b.id))]))))
+                          argv=tuple(inside.argv(["cmake", "--install", str(t.build_dir(b.id))]))))
     proven = t.env.proven_toolchain
-    audit = (m.in_prefix(p, ["python", "-c", _AUDIT, json.dumps(t.env.provides.modules),
-                             json.dumps(list(proven.compilers.values()) if proven else [])])
-             if t.env.provides.modules or proven else None)      # nothing for Python to find: no command
+    found = (inside.program(t.programs[AUDIT], *audit.arguments(
+        t.env.provides.modules, list(proven.compilers.values()) if proven else []))
+        if t.env.provides.modules or proven else None)      # nothing for Python to find: no command
     steps.append(Step(id="audit", describe="find every provided executable and module inside the prefix",
-                      argv=tuple(audit) if audit else None))
+                      argv=tuple(found) if found else None))
     steps.append(Step(id="manifest", describe="probe the version and write the manifest"))
     return steps
+
+
+def _deliver(t: Target, packages: list[str]) -> Step:
+    """The step that installs ``packages``, the projects', into the prefix as it stands (envs.md § 4.1)."""
+    return Step(id="deliver", describe=f"install what the projects declare into {t.managed}: "
+                                       f"{' '.join(packages)}",
+                argv=tuple(t.manager.install(t.managed, t.channels, packages)))
+
+
+def _lock(t: Target) -> Step:
+    return Step(id="lock", describe=f"save the exact package list to {text.path(t.lock)}",
+                argv=tuple(t.manager.export_lock(t.managed)))
+
+
+def deliver_steps(t: Target) -> list[Step]:
+    """What delivers into an installed environment, as it stands, the packages the projects declare
+    that its manifest does not record (envs.md §§ 3.3, 4.1): installed into its prefix, its lock
+    saved again, its manifest written again recording them — never a removal or a create."""
+    return [_deliver(t, t.lacking), _lock(t), Step(id="manifest", describe="probe the version and write the manifest")]
 
 
 # ------------------------------------------------------------------ the steps
@@ -226,10 +293,10 @@ def _ended(result: process.ProcessResult, log: Path) -> str:
 
 
 def _run(t: Target, step: Step, log: Path, *, inside: bool = False) -> str:
-    """A step's command. ``inside``: it runs inside the prefix, from the confined variables
-    (envs.md § 4.4); the manager's own commands keep the invocation's."""
-    env = manager.confined(t.manager.environment) if inside else t.manager.environment
-    return _ended(process.run(step.argv, log=log, env=env), log)
+    """A step's command. ``inside``: it runs inside the environment, through the one door (envs.md
+    § 4.4); the manager's own commands from the same clean start."""
+    ran = t.inside.run(step.argv, log=log) if inside else process.run(step.argv, log=log, env=t.manager.environment)
+    return _ended(ran, log)
 
 
 def _note(log: Path, text: str) -> None:
@@ -237,7 +304,10 @@ def _note(log: Path, text: str) -> None:
 
 
 def step_remove(t: Target, step: Step, log: Path, say: Say) -> str:
-    return _run(t, step, log)
+    try:
+        return _run(t, step, log)
+    finally:
+        t.manager.forget()   # where its environments are, asked again
 
 
 def step_discard_lock(t: Target, step: Step, log: Path, say: Say) -> str:
@@ -246,6 +316,13 @@ def step_discard_lock(t: Target, step: Step, log: Path, say: Say) -> str:
 
 
 def step_create(t: Target, step: Step, log: Path, say: Say) -> str:
+    try:
+        return _run(t, step, log)
+    finally:
+        t.manager.forget()   # where its environments are, asked again
+
+
+def step_deliver(t: Target, step: Step, log: Path, say: Say) -> str:
     return _run(t, step, log)
 
 
@@ -302,7 +379,7 @@ def step_toolchain(t: Target, step: Step, log: Path, say: Say) -> str:
     program measures, `envs/toolchain.py` judges, and each finding is said and logged."""
     work = persist.empty_folder(layout.toolchain_dir(t.prefix))
     spec = write_json(work / "spec.json", toolchain.spec(t.env.proven_toolchain, t.launcher))
-    report, result = toolchain.run(t.manager, t.prefix, "check", str(spec), str(work))
+    report, result = toolchain.run(t.inside, t.programs[TOOLCHAIN], "check", str(spec), str(work))
     _note(log, result.stdout + result.stderr)
     if report is None:
         if _ended(result, log) == KILLED:
@@ -401,21 +478,9 @@ def step_install(t: Target, step: Step, log: Path, say: Say) -> str:
     return _run(t, step, log, inside=True)
 
 
-_AUDIT = """import importlib, json, os, shutil, sys
-modules, variables = json.loads(sys.argv[1]), json.loads(sys.argv[2])
-origins, failures = {}, {}
-for m in modules:
-    try:
-        origins[m] = getattr(importlib.import_module(m), "__file__", None)
-    except Exception as exc:  # reported whole: a module in the prefix that fails to import says why
-        origins[m], failures[m] = None, f"{type(exc).__name__}: {exc}"
-compilers = {v: shutil.which(os.environ[v]) if os.environ.get(v) else None for v in variables}
-print(json.dumps({"modules": origins, "failures": failures, "compilers": compilers}))
-"""
-
-
 def step_audit(t: Target, step: Step, log: Path, say: Say) -> str:
-    """Every provided executable and module, and the compilers, found inside the prefix (envs.md § 4.1)."""
+    """Every provided executable and module, and the compilers, found inside the prefix (envs.md
+    § 4.1): the executables here, the rest by the audit's program, run in it."""
     inside = lambda path: paths.inside(path, t.prefix)  # noqa: E731
     proven = t.env.proven_toolchain
     problems = [f"executable not in the prefix: {e}" for e in t.env.provides.executables
@@ -424,11 +489,14 @@ def step_audit(t: Target, step: Step, log: Path, say: Say) -> str:
         for p in problems:
             _note(log, p)
         return "failed" if problems else "done"
-    result = process.run(step.argv, env=manager.confined(t.manager.environment), timeout=300)   # the plan's command
+    result = t.inside.run(step.argv, declared=t.programs[AUDIT])   # the plan's command, as its program is declared
     _note(log, result.stdout + result.stderr)
     if not result.ok:
         return _ended(result, log)
-    found = json.loads(result.stdout.strip().splitlines()[-1])
+    found = audit.read(result.stdout)
+    if found is None:
+        _note(log, "the audit program gave no report")
+        return "failed"
     problems += [f"module {m} does not import inside the prefix: {found['failures'][m]}" if m in found["failures"]
                  else f"module not found inside the prefix: {m} ({o})" for m, o in found["modules"].items() if not inside(o)]
     if proven:
@@ -439,23 +507,14 @@ def step_audit(t: Target, step: Step, log: Path, say: Say) -> str:
     return "failed" if problems else "done"
 
 
-def _last_line(stdout: str, stderr: str) -> str | None:
-    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
-    return lines[-1] if lines else None
-
-
 def step_manifest(t: Target, step: Step, log: Path, say: Say) -> str:
-    if t.env.tool:  # its own command, its last line (definitions.md § 4.7)
-        command, read = t.env.version_command, _last_line
-    else:
-        engine = engines.module(t.env.engine)
-        command, read = engine.VERSION_COMMAND, engine.read_version
-    result = process.run(t.manager.in_prefix(t.prefix, command), env=manager.confined(t.manager.environment),
-                         timeout=120)
+    """The version its declared command states — read by its last line, or by its engine's reader
+    where that output is irregular (definitions.md § 4) — the pinned one; then the manifest."""
+    result = t.inside.run(t.inside.argv(t.env.version_command), timeout=VERSION_TIMEOUT)
     _note(log, result.stdout + result.stderr)
     if _ended(result, log) == KILLED:
         return KILLED
-    version = read(result.stdout, result.stderr)
+    version = engines.version_reader(t.env.engine)(result.stdout, result.stderr)
     if version != t.env.version:
         _note(log, f"the version probe reported {version!r}; the definition requires {t.env.version!r}")
         return "failed"
@@ -469,17 +528,36 @@ def step_manifest(t: Target, step: Step, log: Path, say: Say) -> str:
         return "failed"
     write_json(layout.manifest_file(t.prefix), Manifest(
         install_fingerprint=t.install_fingerprint, lock_sha256=lock_sha256, manager_kind=t.manager.kind_name,
-        manager_version=manager_version, solver_version=version, time=clock.stamp(t.now()),
+        manager_version=manager_version, solver_version=version, projects=t.projects, settings=t.settings,
+        time=clock.stamp(t.now()),
     ).model_dump())
     return "done"
 
 
 STEP_KINDS: dict[str, Callable[[Target, Step, Path, Say], str]] = {
-    "remove": step_remove, "discard-lock": step_discard_lock, "create": step_create, "lock": step_lock,
+    "remove": step_remove, "discard-lock": step_discard_lock, "create": step_create, "deliver": step_deliver,
+    "lock": step_lock,
     "forbid": step_forbid, "toolchain": step_toolchain, "fetch": step_fetch, "unpack": step_unpack,
     "configure": step_configure, "compile": step_compile, "install": step_install, "audit": step_audit,
     "manifest": step_manifest,
 }
+
+
+#: The steps that make or remove the environment: after each, the manager is asked again where it is
+#: (`target`), and the steps that build in it run with that prefix (`rendered`, envs.md § 4.1).
+MAKES = frozenset({"remove", "create"})
+#: The steps whose commands hold paths within the prefix: what `rendered` writes again.
+IN_PREFIX = frozenset({"configure", "compile", "install"})
+
+
+def rendered(t: Target, step: Step) -> Step:
+    """``step`` as it runs: a build step's command written again with the prefix the manager lists
+    now — the plan, made before the environment existed, held `<prefix of femkit-NAME>` in its
+    place (envs.md § 4.1); any other step as planned."""
+    if t.prefix is None or step.id.split(":", 1)[0] not in IN_PREFIX:
+        return step
+    now = {s.id: s for s in plan_steps(t, remove_first=False, discard_lock=False)}
+    return step.model_copy(update={"argv": now[step.id].argv})
 
 
 def run_step(t: Target, step: Step, where: Path, say: Say = lambda line: None,
@@ -489,6 +567,7 @@ def run_step(t: Target, step: Step, where: Path, say: Say = lambda line: None,
     failure, said in its log; anything else is a defect and propagates."""
     log = where / f"{step.id.replace(':', '-')}.log"
     watch(log)
+    step = rendered(t, step)
     try:
         return STEP_KINDS[step.id.split(":", 1)[0]](t, step, log, say), log
     except (OSError, tarfile.TarError, urllib.error.URLError) as exc:

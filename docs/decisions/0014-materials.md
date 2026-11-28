@@ -2,7 +2,9 @@
 
 **Role:** ADR
 
-**Status:** accepted (2026-11-23)
+**Status:** accepted (2026-11-23); its translators are what
+[ADR 0025](0025-one-engine-per-study-observables-after.md) (decision 10)
+names the engines' input writers
 
 **Authority:** the reasons and the alternatives only;
 [`materials.md`](../contracts/materials.md) owns the rules
@@ -15,8 +17,7 @@ properties it reads under its own names. Existing libraries differ (read on
 unit, source or dependence stated; refractiveindex.info keeps one YAML file per
 material and source, its data tabulated or as one of nine dispersion formulas,
 with its range in micrometres; Tidy3D keeps several datasets per material, each
-named by its source; COMSOL groups properties and stores a complex permittivity
-as real and imaginary parts under its own sign convention; NIST's MatML
+named by its source; NIST's MatML
 separates a material, its property data and the metadata of where the data
 came from.
 

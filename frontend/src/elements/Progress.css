@@ -1,10 +1,16 @@
-.progress { display: grid; gap: var(--space-2); }
-.progress__head { display: flex; align-items: center; justify-content: space-between; font-size: var(--text-xs); color: var(--text-muted); }
-.progress__steps { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); font-size: var(--text-sm); }
-.progress__step { display: flex; gap: var(--space-2); align-items: center; }
-.progress__step::before { content: ""; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--line-strong); flex: none; }
-.progress__step--done::before { background: var(--ok); }
-.progress__step--failed::before, .progress__step--killed::before { background: var(--bad); }
-.progress__step--running::before { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
-.progress__log { margin: 0; max-height: 180px; overflow: auto; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
-  background: var(--surface-sunken); font-family: var(--mono); font-size: var(--text-2xs); color: var(--text-muted); }
+/* Progress: each step with its mark in the colour its word is bound to, and the running step's last lines. */
+.progress { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: var(--size-hairline) solid var(--color-line); border-radius: var(--size-radius); background: var(--color-surface); }
+.progress__head { display: flex; align-items: center; gap: var(--space-2); }
+.progress__what { flex: 1; font-family: var(--type-mono); font-size: var(--type-size-xs); color: var(--color-text-muted); overflow-wrap: anywhere; }
+.progress__steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-1); }
+.progress__step { display: flex; align-items: center; gap: var(--space-2); font-size: var(--type-size-sm); }
+.progress__step::before {
+  content: ""; flex: none; width: var(--size-dot); height: var(--size-dot); border-radius: var(--size-radius-pill);
+  background: var(--outcome, var(--color-line-strong));
+}
+.progress__log {
+  margin: 0; padding: var(--space-2) var(--space-3); max-height: var(--layout-panel-min); overflow: auto;
+  font-family: var(--type-mono); font-size: var(--type-size-2xs); line-height: var(--type-leading-code);
+  background: var(--color-code); border-radius: var(--size-radius-sm);
+}
+.progress__lost { margin: 0; font-size: var(--type-size-sm); color: var(--color-error); }

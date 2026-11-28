@@ -11,6 +11,7 @@ from dataclasses import fields
 
 import enum
 import html
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -23,11 +24,13 @@ from femkit.core import dirs, states, text, view
 from femkit.definitions.requests import CheckRequest, DocsRequest
 from femkit.core.issues import Issue
 from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
-from femkit.core.persist import atomic_write_text, inline_text, read_text
+from femkit.core.persist import atomic_write_text, inline_text, json_text, read_text
 from femkit.core.schema import (QUANTITIES, DefinitionError, Model, allowed, alternatives, classes, described,
                                 field_extras, items_of, keys_of, optional, values_of)
 from femkit.definitions import catalogue
+from femkit.jobs import addresses, folders, layout, runs
 from femkit.jobs.record import Record
+from femkit.jobs.request import JobRequest
 from femkit.models.cases import Case
 from femkit.projects import layout as layouts
 from femkit.projects import location
@@ -44,9 +47,14 @@ def pages() -> dict[str, tuple[str, str, list[type[Model]]]]:
     return {
         "definitions": ("Shipped definitions", "`femkit/data/` (definitions.md)",
                         [kind.metadata["model"] for kind in fields(catalogue.Catalogue) if kind.metadata["model"]]
-                        + [layouts.Layout, page.Page]),
+                        + [layouts.Layout, page.Page, page.Theme]),
         "config": ("User configuration", "`<config>/config.toml` (config.md § 3)", [UserConfig]),
         "machines": ("Machine records", "`<config>/machines/<name>.toml` (jobs.md § 9)", [Record]),
+        "jobs": ("Job requests and runs", "`femkit/data/jobs/files.toml`, every file of a calculation folder, a "
+                 "launch folder and a run; `job.toml`, `prepared.json`, a launch folder's records, each run's "
+                 "records, and a job's address (jobs.md §§ 1–5)",
+                 [layout.Catalogue, JobRequest, folders.Prepared, folders.Maker, folders.LaunchRecord,
+                  *runs.RECORDS.values(), *runs.CHECKS.values(), addresses.Address]),
         "cases": ("Cases", "`<project>/cases/<study>/<id>/case.json` (models.md § 5.3)", [Case]),
         "parts": ("A project's parts", "each part of a project (projects.md §§ 2–4)", parts),
     }
@@ -67,14 +75,14 @@ class Loaded(Model):
 class SchemaCheckResult(Result):
     loaded: list[Loaded] = Field(default_factory=list, description="each type of shipped definition that loaded")
 
+    @property
     def report(self) -> view.Report:
         if not self.ok():
             return view.Report(blocks=[view.Text(text="shipped definitions that do not load")])
         return view.Report(blocks=[
             view.Text(text="every shipped definition loads"),
-            view.Table(columns=view.columns("type", "loaded"),
-                       rows=[{"type": row.type, "loaded": text.show(row.names) if row.names else row.files}
-                             for row in self.loaded])])
+            view.Table.of(Loaded, [{"type": row.type, "names": text.show(row.names) if row.names else row.files}
+                                   for row in self.loaded], "type", "names")])
 
 
 @operation(SCHEMA_CHECK, result=SchemaCheckResult)
@@ -88,9 +96,10 @@ def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
     ops = registry.operations()
     issues = _benchmark_issues(cat, ctx) + _template_issues(cat)
     beside = [(lambda: catalogue.load_states({"operations": {n: op.request for n, op in ops.items()}})),
-              layouts.read, lambda: page.load(ops)]
-    for load in beside:   # what the catalogue's own rules cannot see: the operations, the layout, the page
-        try:
+              layouts.read, lambda: catalogue.load_stages(layouts.read().fixed()), page.load_theme,
+              lambda: page.load(registry.offered(ops, "page")), layout.read]
+    for load in beside:   # what the catalogue's own rules cannot see: the operations, the layout, each stage kind's
+        try:              # part kind against it, the page and its theme
             load()
         except catalogue.CatalogueError as exc:
             issues += [i for err in exc.errors for i in _issues(err)]
@@ -103,7 +112,8 @@ def schema_check(req: CheckRequest, ctx: Context) -> SchemaCheckResult:
                      names=list(part) if isinstance(part := getattr(cat, kind.name), dict) else [])
               for kind in fields(catalogue.Catalogue)]
     return SchemaCheckResult(loaded=loaded + [Loaded(type=name, files=str(file().relative_to(catalogue.data_root())))
-                                              for name, file in (("layout", layouts.file), ("page", page.path))])
+                                              for name, file in (("layout", layouts.file), ("page", page.path),
+                                                                 ("theme", page.theme_path), ("jobs' files", layout.file))])
 
 
 def _issues(err: DefinitionError) -> list[Issue]:
@@ -140,9 +150,12 @@ def _template_issues(cat) -> list[Issue]:
 
 def _benchmark_issues(cat, ctx: Context) -> list[Issue]:
     """Each benchmark's project template passes `project check` where it can check without
-    building its geometry, its one study's steps state the benchmark's formulation, and its
-    reference names an observable of that study, in that observable's dimension (models.md § 4.3).
-    Here, above both layers, as the definitions may not import `models`."""
+    building its geometry, each of its studies — one per engine — solves the benchmark's
+    formulation, and its reference names an observable of an observables part reading them, in that
+    observable's dimension (models.md § 4.3). Here, above both layers, as the definitions may not
+    import `models`."""
+    from femkit.models import definitions
+    from femkit.models.observables import KEY as OBSERVABLES_SCHEMA
     from femkit.models.physics import Physics
     from femkit.models.study import KEY as STUDY_SCHEMA, cites
     from femkit.projects import checking, door
@@ -164,27 +177,29 @@ def _benchmark_issues(cat, ctx: Context) -> list[Issue]:
             except DefinitionError as exc:
                 problem(exc.summary())
                 continue
-            c = checking.Checking.of(opened, ctx)
+            c = checking.Checking.of(opened, ctx, definitions.defined(opened, ctx, compute=False))
             for finding in checking.findings(c):
                 if finding.severity == "error":
                     problem(f"{finding.file}: {finding.key or '<file>'}: {finding.message}")
-            study_kind = opened.layout.kind_of(STUDY_SCHEMA)
+            study_kind, part_kind = opened.layout.kind_of(STUDY_SCHEMA), opened.layout.kind_of(OBSERVABLES_SCHEMA)
             studies = [p for p in opened.parts.values() if p.address.kind == study_kind and p.data is not None]
-            if len(studies) != 1:
-                problem(f"its project {b.project} holds {len(studies)} studies that load, not one")
+            if not studies:
+                problem(f"its project {b.project} holds no study that loads")
                 continue
-            study = studies[0].data
-            for step in study.steps.values():
-                physics = cites(c, "physics", step.physics, type(step))
-                if physics is not None and isinstance(physics.data, Physics) and physics.data.formulation != fid:
-                    problem(f"its study's step solves {physics.data.formulation}, not {fid}")
-            units = {o: spec.unit for s in study.observables if (held := cites(c, "observables", s)) is not None
-                     for o, spec in held.data.observables.items()}
+            for study in studies:
+                for step in study.data.steps.values():
+                    physics = cites(c, "physics", step.physics, type(step))
+                    if physics is not None and isinstance(physics.data, Physics) and physics.data.formulation != fid:
+                        problem(f"its study {study.address.name}'s step solves {physics.data.formulation}, not {fid}")
+            read = {s.address.name for s in studies}
+            units = {o: spec.unit for p in opened.parts.values() if p.address.kind == part_kind and p.data is not None
+                     and read & set(p.data.studies) for o, spec in p.data.observables.items()}
             for observable, value in b.reference.items():
                 if observable not in units:
-                    problem(f"reference.{observable}: its study reports no such observable")
-                elif c.units.parse(value).dimension != c.units.parse(units[observable]).dimension:
-                    problem(f"reference.{observable}: {value!r} is not in the dimension of {units[observable]}")
+                    problem(f"reference.{observable}: no observables part reading its studies gives such an "
+                            "observable")
+                elif c.units.measure(value).dimension != c.units.unit(units[observable]).dimension:
+                    problem(f"reference.{observable}: {value.unit!r} is not in the dimension of {units[observable]}")
     return out
 
 
@@ -206,7 +221,7 @@ def _one_type(annotation: Any) -> str:
         return " \\| ".join(f"`{m.value}`" for m in annotation)
     if isinstance(annotation, type) and issubclass(annotation, Model):
         return f"[{annotation.__name__}](#{annotation.__name__.lower()})"
-    return {str: "text", int: "integer", float: "number", bool: "boolean", Path: "path"}.get(
+    return {str: "text", int: "integer", float: "number", Decimal: "number", bool: "boolean", Path: "path"}.get(
         annotation, getattr(annotation, "__name__", str(annotation)))
 
 
@@ -284,12 +299,12 @@ def render_page(name: str) -> str:
 class DocsOutcome(Outcome):
     written: list[str] = Field(default_factory=list, description="pages written")
 
+    @property
     def report(self) -> view.Report:
         if not self.written:
             return view.Report(blocks=[view.Text(text="docs/reference/ and the page's schemas are up to date")])
         return view.Report(blocks=[view.Text(text=f"wrote {text.count(len(self.written), 'page')}"),
-                                   view.Table(columns=view.columns("page"),
-                                              rows=[{"page": p} for p in self.written])])
+                                   view.Table.of(DocsOutcome, [{"written": p} for p in self.written], "written")])
 
 
 def schemas_file() -> Path:
@@ -303,8 +318,8 @@ def page_schemas() -> str:
     server writes them."""
     from pydantic.json_schema import models_json_schema
     from femkit import registry               # here: the registry imports this module
-    from femkit.core import operations as surface
-    vocabulary = [m for module in (view, surface) for m in vars(module).values()
+    from femkit.core import eventlog, operations as surface
+    vocabulary = [m for module in (view, surface, eventlog) for m in vars(module).values()
                   if isinstance(m, type) and issubclass(m, Model) and m.__module__ == module.__name__]
     results = {op.result for op in registry.operations().values()}
     models = sorted({*vocabulary, *results, page.Page}, key=lambda m: (m.__module__, m.__qualname__))
@@ -325,7 +340,7 @@ def page_schemas() -> str:
                 for k, v in node.items() if k != "title"}
 
     defs = {name: {**untitled(d), "title": d.get("title", name)} for name, d in schema["$defs"].items()}
-    return json.dumps({"title": "femkit", "$defs": defs}, indent=2, sort_keys=True) + "\n"
+    return json_text({"title": "femkit", "$defs": defs})
 
 
 def icons_file() -> Path:
@@ -334,11 +349,10 @@ def icons_file() -> Path:
 
 
 def page_icons() -> str:
-    """Every icon the page declaration names — a workspace's, a kind's — imported from the icon
-    set by its component's name, and keyed by the name the declaration uses."""
+    """Every icon the page declaration names (`page.icons`) imported from the icon set by its
+    component's name, and keyed by the name the declaration uses."""
     from femkit import registry               # here: the registry imports this module
-    p = page.load(registry.operations())
-    names = sorted({w.icon for w in p.workspaces} | set(p.kinds.values()))
+    names = page.icons(page.load(registry.offered(registry.operations(), "page")))
     component = {n: "".join(part.capitalize() for part in n.split("-")) + "Icon" for n in names}  # never a global's name
     lines = ["// generated by `femkit schema docs` from femkit/data/web/page.toml -- do not edit",
              "import { " + ", ".join(sorted(set(component.values()))) + " } from \"lucide-react\";", "",
@@ -346,21 +360,58 @@ def page_icons() -> str:
     return "\n".join(lines)
 
 
+def tokens_file() -> Path:
+    """The page's design tokens, as one stylesheet the page imports first (web.md § 10.1)."""
+    return dirs.checkout() / "frontend" / "src" / "generated" / "tokens.css"
+
+
+def page_tokens() -> str:
+    """Every value of the theme as a custom property, and the declaration's words bound to their
+    tokens (`page.tokens`)."""
+    from femkit import registry               # here: the registry imports this module
+    return page.tokens(page.load_theme(), page.load(registry.offered(registry.operations(), "page")))
+
+
+def bundle_file() -> Path:
+    """What the bundle carries before any token — the gate, the mark, the addresses, the attribute
+    naming the theme chosen — as one file the page and its build read (web.md §§ 5, 8.1)."""
+    return dirs.checkout() / "frontend" / "src" / "generated" / "bundle.json"
+
+
+def page_bundle() -> str:
+    """The declaration's part the bundle carries before any token (`page.bundle`), as JSON."""
+    from femkit import registry               # here: the registry imports this module
+    return json.dumps(page.bundle(page.load(registry.offered(registry.operations(), "page"))), indent=2) + "\n"
+
+
+def mark_file() -> Path:
+    """The page's mark, the file the page ships and its icon (web.md § 10.2)."""
+    return dirs.checkout() / "frontend" / "public" / "mark.svg"
+
+
+def logo_file() -> Path:
+    """femkit's one logo: the README's and the repository's, the source of the page's mark."""
+    return dirs.checkout() / "docs" / "assets" / "femkit.svg"
+
+
 def _stale() -> dict[str, str]:
-    """file, from the checkout -> its text, for every reference page and the page's schemas
-    that differ from what the models render."""
+    """file, from the checkout -> its text, for every reference page and the page's generated
+    files — its schemas, its icons, its tokens, its mark (femkit's one logo) — that differ from what
+    the models render."""
     out = {}
     wanted = {reference_dir() / f"{name}.md": render_page(name) for name in pages()}
     wanted[schemas_file()] = page_schemas()
     wanted[icons_file()] = page_icons()
+    wanted[tokens_file()] = page_tokens()
+    wanted[bundle_file()] = page_bundle()
+    wanted[mark_file()] = read_text(logo_file())
     for path, text in wanted.items():
         if read_text(path) != text:
             out[str(path.relative_to(dirs.checkout()))] = text
     return out
 
 
-@operation(SCHEMA_DOCS, result=DocsOutcome, changes=True,
-           subject=lambda req: [DOCS_SUBJECT])
+@operation(SCHEMA_DOCS, result=DocsOutcome, subject=lambda req: [DOCS_SUBJECT])
 class SchemaDocs:
     """Render docs/reference/, and the page's schemas, from the schema models; files already up to date are left alone."""
 

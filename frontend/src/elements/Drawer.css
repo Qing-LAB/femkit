@@ -1,13 +1,21 @@
-.drawer { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--surface); }
-.drawer--start { border-right: 1px solid var(--line); }
-.drawer--end { border-left: 1px solid var(--line); }
-.drawer__close { display: none; }
-@container workspace (max-width: 960px) {
-  .drawer { position: absolute; top: 0; bottom: 0; z-index: 30; width: var(--drawer-width); box-shadow: var(--shadow-lg);
-    transition: transform var(--motion); }
-  .drawer--start { left: 0; transform: translateX(-105%); }
-  .drawer--end { right: 0; transform: translateX(105%); }
-  .drawer--open { transform: none; }
-  .drawer__close { display: block; align-self: flex-end; margin: var(--space-2); border: none; background: none; color: var(--text-muted);
-    font-size: var(--text-xl); cursor: pointer; }
+/* Drawer: a panel sliding over the canvas, a scrim behind it. */
+.drawer__scrim {
+  position: fixed; inset: 0; z-index: var(--layer-drawer); background: var(--color-scrim);
+  opacity: 0; visibility: hidden; transition: opacity var(--motion-base) var(--motion-ease-standard), visibility var(--motion-base);
 }
+.drawer__scrim--open { opacity: 1; visibility: visible; }
+.drawer {
+  position: fixed; z-index: var(--layer-drawer); display: flex; flex-direction: column;
+  background: var(--color-surface); box-shadow: var(--layer-drawer-shadow); visibility: hidden;
+  transition: transform var(--motion-slow) var(--motion-ease-standard), visibility var(--motion-slow);
+}
+.drawer--end { top: 0; bottom: 0; right: 0; width: min(var(--layout-inspector), 100%); transform: translateX(100%); }
+.drawer--start { top: 0; bottom: 0; left: 0; width: min(var(--layout-inspector), 100%); transform: translateX(-100%); }
+.drawer--bottom { left: 0; right: 0; bottom: 0; height: min(var(--layout-panel), 100%); transform: translateY(100%); }
+.drawer--open { transform: none; visibility: visible; }
+.drawer__head {
+  display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border-bottom: var(--size-hairline) solid var(--color-line);
+}
+.drawer__title { flex: 1; font-weight: var(--type-weight-strong); }
+.drawer__body { flex: 1; overflow: auto; min-height: 0; }

@@ -20,11 +20,11 @@ from femkit.engines.ngsolve.checks.common import projected, relative_residual, s
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
-        print("usage: python -m femkit.engines.ngsolve.checks.cuda WORK", file=sys.stderr)
+    if len(argv) != 2 or not argv[1].isdigit():
+        print("usage: python -m femkit.engines.ngsolve.checks.cuda WORK THREADS", file=sys.stderr)
         return 2
     work = Path(argv[0])
-    start()
+    start(int(argv[1]))
     os.environ["NGS_CUDA_DEVICE_INDEX"] = "0"
     from netgen.geom2d import unit_square
     from ngsolve import BilinearForm, GridFunction, H1, LinearForm, Mesh, Norm, TaskManager, dx, grad, x

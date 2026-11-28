@@ -1,34 +1,35 @@
-# One study (manual: 3 · Write each part): it pairs the square with the physics, a mesh recipe
-# and an observable set, and holds everything that is not the physics. Its one axis refines the
-# mesh: `study expand` writes one case per size, and the midpoint's potential is the same in each.
+# The Laplace check (manual: 3 · Write each part): it pairs the square with the physics and a mesh
+# recipe, and holds everything that is not the physics. It names no engine: the engine that solves
+# it is chosen when it is prepped — `femkit study prep check --engine elmer`, or `--engine ngsolve`
+# — and femkit then checks that the engine takes the recipe's mesh; the solve itself is not built
+# yet. Its one axis refines the mesh: `study prep` writes one case per size. Its solve's job and
+# its meshing job each ask one core, a short wall and modest memory, ample for the square's small
+# 2-D meshes.
 
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
-schema = 1
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `2` (manual: 3 · Write each part)
+schema = 2
 
 # the component it solves, by name
 component = "square"
 
-# the mesh recipe it meshes with, by name
+# the mesh recipe it meshes with, by name: the recipe states the mesher that makes its mesh, which the engine chosen to solve the study must take
 mesh = "uniform"
-
-# the observable sets it reports, by name
-observables = ["midpoint"]
 
 # the units values are shown in: each value in the first listed unit of its dimension, else in SI units, angles in degrees
 display = ["m", "V", "V/m"]
 
-# its steps, by name: each solves its physics as a kind of calculation, after any step it takes from; the order they are written in means nothing (manual: 3 · Write each part)
+# its steps, by name: each solves its physics as a kind of calculation, after any step it takes from; the order they are written in means nothing; one step for now, several in one study not built yet (manual: 3 · Write each part)
 [steps]
 
-[steps.solve]
+[steps.potential]
 # the physics it solves, by name
 physics = "electrostatics"
 # the kind of calculation, which the physics' formulation must support: one of `stationary` (manual: 3 · Write each part)
 kind = "stationary"
-# when several physics are solved in turn, what it takes from a step that runs before it — a heat step taking an optics step's absorbed power, say: each by what it is to its own physics, then the step's name and a quantity that step derives
-# takes = { heat_source = "optics.absorbed_power_density" }
+# when several physics are solved in turn, what it takes from a step that runs before it — a heat step taking an optics step's absorbed power, say: each by what it is to its own physics, then the step's name and a quantity that step derives; not built yet, since a study solves one step until several are
+# takes_from = { heat_source = "optics.absorbed_power_density" }
 
-# how the equations are discretized and solved — the finite element and the linear solver — the same in every environment (manual: 3 · Write each part)
+# how the equations are discretized and solved — the finite element and the linear solver — the same whatever the engine (manual: 3 · Write each part)
 [numerics]
 
 # the finite element
@@ -45,28 +46,39 @@ kind = "direct"
 # the relative tolerance an iterative solver stops at: a plain number; required with `iterative`
 # tolerance = 1e-10
 
-# what varies, each axis keyed by the address of what it varies — a parameter, `project:parameters.side`; a value of the mesh recipe, `mesh:uniform:size`; a numerics field; or a material's dataset — every axis crossed with every other (manual: 3 · Write each part)
+# what varies, each axis keyed by the address of what it varies — a definition written as its value, `project:definitions.side`; a value of the mesh recipe, `mesh:uniform:size`; a numerics field; or a material's dataset — every axis crossed with every other, but those a group steps together, which cross as one; a value one formula gives is that formula, not an axis (manual: 3 · Write each part)
 [axes]
 
 # the recipe's size, halved twice
 [axes."mesh:uniform:size"]
 # why it varies: one of `numerical convergence`, `geometry convergence`, `physical sweep`
 class = "numerical convergence"
-# its values, in order, each written as the value the axis varies is written in its own file
-values = ["0.1 m", "0.05 m", "0.025 m"]
+# its values, in order: plain numbers — in its `unit` where what it varies has one — or, for a material's dataset, each dataset by its name
+values = [0.1, 0.05, 0.025]
+# the unit its values are in, where what it varies has one: a unit of its dimension
+unit = "m"
 
-# when the axes are of more than one class: every axis, and why their full product is needed
+# groups of axes that step together, each by its name: the n-th case takes each one's n-th value — for values no formula relates, such as each sample's measured sizes (manual: 3 · Write each part)
+# [together]
+
+# [together.samples]
+# the address of each axis of the study it steps together, two or more, of one class, with as many values each
+# axes = ["project:definitions.side", "project:definitions.bias"]
+# why their values belong together, in a sentence
+# reason = "each square as built, with the bias it was measured at"
+
+# when what is crossed holds axes of more than one class: every axis, and why their full product is needed
 # [crossing]
 # the address of every axis of the study
-# axes = ["mesh:uniform:size", "project:parameters.bias"]
+# axes = ["mesh:uniform:size", "project:definitions.bias"]
 # why the full product is needed, in a sentence
 # reason = "the midpoint must hold half the bias at every size, whatever the bias"
 
-# each engine environment's settings for this study, by the environment's name (manual: 3 · Write each part)
-[environments]
+# what belongs to the solve, whatever engine solves it: the resources of the job that solves its cases (manual: 3 · Write each part)
+[solve]
 
-# the job's resources in this environment (manual: 3 · Write each part)
-[environments.elmer.resources]
+# the resources of the job that solves the study's cases, each in turn within it, stated, never derived (manual: 3 · Write each part)
+[solve.resources]
 # MPI ranks
 ranks = 1
 # threads per rank
@@ -75,15 +87,18 @@ threads = 1
 gpus = 0
 # wall time, `[D-]HH:MM:SS`; read on a machine with a scheduler
 wall = "00:10:00"
-# memory per node, a whole number with `K`, `M`, `G` or `T`; read on a machine with a scheduler
+# memory per node, a whole number with `K`, `M`, `G`, `T` or `P`; read on a machine with a scheduler
 memory = "2G"
 # the queue, on a machine with a scheduler
 # partition = "batch"
 # the quality of service, where the record lists one
 # qos = "normal"
 
-# the job's resources in this environment (manual: 3 · Write each part)
-[environments.ngsolve.resources]
+# the job that makes its geometries and meshes: its resources alone (manual: 3 · Write each part)
+[meshing]
+
+# the resources of the job that makes the study's geometries and meshes, each in turn within it, stated, never derived (manual: 3 · Write each part)
+[meshing.resources]
 # MPI ranks
 ranks = 1
 # threads per rank
@@ -91,9 +106,9 @@ threads = 1
 # GPUs per node, a count; 0 states that none is used
 gpus = 0
 # wall time, `[D-]HH:MM:SS`; read on a machine with a scheduler
-wall = "00:10:00"
-# memory per node, a whole number with `K`, `M`, `G` or `T`; read on a machine with a scheduler
-memory = "2G"
+wall = "00:05:00"
+# memory per node, a whole number with `K`, `M`, `G`, `T` or `P`; read on a machine with a scheduler
+memory = "1G"
 # the queue, on a machine with a scheduler
 # partition = "batch"
 # the quality of service, where the record lists one

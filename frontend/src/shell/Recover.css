@@ -1,0 +1,8 @@
+/* A view the page could not draw: its sentence, the error, and the way to read the page again. */
+.recover {
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3);
+  max-width: var(--size-readable); margin: var(--space-6) auto; padding: var(--space-4);
+  background: var(--color-surface); border: var(--size-rule) solid var(--color-line); border-radius: var(--size-radius);
+}
+.recover__says { margin: 0; color: var(--color-text); }
+.recover__error { margin: 0; color: var(--color-text-muted); font-family: var(--type-mono); font-size: var(--type-size-sm); }

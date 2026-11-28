@@ -1,11 +1,22 @@
-.help { position: relative; display: inline-flex; vertical-align: middle; }
-.help__mark { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: var(--radius-pill);
-  border: 1px solid var(--line-strong); color: var(--text-faint); font-size: 10px; font-weight: var(--weight-bold);
-  text-decoration: none; cursor: help; background: var(--surface); }
-.help__mark:hover, .help__mark:focus-visible { color: var(--accent); border-color: var(--accent); outline: none; box-shadow: var(--focus); }
-.help__tip { position: absolute; z-index: 40; left: 50%; bottom: calc(100% + var(--space-2)); transform: translateX(-50%);
-  width: max-content; max-width: 300px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
-  background: var(--text); color: var(--bg); font-size: var(--text-xs); line-height: var(--leading); font-weight: var(--weight-normal);
-  box-shadow: var(--shadow-lg); opacity: 0; pointer-events: none; transition: opacity var(--motion); text-transform: none; letter-spacing: normal; }
-.help__tip--open { opacity: 1; }
-.help__where { opacity: 0.7; }
+/* Help: a quiet `?`, its sentence in a tip above it. */
+.help { position: relative; display: inline-flex; vertical-align: middle; margin-left: var(--space-1); }
+.help__mark {
+  display: inline-grid; place-items: center; width: var(--size-icon); height: var(--size-icon);
+  font-size: var(--type-size-2xs); font-weight: var(--type-weight-strong); text-decoration: none;
+  color: var(--color-text-muted); background: var(--color-surface-sunken); border-radius: var(--size-radius-pill);
+  cursor: help; transition: background var(--motion-quick) var(--motion-ease-standard);
+}
+.help__mark:hover, .help__mark:focus-visible { color: var(--color-on-accent); background: var(--color-accent); outline: none; }
+.help__tip {
+  position: absolute; bottom: 100%; left: 0; margin-bottom: var(--space-2); z-index: var(--layer-overlay);
+  width: max-content; max-width: var(--size-tip); padding: var(--space-2) var(--space-3);
+  font-size: var(--type-size-xs); font-weight: var(--type-weight-normal); line-height: var(--type-leading-snug);
+  text-transform: none; letter-spacing: normal; white-space: normal; text-align: left;
+  color: var(--color-text); background: var(--color-surface-raised); border: var(--size-hairline) solid var(--color-line);
+  border-radius: var(--size-radius-sm); box-shadow: var(--layer-overlay-shadow);
+  opacity: 0; visibility: hidden; transform: translateY(var(--space-1)); pointer-events: none;
+  transition: opacity var(--motion-quick) var(--motion-ease-out), transform var(--motion-quick) var(--motion-ease-out),
+              visibility var(--motion-quick);
+}
+.help__tip--open { opacity: 1; visibility: visible; transform: none; }
+.help__where { display: block; margin-top: var(--space-1); color: var(--color-text-faint); }

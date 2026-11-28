@@ -1,0 +1,8 @@
+/* Next: a quiet heading over its actions. */
+.next { display: flex; flex-direction: column; gap: var(--space-2); }
+.next__label {
+  margin: 0; font-size: var(--type-size-2xs); font-weight: var(--type-weight-strong);
+  letter-spacing: var(--type-tracking-caps); text-transform: uppercase; color: var(--color-text-muted);
+}
+.next--inline { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.next .button { white-space: normal; text-align: start; }

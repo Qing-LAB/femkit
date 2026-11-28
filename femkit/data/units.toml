@@ -2,7 +2,10 @@
 # `equals` may use only the units above it. Definitions: the SI Brochure, 9th edition (2019):
 # its base units, its derived units with special names, its prefixes with the four the 27th
 # CGPM added in 2022, and the electronvolt from its exact elementary charge. The ångström is
-# 1e-10 m exactly.
+# 1e-10 m exactly. Memory is counted in bytes and their binary multiples, IEC 80000-13's
+# kibibyte (1024 bytes) and those above it: the multiples a job request's and a scheduler's `K`,
+# `M`, `G`, `T` and `P` mean (`MEMORY_LETTERS`, femkit/core/units.py), and a machine record keeps
+# memory in, whole MiB (jobs.md §§ 2, 9.1).
 
 # Each base dimension and its canonical unit: every value of the dimension is held in it.
 # Plane angle is a base dimension here, held in degrees, so that a written angle stays exact.
@@ -15,6 +18,7 @@ temperature = "K"
 amount = "mol"
 luminous_intensity = "cd"
 angle = "deg"
+information = "byte"
 
 # Each SI prefix and its power of ten. The micro sign (U+00B5), the Greek mu (U+03BC) and
 # the ASCII `u` all mean micro.
@@ -75,3 +79,10 @@ H = { equals = "Wb/A", prefixes = true }
 eV = { equals = "1.602176634e-19 J", prefixes = true }
 "Å" = { equals = "1e-10 m", prefixes = false }
 angstrom = { equals = "1e-10 m", prefixes = false }
+# memory: the byte, and its binary multiples, to which no SI prefix applies
+byte = { dimension = "information", prefixes = false }
+KiB = { equals = "1024 byte", prefixes = false }
+MiB = { equals = "1024 KiB", prefixes = false }
+GiB = { equals = "1024 MiB", prefixes = false }
+TiB = { equals = "1024 GiB", prefixes = false }
+PiB = { equals = "1024 TiB", prefixes = false }

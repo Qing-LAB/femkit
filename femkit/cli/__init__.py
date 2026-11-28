@@ -2,9 +2,10 @@
 
 Every command is built from the registry: its options from the request model,
 its help from the docstring and field descriptions. Nothing here knows an
-operation. A request the model refuses is said as the person types the command:
-each field by its argument or option (`STUDY`, `--as NAME`), with what it takes,
-a closed list's choices named, and the command again as its next step.
+operation. A request the model refuses is refused by the operation's own
+`request_from`, as the page's routes refuse it: each field by its argument or
+option (`STUDY`, `--as NAME`), with what it takes, a closed list's choices named,
+and the command again as its next step.
 """
 
 from __future__ import annotations
@@ -15,18 +16,18 @@ import sys
 import threading
 import time
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import click
-from pydantic import ValidationError
 from pydantic.fields import FieldInfo
 
 from femkit.core import commandline, process, text, view
 from femkit.core.errors import ConsentDeclined, Refusal, UsageError
-from femkit.core.operations import Ask, Context, Operation, Plan, Result, Step
-from femkit.core.schema import WANTED, closed, described, pointer
-from femkit.registry import GROUPS, Group, group, operations
+from femkit.core.operations import Ask, Context, Operation, Plan, PlanAnswer, Result, Step
+from femkit.core.schema import described, pointer
+from femkit.registry import GROUPS, Group, group, offered, operations
 
 
 # ------------------------------------------------------------ fields to params
@@ -55,7 +56,7 @@ class _Option(click.Option):
 def _param(name: str, field: FieldInfo, manual: str | None = None) -> click.Parameter:
     """A field's parameter (api.md § 4.1). It takes the words as typed — no type, nothing
     required — so every problem with them is the request model's, said as it is typed
-    (`_refused`)."""
+    (`Operation.request_from`)."""
     s = commandline.spelling(name, field)
     if s.kind == "argument":   # its usage says what the request requires, which click is not asked to check
         shown = name.upper() if field.is_required() else f"[{name.upper()}]"
@@ -117,8 +118,8 @@ def _again(op: Operation, req: Any) -> str:
 
 def _request(op: Operation, values: dict) -> Any:
     """The request from the words given, validated by the request model alone (api.md § 4.1); a
-    field given none is left to the model: its default, or its refusal as missing — said as the
-    person types the command (`_refused`)."""
+    field given none is left to the model: its default, or its refusal as missing — the one
+    refusal of a bad request, which the page's routes give too (`Operation.request_from`)."""
     data = {}
     for name in op.request.model_fields:
         value = values.get(name)
@@ -127,64 +128,7 @@ def _request(op: Operation, values: dict) -> Any:
         if isinstance(value, tuple):
             value = list(value)
         data[name] = value
-    try:
-        return op.request.model_validate(data)
-    except ValidationError as exc:
-        raise _refused(op, data, exc.errors()) from None
-
-
-def _typed(name: str, field: FieldInfo) -> str:
-    """A request field as a person types it (api.md § 4.1): an argument by its name in capitals,
-    `STUDY`; an option with its value, `--as NAME`, or its choices, `--into library|project`; a
-    flag as itself."""
-    s = commandline.spelling(name, field)
-    if s.kind == "argument":
-        return name.upper() + ("..." if s.many else "")
-    if s.kind == "flag":
-        return s.flag
-    return f"{s.flag} {'|'.join(closed(s.element)) or name.upper()}"
-
-
-def _choices(name: str, field: FieldInfo) -> list[str]:
-    """The values a field's closed list allows; none for a field that takes any."""
-    return closed(commandline.spelling(name, field).element)
-
-
-def _refused(op: Operation, data: dict, errors: list[dict]) -> UsageError:
-    """The request's problems as the command line says them (api.md § 4.1; core.md § 9): each
-    field by its argument or option — missing, with what it takes; outside its closed list, with
-    its choices; of the wrong kind, with what it should be — and, as the next step, the command
-    again with what was given right, each field to give again still to fill, and, for a closed
-    list, one command for each of its choices. A `UsageError`, `invalid-request`, its subject the
-    operation, as the request model's own refusal is (`Operation.request_from`)."""
-    fields = op.request.model_fields
-    by_key = {field.alias or name: name for name, field in fields.items()}
-    said, wrong = [], []
-    for error in errors:
-        name = by_key.get(error["loc"][0]) if error["loc"] else None
-        reason = error["msg"].removeprefix("Value error, ")
-        if name is None:
-            said.append(reason)
-            continue
-        field, typed, given = fields[name], _typed(name, fields[name]), text.show(error.get("input"))
-        wrong.append(name)
-        if error["type"] == "missing":
-            said.append(f"{typed} is missing: {described(field, _manual(op))}")
-        elif _choices(name, field):
-            said.append(f"{typed.split()[0]} is `{given}`, and it takes "
-                        + " or ".join(f"`{c}`" for c in _choices(name, field)))
-        elif error["type"] in WANTED:
-            said.append(f"{typed} is `{given}`, and it should be {WANTED[error['type']]}: "
-                        f"{described(field, _manual(op))}")
-        else:
-            said.append(f"{typed} is `{given}`: {reason}")
-    wrong = list(dict.fromkeys(wrong))
-    given = {k: v for k, v in data.items() if k not in wrong and v != fields[k].default}
-    choosing = next((n for n in wrong if _choices(n, fields[n])), None)
-    fills = [view.Fill(field=n, label=described(fields[n])) for n in wrong if n != choosing]
-    again = [view.command(op.verb, fills=fills, **given, **({choosing: c} if choosing else {}))
-             for c in (_choices(choosing, fields[choosing]) if choosing else [None])]
-    return UsageError("\n  ".join(said), tuple(again), code="invalid-request", subject=op.name)
+    return op.request_from(data)
 
 
 # ------------------------------------------------------------------- output
@@ -196,23 +140,14 @@ def _tagged(tag: str, text: str) -> str:
 
 
 def _emit(as_json: bool, model: Result | Plan, tag: str) -> None:
+    """A result, or a plan — under `--json`, the one plan answer the page's `/plan` gives too
+    (api.md § 4.4)."""
     if as_json:
-        click.echo(model.model_dump_json(indent=2))
-    elif isinstance(model, Result) and model.report().blocks[:1] and isinstance(model.report().blocks[0], view.Code):
-        click.echo(model.text())   # text to copy as it is, untagged (web.md § 7.6)
+        click.echo((PlanAnswer.of(model) if isinstance(model, Plan) else model).model_dump_json(indent=2))
+    elif isinstance(model, Result) and model.report.blocks[:1] and isinstance(model.report.blocks[0], view.Code):
+        click.echo(model.text())   # text to copy as it is, untagged (web.md § 7.7)
     else:
         click.echo(_tagged(tag, model.text()))
-
-
-def took(seconds: float) -> str:
-    s = int(round(seconds))
-    if s < 60:
-        return f"{s} s"
-    m, s = divmod(s, 60)
-    if m < 60:
-        return f"{m} min {s:02d} s"
-    h, m = divmod(m, 60)
-    return f"{h} h {m:02d} min"
 
 
 def _tail(log: Path) -> list[str]:
@@ -269,7 +204,7 @@ class TerminalObserver:
             if not self.watching:
                 return
             log, started, indent = self.watching
-            line = f"{indent}{took(time.monotonic() - started)} | {last_line(log)}"
+            line = f"{indent}{text.duration(time.monotonic() - started)} | {last_line(log)}"
             width = shutil.get_terminal_size().columns - 1
             click.echo("\r\x1b[K" + (line if len(line) <= width else line[:width - 1] + "…"), nl=False, err=True, color=True)
             self.shown = True
@@ -310,9 +245,9 @@ class TerminalObserver:
         seconds = time.monotonic() - run.get("started", time.monotonic())
         if outcome == "done":
             if seconds >= 1:  # a step done at once needs no second line
-                self._say(f"{run['head']} done in {took(seconds)}")
+                self._say(f"{run['head']} done in {text.duration(seconds)}")
             return
-        self._say(f"{run['head']} {outcome.upper()} after {took(seconds)}" + (f"; log: {text.path(log)}" if log else ""))
+        self._say(f"{run['head']} {outcome.upper()} after {text.duration(seconds)}" + (f"; log: {text.path(log)}" if log else ""))
         for line in _tail(log) if log else []:
             self._say(f"      | {line}")
 
@@ -378,7 +313,9 @@ def _asked(op: Operation, req: Any, plan: Plan, ctx: Context) -> tuple[Any, Plan
 
 def _consent(plan: Plan, yes: bool, tag: str, again: str) -> None:
     """An empty plan needs no consent; otherwise --yes, or a yes on a terminal. The plan is
-    shown either way: what is about to run is the context of everything printed after it."""
+    shown either way: what is about to run is the context of everything printed after it. Without
+    a terminal, refused, offering the command again with each of the command line's own options
+    that does without one, as `OWN` declares them."""
     if not plan.steps:
         return
     if yes:  # the steps alone: the findings come again with the outcome
@@ -386,8 +323,8 @@ def _consent(plan: Plan, yes: bool, tag: str, again: str) -> None:
         return
     if not _can_ask():
         raise ConsentDeclined("there is no terminal to ask on",
-                              (view.shell(f"{again} --dry-run"), view.shell(f"{again} --yes")), code="no-terminal",
-                              subject=plan.operation)
+                              tuple(view.shell(f"{again} {OWN[o].flags[0]}", note=OWN[o].help) for o in WITHOUT_ASKING),
+                              code="no-terminal", subject=plan.operation)
     click.echo(_tagged(tag, plan.text()), err=True)
     if not click.confirm("Proceed?", default=False, err=True):
         raise ConsentDeclined("declined; nothing was changed", code="declined", subject=plan.operation)
@@ -418,9 +355,9 @@ def _execute(op: Operation, values: dict) -> int:
     except Refusal as exc:
         if as_json:
             click.echo(view.RefusalAnswer.of(exc).model_dump_json(indent=2))
-        else:
+        else:   # the findings it rests on before its sentence (core.md § 9)
             lines = [f"refused: {exc}"] + text.next_block("instead", exc.next)
-            click.echo(_tagged(tag, "\n".join(lines)), err=True)
+            click.echo("\n".join([*text.findings(exc.issues), _tagged(tag, "\n".join(lines))]), err=True)
         return 2
     except Exception as exc:  # a defect or an unavailable system (core.md § 9): the surface's one report of it
         click.echo(traceback.format_exc(), err=True)
@@ -431,12 +368,31 @@ def _execute(op: Operation, values: dict) -> int:
         return 1
 
 
+@dataclass(frozen=True)
+class Own:
+    """One of the command line's own options (api.md § 4.2): its spellings, its help, and whether
+    only a changing command has it."""
+
+    flags: tuple[str, ...]
+    help: str
+    changing: bool
+
+
+#: The command line's own options, by the name its callback is handed each by (api.md § 4.2): the
+#: one declaration every command's options are built from and a refusal names them by.
+OWN = {
+    "json_output": Own(("--json",), "print one JSON document on stdout", changing=False),
+    "dry_run": Own(("--dry-run",), "print the plan; change nothing", changing=True),
+    "yes": Own(("--yes", "-y"), "consent in advance", changing=True),
+}
+#: Those that let a changing command go on without a terminal to ask on.
+WITHOUT_ASKING = ("dry_run", "yes")
+
+
 def _command(verb: str, op: Operation) -> click.Command:
     params = [_param(name, field, _manual(op)) for name, field in op.request.model_fields.items()]
-    params.append(click.Option(["--json", "json_output"], is_flag=True, help="print one JSON document on stdout"))
-    if op.changes:
-        params.append(click.Option(["--dry-run"], is_flag=True, help="print the plan; change nothing"))
-        params.append(click.Option(["--yes", "-y"], is_flag=True, help="consent in advance"))
+    params += [click.Option([*own.flags, name], is_flag=True, help=own.help)
+               for name, own in OWN.items() if op.changes or not own.changing]
 
     def callback(**values: Any) -> None:
         sys.exit(_execute(op, values))
@@ -448,7 +404,7 @@ def build(ops: dict[str, Operation] | None = None) -> click.Group:
     """femkit's command line: one group per name prefix, one command per operation (api.md § 4) —
     femkit's own group, `""`, holding the commands of none."""
     root = _Group("femkit", GROUPS.get(""))
-    for name, op in (ops if ops is not None else operations()).items():
+    for name, op in offered(ops if ops is not None else operations(), "cli").items():
         group_name, _, verb = name.rpartition(".")
         if not group_name:
             root.add_command(_command(verb, op))

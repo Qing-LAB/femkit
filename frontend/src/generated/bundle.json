@@ -1,0 +1,18 @@
+{
+  "gate": {
+    "label": "access token",
+    "icon": "key-round",
+    "help": "Use this access token, kept in this tab alone.",
+    "says": {
+      "token": "This server needs its access token. Open the address `serve start` printed, or paste the token here; it is kept in this tab alone.",
+      "unreachable": "The server does not answer: it may have stopped. `femkit serve status` says whether it runs.",
+      "unreadable": "The server answered with something the page cannot read."
+    }
+  },
+  "mark": "/static/mark.svg",
+  "addresses": {
+    "bundle": "/static/",
+    "documents": "/docs"
+  },
+  "attribute": "data-theme"
+}

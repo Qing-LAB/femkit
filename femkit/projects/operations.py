@@ -21,7 +21,7 @@ from femkit.projects import layout as layouts
 from femkit.projects.door import Opened
 from femkit.projects.layout import Layout
 from femkit.projects.project import Library, Project
-from femkit.projects.requests import PROJECT_LIST, PROJECT_NEW, ListRequest, NewRequest
+from femkit.projects.requests import PROJECT_CHECK, PROJECT_LIST, PROJECT_NEW, ListRequest, NewRequest
 
 
 # ------------------------------------------------------------------ project list
@@ -36,18 +36,19 @@ class ProjectList(Result):
     root: str = Field(description="the projects root, `paths.projects`")
     projects: list[ProjectRow] = Field(default_factory=list, description="each project under the root, by name")
 
+    @property
     def report(self) -> view.Report:
         return view.Report(blocks=[
             view.Text(text=f"{text.count(len(self.projects), 'project')} in {text.path(self.root)}"),
-            view.Table(columns=view.columns("name", "studies"),
-                       rows=[{"name": p.name, "studies": text.show(p.studies)} for p in self.projects])])
+            view.Table.of(ProjectRow, [{"name": p.name, "studies": text.show(p.studies)} for p in self.projects],
+                          "name", "studies")])
 
 
 @operation(PROJECT_LIST, result=ProjectList)
 def project_list(req: ListRequest, ctx: Context) -> ProjectList:
     """The projects under the projects root, each with its studies."""
     top = location.root(ctx)
-    layout = layouts.read()
+    layout = layouts.read_once(ctx)
     return ProjectList(root=str(top), projects=[
         ProjectRow(name=p.name, path=str(p.folder),
                    studies=door.listing(p, layout).get(layout.listed, []) if layout.listed else [])
@@ -63,13 +64,17 @@ class NewOutcome(Outcome):
                                     "the projects root")
     copied: list[str] = Field(default_factory=list, description="each file copied, by its path from the project's "
                                                                 "folder")
+    next: list[view.Action] = Field(default_factory=list, description="its next step: the new project checked, as "
+                                    "any other", json_schema_extra={"doc": "projects.md § 8"})
 
+    @property
     def report(self) -> view.Report:
         if self.status != "done":
             return view.Report(blocks=[view.Text(text=f"{text.path(self.path)} is not made")])
         return view.Report(blocks=[
             view.Text(text=f"made {text.path(self.path)} from {self.source}: {text.count(len(self.copied), 'file')}"),
-            view.Table(columns=view.columns("file"), rows=[{"file": f} for f in self.copied])])
+            view.Table.of(NewOutcome, [{"copied": f} for f in self.copied], "copied"),
+            *([view.Next(label="check the new project, as any other", actions=self.next)] if self.next else [])])
 
 
 def _choose(templates: dict[str, Path], name: str) -> list[view.Action]:
@@ -87,11 +92,13 @@ def _source(ctx: Context, given: str | None, top: Path, name: str) -> Project:
                          f"templates: {', '.join(templates) or 'none'}", _choose(templates, name),
                          code="no-source", subject="source")
     names.check(given, what="a template's or a project's name")
-    project = location.along(top, tuple(names.steps(given))) if top.is_dir() else None
+    project = location.along(ctx, top, tuple(names.steps(given))) if top.is_dir() else None
     project = project if project == Project(top, given) else None
     template = Project(templates[given].parent, given) if given in templates else None
     if project is not None and template is not None:
         raise UsageError(f"{given!r} names both femkit's template {given} and your project {text.path(project.folder)}",
+                         (view.command(PROJECT_LIST, note="your projects, by the names --from takes"),
+                          *_choose({t: p for t, p in templates.items() if t != given}, name)),
                          code="ambiguous-source", subject=given)
     if project is None and template is None:
         raise UsageError(f"no template or project is named {given!r}; the templates: {', '.join(templates) or 'none'}",
@@ -99,7 +106,7 @@ def _source(ctx: Context, given: str | None, top: Path, name: str) -> Project:
     return project or template
 
 
-def _target(top: Path, name: str, layout: Layout) -> Project:
+def _target(ctx: Context, top: Path, name: str, layout: Layout) -> Project:
     """The new project ``name`` names under the root ``top`` — refused, naming it, when it breaks
     the name rule, opens with a global library's folder, lies inside a project, or would replace a
     file or folder (projects.md § 7)."""
@@ -108,7 +115,7 @@ def _target(top: Path, name: str, layout: Layout) -> Project:
     if steps[0] in layout.libraries().values():
         raise UsageError(f"{name!r} would lie in {steps[0]}/, a global library at the projects root, which holds "
                          "no project", code="in-library", subject=name)
-    inner = location.along(top, tuple(steps[:-1])) if top.is_dir() else None
+    inner = location.along(ctx, top, tuple(steps[:-1])) if top.is_dir() else None
     if inner is not None:
         raise UsageError(f"{name!r} would lie inside the project {inner.name}", code="inside-project", subject=name)
     target = Project(top, name)
@@ -181,13 +188,13 @@ def _planned(req: NewRequest, ctx: Context) -> tuple[Path, Project, Project, lis
     if top.exists() and not top.is_dir():
         raise Refused(f"the projects root {text.path(top)} ({location.KEY}) is no folder", code="no-root",
                       subject=str(top))
-    layout = layouts.read()
-    target = _target(top, req.name, layout)
+    layout = layouts.read_once(ctx)
+    target = _target(ctx, top, req.name, layout)
     source = _source(ctx, req.source, top, req.name)
     return top, target, source, *_written(door.open_project(source, ctx)), _seeds(top, layout)
 
 
-@operation(PROJECT_NEW, result=NewOutcome, changes=True, subject="plan")
+@operation(PROJECT_NEW, result=NewOutcome, subject="plan")
 class ProjectNew:
     """Make a new project under the projects root, a copy of one of femkit's templates or of one of
     your projects: every part, the files each fixes and declares, and your own folder — nothing
@@ -237,4 +244,4 @@ class ProjectNew:
         status, log = run_steps(plan, ctx, observer, do)
         return NewOutcome(plan=plan, status=status, log=str(log), name=req.name, path=held["path"],
                           source=req.source or "", copied=held["files"] if status == "done" else [],
-                          issues=list(plan.issues))
+                          next=[view.command(PROJECT_CHECK, project=req.name)] if status == "done" else [])

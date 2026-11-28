@@ -80,10 +80,12 @@ def test_a_part_kind_the_layout_says_femkit_writes_is_never_copied(definitions, 
     kit.rewrite(definitions / "project" / "layout.toml", 'schema = "models.study"\n',
                 'schema = "models.study"\nwriter = "femkit"\n')
     outcome = kit.apply("project.new", name="first", source="laplace_square")
-    assert outcome.ok() and "studies/check.toml" not in outcome.copied and "physics/electrostatics.toml" in outcome.copied
+    assert outcome.ok() and "studies/check.toml" not in outcome.copied \
+        and "physics/electrostatics.toml" in outcome.copied
     assert not (root / "first/studies").exists()
     assert [(i.code, i.subject, i.message) for i in outcome.issues] == [
-        ("not-copied", "studies/check.toml", "not copied: femkit writes this file")]
+        ("not-copied", f"studies/{name}.toml", "not copied: femkit writes this file")
+        for name in ("check",)]
 
 
 def test_a_source_changed_between_plan_and_apply_is_refused_and_nothing_made(root):
@@ -133,10 +135,12 @@ def test_without_a_source_the_refusal_offers_each_template_for_the_name_given(ro
 def test_a_source_that_names_both_a_template_and_a_project_or_neither_is_refused(root):
     """Fails if `project new --from` a name that is both a template and one of the person's
     projects picks one, or one that is neither is looked for elsewhere, instead of refusing,
-    naming it (projects.md § 7: "a name that is both is refused, naming both")."""
+    naming it, with nothing to do instead (projects.md § 7: "a name that is both is refused, naming
+    both"; § 8: "the door's refusals fill their `next`")."""
     kit.apply("project.new", name="laplace_square", source="two_material")
-    with kit.refused(UsageError, "ambiguous-source", "laplace_square"):
+    with kit.refused(UsageError, "ambiguous-source", "laplace_square") as caught:
         kit.planned("project.new", name="first", source="laplace_square")
+    assert [a.call.operation for a in caught.value.next][0] == "project.list"
     with kit.refused(UsageError, "no-such-source", "nowhere"):
         kit.planned("project.new", name="first", source="nowhere")
     kit.apply("project.new", name="first", source="two_material")        # a project alone: copied
@@ -192,3 +196,14 @@ def test_the_parts_named_beside_each_project_are_of_the_kind_the_layout_lists(de
     kit.apply("project.new", name="square", source="laplace_square")
     kit.rewrite(definitions / "project" / "layout.toml", 'listed = "study"', 'listed = "physics"')
     assert [(p.name, p.studies) for p in kit.run("project.list").projects] == [("square", ["electrostatics"])]
+
+
+def test_a_new_project_offers_project_check_of_it_as_the_next_step(root):
+    """Fails if `project new` does not end with `project check` of the new project as its next
+    step — what writing a project's files leads to, the check then giving the project's own next
+    step (plan.md § 2, rows 3–5; models.md § 11.2: "a new project is checked as any other")."""
+    from femkit.core import text
+    outcome = kit.apply("project.new", name="first", source="laplace_square")
+    (step,) = outcome.next
+    assert (step.call.operation, step.call.request) == ("project.check", {"project": "first"})
+    assert str(step) in text.report(outcome.report)

@@ -1,0 +1,19 @@
+# Where a project's definitions.py runs (models.md § 3; ADR 0021): numpy, scipy, the netCDF4
+# library and xarray, through which the one store writes (ADR 0025 decision 6), and femkit's program
+# that builds `project.definitions`, calls the person's functions and writes their values
+# (femkit/engines/person/definitions.py), declared with its time limit in femkit/data/programs.toml
+# — a tool environment (definitions.md § 4.7). Conda-forge packages alone, nothing built, no engine.
+# What definitions.py may import, beside `project.definitions`, `math` and `cmath`, is what this
+# file lists under `modules`. A default: the person's Python runs here in every project that
+# computes a definition.
+description = "numpy, scipy, netCDF4 and xarray: where a project's definitions.py runs"
+version = "1.7.4"
+version_command = ["python", "-c", "import netCDF4; print(netCDF4.__version__)"]
+default = true
+
+[packages]
+conda = ["python", "numpy", "scipy", "netcdf4=1.7.4", "xarray"]
+
+[provides]
+executables = ["python"]
+modules = ["numpy", "scipy", "netCDF4", "xarray"]

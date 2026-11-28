@@ -1,6 +1,6 @@
 """`job probe`: measure the machine this runs on into a record (jobs.md § 9.1, § 9.2).
 
-Every outside command runs through `core.process`;
+Every outside command runs through `core.process`, one in an environment through its one door;
 one that is missing or fails makes the facts it measures unknown, with the reason —
 never an exception, never a guess.
 """
@@ -11,25 +11,27 @@ import getpass
 import os
 import platform
 import re
+import shlex
 import shutil
-import socket
 from pathlib import Path
 from typing import Any
 
 from femkit.config import probe as config_probe
 from femkit.config import settings
-from femkit.core import clock, dirs, persist, process, view
+from femkit.core import clock, dirs, persist, view
 from femkit.core.errors import Refusal, Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.definitions import catalogue
 from femkit.definitions.models import SchedulerKind
-from femkit.envs.manager import confined, resolve
+from femkit.envs import inside
+from femkit.envs.manager import made, resolve
 from femkit.envs.state import gpu, observe
 from femkit import schedulers
-from femkit.jobs.record import SCHEMA, Record, settings_now
+from femkit.jobs.record import SCHEMA, Record, host_identity, settings_now
 from femkit.jobs.requests import JOB_PROBE
 
 MEMINFO = Path("/proc/meminfo")
+ENTERS = "enters"   # the program that says which prefix the manager's `run` enters, by its name in programs.toml
 
 
 def unknown(reason: str) -> dict:
@@ -42,21 +44,21 @@ def declarations(pairs: list[str]) -> dict[str, str]:
     return dict(pair.partition("=")[::2] for pair in pairs)
 
 
+SCHEDULER = "scheduler"   # the record's part whose command paths `--set` declares (jobs.md § 9.2)
+
+
 def scheduler_kind(ctx: Context, named: str | None, declared: dict[str, str]) -> tuple[str, SchedulerKind, str]:
-    """The kind: named, or detected by its submit command (jobs.md § 9.2)."""
+    """The kind: named, or detected by its submit command, found or declared (jobs.md § 9.2)."""
     kinds = catalogue.schedulers(ctx)
     if named is not None:
         if named not in kinds:
-            raise UsageError(f"no scheduler kind {named!r}; kinds: {', '.join(sorted(kinds))}", code="no-such-kind",
+            raise UsageError(f"no scheduler kind `{named}`; kinds: {', '.join(sorted(kinds))}", code="no-such-kind",
                              subject=named)
         return named, kinds[named], "named by --scheduler"
-    if declared:
-        raise UsageError("--set declares a scheduler command; name its kind with --scheduler", code="unnamed",
-                         subject="scheduler")
-    name, why = config_probe.detect_scheduler(kinds)
+    name, why = config_probe.detect_scheduler(kinds, submit_declared=f"{SCHEDULER}.commands.submit" in declared)
     if name is None:
-        raise Unstated(why, (view.command(JOB_PROBE,
-                                         fills=[view.Fill(field="scheduler", label="the scheduler's kind", example="KIND")]),),
+        raise Unstated(why, (view.command(JOB_PROBE, note=f"one of: {', '.join(sorted(kinds))}",
+                                         fills=[view.Fill(field="scheduler", label="the scheduler's kind")]),),
                       code="scheduler-unknown", subject="scheduler")
     return name, kinds[name], why
 
@@ -108,15 +110,33 @@ def _manager(ctx: Context) -> dict:
     root = answer(m.query(m.kind.root))
     plat = answer(m.query(m.kind.platform)) if m.kind.platform else \
         unknown(f"the {m.kind_name} kind declares no platform query")
-    control = dirs.control_prefix()
-    if not (control / "conda-meta").is_dir():
-        enters: Any = unknown(f"no control environment at {control}")
-    else:
-        ran = process.run(m.in_prefix(control, ["python", "-c", "import sys; print(sys.prefix)"]),
-                          env=confined(m.environment), timeout=120)  # as every command in a prefix runs (envs.md § 4.4)
-        enters = ran.ok and Path(ran.stdout.strip().splitlines()[-1] if ran.stdout.strip() else "/").resolve() == control.resolve()
     return {"kind": m.kind_name, "path": str(m.path), "version": version, "root": root,
-            "platform": plat, "run_enters": enters}
+            "platform": plat, "run_enters": _run_enters(ctx, m)}
+
+
+def _run_enters(ctx: Context, m) -> Any:
+    """Whether `<manager> run -n femkit` runs inside the prefix the manager lists for the control
+    environment here (jobs.md § 9.1): true or false only when it ran and said which prefix it ran in;
+    unknown, with why, otherwise. The program that says so is declared, `enters`, and runs through the
+    one door into the control environment, as every command in an environment runs (envs.md § 4.4)."""
+    try:
+        there = inside.entered(ctx, dirs.CONTROL)
+    except Refusal as exc:
+        return unknown(str(exc))
+    control = there.prefix
+    if control is None or not made(control, catalogue.managers(ctx)):
+        return unknown(f"the manager lists no control environment, {there.managed}")
+    declared = inside.program(ctx, ENTERS)
+    argv = there.program(declared)
+    ran = there.run(argv, declared=declared)
+    said = ran.stdout.strip().splitlines()
+    if not ran.ok:
+        how = "did not end in time" if ran.timed_out else f"failed (exit {ran.returncode})"
+        first = (ran.stderr or ran.stdout).strip().splitlines()
+        return unknown(f"`{shlex.join(argv[1:])}` {how}" + (f": {first[0][:200]}" if first else ""))
+    if not said:
+        return unknown(f"`{shlex.join(argv[1:])}` printed no prefix")
+    return Path(said[-1]).resolve() == control.resolve()
 
 
 def _environments(ctx: Context) -> Any:
@@ -138,7 +158,7 @@ def measure(ctx: Context, scheduler: str | None, declared: dict[str, str]) -> Re
     for key in declared:                      # a role is the kind's: a mistyped one is never dropped silently
         _, part, role = key.split(".")
         if role not in getattr(kind, part):
-            raise UsageError(f"{key}: the {kind_name} kind has no {part} role {role!r}; "
+            raise UsageError(f"{key}: the {kind_name} kind has no {part} role `{role}`; "
                              f"it has {', '.join(getattr(kind, part)) or 'none'}", code="no-such-role", subject=key)
     sources: dict[str, str] = {"scheduler.kind": why, "host": f"platform, {MEMINFO}, {config_probe.GPU_QUERY[0]}",
                                "manager": "the manager kind's queries", "environments": "env list",
@@ -155,12 +175,12 @@ def measure(ctx: Context, scheduler: str | None, declared: dict[str, str]) -> Re
                      "partitions": unknown(f"femkit has no readers for {kind_name}"),
                      "queues": unknown(f"femkit has no readers for {kind_name}"), "notes": [], "sources": {}}
         else:
-            found = module.probe(probe_paths, getpass.getuser())
+            found = module.probe(probe_paths, getpass.getuser(), catalogue.units(ctx))
         identity, partitions, queues = found["identity"], found["partitions"], found["queues"]
         notes += found["notes"]
         sources.update(found["sources"])
     else:
-        identity, partitions, queues = socket.gethostname(), {}, []
+        identity, partitions, queues = host_identity(), {}, []
         sources["identity"] = "the host name"
 
     data = {

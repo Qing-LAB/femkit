@@ -1,50 +1,56 @@
 import { useEffect, useState } from "react";
+import type { LogState, Step } from "../generated/schemas";
+import bundle from "../generated/bundle.json";
 import { server } from "../kernel/client";
+import { useSaying } from "../kernel/declared";
+import { measure } from "../kernel/tokens";
 import { Badge } from "./Badge";
+import { Sentence } from "./Sentence";
 import "./Progress.css";
 
-// A run's steps as they go, from its event log, and the running step's last lines (web.md § 9.2).
+// A run's steps as they go (web.md § 9.2): the operation's event log as the server folds it
+// (`LogState`, core.md § 6) — each step with its word, marked by the colour the declaration binds it
+// to — and the running step's last lines, read as often as the theme says. A stream refused, or one
+// that ends before its run did, is said.
 
-interface StepState { id: string; describe: string; outcome?: string }
-
-export function Progress({ address, steps }: { address: string; steps: { id: string; describe: string }[] }) {
-  const [states, setStates] = useState<StepState[]>([]);
-  const [running, setRunning] = useState<string | null>(null);
+export function Progress({ address, steps, label }: { address: string; steps: Step[]; label?: string }) {
+  const [state, setState] = useState<LogState | null>(null);
+  const [lost, setLost] = useState<"unreachable" | "unreadable" | null>(null);
   const [lines, setLines] = useState<string[]>([]);
-  const [ended, setEnded] = useState<string | null>(null);
+  const runningWord = useSaying("running");
   useEffect(() => {
     let live = true;
-    const describe = new Map(steps.map((s) => [s.id, s.describe]));
     (async () => {
-      for await (const r of server.events(address)) {
+      for await (const line of server.events(address)) {
         if (!live) return;
-        if (r.kind === "step-start") {
-          setRunning(String(r.step));
-          setStates((s) => [...s, { id: String(r.step), describe: describe.get(String(r.step)) ?? String(r.step) }]);
-        } else if (r.kind === "step-end") {
-          setStates((s) => s.map((x) => (x.id === r.step ? { ...x, outcome: String(r.outcome) } : x)));
-          setRunning(null);
-        } else if (r.kind === "operation-end") setEnded(String(r.outcome));
+        if (line.kind === "state") setState(line.state); else setLost(line.why);
       }
     })();
     return () => { live = false; };
-  }, [address, steps]);
+  }, [address]);
+  const running = state?.running ?? null;
   useEffect(() => {
     if (!running) return;
     let live = true;
-    const look = () => server.tail(address, running).then((o) => { if (live && o.kind === "ok") setLines(o.value.lines ?? []); });
-    look();
-    const timer = setInterval(look, 1000);
+    const look = () => server.tail(address, running).then((o) => { if (live && o.kind === "ok") setLines(o.value.lines); });
+    void look();
+    const timer = setInterval(look, measure("motion-poll"));
     return () => { live = false; clearInterval(timer); };
   }, [address, running]);
+  const describe = new Map(steps.map((s) => [s.id, s.describe]));
   return (
     <div className="progress">
-      <div className="progress__head"><span className="progress__what">{steps.length} step{steps.length === 1 ? "" : "s"}</span>
-        <Badge meaning={ended === "done" ? "ok" : ended ? "bad" : "info"}>{ended ?? "running"}</Badge></div>
+      <div className="progress__head">
+        <span className="progress__what">{label ?? address}</span>
+        <span data-outcome={state?.outcome ?? undefined}><Badge toned={!!state?.outcome}>{state?.outcome ?? runningWord}</Badge></span>
+      </div>
       <ol className="progress__steps">
-        {states.map((s) => <li key={s.id} className={`progress__step progress__step--${s.outcome ?? (s.id === running ? "running" : "waiting")}`}>{s.describe}</li>)}
+        {(state?.steps ?? []).map((s) => (
+          <li key={s.id} className="progress__step" data-outcome={s.outcome}>{describe.get(s.id) ?? s.id}</li>
+        ))}
       </ol>
       {running && lines.length > 0 && <pre className="progress__log">{lines.join("\n")}</pre>}
+      {lost && <p className="progress__lost"><Sentence text={bundle.gate.says[lost]} /></p>}
     </div>
   );
 }

@@ -1,0 +1,10 @@
+/* ThemeSwitch: a pill of three choices, the chosen one raised. */
+.theme { display: inline-flex; gap: var(--size-rule); padding: var(--size-rule); background: var(--color-surface-sunken); border-radius: var(--size-radius-pill); }
+.theme__choice {
+  display: grid; place-items: center; width: var(--size-control-sm); height: var(--size-control-sm);
+  border: none; border-radius: var(--size-radius-pill); color: var(--color-text-muted); background: transparent; cursor: pointer;
+  transition: background var(--motion-quick) var(--motion-ease-standard), color var(--motion-quick) var(--motion-ease-standard);
+}
+.theme__choice:hover { color: var(--color-text); }
+.theme__choice:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-ring) var(--color-ring); }
+.theme__choice[aria-checked="true"] { color: var(--color-accent-text); background: var(--color-surface); box-shadow: var(--layer-raised-shadow); }

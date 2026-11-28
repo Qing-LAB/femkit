@@ -5,11 +5,12 @@ dispersion model with its parameters — held under the property its record give
 file's name under the name rule; its citation, plain, as the dataset's `source`, each DOI kept;
 its conditions, each with its unit; its range, or a table's first and last rows; its notes —
 under today's name or an older one — in the material's `[notes]`. Every key the file holds is
-one its declaration maps: nothing a file says is dropped. Every number is read exactly by the
-unit grammar (core.md § 11) and written as the source wrote it. The material's file is written
+one its declaration maps: nothing a file says is dropped. Every number is read exactly from the
+text the source wrote and written as that number, each quantity in the one form, `{value, unit}`,
+a plain number where it has no unit (core.md § 11). The material's file is written
 by the core's one writer of a person's TOML file (`persist.commented_text`) as a person's own:
 each key under its help as the schema, the property list or the dispersion list states it
-(`material.declared`), and each key the source leaves unset shown commented out under its help
+(`material.keys`), and each key the source leaves unset shown commented out under its help
 (projects.md § 7).
 
 Each refusal is a `UsageError` with its code, its subject the file as the request names it
@@ -35,9 +36,9 @@ Each refusal is a `UsageError` with its code, its subject the file as the reques
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 from fractions import Fraction
 from pathlib import PurePath
 from typing import Any, Callable, Iterable, Mapping
@@ -46,14 +47,15 @@ import yaml
 
 from femkit.core.errors import UsageError
 from femkit.core.markdown import plain
-from femkit.core.persist import Shown, commented_text
-from femkit.core.schema import Declared, Model, allowed, described, field_named, pointer
+from femkit.core import persist
+from femkit.core.persist import Inline, Shown, commented_text
+from femkit.core.schema import Declared, Model, allowed, declared_by, described, field_named, pointer
 from femkit.core.units import Quantity, UnitError, Units, number
 from femkit.definitions.dispersion import Dispersion
 from femkit.definitions.importers import Importer, ModelRecord, TableRecord, property_of
 from femkit.definitions.properties import Property
-from femkit.materials.material import (PROPERTIES, Column, Material, Modelled, Stated, Table, TableError, declared,
-                                       rows)
+from femkit.materials.material import (PROPERTIES, Column, Material, Modelled, Stated, Table, TableError, rows)
+from femkit.materials.material import keys as declared_keys
 from femkit.projects import names
 
 
@@ -146,10 +148,12 @@ def imported(importer: Importer, source: str, file: str, data: bytes | None, *, 
             raise refused("bad-value", f"{what} is {value!r}, no decimal number") from None
         return value
 
-    def quantity(value: str, unit: str) -> str:
-        """A number the source wrote, with its unit, as a material writes a quantity: alone, for a
-        plain number (core.md § 11)."""
-        return value if units.parse(unit) == Quantity(Fraction(1)) else f"{value} {unit}"
+    def quantity(value: str | list[str], unit: str) -> Any:
+        """Numbers the source wrote, under their unit, as a material writes a quantity — `{value,
+        unit}`, its value a list for a range — and a number alone where it has no unit (core.md
+        § 11): each the exact number its text states, written as the source wrote it."""
+        exact = [Decimal(v) for v in value] if isinstance(value, list) else Decimal(value)
+        return exact if units.unit(unit) == Quantity(Fraction(1)) else Inline({"value": exact, "unit": unit})
 
     variable = importer.variable
     stated: dict[str, Any] = {}
@@ -164,7 +168,7 @@ def imported(importer: Importer, source: str, file: str, data: bytes | None, *, 
         bounds = span.split() if isinstance(span, str) else []
         if len(bounds) != 2:
             raise refused("bad-value", f"its record's `{keys.range}` is {span!r}, not two numbers")
-        span = [quantity(read(b, f"its record's {keys.range}"), variable.unit) for b in bounds]
+        span = quantity([read(b, f"its record's {keys.range}") for b in bounds], variable.unit)
     stated["source"] = plain(references, lambda shown, to: next((f"{shown}, doi:{to.removeprefix(p)}"
                                                                  for p in importer.doi if to.startswith(p)), shown))
     files: dict[str, bytes] = {}
@@ -172,9 +176,9 @@ def imported(importer: Importer, source: str, file: str, data: bytes | None, *, 
         form, prop = Table, property_of(properties, source, mapping.property)[0]
         table = TABLE_FILE.format(dataset=dataset)
         files[table], ends = _table(record, mapping, variable.name, read, refused)
-        head = {"table": table, "sha256": hashlib.sha256(files[table]).hexdigest(),
+        head = {"table": table, "sha256": persist.digest(files[table]),
                 "interpolation": mapping.interpolation}
-        stated |= {"convention": mapping.convention, "range": span or [quantity(e, variable.unit) for e in ends]}
+        stated |= {"convention": mapping.convention, "range": span or quantity(ends, variable.unit)}
         within = {"variable": {"name": variable.name, "unit": variable.unit}}
     else:
         model = dispersion.models[mapping.model]
@@ -189,7 +193,7 @@ def imported(importer: Importer, source: str, file: str, data: bytes | None, *, 
                 "notes": {dataset: notes} if notes else Shown({})}
     # the help the property list and the dispersion list give its keys, read from the file as it
     # writes them — its dataset's model among them — as a template's is
-    helps = declared(properties, dispersion, commented_text(material, lambda path: None))
+    helps = declared_by(declared_keys(properties, dispersion, commented_text(material, lambda path: None)))
     text = commented_text(material, _comments(form, helps, manual),
                           prose=f"Written by `material import` from {source}'s file {PurePath(file).name}; yours "
                                 "from now on, as a file you wrote is" + (f" {pointer(manual)}" if manual else "")
@@ -276,7 +280,7 @@ def _table(record: dict[str, Any], mapping: TableRecord, variable: str, read: Ca
 
 
 def _parameters(record: dict[str, Any], mapping: ModelRecord, read: Callable[[Any, str], str],
-                quantity: Callable[[str, str], str], refused: Callable[[str, str], UsageError]) -> dict[str, Any]:
+                quantity: Callable[[str, str], Any], refused: Callable[[str, str], UsageError]) -> dict[str, Any]:
     """A model record's coefficients as its model's parameters, in the order its declaration gives
     them: the leading parameters, then the list of terms, term after term — each with its unit."""
     given = record.get(mapping.coefficients)
@@ -307,9 +311,10 @@ def _stated(stated: Mapping[str, Any], unit: str, dispersion: Dispersion) -> dic
         if key in stated:
             out[key] = stated[key]
         elif key == "range":
-            out[key] = Shown([f"{UNSET} {unit}"] * 2)
+            out[key] = Shown({"value": [UNSET, UNSET], "unit": unit})
         else:
-            out[key] = Shown(f"{UNSET} {dispersion.variables[key].unit}" if key in dispersion.variables else UNSET)
+            out[key] = Shown({"value": UNSET, "unit": dispersion.variables[key].unit} if key in dispersion.variables
+                             else UNSET)
     return out
 
 

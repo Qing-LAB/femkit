@@ -2,13 +2,15 @@
 """Run a test tier with a live progress log, and say what the log supports.
 
     python tools/testrun.py run basic                  # the default tier, over the cores
-    <data>/environments/web/bin/python tools/testrun.py run web   # the web environment's own Python
+    <prefix of femkit-web>/bin/python tools/testrun.py run web   # the web environment's own Python
     python tools/testrun.py run field                  # this machine's manager and scheduler
     python tools/testrun.py run engine                 # installed engines, on the person's word
-    python tools/testrun.py run tests/basic/test_x.py  # a targeted set: batch `custom`
+    python tools/testrun.py run tests/basic/test_x.py  # a targeted set: the tier run `custom`
     python tools/testrun.py run lf                     # only the last run's failures
-    python tools/testrun.py status [BATCH] [--fails]   # what each batch's log supports saying
-    python tools/testrun.py failed BATCH               # failed test IDs, to pass back to pytest
+    python tools/testrun.py status [TIER_RUN] [--fails]  # what each tier run's log supports saying
+    python tools/testrun.py failed TIER_RUN            # failed test IDs, to pass back to pytest
+
+A tier run is what one log and one lock are kept for: a tier, `custom` (a targeted set) or `lf`.
 
 The contract is docs/contracts/testing.md § 4. This file and its plugin use
 the standard library and pytest only, and import nothing from femkit: the
@@ -39,7 +41,7 @@ ONE_PROCESS = {"field", "engine"}  # no two installs or calculations compete (§
 #: A log silent this long belongs to a run that is not writing any more (§ 4.4).
 SILENCE_LIMIT = 30 * 60
 
-#: Batch states that are not a suite result (§ 4.4).
+#: A tier run's states that are not a suite result (§ 4.4).
 UNTRUSTED = {"unusable", "interleaved", "partial", "unexplained", "abandoned"}
 
 
@@ -78,22 +80,22 @@ def default_workers() -> int:
     return min(8, max(1, (os.cpu_count() or 1) // 4))
 
 
-def progress_path(batch: str, root: str = PROGRESS_DIR) -> str:
-    return os.path.join(root, f"{batch}.jsonl")
+def progress_path(tier_run: str, root: str = PROGRESS_DIR) -> str:
+    return os.path.join(root, f"{tier_run}.jsonl")
 
 
-def _lock_path(batch: str, root: str = PROGRESS_DIR) -> str:
-    return os.path.join(root, f"{batch}.lock")
+def _lock_path(tier_run: str, root: str = PROGRESS_DIR) -> str:
+    return os.path.join(root, f"{tier_run}.lock")
 
 
-def acquire_batch_lock(batch: str, root: str = PROGRESS_DIR):
-    """An exclusive flock for the batch, or None when another run holds it (§ 4.3).
+def acquire_lock(tier_run: str, root: str = PROGRESS_DIR):
+    """An exclusive flock for the tier run, or None when another run holds it (§ 4.3).
 
     The kernel releases it however the process ends, so there is nothing stale
     to detect. The pid written inside only lets a refusal name the holder.
     """
     os.makedirs(root, exist_ok=True)
-    fh = open(_lock_path(batch, root), "a+")
+    fh = open(_lock_path(tier_run, root), "a+")
     try:
         fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -106,9 +108,9 @@ def acquire_batch_lock(batch: str, root: str = PROGRESS_DIR):
     return fh
 
 
-def _lock_holder(batch: str, root: str = PROGRESS_DIR) -> int | None:
+def _lock_holder(tier_run: str, root: str = PROGRESS_DIR) -> int | None:
     try:
-        text = open(_lock_path(batch, root)).read().strip()
+        text = open(_lock_path(tier_run, root)).read().strip()
         return int(text) if text else None
     except (OSError, ValueError):
         return None
@@ -149,15 +151,15 @@ def _writer_is_alive(start: dict, path: str, now: float) -> bool:
         return False
 
 
-def summarise(batch: str, path: str, now: float | None = None) -> dict:
+def summarise(tier_run: str, path: str, now: float | None = None) -> dict:
     """What the log's last generation supports saying: one closed table (§ 4.4)."""
     now = time.time() if now is None else now
     records = read_records(path)
     if not records:
-        return {"batch": batch, "state": "no-data", "path": path}
+        return {"tier_run": tier_run, "state": "no-data", "path": path}
     starts = [i for i, r in enumerate(records) if r.get("event") == "start"]
     if not starts:
-        return {"batch": batch, "state": "unusable", "path": path,
+        return {"tier_run": tier_run, "state": "unusable", "path": path,
                 "why": "no `start` record: the log was cut under a writer; what is left is a fragment"}
     gen = records[starts[-1]:]
     run_id = gen[0].get("run")
@@ -194,7 +196,7 @@ def summarise(batch: str, path: str, now: float | None = None) -> dict:
         state, why = "abandoned", f"no `done` record and the writer is gone after {ran} tests: a fragment"
 
     return {
-        "batch": batch, "state": state, "why": why, "run": run_id, "path": path,
+        "tier_run": tier_run, "state": state, "why": why, "run": run_id, "path": path,
         "exitstatus": done["exitstatus"] if done else None,
         "collected": collected, "ran": ran,
         "passed": counts["passed"], "failed": counts["failed"],
@@ -234,46 +236,46 @@ def _last_failed_names_a_file() -> bool:
     return any(os.path.isfile(os.path.join(REPO, nid.split("::", 1)[0])) for nid in ids)
 
 
-def select(batch: str, targets: list[str], workers: int) -> tuple[list[str], str, int]:
-    """(pytest selection, batch name, workers) for what was asked (§ 4.3, § 4.6)."""
-    if batch == "lf":
+def select(asked: str, targets: list[str], workers: int) -> tuple[list[str], str, int]:
+    """(pytest selection, tier run, workers) for what was asked (§ 4.3, § 4.6)."""
+    if asked == "lf":
         return ["tests", "--last-failed", "--last-failed-no-failures", "none"], "lf", 1
-    if batch in TIERS and not targets:
-        return [TIERS[batch]], batch, 1 if batch in ONE_PROCESS else workers
-    # A part of a tier, or any targeted set, is the batch `custom`, ordered by
+    if asked in TIERS and not targets:
+        return [TIERS[asked]], asked, 1 if asked in ONE_PROCESS else workers
+    # A part of a tier, or any targeted set, is the tier run `custom`, ordered by
     # directory so a subdirectory's conftest binds every file in it.
-    sel = sorted(list(targets) if batch in TIERS else [batch, *targets], key=lambda s: (os.path.dirname(s), s))
+    sel = sorted(list(targets) if asked in TIERS else [asked, *targets], key=lambda s: (os.path.dirname(s), s))
     if any(_inside(s, TIERS[t]) for s in sel for t in ONE_PROCESS):
         workers = 1  # a part of field or engine is still one process
     return sel, "custom", workers
 
 
 def cmd_run(args) -> int:
-    if args.batch == "lf" and not _last_failed_names_a_file():
+    if args.asked == "lf" and not _last_failed_names_a_file():
         print("[testrun] lf: the last-failed list names no test file here; nothing to rerun.")
         return 0
-    sel, batch, workers = select(args.batch, args.targets, args.workers)
+    sel, tier_run, workers = select(args.asked, args.targets, args.workers)
     if workers > 1 and importlib.util.find_spec("xdist") is None:
         print("[testrun] refused: spreading the run needs pytest-xdist; use --workers 1", file=sys.stderr)
         return 2
 
-    lock = acquire_batch_lock(batch)
+    lock = acquire_lock(tier_run)
     if lock is None:
-        holder = _lock_holder(batch)
+        holder = _lock_holder(tier_run)
         who = f" (pid {holder})" if holder else ""
         if not args.force:
-            print(f"[testrun] refused: batch {batch!r} is already running{who}.", file=sys.stderr)
-            print(f"[testrun]   watch it: python tools/testrun.py status {batch}", file=sys.stderr)
+            print(f"[testrun] refused: the tier run {tier_run!r} is already running{who}.", file=sys.stderr)
+            print(f"[testrun]   watch it: python tools/testrun.py status {tier_run}", file=sys.stderr)
             return 2
-        print(f"[testrun] --force: a second {batch} run alongside the one going{who}; "
-              f"`status {batch}` will read interleaved.", file=sys.stderr)
+        print(f"[testrun] --force: a second {tier_run} run alongside the one going{who}; "
+              f"`status {tier_run}` will read interleaved.", file=sys.stderr)
 
-    prog = progress_path(batch)
+    prog = progress_path(tier_run)
     cmd = [sys.executable, "-m", "pytest", *sel, "-p", "tools.progress_plugin",
            f"--progress-file={prog}", "-q", "-rfE", "--tb=short"]
     if workers > 1:
         cmd += ["-n", str(workers), "--dist", "loadgroup", "--max-worker-restart", "0"]
-    print(f"[testrun] batch={batch} workers={workers} progress={prog}", flush=True)
+    print(f"[testrun] tier run={tier_run} workers={workers} progress={prog}", flush=True)
     print("[testrun] " + " ".join(cmd), flush=True)
     out_path = os.path.splitext(prog)[0] + ".out"
     # The full console text of the run holding the lock (§ 4.2), and the terminal too.
@@ -286,20 +288,20 @@ def cmd_run(args) -> int:
         return proc.wait()
 
 
-def _known_batches() -> list[str]:
+def _known_tier_runs() -> list[str]:
     if not os.path.isdir(PROGRESS_DIR):
         return []
     return sorted(f[:-6] for f in os.listdir(PROGRESS_DIR) if f.endswith(".jsonl"))
 
 
 def cmd_status(args) -> int:
-    batches = [args.batch] if args.batch else _known_batches()
-    if not batches:
+    tier_runs = [args.tier_run] if args.tier_run else _known_tier_runs()
+    if not tier_runs:
         print("no progress logs under .test-progress/ yet")
         return 0
     code = code_now()
     untrusted = False
-    for b in batches:
+    for b in tier_runs:
         s = summarise(b, progress_path(b))
         if s["state"] == "no-data":
             print(f"[{b}] no data")
@@ -339,7 +341,7 @@ def cmd_status(args) -> int:
 
 
 def cmd_failed(args) -> int:
-    for nid, _ in summarise(args.batch, progress_path(args.batch)).get("failed_ids", []):
+    for nid, _ in summarise(args.tier_run, progress_path(args.tier_run)).get("failed_ids", []):
         if not nid.endswith(" [teardown]"):
             print(nid)
     return 0
@@ -349,18 +351,18 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="action", required=True)
     pr = sub.add_parser("run", help="run a tier or a targeted set with a live progress log")
-    pr.add_argument("batch", help="basic | web | field | engine | lf | a test path")
-    pr.add_argument("targets", nargs="*", help="more test paths (makes the batch `custom`)")
-    pr.add_argument("--force", action="store_true", help="run even while this batch is running")
+    pr.add_argument("asked", metavar="TIER", help="basic | web | field | engine | lf | a test path")
+    pr.add_argument("targets", nargs="*", help="more test paths (makes the tier run `custom`)")
+    pr.add_argument("--force", action="store_true", help="run even while this tier run is running")
     pr.add_argument("--workers", type=int, default=default_workers(),
                     help="processes for `basic` (default: a quarter of the cores, at most 8)")
     pr.set_defaults(func=cmd_run)
-    ps = sub.add_parser("status", help="what each batch's log supports saying")
-    ps.add_argument("batch", nargs="?")
+    ps = sub.add_parser("status", help="what each tier run's log supports saying")
+    ps.add_argument("tier_run", nargs="?")
     ps.add_argument("--fails", action="store_true", help="list every failure, one line each")
     ps.set_defaults(func=cmd_status)
     pf = sub.add_parser("failed", help="failed test IDs, to pass back to pytest")
-    pf.add_argument("batch")
+    pf.add_argument("tier_run")
     pf.set_defaults(func=cmd_failed)
     args = p.parse_args(argv)
     return args.func(args)

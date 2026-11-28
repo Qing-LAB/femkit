@@ -13,11 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from femkit.config import settings
 from femkit.core import dirs, locks
 from femkit.core.errors import Refusal
 from femkit.core.operations import Context
-from femkit.definitions.catalogue import load_environments
+from femkit.definitions import catalogue
+from femkit.definitions.models import JsonQuery
 from femkit.envs import manager
 from tools.testrun import code_now
 
@@ -25,33 +25,31 @@ REPO = Path(__file__).resolve().parent.parent
 
 # The person's real places, resolved once, before any isolation is set (§ 2.2).
 REAL_CONFIG = dirs.config_dir()
-REAL_CONTROL = dirs.control_prefix()
 REAL_SHALLOW = {"state": dirs.state_dir(), "cache": dirs.cache_dir(), "runtime": dirs.runtime_dir(),
-                "locks": locks.root()}
+                "locks": locks.root(), "bin": dirs.bin_dir()}
 
 
-def _real_engine_root() -> Path:
-    """Where femkit itself would put engine environments for this person (config.md § 3)."""
+def _asked() -> tuple[list[Path], list[Path]]:
+    """What the person's own package manager says, asked once before any isolation (envs.md § 1):
+    every environment of femkit's it names so, `femkit` and `femkit-<name>`, by its prefix; and its
+    list of environments and its package caches, which it names too (`pkgs_dirs`). Nothing formed
+    from where its executable lies. Nothing where no manager is named here, or it does not answer:
+    those canaries are then disarmed, and say so."""
+    ctx = Context.from_process()
     try:
-        return settings.environments_root(settings.load(Context.from_process(), fresh=True).config)
+        m = manager.resolve(ctx)
+        names = [catalogue.managed(ctx, n) for n in (dirs.CONTROL, *catalogue.environments(ctx))]
+        prefixes = [p for p in (m.prefix(n) for n in names) if p is not None]
+        caches, _ = m.query(JsonQuery(argv=["{exe}", "info", "--json"], key="pkgs_dirs"))
     except Refusal as exc:
-        warnings.warn(f"environments canary partly DISARMED: {exc}", stacklevel=1)
-        return dirs.environments_dir()
+        warnings.warn(f"environments and manager canaries DISARMED: the person's manager was not asked: {exc}",
+                      stacklevel=2)
+        return [], []
+    return prefixes, [Path.home() / ".conda" / "environments.txt",
+                      *(Path(c) for c in (caches if isinstance(caches, list) else []))]
 
 
-REAL_ENVIRONMENTS = [REAL_CONTROL] + [_real_engine_root() / name for name in load_environments()]
-
-
-def _persons_manager() -> list[Path]:
-    """The person's own package manager's list of environments and package caches: what a
-    manager command run outside femkit's places would write (envs.md § 4.4)."""
-    places = [Path.home() / ".conda" / "environments.txt", Path.home() / ".conda" / "pkgs"]
-    if named := manager.named(Context.from_process()):
-        places.append(Path(named).resolve().parent.parent / "pkgs")
-    return places
-
-
-REAL_MANAGER = _persons_manager()
+REAL_ENVIRONMENTS, REAL_MANAGER = _asked()
 
 
 # ------------------------------------------------------------------ isolation

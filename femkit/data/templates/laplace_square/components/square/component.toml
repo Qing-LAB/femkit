@@ -1,6 +1,6 @@
 # The square's contract (manual: 3 · Write each part): what geometry.py beside it reads, the
 # groups it promises, and the material that fills its one body. A physics, a mesh recipe and an
-# observable set name only these groups, so each serves any component that promises them.
+# observables part name only these groups, so each serves any component that promises them.
 
 # the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
 schema = 1
@@ -20,13 +20,21 @@ unit = "m"
 # what the script reads beside its own numbers
 [inputs]
 
-# the project parameters the script reads, by name, each with what it must be — a length reaches the script in the frame's unit, an angle in degrees, a number as itself: one of `length`, `angle`, `number`
-[inputs.parameters]
+# the project's definitions the script reads, by name, each with what it must be — a length reaches the script in the frame's unit, an angle in degrees, a number as itself: one of `length`, `angle`, `number`
+[inputs.definitions]
 side = "length"
 
 # the files beside the script that it reads, each by its path from the component's folder, with its SHA-256
 # [inputs.files]
 # "profile.csv" = "<the file's SHA-256>"
+
+# what the script writes beside the geometry: a mesh, only for a script that meshes too (manual: 3 · Write each part)
+# [outputs]
+
+# a mesh it writes too, every promised group a named group of it — for a mesh no recipe can state; a mesh recipe names the `given` mesher to take it on unchanged
+# [outputs.mesh]
+# its geometry order, as a mesh recipe's — 2 for elements bent to follow a curved surface: one of `1`, `2`
+# order = 2
 
 # the named groups the script promises, each with its dimension — the frame's for a body, one less for a face, 1 for an edge in 3-D, 0 for a point; every other part names only these
 [groups]

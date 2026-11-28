@@ -4,7 +4,10 @@
 
 **Status:** accepted (2026-11-23); it
 amends [`web.md`](../contracts/web.md) §§ 1–2 and
-[`models.md`](../contracts/models.md) § 8.4
+[`models.md`](../contracts/models.md) § 8.4. Decision 1's "it does not mesh"
+is amended by [ADR 0018](0018-one-graph-from-description-to-execution.md)
+decision 3: a script may write a mesh its contract declares, which the mesh
+stage passes through (the person, 2026-11-25)
 
 **Authority:** the reasons and the alternatives only;
 [`geometry.md`](../contracts/geometry.md) owns the rules

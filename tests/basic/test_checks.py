@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 import pytest
+from pydantic import ValidationError
 
 from pathlib import Path
 
@@ -19,25 +20,36 @@ from tests.kit import apply, ctx, installed, planned, refused
 from femkit.core.errors import Refused, Unstated, UsageError
 from femkit.core.operations import SilentObserver
 from femkit.definitions.models import Agreement, Check, Expectation
-from femkit.engines import junit
+from femkit.engines import Output, junit
 from femkit.core.schema import render
-from femkit.definitions.catalogue import CUDA_SUFFIX, load_managers
+from femkit.definitions.catalogue import CUDA_SUFFIX, load_environments, load_managers
 from femkit.envs import checks, layout, state as state_module
-from femkit.envs.records import CheckOutcome, ChecksRecord, read
+from femkit.core.persist import read_record
+from femkit.envs.records import CheckOutcome, ChecksRecord
 from femkit.envs.state import facts, observe
 
 DEFINITION = "ngsolve"  # thread_variables NGS_NUM_THREADS, fixed_variables OMP_NUM_THREADS = "1"
 NAME = DEFINITION + CUDA_SUFFIX  # its CUDA environment: it runs CPU and device checks alike
 
-# A check program for femkit: reports what it was started with, and the value it is given.
+# A check program for femkit: reports what it was started with, the value it is given, and the
+# engine it ran — the version the environment pins (definitions.md § 5.3).
 PROGRAM = ("import os, sys; from femkit.engines import summary; summary.write(sys.argv[1], dict("
            "threads=int(os.environ['NGS_NUM_THREADS']), omp=int(os.environ['OMP_NUM_THREADS']), "
            "ranks=int(os.environ.get('RANKS', '1')), nousersite=int(os.environ.get('PYTHONNOUSERSITE', '0')), "
-           "value=float(sys.argv[2])), dict())")
+           "value=float(sys.argv[2])), VERSIONS)")
+
+
+def versions(**stated: str) -> str:
+    """The versions a check program states it ran, as its text writes them — `dict(...)`, since
+    braces in a check's command are its placeholders: the engine at its pinned version, unless
+    stated."""
+    stated = stated or {DEFINITION: load_environments()[NAME].version}
+    return "dict(" + ", ".join(f"{name}={version!r}" for name, version in stated.items()) + ")"
 
 
 def program(id_: str, value: float = 1.0, **fields) -> Check:
-    return Check(id=id_, kind="command", run=["python", "-c", PROGRAM, "{work}", str(value)], read="summary", **fields)
+    return Check(id=id_, kind="command", run=["python", "-c", PROGRAM.replace("VERSIONS", versions()), "{work}",
+                                              str(value)], read="summary", **fields)
 
 
 def set_key(key: str, value: str) -> None:
@@ -62,53 +74,87 @@ def validate(name: str = NAME, **fields):
 
 
 def recorded() -> dict[str, CheckOutcome]:
-    record = read(layout.checks_file(facts(ctx(), NAME).prefix), ChecksRecord)
+    record = read_record(layout.checks_file(facts(ctx(), NAME).prefix), ChecksRecord).value
     return {o.id: o for o in record.outcomes}
 
 
 def test_a_check_runs_in_its_environment_with_its_threads_ranks_and_fixed_variables(declared, running_manager):
-    """Fails if a check does not run through the manager in the prefix, or misses its thread
+    """Fails if a check does not run through the manager in its environment, by its name, or misses its thread
     variables, the fixed ones, the launcher for several ranks, or runs with the user's own
     site-packages on (definitions.md § 5.1)."""
-    f = declared(program("serial", expect={"threads": Expectation(equals=1)}),
-                 program("threaded", threads=2, expect={"threads": Expectation(equals=2)}),
-                 program("mpi", ranks=2, expect={"ranks": Expectation(equals=2)}))
+    f = declared(program("serial"), program("threaded", threads=2), program("mpi", ranks=2))
     outcome = validate()
     assert outcome.ok() and outcome.state == "ready"
     got = recorded()
     assert {i: o.outcome for i, o in got.items()} == {"serial": "passed", "threaded": "passed", "mpi": "passed"}
+    assert [(o.quantities["ranks"], o.quantities["threads"]) for o in got.values()] == [(1, 1), (1, 2), (2, 1)]
     assert all(o.quantities["omp"] == 1 and o.quantities["nousersite"] == 1 for o in got.values())
-    run_form = " ".join(render(a, {"exe": "", "prefix": str(f.prefix)}) for a in load_managers()["conda"].run[1:])
+    run_form = " ".join(render(a, {"exe": "", "name": "femkit-" + NAME}) for a in load_managers()["conda"].run[1:])
     ran = [line for line in running_manager.read_text().splitlines() if line.startswith(run_form.split()[0] + " ")]
     assert len(ran) == len(got) and all(line.startswith(run_form + " ") for line in ran)   # each check, in the prefix
+
+
+def stating(id_: str, stated: str, quantities: str = "dict(value=1.0)", **fields) -> Check:
+    """A check whose program reports ``quantities`` and states the versions ``stated``, each a
+    Python dict's text."""
+    return Check(id=id_, kind="command", read="summary", run=[
+        "python", "-c", f"import sys; from femkit.engines import summary; "
+        f"summary.write(sys.argv[1], {quantities}, {stated})", "{work}"], **fields)
+
+
+def test_the_runner_holds_the_ranks_and_threads_a_check_reports_to_its_own(declared):
+    """Fails if a check whose reader reports other ranks or threads than the check's own passes,
+    or one on several ranks passes with none reported — its outcome would not prove that what
+    was asked ran — or if `expect` may state them beside the check's own (definitions.md § 5.2;
+    framework.md § 4)."""
+    declared(program("as-asked", ranks=2, threads=2),
+             stating("other-threads", versions(), "dict(threads=1)", threads=2),
+             stating("unreported", versions(), "dict(value=1.0)", ranks=2),
+             stating("serial-unreported", versions()))
+    validate()
+    assert {i: o.outcome for i, o in recorded().items()} == {
+        "as-asked": "passed", "other-threads": "failed", "unreported": "failed", "serial-unreported": "passed"}
+    with pytest.raises(ValidationError):
+        program("stated", ranks=2, expect={"ranks": Expectation(equals=2)})
 
 
 def test_every_check_runs_and_a_failed_one_makes_the_environment_failing(declared):
     """Fails if a failed check stops the rest — leaving the environment unchecked instead of
     failing — a missing quantity counts as met, or a check that ran another version of the
-    engine than the pinned one passes (envs.md § 5; definitions.md § 5.2, § 5.3)."""
-    other_version = Check(id="other-version", kind="command", read="summary", run=[
-        "python", "-c", "import sys; from femkit.engines import summary; "
-        "summary.write(sys.argv[1], dict(value=1.0), dict(ngsolve='0.0'))", "{work}"])
+    engine than the pinned one, or states none, passes (envs.md § 5; definitions.md § 5.2, § 5.3)."""
     declared(program("too-big", value=2.0, expect={"value": Expectation(max=1.0)}),
              program("missing", expect={"absent": Expectation(min=0)}),
-             other_version,
+             stating("other-version", versions(ngsolve="0.0")),
+             stating("no-version", "dict(netgen='6.2.2606')"),
              program("fine", expect={"value": Expectation(max=1.0)}))
     outcome = validate()
     assert not outcome.ok() and outcome.state == "failing"
     assert {i: o.outcome for i, o in recorded().items()} == {
-        "too-big": "failed", "missing": "failed", "other-version": "failed", "fine": "passed"}
+        "too-big": "failed", "missing": "failed", "other-version": "failed", "no-version": "failed", "fine": "passed"}
+
+
+def test_a_tool_environments_check_states_the_version_of_the_tool_by_its_name(give_checks, running_manager):
+    """Fails if a tool environment's check — which runs no engine — passes stating no version of
+    its tool, or another than the one the environment pins: the version is keyed by the
+    environment's own name (definitions.md § 4.7, § 5.3)."""
+    pinned = load_environments()["web"].version
+    give_checks("web", [stating("right", versions(web=pinned)), stating("wrong", versions(web="v0")),
+                        stating("none", versions(node=pinned))])
+    installed("web")
+    validate("web")
+    record = read_record(layout.checks_file(facts(ctx(), "web").prefix), ChecksRecord).value
+    assert {o.id: o.outcome for o in record.outcomes} == {"right": "passed", "wrong": "failed", "none": "failed"}
 
 
 # A GPU check program for femkit: fails, as a CUDA program does, where no GPU is allocated.
 GPU_PROGRAM = ("import os, sys; from femkit.engines import summary\n"
                "if not os.environ.get('CUDA_VISIBLE_DEVICES'): sys.exit('no CUDA device is visible')\n"
-               "summary.write(sys.argv[1], dict(value=1.0), dict())")
+               "summary.write(sys.argv[1], dict(value=1.0), VERSIONS)")
 
 
 def gpu_program(id_: str, **fields) -> Check:
-    return Check(id=id_, kind="command", run=["python", "-c", GPU_PROGRAM, "{work}"], read="summary", device=True,
-                 **fields)
+    return Check(id=id_, kind="command", run=["python", "-c", GPU_PROGRAM.replace("VERSIONS", versions()), "{work}"],
+                 read="summary", device=True, **fields)
 
 
 def test_validate_runs_the_gpu_checks_only_when_asked_and_reports_what_the_machine_did(declared, monkeypatch):
@@ -152,7 +198,7 @@ def test_a_reference_that_fails_later_fails_the_gpu_result_kept_with_it(declared
     reference = Check(id="reference", kind="command", read="summary", agree="pair", run=[
         "python", "-c", "import os, sys; from femkit.engines import summary\n"
         f"if os.path.exists({str(broken)!r}): sys.exit('broken')\n"
-        "summary.write(sys.argv[1], dict(value=1.0), dict())", "{work}"])
+        f"summary.write(sys.argv[1], dict(value=1.0), {versions()})", "{work}"])
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
     declared(reference, gpu_program("gpu", agree="pair"), agreements={"pair": Agreement(quantity="value", rtol=1e-9)})
     validate()
@@ -160,9 +206,9 @@ def test_a_reference_that_fails_later_fails_the_gpu_result_kept_with_it(declared
     broken.touch()
     outcome = validate()
     assert outcome.state == "failing" and outcome.gpu == "failed"
-    assert [i.code for i in outcome.issues] == ["not-ready"]
+    assert [i.code for i in outcome.issues] == ["not-ready", "check-failed"]
     outcome = validate(gpu=True)
-    assert sorted(i.code for i in outcome.issues) == ["gpu-not-qualified", "not-ready"]
+    assert sorted(i.code for i in outcome.issues) == ["check-failed", "check-failed", "gpu-not-qualified", "not-ready"]
 
 
 @pytest.mark.parametrize("members, results, failed", [
@@ -210,14 +256,16 @@ def test_validate_gpu_is_refused_where_no_gpu_check_is_declared(declared):
 def test_an_unchecked_environment_installs_by_validating(declared, value, ready):
     """Fails if `install` on an installed, unchecked environment does anything but validate,
     does not run it, runs a GPU check nobody asked for, or succeeds when it leaves the
-    environment failing — without naming the check (envs.md § 3.3, § 4.1, § 5)."""
+    environment failing — without one finding for the check that failed, its log the file the
+    person opens (envs.md § 3.3, § 4.1, § 5; core.md § 10)."""
     declared(program("cpu", value=value, expect={"value": Expectation(max=1.0)}), gpu_program("gpu"))
     op, plan, c = planned("env.install", names=[NAME])
     assert [s.id for s in plan.steps] == [f"{NAME}/validate"]
     result = op.apply(plan, c)
     assert result.ok() is ready
     assert result.environments[0].state == ("ready" if ready else "failing")
-    assert ready or [i.subject for i in result.issues] == [NAME]
+    assert ready or [(i.code, i.subject, i.file) for i in result.issues] == [
+        ("not-ready", NAME, None), ("check-failed", NAME, recorded()["cpu"].log)]
     assert set(recorded()) == {"cpu"}
 
 
@@ -265,16 +313,22 @@ def test_a_check_on_several_ranks_is_refused_before_anything_runs_without_a_laun
         planned("env.install", names=[NAME])
 
 
+def report(folder: Path, nodes: list[str]) -> Output:
+    """What the runner hands the JUnit reader of a check naming ``nodes``: the report in ``folder``."""
+    return Output(written=lambda pattern: {p.name: p.read_bytes() for p in folder.glob(pattern)}, ranks=1, threads=1,
+                  product=DEFINITION, version="", tests=tuple(nodes))
+
+
 def _junit(tmp_path, body: str, nodes: list[str]) -> dict:
     """Run real pytest on a real test file; read its real JUnit report."""
     tests = tmp_path / "src" / "tests"
     tests.mkdir(parents=True)
     (tests / "test_x.py").write_text(body)
-    report = tmp_path / junit.FILE
     subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "junit_family=xunit2",
-                    "--rootdir", str(tests), "--junitxml", str(report), *[str(tests / n.split("/")[-1]) for n in nodes]],
+                    "--rootdir", str(tests), "--junitxml", str(tmp_path / junit.FILE),
+                    *[str(tests / n.split("/")[-1]) for n in nodes]],
                    cwd=tmp_path, capture_output=True, env={**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"})
-    return junit.read(tmp_path, nodes)
+    return junit.read(report(tmp_path, nodes))
 
 
 def test_the_junit_reader_passes_only_exactly_the_named_tests_all_passing(tmp_path):
@@ -285,7 +339,7 @@ def test_the_junit_reader_passes_only_exactly_the_named_tests_all_passing(tmp_pa
     with pytest.raises(ValueError):
         _junit(tmp_path / "2", body, named + ["tests/test_x.py::test_s"])
     with pytest.raises(ValueError):
-        junit.read(tmp_path / "1", named[:1])
+        junit.read(report(tmp_path / "1", named[:1]))
 
 
 def test_a_passing_test_inside_a_class_counts_as_passed(tmp_path):

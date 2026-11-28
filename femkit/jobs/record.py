@@ -12,19 +12,23 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, ValidationInfo, create_model, model_validator
 
 from femkit.config import settings
 from femkit.config.probe import Where
 from femkit.core import dirs, persist, states, text
-from femkit.core.errors import UsageError
+from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
-from femkit.core.schema import DefinitionError, Model, key_path, load_toml
+from femkit.core.schema import DefinitionError, Model, key_path, load_toml, refuse
 from femkit.definitions import catalogue
-from femkit.jobs.requests import MACHINE_NAME
+from femkit.envs import state as env_state
+from femkit.jobs.requests import LOCAL, MACHINE_NAME
 
-SCHEMA = 1
-LOCAL = "local"  # always the machine the command runs on
+SCHEMA = 4
+#: The unit a record keeps memory in, whole, as the scheduler reports it (jobs.md § 9.1), as the unit
+#: table names it.
+MEBIBYTE = "MiB"
+
 NAME = re.compile(MACHINE_NAME)   # the request's own grammar: a name typed in a request or found as a file
 
 
@@ -32,6 +36,13 @@ class Unknown(Model):
     """A fact that could not be measured, and why. Never read as zero or none."""
 
     unknown: str = Field(description="why it could not be measured")
+
+
+def shown(value: Any) -> str:
+    """One fact of a record as a person reads it: an unknown with its reason (api.md § 4.4)."""
+    if isinstance(value, dict) and set(value) == {"unknown"}:
+        value = Unknown.model_validate(value)
+    return f"unknown ({value.unknown})" if isinstance(value, Unknown) else text.show(value)
 
 
 # A limit has three answers (jobs.md § 9.1): a number, `unlimited` (asked; none stated),
@@ -65,7 +76,7 @@ class ManagerFacts(Model):
     version: str | Unknown = Field(description="its version")
     root: str | Unknown = Field(description="its root (base) prefix")
     platform: str | Unknown = Field(description="what an environment built here is for, e.g. linux-64")
-    run_enters: bool | Unknown = Field(description="whether `<manager> run -p <control prefix>` runs inside that prefix here")
+    run_enters: bool | Unknown = Field(description="whether `<manager> run -n femkit` runs inside the prefix the manager lists for the control environment here")
 
 
 class SchedulerFacts(Model):
@@ -78,7 +89,7 @@ class NodeGroup(Model):
     count: int = Field(description="how many nodes are alike in the four facts below")
     cores: int | Unknown = Field(description="cores per node")
     memory_mib: int | Unknown = Field(description="memory per node")
-    gpus: dict[str, int] = Field(default_factory=dict, description="GPUs per node, {type: count}; {} is none")
+    gpus: dict[str, int] | Unknown = Field(default_factory=dict, description="GPUs per node, {type: count}; {} is none")
     architecture: str | Unknown = Field(description="e.g. x86_64, aarch64")
 
 
@@ -109,17 +120,31 @@ class EnvSnapshot(Model):
     solver_version: str | None = Field(default=None, description="from its manifest")
 
 
-class Settings(Model):
-    environments: str = Field(description="paths.environments, as in effect")
-    mpi: list[str] | None = Field(default=None, description="launch.mpi; absent when unset")
-    preamble: list[str] | None = Field(default=None, description="activation.preamble; absent when unset")
-    activation: str | None = Field(default=None, description="activation.command; absent when unset")
+#: The keys of this machine's config.toml a job run here needs, copied into its record (jobs.md § 9.1).
+COPIED = ("launch.mpi", "activation.preamble", "activation.command")
+
+
+def _copied() -> type[Model]:
+    """The record's `settings`: each key of COPIED by its own name, type and help — its field of
+    `UserConfig` (config.md § 3.1) — in its own table, as config.toml writes it."""
+    tables: dict[str, dict[str, Any]] = {}
+    for k in map(settings.key, COPIED):
+        tables.setdefault(k.section, {})[k.name] = (k.annotation, k.field)
+    models = {section: create_model(f"Copied{section.title()}", __base__=settings.Section, **fields)
+              for section, fields in tables.items()}
+    return create_model("Settings", __base__=Model, __doc__="config.toml's values a job run here needs, copied",
+                        **{section: (model, Field(default_factory=model,
+                                                  description=settings.UserConfig.model_fields[section].description))
+                           for section, model in models.items()})
+
+
+Settings = _copied()
 
 
 class Record(Model):
-    """One machine's record, as measured on it (jobs.md § 9.1)."""
+    """One machine's record, as measured on it (jobs.md § 9.1). Its file states the record's
+    schema version, `schema`, first; a record of another version does not load."""
 
-    schema_: Literal[1] = Field(alias="schema", description="the record's schema version")
     measured: Measured = Field(description="when and where the probe ran")
     identity: str | Unknown = Field(description="the scheduler's cluster name, or the host name")
     host: Host = Field(description="the machine the probe ran on; on a cluster, never what a job is fit against")
@@ -132,11 +157,24 @@ class Record(Model):
     sources: dict[str, str] = Field(default_factory=dict, description="dotted part -> what measured it")
     notes: list[str] = Field(default_factory=list, description="what the probe could not do, and why")
 
-    model_config = {**Model.model_config, "populate_by_name": True}
+    @model_validator(mode="before")
+    @classmethod
+    def _version(cls, data: Any, info: ValidationInfo) -> Any:
+        """The schema version its file states, read before anything else: a record of another
+        version, or of none, is refused naming its version and the probe that rewrites it (jobs.md
+        § 9.1). A record a result holds, as femkit wrote it there, states none."""
+        stated = isinstance(data, dict) and "schema" in data
+        if not stated and not (info.context or {}).get(FILE):
+            return data
+        written = data.get("schema") if isinstance(data, dict) else None
+        if written != SCHEMA:
+            refuse("Record", [(("schema",), f"written with schema {text.show(written)}; this femkit reads {SCHEMA}: "
+                                           "rewrite it with `job probe --write` on that machine")])
+        return {k: v for k, v in data.items() if k != "schema"}
 
     def data(self) -> dict:
-        """The record as TOML-ready data: no nulls."""
-        return self.model_dump(mode="json", by_alias=True, exclude_none=True)
+        """The record as its file holds it: its schema version first, no nulls."""
+        return {"schema": SCHEMA, **self.model_dump(mode="json", exclude_none=True)}
 
 
 # ------------------------------------------------------------------ files
@@ -147,22 +185,18 @@ def machines_dir() -> Path:
 
 def path(name: str) -> Path:
     if not NAME.fullmatch(name):
-        raise UsageError(f"{name!r} is not a machine name: letters, digits, '.', '_' and '-'", code="bad-name",
+        raise UsageError(f"`{name}` is not a machine name: letters, digits, `.`, `_` and `-`", code="bad-name",
                          subject=name)
     return machines_dir() / f"{name}.toml"
 
 
+FILE = "file"   # the validation context of a record read from its file, which states its schema version
+
+
 def read(file: Path) -> Record:
-    """The record, or DefinitionError naming what is wrong — a record of another schema
-    version names that version and the probe that rewrites it."""
-    try:
-        raw = persist.read_toml(file)
-    except (OSError, ValueError) as exc:
-        raise DefinitionError(file, [("", f"does not read: {exc}")]) from None
-    if raw.get("schema") != SCHEMA:
-        raise DefinitionError(file, [("schema", f"written with schema {raw.get('schema')!r}; this femkit reads "
-                                                f"{SCHEMA}: rewrite it with `job probe --write` on that machine")])
-    return load_toml(file, Record)
+    """The record, or DefinitionError naming what is wrong, by the one TOML reader (core.md § 2) —
+    a record of another schema version names that version and the probe that rewrites it."""
+    return load_toml(file, Record, {FILE: True})
 
 
 def write(file: Path, record: Record) -> Path:
@@ -184,36 +218,148 @@ def listing() -> list[tuple[str, Path, Record | None, str]]:
     return out
 
 
+def host_identity() -> str:
+    """This host's name: a machine's identity when it has no scheduler (jobs.md § 9.1), what the
+    probe records there, and the host a job launched here is asked about by (jobs.md § 5.1); the
+    one host name femkit reads (core.md § 3). Never what tells whether a record is this machine's
+    (`of_this_machine`): a cluster's identity is its scheduler's cluster name, no host's."""
+    return dirs.host()
+
+
+def own() -> Record | None:
+    """This machine's own record, `local` — always the machine a command runs on (jobs.md § 9.3) —
+    where it is there and loads: what every other record is told this machine's by
+    (`of_this_machine`)."""
+    file = path(LOCAL)
+    if not file.is_file():
+        return None
+    try:
+        return read(file)
+    except DefinitionError:
+        return None
+
+
+def of_this_machine(r: Record | str) -> bool:
+    """Whether a record describes this machine — told by its identity of the host, never its name
+    nor this host's name, here alone (jobs.md § 9.3; workflow.md § 7). A record, by what it holds:
+    this machine's own (`own`) does, and any naming its identity — so on a cluster its own record
+    `cluster-a` is this machine's, as `local` is, though its identity is the scheduler's cluster
+    name and no host's, and a calculation's copy of a `local` measured on another machine is not;
+    two identities neither probe could read name no machine. A record of `<config>/machines/`, by
+    its name: `local`, always the machine a command runs on, whatever its file holds; any other by
+    what its file holds — one not there, or that does not load, another machine's, whose machine
+    cannot be told."""
+    if isinstance(r, str):
+        if r == LOCAL:
+            return True
+        try:
+            r = read(path(r))
+        except DefinitionError:
+            return False
+    local = own()
+    return local is not None and (r == local or isinstance(r.identity, str) and r.identity == local.identity)
+
+
+def copied(values: Settings | settings.UserConfig, dotted: str) -> Any:
+    """The value a record's settings, or a config.toml, hold for one key of COPIED."""
+    return settings.value_of(values, settings.key(dotted))
+
+
 def settings_now(config: settings.UserConfig) -> Settings:
-    """This machine's settings as a record copies them (jobs.md § 9.1)."""
-    return Settings(environments=str(settings.environments_root(config)),
-                    mpi=list(config.launch.mpi) if config.launch.mpi else None,
-                    preamble=list(config.activation.preamble) if config.activation.preamble is not None else None,
-                    activation=config.activation.command)
+    """This machine's settings as a record copies them (jobs.md § 9.1), each key as config.toml holds it."""
+    now = {d: copied(config, d) for d in COPIED}
+    tables: dict[str, dict[str, Any]] = {}
+    for d, value in now.items():
+        k = settings.key(d)
+        tables.setdefault(k.section, {})[k.name] = value
+    return Settings.model_validate(tables)
 
 
 def stale(record: Record, config: settings.UserConfig) -> list[str]:
     """The settings a record of this machine no longer shares with its config.toml (jobs.md § 9.3)."""
     now = settings_now(config)
-    return [f"{k}: recorded {text.show(getattr(record.settings, k))}, now {text.show(getattr(now, k))}"
-            for k in Settings.model_fields if getattr(record.settings, k) != getattr(now, k)]
+    return [f"{d}: recorded {settings.key(d).shown(copied(record.settings, d))}, now {settings.key(d).shown(copied(now, d))}"
+            for d in COPIED if copied(record.settings, d) != copied(now, d)]
+
+
+@dataclass(frozen=True)
+class Listing:
+    """What a record lists of one environment (jobs.md § 9.1): whether it could list its
+    environments at all — and, where not, why — what it lists of this one, none where it lists it
+    not, and as what: its state, the environment machine's member — none where it lists it not, or
+    in a state that machine does not have — and whether it lists it GPU-qualified."""
+
+    known: bool
+    why: str | None
+    snapshot: EnvSnapshot | None
+    state: Enum | None
+    qualified: bool
+
+
+def listed(ctx: Context, r: Record, name: str) -> Listing:
+    """Whether the record ``r`` lists the environment ``name``, and as what (jobs.md § 9.1): the one
+    reader of a record's environments, for a stage's identity and a prepare's warning alike — each
+    comparing the state it lists by the environment machine's member, never by its name."""
+    if not isinstance(r.environments, dict):
+        return Listing(known=False, why=r.environments.unknown, snapshot=None, state=None, qualified=False)
+    snap = r.environments.get(name)
+    named = {s.value: s for s in env_state.machine(ctx).states}
+    return Listing(known=True, why=None, snapshot=snap, state=named.get(snap.state) if snap else None,
+                   qualified=snap is not None and snap.gpu == env_state.QUALIFIED)
+
+
+def environments_now(ctx: Context, r: Record) -> dict[str, tuple[str | None, str]]:
+    """Each environment whose state here now differs from what a record of this machine holds of
+    it: (its state in the record, or None for one it lists not; its state now) — `env list` now
+    against the record's snapshot (jobs.md § 9.3), which never makes the record stale; none where no
+    manager is named here to ask where they are (envs.md § 3.1)."""
+    held = r.environments if isinstance(r.environments, dict) else {}
+    m = env_state.machine(ctx)
+    out = {}
+    for name in sorted(catalogue.load(ctx).environments):
+        try:
+            state = env_state.observe(ctx, name)[1]
+        except Unstated:
+            return {}
+        was = held[name].state if name in held else None
+        if was != state.value and not (was is None and state is m.states.absent):   # never installed: no change
+            out[name] = (was, state.value)
+    return out
 
 
 @dataclass(frozen=True)
 class RecordFacts:
     """What is observed of a record of this machine."""
 
+    name: str             # the record's name
     there: bool           # its file is there
     problem: str | None   # why the file does not load; None when it loads, or is not there
     drift: list[str]      # the settings it no longer shares with this machine's config.toml
+    installs: bool = False   # `env bootstrap`'s: it installs an environment, which the record would list as it was
 
+
+def probe_name(name: str) -> str | None:
+    """The name a probe writing the record ``name`` is given: none for `local`, this machine's own
+    record and the probe's default, which takes no `--name` (jobs.md § 9.2) — decided here alone.
+    Which file the probe writes, never which machine it runs on (`of_this_machine`)."""
+    return None if name == LOCAL else name
+
+
+#: The action of a record's state that writes it, measuring the machine it describes (jobs.md § 9.3).
+PROBE = "probe"
+#: What `env bootstrap` does to this machine's record, by the names its table's `[tasks]` gives them
+#: (envs.md § 6.2): measure the machine and write it; measure a current one again where it installs
+#: environments.
+WRITE, RENEW = "write", "renew"
 
 BINDING = states.Binding("record", {
     "there": lambda f: f.there,
     "loads": lambda f: f.problem is None,
     "drifted": lambda f: bool(f.drift),
-}, values={"name": lambda name: None if name == LOCAL else name},   # `local` is the probe's own default
-   reads=frozenset({"absent", "unloadable", "stale", "current"}))
+    "installs": lambda f: f.installs,
+}, values={"name": lambda f: probe_name(f.name)},
+   reads=frozenset({"absent", "unloadable", "stale", "current"}), acts=frozenset({PROBE}),
+   tasks=frozenset({WRITE, RENEW}))
 
 
 def machine(ctx: Context) -> states.Machine:
@@ -221,21 +367,25 @@ def machine(ctx: Context) -> states.Machine:
     return catalogue.machine(ctx, BINDING)
 
 
-def facts(file: Path, config: settings.UserConfig) -> RecordFacts:
-    """What is observed of the record ``file``, a record of this machine, against this config.toml."""
+def facts(file: Path, config: settings.UserConfig | None) -> RecordFacts:
+    """What is observed of the record ``file``: a record of this machine, against this config.toml;
+    with no ``config``, a record not compared — another machine's, or one only probed again — whose
+    settings never drift (jobs.md § 9.3)."""
+    name = file.stem
     if not file.exists():
-        return RecordFacts(there=False, problem=None, drift=[])
+        return RecordFacts(name=name, there=False, problem=None, drift=[])
     try:
-        return RecordFacts(there=True, problem=None, drift=stale(read(file), config))
+        held = read(file)
     except DefinitionError as exc:
-        return RecordFacts(there=True, problem=exc.summary(), drift=[])
+        return RecordFacts(name=name, there=True, problem=exc.summary(), drift=[])
+    return RecordFacts(name=name, there=True, problem=None, drift=stale(held, config) if config is not None else [])
 
 
-def status(ctx: Context, file: Path, config: settings.UserConfig) -> tuple[Enum, str]:
+def status(ctx: Context, file: Path, config: settings.UserConfig) -> tuple[Enum, str, RecordFacts]:
     """A record of this machine against this config.toml (jobs.md § 9.3): its state by the
-    machine's rules, and the detail — what drifted, or what is wrong."""
+    machine's rules, the detail — what drifted, or what is wrong — and its facts."""
     f = facts(file, config)
-    return machine(ctx).observe(f), f.problem or "; ".join(f.drift)
+    return machine(ctx).observe(f), f.problem or "; ".join(f.drift), f
 
 
 def unknowns(record: Record) -> list[tuple[str, str]]:
@@ -261,16 +411,8 @@ def differences(old: Record, new: Record) -> list[str]:
     """What changed, part by part, leaving out when it was measured."""
     a, b = _flat(old.data()), _flat(new.data())
     skip = ("measured.", "sources.")   # key paths, as core writes them
-    return [f"{k}: {_shown(a, k)} -> {_shown(b, k)}"
+    return [f"{k}: {shown(a[k]) if k in a else '(absent)'} -> {shown(b[k]) if k in b else '(absent)'}"
             for k in sorted(set(a) | set(b)) if not k.startswith(skip) and a.get(k) != b.get(k)]
-
-
-def _shown(flat: dict[str, Any], key: str) -> str:
-    """One value of a record as a person reads it: an unknown with its reason."""
-    if key not in flat:
-        return "(absent)"
-    value = flat[key]
-    return f"unknown ({value['unknown']})" if isinstance(value, dict) and set(value) == {"unknown"} else text.show(value)
 
 
 def _flat(value: Any, where: tuple = ()) -> dict[str, Any]:

@@ -2,22 +2,18 @@
 
 from __future__ import annotations
 
-import os
-import shlex
-from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from femkit.config import probe, settings
-from femkit.core import dirs, paths, text, view
+from femkit.core import dirs, text, view
 from femkit.core.errors import UsageError
 from femkit.core.issues import Issue
 from femkit.core.operations import Ask, Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import inline_text, plain_value
-from femkit.core.schema import Model, closed
-from femkit.definitions import catalogue
-from femkit.config.requests import OPTION_KEYS, PathRequest, SetRequest, ShowRequest, option_name
+from femkit.core.schema import Model
+from femkit.config.requests import EMPTIES, OPTION_KEYS, PathRequest, SetRequest, ShowRequest
 from femkit.config.requests import CONFIG_INIT, CONFIG_PATH, CONFIG_SET, CONFIG_SHOW
 
 
@@ -25,26 +21,26 @@ from femkit.config.requests import CONFIG_INIT, CONFIG_PATH, CONFIG_SET, CONFIG_
 # ------------------------------------------------------------------ config path
 
 class DirectoryRow(Model):
-    name: str = Field(description=f"one of {', '.join(dirs.VARIABLES)}")
+    name: Literal[tuple(dirs.VARIABLES)] = Field(description="which of femkit's directories", title="directory")
     path: str = Field(description="the directory")
-    rule: str = Field(description="what chose it: its own variable, an XDG variable, or the default")
+    rule: str = Field(description="what chose it: its own variable, an XDG variable, or the default", title="from")
     entries: list[str] = Field(description="every file under the config directory; the top-level entries of the others")
 
 
 class PathResult(Result):
     directories: list[DirectoryRow] = Field(description=f"femkit's directories: {', '.join(dirs.VARIABLES)}")
 
+    @property
     def report(self) -> view.Report:
         blocks: list = [view.Text(text="femkit's directories"),
-                        view.Table(columns=view.columns("name", "path", "rule", name="directory", path="path", rule="from"),
-                                   rows=[{"name": d.name, "path": text.path(d.path), "rule": d.rule}
-                                         for d in self.directories])]
+                        view.Table.of(DirectoryRow, [{"name": d.name, "path": text.path(d.path), "rule": d.rule}
+                                                     for d in self.directories], "name", "path", "rule")]
         for d in self.directories:
             if not d.entries:
                 blocks.append(view.Text(text=f"in {d.name}: empty"))
                 continue
             blocks += [view.Text(text=f"in {d.name}:"),
-                       view.Table(columns=view.columns("entry"), rows=[{"entry": e} for e in d.entries])]
+                       view.Table.of(DirectoryRow, [{"entries": e} for e in d.entries], "entries")]
         return view.Report(blocks=blocks)
 
 
@@ -68,20 +64,21 @@ def config_path(req: PathRequest, ctx: Context) -> PathResult:
 class ShowRow(Model):
     key: str = Field(description="the dotted key")
     value: Any = Field(default=None, description="its value; none when unset")
-    source: str = Field(description="`config.toml`, or `unset`")
-    unset: str = Field(description="what the key's absence means")
+    source: Literal["config.toml", "unset"] = Field(description="where its value came from")
+    unset: str = Field(description="what the key's absence means", title="when unset")
 
 
 class ShowResult(Result):
     file: str | None = Field(description="the file that answered; none when absent")
     rows: list[ShowRow] = Field(description="every key, in the model's order")
 
+    @property
     def report(self) -> view.Report:
         return view.Report(blocks=[
             view.Text(text=f"read {text.path(self.file)}" if self.file else "no config.toml: every key is unset"),
-            view.Table(columns=view.columns("key", "value", "unset", key="key", value="value", unset="when unset"),
-                       rows=[{"key": r.key, "value": settings.key(r.key).shown(r.value),
-                              "unset": r.unset if r.value is None else ""} for r in self.rows])])
+            view.Table.of(ShowRow, [{"key": r.key, "value": settings.key(r.key).shown(r.value),
+                                     "unset": r.unset if r.value is None else ""} for r in self.rows],
+                          "key", "value", "unset")])
 
 
 @operation(CONFIG_SHOW, result=ShowResult)
@@ -101,6 +98,7 @@ def config_show(req: ShowRequest, ctx: Context) -> ShowResult:
 class SetOutcome(Outcome):
     file: str = Field(default="", description="the file written")
 
+    @property
     def report(self) -> view.Report:
         if not self.plan.steps:
             return view.Report(blocks=[view.Text(text=f"nothing to change in {text.path(self.file)}")])
@@ -122,11 +120,10 @@ def _value(dotted: str, raw: str) -> Any:
         how = ("a text is written in quotes" if again else
                "a text is written in quotes, a number and `true` or `false` bare, a list in `[ ]`")
         raise UsageError(f"{raw} is no value as config.toml writes one: {how}", again, code="not-toml",
-                         subject=raw) from None
+                         subject=dotted) from None
 
 
-@operation(CONFIG_SET, result=SetOutcome, changes=True,
-           subject=lambda req: ["config"])
+@operation(CONFIG_SET, result=SetOutcome, subject=lambda req: ["config"])
 class ConfigSet:
     """Validate and write one configuration key, keeping the file's comments and layout."""
 
@@ -156,81 +153,44 @@ class ConfigSet:
 
 # ------------------------------------------------------------------ config init
 
-PREAMBLE, COMMAND = settings.PREAMBLE, settings.COMMAND
-
-
-def stating(verb: view.Verb, dotted: list[str]) -> tuple[view.Action, ...]:
-    """What states each of these keys of settings.STATED, as ``operation`` takes them."""
-    out: list[view.Action] = []
-    if PREAMBLE in dotted:
-        preamble = settings.key(PREAMBLE)
-        out += [view.command(verb, note="once per line",
-                             fills=[view.Fill(field="preamble", label=preamble.dotted, example="LINE",
-                                                          help=view.Help.of(preamble.description))]),
-                view.command(verb, no_preamble=True, note="none is needed here")]
-    if COMMAND in dotted:
-        command = settings.key(COMMAND)
-        first, *others = closed(command.annotation)
-        out += [view.command(verb, note="or " + ", ".join(shlex.quote(c) for c in others),
-                             fills=[view.Fill(field=option_name(command), label=command.dotted, example=first,
-                                              help=view.Help.of(command.description))])]
-    return tuple(out)
-
 class InitRow(Model):
     key: str = Field(description="the dotted key")
-    status: str = Field(description="added, kept or unset")
+    status: Literal["added", "kept", "unset"] = Field(description="what config init did with it")
     value: Any = Field(default=None, description="the value added or kept")
-    note: str = Field(default="", description="for an unset key, what its absence means")
+    note: str = Field(default="", description="for an unset key, what its absence means", title="when unset")
 
 
 class InitOutcome(Outcome):
     file: str = Field(default="", description="the file written")
     rows: list[InitRow] = Field(default_factory=list, description="every key, in the model's order")
 
+    @property
     def report(self) -> view.Report:
         added = sum(r.status == "added" for r in self.rows)
         return view.Report(blocks=[
             view.Text(text=f"{text.path(self.file)}: {text.count(added, 'key')} added"),
-            view.Table(columns=view.columns("status", "key", "value", "note", status="status", key="key", value="value", note="when unset"),
-                       rows=[{"status": r.status, "key": r.key, "value": settings.key(r.key).shown(r.value),
-                              "note": r.note} for r in self.rows])])
+            view.Table.of(InitRow, [{"status": r.status, "key": r.key, "value": settings.key(r.key).shown(r.value),
+                                     "note": r.note} for r in self.rows], "status", "key", "value", "note")])
 
 
 def _given(req) -> dict[str, Any]:
+    """Each key the request gives a value: by its option, or a list by the flag stating it empty,
+    which its request refuses beside the key's own option (config.md § 3.2)."""
     given = {k.dotted: settings.plain(getattr(req, name)) for name, k in OPTION_KEYS.items()
              if getattr(req, name) is not None}
-    if req.no_preamble:
-        if PREAMBLE in given:
-            raise UsageError("--preamble and --no-preamble contradict each other", code="contradiction",
-                             subject=PREAMBLE)
-        given[PREAMBLE] = []
-    return given
-
-
-ENVIRONMENTS = "paths.environments"
-
-
-def where_environments_go(path: Path) -> str:
-    """A place for environments as a person weighs it: writable, and its free space."""
-    existing = paths.nearest_existing(path)
-    free = settings.free_space(path)
-    return (f"{text.path(path)}  ({'writable' if existing and os.access(existing, os.W_OK) else 'NOT writable'}"
-            + (f", {free / 1e9:.0f} GB free" if free is not None else "") + ")")
+    return {**given, **{k.dotted: [] for flag, k in EMPTIES.items() if getattr(req, flag)}}
 
 
 def _proposals(ctx: Context, given: dict[str, Any], present: dict[str, Any]) -> dict[str, tuple[Any, str]]:
-    """dotted key -> (value, where it came from), for every key the file lacks. A default
-    is never proposed: it applies while the key is unset (config.md § 3.2)."""
+    """dotted key -> (value, where it came from), for every key the file lacks: given, or proposed
+    from what its field says it is proposed from (`propose`, config.md § 3.1). A default is never
+    proposed: it applies while the key is unset (config.md § 3.2)."""
     out = {k: (v, "given") for k, v in given.items() if k not in present}
-    if "build.cuda_architectures" not in present and "build.cuda_architectures" not in out:
-        archs, source = probe.gpu_architectures()
-        if archs:
-            out["build.cuda_architectures"] = (archs, f"measured by {source}")
-    if "launch.mpi" not in present and "launch.mpi" not in out:
-        kinds = catalogue.schedulers(ctx)
-        kind, why = probe.detect_scheduler(kinds)
-        if kind is not None:
-            out["launch.mpi"] = (kinds[kind].mpi_launch, f"the {kind} scheduler kind's launcher ({why})")
+    for k in settings.keys():
+        if "propose" in k.extras and k.dotted not in present and k.dotted not in out:
+            value, source = probe.PROPOSALS[k.extras["propose"]](ctx)
+            if value is not None:
+                out[k.dotted] = (value, source)
     return out
 
 
@@ -241,19 +201,19 @@ def _issues(given: dict[str, Any], present: dict[str, Any], adding: dict[str, An
                      message=f"{k} is already {settings.key(k).shown(present[k])}; the value given is ignored",
                      next=(view.command(CONFIG_SET, key=k, value=inline_text(given[k])),))
                for k in given if k in present and given[k] != present[k]]
-    for dotted in settings.STATED:
+    for dotted in settings.person_states():
         if dotted not in present and dotted not in adding:
             issues.append(Issue(severity="warning", code="stated-unset", subject=dotted,
                                 message=f"{dotted} is unset: {settings.key(dotted).unset}",
-                                next=stating(CONFIG_INIT, [dotted])))
+                                next=settings.options([dotted])))
     return issues
 
 
-#: What is measured here and shown beside a key's question (config.md § 3.2).
+#: What is measured here and shown beside a key's question, by the name its field gives it
+#: (`beside`, config.md § 3.2).
 BESIDE = {
-    ENVIRONMENTS: lambda ctx: (f"the default here: {where_environments_go(dirs.environments_dir())}",),
-    PREAMBLE: lambda ctx: ("loaded modules: " + (ctx.env.get("LOADEDMODULES", "").replace(":", " ")
-                                                 or "none listed by this shell"),),
+    "loaded-modules": lambda ctx: "loaded modules: " + (ctx.env.get("LOADEDMODULES", "").replace(":", " ")
+                                                        or "none listed by this shell"),
 }
 
 
@@ -261,13 +221,13 @@ def _asks(ctx: Context, given: dict[str, Any], present: dict[str, Any]) -> tuple
     """What config init asks on a terminal (config.md § 3.2): each key that declares its question
     and is neither in the file nor given — its question, and beside it its help, what is measured
     for it here and what its absence means. Nothing is proposed; an empty answer leaves it unset."""
-    return tuple(Ask(key=option_name(k), question=k.ask,
-                     context=(k.help, *(BESIDE[k.dotted](ctx) if k.dotted in BESIDE else ()), f"when unset: {k.unset}"))
+    return tuple(Ask(key=k.name, question=k.ask,
+                     context=(k.help, *((BESIDE[k.extras["beside"]](ctx),) if "beside" in k.extras else ()),
+                              f"when unset: {k.unset}"))
                  for k in settings.keys() if k.ask and k.dotted not in present and k.dotted not in given)
 
 
-@operation(CONFIG_INIT, result=InitOutcome, changes=True,
-           subject=lambda req: ["config"])
+@operation(CONFIG_INIT, result=InitOutcome, subject=lambda req: ["config"])
 class ConfigInit:
     """Write config.toml from its template, adding only keys it lacks; never replaces a value."""
 
@@ -280,12 +240,6 @@ class ConfigInit:
         steps = tuple(Step(id=f"add:{k}", describe=f"add {k} = {settings.key(k).shown(v)}  # {why}")
                       for k, (v, why) in proposals.items())
         issues = _issues(given, present, values)
-        if ENVIRONMENTS not in present and ENVIRONMENTS not in values:
-            issues.append(Issue(severity="info", code="default", subject=ENVIRONMENTS,
-                                message=f"{ENVIRONMENTS} unset: environments go to the default, "
-                                        f"{where_environments_go(dirs.environments_dir())}",
-                                next=(view.command(CONFIG_INIT, note="to choose",
-                                                   fills=[view.Fill(field="environments", label=ENVIRONMENTS, example="PATH")]),)))
         return Plan(holds={"values": values}, steps=steps, issues=issues, asks=_asks(ctx, given, present))
 
     def observe(self, req, ctx: Context) -> dict:
@@ -311,4 +265,4 @@ class ConfigInit:
             else:
                 rows.append(InitRow(key=k.dotted, status="unset", note=k.unset))
         return InitOutcome(plan=plan, status=status, log=str(log), file=str(settings.config_file()),
-                           rows=rows, issues=[i for i in plan.issues if i.code != "key-kept"])
+                           rows=rows)

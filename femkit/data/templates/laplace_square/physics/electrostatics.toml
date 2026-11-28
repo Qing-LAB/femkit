@@ -20,7 +20,7 @@ formulation = "electrostatics"
 # which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
 kind = "potential"
 # the potential the boundary is held at, in V
-value = "0 V"
+value = {value = 0, unit = "V"}
 
 [conditions.right]
 # which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
@@ -40,4 +40,4 @@ kind = "insulating"
 # the group it acts in or on, by name
 # on = "domain"
 # rho, the free charge per unit volume, in C/m^3
-# value = "1e-12 C/m^3"
+# value = {value = 1e-12, unit = "C/m^3"}

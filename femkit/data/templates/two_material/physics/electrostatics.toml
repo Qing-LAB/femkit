@@ -21,7 +21,7 @@ formulation = "electrostatics"
 # which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
 kind = "potential"
 # the potential the boundary is held at, in V
-value = "0 V"
+value = {value = 0, unit = "V"}
 
 [conditions.right]
 # which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
@@ -39,3 +39,10 @@ kind = "interface"
 
 # each source by its name: its kind, the group it acts in or on, and the parameters its kind lists
 # [sources]
+# [sources.charge]
+# which source it is: one of `charge_density`
+# kind = "charge_density"
+# the group it acts in or on, by name
+# on = "low"
+# rho, the free charge per unit volume, in C/m^3
+# value = {value = 1e-12, unit = "C/m^3"}

@@ -6,7 +6,7 @@
 
 ## ProjectFile
 
-`project.toml`: what the project is, the components and studies it names, and the shared parameters (projects.md § 3, models.md § 3).
+`project.toml`: what the project is, the components and studies it names, and its definitions (projects.md § 3, models.md § 3).
 
 | key | type | default | meaning |
 |---|---|---|---|
@@ -14,7 +14,36 @@
 | `description` | text | required | what the project is, in a sentence or two |
 | `components` | list of text | empty | the project's components, by name: each the folder `components/&lt;name&gt;/`, holding `component.toml` and `geometry.py`. Refers by name to component |
 | `studies` | list of text | empty | the project's studies, by name: each the file `studies/&lt;name&gt;.toml`. Refers by name to study |
-| `parameters` | table of text → text | empty | the shared parameters, by name: each a quantity with its unit, or an expression of other parameters with `+`, `-`, `*`, `/` and parentheses (see core.md § 11). A quantity with its unit, or an expression of parameters |
+| `definitions` | table of text → [Definition](#definition) | empty | the project's definitions, by name: each a number of its type with its unit, written as its value or computed by a function in `definitions.py`; every other part uses one by its name (see models.md § 3) |
+| `postprocess` | [Postprocess](#postprocess), optional | — | what the project's observables scripts need beyond femkit's `postprocess` environment, so a copy of the project carries it (see models.md § 2) |
+
+## Definition
+
+One definition (models.md § 3): a typed value — its number's type and its unit — written as its value or computed by its function.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `type` | `int` \| `float` \| `complex` | required | the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex` |
+| `unit` | text | required | its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone. A unit |
+| `value` | Any | — | its value, a number of its type — a `float` may be written `10`, a `complex` as `[real, imaginary]` — its unit written apart, in `unit`; else `function` |
+| `function` | text, optional | — | else the name of the function in the project's `definitions.py` that computes it: it takes no arguments, reads every other definition as `defs.&lt;name&gt;`, a plain number in SI units — an angle in degrees — and returns its own the same way |
+
+## Postprocess
+
+What the project's observables scripts need beyond femkit's `postprocess` environment (models.md § 2).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `packages` | list of text or [Package](#package) | empty | the conda packages its scripts import beyond what femkit's `postprocess` environment holds, each installed into it on every machine: a package by its name, which a script imports by that name, or `{ conda = "scikit-image", module = "skimage" }` for one it imports by another |
+
+## Package
+
+A package whose module a script imports by a name other than the package's own.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `conda` | text | required | the conda package, by its name, with the version it is held to if any, as conda reads a constraint: `scikit-image&gt;=0.24` |
+| `module` | text | required | the name a script imports it by: `skimage` |
 
 ## Material
 
@@ -37,10 +66,24 @@ A dataset that is a real constant (materials.md § 3).
 |---|---|---|---|
 | `convention` | `real` \| `exp(-iwt)` \| `exp(+iwt)`, optional | — | the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)` |
 | `source` | text, optional | — | where the data comes from: a citation a reader can check, with its DOI where there is one |
-| `range` | `all` or list of text, optional | — | where the data holds: `all`, or `[from, to]` in its variable. A quantity with its unit where it has one, naming no parameter |
-| `temperature` | integer or Decimal or text, optional | — | the temperature its data holds at, where it matters. A quantity with its unit where it has one, naming no parameter |
+| `range` | `all` or [MeasureList](#measurelist), optional | — | where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
+| `temperature` | [Measure](#measure) or integer or number or text, optional | — | the temperature its data holds at, where it matters. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
 | `uncertainty` | text, optional | — | the uncertainty its source gives, as the source gives it |
-| `value` | integer or Decimal or text | required | a real constant, with its unit where it has one. A quantity with its unit where it has one, naming no parameter |
+| `value` | [Measure](#measure) or integer or number or text | required | a real constant: `{value, unit}`, a plain number where it has no unit. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
+
+## MeasureList
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `value` | list of integer or number or text | required | its number; for a point, a line or a range, its numbers, all in its unit |
+| `unit` | text | required | the unit its number is in: a unit femkit reads, or a product of them. A unit |
+
+## Measure
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `value` | integer or number | required | its number; for a point, a line or a range, its numbers, all in its unit |
+| `unit` | text | required | the unit its number is in: a unit femkit reads, or a product of them. A unit |
 
 ## Table
 
@@ -50,8 +93,8 @@ A dataset that is a table: a file beside the material's own (materials.md § 3).
 |---|---|---|---|
 | `convention` | `real` \| `exp(-iwt)` \| `exp(+iwt)`, optional | — | the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)` |
 | `source` | text, optional | — | where the data comes from: a citation a reader can check, with its DOI where there is one |
-| `range` | `all` or list of text, optional | — | where the data holds: `all`, or `[from, to]` in its variable. A quantity with its unit where it has one, naming no parameter |
-| `temperature` | integer or Decimal or text, optional | — | the temperature its data holds at, where it matters. A quantity with its unit where it has one, naming no parameter |
+| `range` | `all` or [MeasureList](#measurelist), optional | — | where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
+| `temperature` | [Measure](#measure) or integer or number or text, optional | — | the temperature its data holds at, where it matters. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
 | `uncertainty` | text, optional | — | the uncertainty its source gives, as the source gives it |
 | `table` | text | required | the file holding it, by its path from the material's folder: comma-separated, a first row naming its columns, then one row per point, the variable increasing. Refers by name to file |
 | `sha256` | text, optional | — | its file's SHA-256, so a table changed under its material is seen |
@@ -75,11 +118,11 @@ A dataset that is a dispersion model with its parameters (materials.md §§ 2, 3
 |---|---|---|---|
 | `convention` | `real` \| `exp(-iwt)` \| `exp(+iwt)`, optional | — | the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)` |
 | `source` | text, optional | — | where the data comes from: a citation a reader can check, with its DOI where there is one |
-| `range` | `all` or list of text, optional | — | where the data holds: `all`, or `[from, to]` in its variable. A quantity with its unit where it has one, naming no parameter |
-| `temperature` | integer or Decimal or text, optional | — | the temperature its data holds at, where it matters. A quantity with its unit where it has one, naming no parameter |
+| `range` | `all` or [MeasureList](#measurelist), optional | — | where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
+| `temperature` | [Measure](#measure) or integer or number or text, optional | — | the temperature its data holds at, where it matters. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
 | `uncertainty` | text, optional | — | the uncertainty its source gives, as the source gives it |
 | `model` | text | required | the dispersion model, by its name in femkit's list of models (see materials.md § 2) |
-| `parameters` | table of text → integer or Decimal or text or list of table of text → integer or Decimal or text | empty | its parameters, each by its name in its model's declaration: a quantity in a dimension it declares, or, for a list of terms the model sums, a list of tables of them. A quantity with its unit where it has one, naming no parameter |
+| `parameters` | table of text → [Measure](#measure) or integer or number or text or list of table of text → [Measure](#measure) or integer or number or text | empty | its parameters, each by its name in its model's declaration: a quantity in a dimension it declares, or, for a list of terms the model sums, a list of tables of them. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
 
 ## Component
 
@@ -90,6 +133,7 @@ A dataset that is a dispersion model with its parameters (materials.md §§ 2, 3
 | `schema` | `1` | required | the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2) |
 | `frame` | [Frame](#frame) | required | the space the script draws in: its dimension and its unit; its origin is where the script's coordinates are zero, and every point another file gives is measured from it (see geometry.md § 3) |
 | `inputs` | [Inputs](#inputs) | see table | what the script reads beside its own numbers |
+| `outputs` | [Outputs](#outputs) | see table | what the script writes beside the geometry: a mesh, only for a script that meshes too (see geometry.md § 3) |
 | `groups` | table of text → integer | required | the named groups the script promises, each with its dimension — the frame's for a body, one less for a face, 1 for an edge in 3-D, 0 for a point; every other part names only these |
 | `assign` | table of text → [Assignment](#assignment) | empty | the material that fills each body group, keyed by the group (see materials.md § 5). Refers by name to its keys: group:body |
 
@@ -117,8 +161,24 @@ What the script reads beside its own numbers (geometry.md §§ 2, 3).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `parameters` | table of text → `length` \| `angle` \| `number` | empty | the project parameters the script reads, by name, each with what it must be — a length reaches the script in the frame's unit, an angle in degrees, a number as itself: one of `length`, `angle`, `number`. Refers by name to its keys: parameter |
+| `definitions` | table of text → `length` \| `angle` \| `number` | empty | the project's definitions the script reads, by name, each with what it must be — a length reaches the script in the frame's unit, an angle in degrees, a number as itself: one of `length`, `angle`, `number`. Refers by name to its keys: definition |
 | `files` | table of text → text | empty | the files beside the script that it reads, each by its path from the component's folder, with its SHA-256. Refers by name to its keys: file |
+
+## Outputs
+
+What the script writes beside the geometry (geometry.md § 3).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `mesh` | [DeclaredMesh](#declaredmesh), optional | — | a mesh it writes too, every promised group a named group of it — for a mesh no recipe can state; a mesh recipe names the `given` mesher to take it on unchanged |
+
+## DeclaredMesh
+
+A mesh the script writes too (geometry.md § 3): its geometry order.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `order` | `1` \| `2` | required | its geometry order, as a mesh recipe's — 2 for elements bent to follow a curved surface: one of `1`, `2` |
 
 ## Assignment
 
@@ -160,77 +220,67 @@ One source: its kind, one its formulation allows, the group it acts in or on, an
 
 ## Recipe
 
-`mesh/<name>.toml`: one mesh recipe, on named groups (geometry.md § 6).
+`mesh/<name>.toml`: one mesh recipe, on named groups, and the mesher that makes its mesh (geometry.md § 6).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `schema` | `1` | required | the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2) |
-| `size` | text | required | the largest element size anywhere: a length. A length |
+| `schema` | `2` | required | the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `2` (see models.md § 2) |
+| `mesher` | text | required | the mesher that makes the mesh, by name — `given`, the mesh the component's script writes, passed on unchanged; the meshers: `given`, `gmsh` (see geometry.md § 6). Refers by name to mesher |
+| `size` | [Measure](#measure) or integer or number or text | required | the largest element size anywhere: a length above 0. A length, `{value, unit}`, or a definition's name |
 | `order` | `1` \| `2` | required | the geometry order — how closely elements follow a curved surface, 2 bending them to it: one of `1`, `2` |
-| `tolerance` | integer or Decimal or text | required | how far each group's measure in the mesh may differ from its measure in the geometry, relative: a plain number. A quantity with its unit, or an expression of parameters |
-| `growth` | integer or Decimal or text, optional | — | how fast the size grows away from a group of `sizes`: the size added per unit of distance, a plain number above 0; required with `sizes`. A quantity with its unit, or an expression of parameters |
-| `quality` | integer or Decimal or text, optional | — | the smallest quality an element may have, by Gmsh's signed inverse condition number, at most 1; unset, only an inverted element, below 0, is refused. A quantity with its unit, or an expression of parameters |
-| `sizes` | table of text → text | empty | a finer size on and near named groups, keyed by the group: each a length. Refers by name to its keys: group. A length |
+| `tolerance` | [Measure](#measure) or integer or number or text | required | how far each group's measure in the mesh may differ from its measure in the geometry, relative: a plain number, 0 or above. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
+| `growth` | [Measure](#measure) or integer or number or text, optional | — | how fast the size grows away from a group of `sizes`: the size added per unit of distance, a plain number above 0; required with `sizes`. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
+| `quality` | [Measure](#measure) or integer or number or text, optional | — | the smallest quality an element may have, by Gmsh's signed inverse condition number, at most 1; unset, only an inverted element, below 0, is refused. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
+| `sizes` | table of text → [Measure](#measure) or integer or number or text | empty | a finer size on and near named groups, keyed by the group: each a length above 0. Refers by name to its keys: group. A length, `{value, unit}`, or a definition's name |
 
-## ObservableSet
+## ObservablesPart
 
-`observables/<o>.toml`: what a study reports, on named groups and on points and lines given with their units (models.md § 5.2).
-
-| key | type | default | meaning |
-|---|---|---|---|
-| `schema` | `1` | required | the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2) |
-| `observables` | table of text → [AtPoint](#atpoint) or [AlongLine](#alongline) or [OverGroup](#overgroup) | empty | the set's observables, by name, unique across the sets a study reports (see models.md § 5.2) |
-
-## AtPoint
-
-An observable read at a point.
+`observables/<o>/observables.toml`: the studies it reads, and each observable, computed by its function in `observe.py` beside it (models.md § 5.2).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `quantity` | text | required | the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with |
-| `reduction` | `value` \| `average` \| `integral` \| `maximum` \| `norm` | required | how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm` |
-| `unit` | text | required | the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over. A unit |
-| `point` | list of text | required | where it is read, as a point: one length per axis of the component's frame, from its origin; or give `line` or `group` instead. A length |
+| `schema` | `2` | required | the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `2` (see models.md § 2) |
+| `studies` | list of text | required | the studies it reads, by name: any whose components promise the groups it takes (see models.md § 5.2). Refers by name to study |
+| `observables` | table of text → [Observable](#observable) | empty | its observables, by name, unique across the parts reading one study: each computed by its function (see models.md § 5.2) |
 
-## AlongLine
+## Observable
 
-An observable read along a line.
-
-| key | type | default | meaning |
-|---|---|---|---|
-| `quantity` | text | required | the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with |
-| `reduction` | `value` \| `average` \| `integral` \| `maximum` \| `norm` | required | how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm` |
-| `unit` | text | required | the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over. A unit |
-| `line` | list of list of text | required | where it is read, as a line: its two end points, each one length per axis of the component's frame, from its origin; or give `point` or `group` instead. A length |
-
-## OverGroup
-
-An observable read over a group.
+One observable (models.md § 5.2): its function, what it takes, and what it gives, a typed value — a number, or an array over the case's own dimensions.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `quantity` | text | required | the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with |
-| `reduction` | `value` \| `average` \| `integral` \| `maximum` \| `norm` | required | how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm` |
-| `unit` | text | required | the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over. A unit |
-| `group` | text | required | where it is read, as a group: one the paired component promises; or give `point` or `line` instead. Refers by name to group |
-| `side` | text, optional | — | on an interface group, the body group it is read from. Refers by name to group:body |
+| `type` | `int` \| `float` \| `complex` | required | the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex` |
+| `unit` | text | required | its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone. A unit |
+| `function` | text | required | the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units |
+| `takes` | [Takes](#takes) | see table | what its function reads of the case beside its solve's run: definitions, groups |
+| `dims` | table of text → text | empty | for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number. A unit |
+
+## Takes
+
+What an observable's function takes of a case beside its solve's run (models.md § 5.2) — the one statement of what it uses; the standard forms an output translator gives join with M6.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `definitions` | list of text | empty | the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.&lt;name&gt;`. Refers by name to definition |
+| `groups` | list of text | empty | groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.&lt;name&gt;`. Refers by name to group |
 
 ## Study
 
-`studies/<s>.toml`: a component paired with the physics of its steps, a mesh recipe and observable sets; what varies; each environment's settings (models.md § 5.1).
+`studies/<s>.toml`: a component paired with the physics of its steps and a mesh recipe; what varies; what belongs to its solve, whatever engine solves it; and the job that makes its geometries and meshes (models.md § 5.1). It names no engine: the engine is chosen when it is solved.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `schema` | `1` | required | the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (see models.md § 2) |
+| `schema` | `2` | required | the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `2` (see models.md § 2) |
 | `component` | text | required | the component it solves, by name. Refers by name to component |
-| `mesh` | text | required | the mesh recipe it meshes with, by name. Refers by name to mesh |
-| `observables` | list of text | empty | the observable sets it reports, by name. Refers by name to observables |
+| `mesh` | text | required | the mesh recipe it meshes with, by name: the recipe states the mesher that makes its mesh, which the engine chosen to solve the study must take. Refers by name to mesh |
 | `display` | list of text | empty | the units values are shown in: each value in the first listed unit of its dimension, else in SI units, angles in degrees. A unit |
-| `steps` | table of text → [Step](#step) | required | its steps, by name: each solves its physics as a kind of calculation, after any step it takes from; the order they are written in means nothing (see models.md § 4.5) |
-| `numerics` | [Numerics](#numerics) | required | how the equations are discretized and solved — the finite element and the linear solver — the same in every environment (see models.md § 6.4) |
-| `axes` | table of text → [Axis](#axis) | empty | what varies, each axis keyed by the address of what it varies — a parameter, `project:parameters.side`; a value of the mesh recipe, `mesh:uniform:size`; a numerics field; or a material's dataset — every axis crossed with every other (see models.md § 5.1) |
-| `crossing` | [Crossing](#crossing), optional | — | when the axes are of more than one class: every axis, and why their full product is needed |
-| `environments` | table of text → [Binding](#binding) | empty | each engine environment's settings for this study, by the environment's name (see models.md § 5.1). Refers by name to its keys: environment |
+| `steps` | table of text → [Step](#step) | required | its steps, by name: each solves its physics as a kind of calculation, after any step it takes from; the order they are written in means nothing; one step for now, several in one study not built yet (see models.md § 4.5) |
+| `numerics` | [Numerics](#numerics) | required | how the equations are discretized and solved — the finite element and the linear solver — the same whatever the engine (see models.md § 6.4) |
+| `axes` | table of text → [Axis](#axis) | empty | what varies, each axis keyed by the address of what it varies — a definition written as its value, `project:definitions.side`; a value of the mesh recipe, `mesh:uniform:size`; a numerics field; or a material's dataset — every axis crossed with every other, but those a group steps together, which cross as one; a value one formula gives is that formula, not an axis (see models.md § 5.1) |
+| `together` | table of text → [Together](#together) | empty | groups of axes that step together, each by its name: the n-th case takes each one's n-th value — for values no formula relates, such as each sample's measured sizes (see models.md § 5.1) |
+| `crossing` | [Crossing](#crossing), optional | — | when what is crossed holds axes of more than one class: every axis, and why their full product is needed |
+| `solve` | [Solve](#solve), optional | — | what belongs to the solve, whatever engine solves it: the resources of the job that solves its cases (see models.md § 5.1) |
+| `meshing` | [Meshing](#meshing) | required | the job that makes its geometries and meshes: its resources alone (see models.md § 5.1) |
 
 ## Step
 
@@ -240,7 +290,7 @@ One step: the physics it solves and the kind of calculation, after any step it t
 |---|---|---|---|
 | `physics` | text | required | the physics it solves, by name. Refers by name to physics |
 | `kind` | text | required | the kind of calculation, which the physics' formulation must support (see models.md § 4.2) |
-| `takes` | table of text → text | empty | when several physics are solved in turn, what it takes from a step that runs before it — a heat step taking an optics step's absorbed power, say: each by what it is to its own physics, then the step's name and a quantity that step derives |
+| `takes_from` | table of text → text | empty | when several physics are solved in turn, what it takes from a step that runs before it — a heat step taking an optics step's absorbed power, say: each by what it is to its own physics, then the step's name and a quantity that step derives; not built yet, since a study solves one step until several are |
 
 ## Numerics
 
@@ -267,16 +317,26 @@ The linear solver (models.md § 5.1).
 | key | type | default | meaning |
 |---|---|---|---|
 | `kind` | `direct` \| `iterative` | required | how the linear system is solved, exactly or to a tolerance: one of `direct`, `iterative` |
-| `tolerance` | Decimal, optional | — | the relative tolerance an iterative solver stops at: a plain number; required with `iterative` |
+| `tolerance` | integer or number, optional | — | the relative tolerance an iterative solver stops at: a plain number; required with `iterative` |
 
 ## Axis
 
-One axis: its class and its values (models.md § 5.1).
+One axis: its class, its values and the one unit they are in (models.md § 5.1).
 
 | key | type | default | meaning |
 |---|---|---|---|
 | `class` | `numerical convergence` \| `geometry convergence` \| `physical sweep` | required | why it varies: one of `numerical convergence`, `geometry convergence`, `physical sweep` |
-| `values` | list of text or integer or Decimal | required | its values, in order, each written as the value the axis varies is written in its own file |
+| `values` | list of integer or number or text | required | its values, in order: plain numbers — in its `unit` where what it varies has one — or, for a material's dataset, each dataset by its name |
+| `unit` | text, optional | — | the unit its values are in, where what it varies has one: a unit of its dimension. A unit |
+
+## Together
+
+A group of axes that step together (models.md § 5.1): the n-th case takes each one's n-th value.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `axes` | list of text | required | the address of each axis of the study it steps together, two or more, of one class, with as many values each |
+| `reason` | text | required | why their values belong together, in a sentence |
 
 ## Crossing
 
@@ -287,13 +347,13 @@ Why axes of more than one class are crossed (models.md § 5.1).
 | `axes` | list of text | required | the address of every axis of the study |
 | `reason` | text | required | why the full product is needed, in a sentence |
 
-## Binding
+## Solve
 
-One engine environment's settings for the study (models.md § 5.1): its job's resources, for now.
+What belongs to the solve, whatever engine solves it (models.md § 5.1): its job's resources. What only one engine has — its options, decisions, customizations and truncations — goes under that engine's name, `[solve.<engine>]`, as each is built.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `resources` | [Resources](#resources) | required | the job's resources in this environment (see jobs.md § 2) |
+| `resources` | [Resources](#resources) | required | the resources of the job that solves the study's cases, each in turn within it, stated, never derived (see jobs.md § 2) |
 
 ## Resources
 
@@ -305,6 +365,14 @@ What a job asks for; nothing about a machine (jobs.md § 2).
 | `threads` | integer | required | threads per rank |
 | `gpus` | integer | required | GPUs per node, a count; 0 states that none is used |
 | `wall` | text, optional | — | wall time, `[D-]HH:MM:SS`; read on a machine with a scheduler |
-| `memory` | text, optional | — | memory per node, a whole number with `K`, `M`, `G` or `T`; read on a machine with a scheduler |
+| `memory` | text, optional | — | memory per node, a whole number with `K`, `M`, `G`, `T` or `P`; read on a machine with a scheduler |
 | `partition` | text, optional | — | the queue, on a machine with a scheduler |
 | `qos` | text, optional | — | the quality of service, where the record lists one |
+
+## Meshing
+
+The job that makes the study's geometries and meshes (models.md § 5.1; workflow.md § 5): its resources alone, nothing of an engine's.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `resources` | [Resources](#resources) | required | the resources of the job that makes the study's geometries and meshes, each in turn within it, stated, never derived (see workflow.md § 5) |

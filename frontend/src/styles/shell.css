@@ -1,0 +1,10 @@
+/* The page (web.md § 10.1): the document's ground, its one font family, and focus as one token. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0; font-family: var(--type-family); font-size: var(--type-size-md); line-height: var(--type-leading-normal);
+  color: var(--color-text); background: var(--color-canvas); -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--type-mono); }
+::selection { background: var(--color-accent-soft); }
+:focus-visible { outline: var(--size-rule) solid var(--color-accent); outline-offset: var(--size-rule); }

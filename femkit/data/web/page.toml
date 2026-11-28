@@ -1,7 +1,15 @@
-# The web page's own structure (web.md § 8.1): what the page shows and in what order, the
-# context it works in, the icon of each kind of object, the keys it answers. The page draws all
-# of it from here and keeps no list of its own; `schema check` loads it.
-schema = 1
+# The web page's own structure (web.md § 8.1): what the page shows and in what order — each
+# workspace's document and the panels beside it — the context it works in, the registry's groups of
+# operations as the page bands them, the icon of each kind of node, each block word's color, each
+# severity's look, the themes, the page's own controls and sentences, the keys it answers. The page
+# draws all of it from here and keeps no list of its own; `schema check` loads it. Each colour it
+# names is a token of the theme, theme.toml.
+schema = 5
+# How many notices the stack shows at once: the newest.
+notices = 4
+# The colours a box's tag takes on the blocks it holds — a case, the stages several cases share, a
+# grouping folder — one for each box in the graph's order, in turn (web.md § 7.6).
+tags = ["tag-1", "tag-2", "tag-3", "tag-4", "tag-5", "tag-6"]
 
 [app]
 name = "femkit"
@@ -17,16 +25,59 @@ help = "Select a node to read its text and its findings; the next step stays in 
 document = "project.graph"
 context = ["project"]
 empty = "Open a project to see its parts — choose one, or make a new one from a template."
+first = "project.new"
+# the families of node its graph draws: an address of one opens here
+families = ["part", "object"]
+
+# Under the hero, before a project is chosen: the projects as cards, each with its studies, and a new
+# project started from each template its `source` names.
+[workspaces.landing]
+cards = "project"
+detail = "studies"
+starts = "source"
+
+# Each panel beside the workspace's document: a read-only operation's document and the context it
+# needs; the progress of the running operation is the page's own, no operation's, and so is the
+# master list, the parts the workspace's own graph holds.
+[[workspaces.panels]]
+key = "parts"
+title = "Parts"
+help = "The project's parts by section, its definitions and materials first, each with its state and its findings; press one to find its card."
+shows = "parts"
+
+[[workspaces.panels]]
+key = "issues"
+title = "Findings"
+help = "What project check finds wrong, each leading to its node; the first is the next step."
+document = "project.check"
+# its findings alone: each part's state is the graph's
+shows = "issues"
+context = ["project"]
+
+[[workspaces.panels]]
+key = "cases"
+title = "Cases"
+help = "Each study's cases, with their axis values, and whether study prep can make them now."
+document = "case.list"
+context = ["project"]
+
+[[workspaces.panels]]
+key = "progress"
+title = "Progress"
+help = "The running operation's steps as they go, and the running step's last lines."
+context = []
 
 [[workspaces]]
 key = "runs"
 title = "Runs"
 icon = "list-checks"
-tagline = "A project's cases, and the studies they come from."
-help = "Expand a study to write its cases; each case is one point of its axes."
-document = "case.list"
-context = ["project"]
-empty = "Open a project to see its cases."
+tagline = "A study's workflow for a machine: each case's geometries and meshes, their states and their folders."
+help = "Prep the study to write its cases and the jobs that make its stages; select a stage to see its files."
+document = "study.flow"
+families = ["stage"]
+# the machine is study flow's own option: unchosen, this machine's (context.target's `unset`)
+context = ["project", "study"]
+empty = "Open a project and choose a study and a machine to see its workflow."
 
 [[workspaces]]
 key = "operations"
@@ -40,7 +91,7 @@ empty = "Choose an operation."
 [[context]]
 key = "project"
 label = "project"
-help = "A project under the projects root: its parameters, components, materials, physics, mesh recipes, observable sets and studies."
+help = "A project under the projects root: its definitions, components, materials, physics, mesh recipes, studies and observables parts."
 choices = "project.list"
 rows = "projects"
 value_key = "name"
@@ -49,23 +100,85 @@ depends = []
 [[context]]
 key = "study"
 label = "study"
-help = "A study pairs a component with its physics, a mesh recipe and observable sets; its cases are what runs."
+help = "A study pairs a component with its physics and a mesh recipe; it names no engine, the engine chosen when it is solved; its cases are what runs."
 choices = "study.list"
 rows = "studies"
 value_key = "name"
 depends = ["project"]
 
 [[context]]
-key = "environment"
-label = "environment"
-help = "An engine environment; with one chosen, each node shows how it would run there."
-choices = "env.list"
+key = "target"
+label = "machine"
+help = "The machine a study's stages are made for, by the record `job probe` wrote of it: each stage is named by that machine's record."
+unset = "this machine"
+choices = "job.machines"
 rows = "rows"
 value_key = "name"
 depends = []
 
-# Each part kind's and object type's icon, as the project layout names them (web.md § 8.2).
-[kinds]
+# The registry's groups of operations (web.md §§ 8.1, 10.2), each by its name — `""` femkit's
+# own — with its title, its icon and its accent token: the page bands them apart wherever they
+# are listed, in the order listed here, the person's order of work; each of the registry's groups,
+# and no other.
+[groups.project]
+title = "Projects"
+icon = "folder"
+accent = "group-project"
+
+[groups.material]
+title = "Materials"
+icon = "layers"
+accent = "group-material"
+
+[groups.study]
+title = "Studies"
+icon = "flask-conical"
+accent = "group-study"
+
+[groups.case]
+title = "Cases"
+icon = "list"
+accent = "group-case"
+
+[groups.job]
+title = "Jobs"
+icon = "cpu"
+accent = "group-job"
+
+[groups.env]
+title = "Environments"
+icon = "package"
+accent = "group-env"
+
+[groups.config]
+title = "Settings"
+icon = "settings"
+accent = "group-config"
+
+[groups.serve]
+title = "Server"
+icon = "server"
+accent = "group-serve"
+
+[groups.web]
+title = "Web page"
+icon = "globe"
+accent = "group-web"
+
+[groups.schema]
+title = "Definitions"
+icon = "file-code"
+accent = "group-schema"
+
+[groups.""]
+title = "femkit"
+icon = "stethoscope"
+accent = "group-femkit"
+
+# Each kind's icon, keyed by a node's family and its kind within it (web.md §§ 7.6, 8.1–8.2): each
+# part kind and object type as the project layout names them, each stage kind as `stages.toml`
+# names it — so the mesh recipe and the mesh stage each have their own.
+[kinds.part]
 project = "folder"
 material = "layers"
 component = "shapes"
@@ -73,7 +186,9 @@ physics = "atom"
 mesh = "grid-3x3"
 observables = "gauge"
 study = "flask-conical"
-parameter = "variable"
+
+[kinds.object]
+definition = "variable"
 property = "beaker"
 frame = "ruler"
 input = "log-in"
@@ -89,9 +204,552 @@ step = "play"
 numerics = "sigma"
 axis = "sliders-horizontal"
 crossing = "merge"
-binding = "plug"
+together = "link"
+
+[kinds.stage]
+geometry = "box"
+mesh = "grid-2x2"
+observe = "eye"
+
+# Each block word of the vocabulary's closed list (web.md § 7.6), with the design token a block
+# showing it is colored by (§ 10.2): a block is colored by its word alone, the same in every
+# diagram; a kind is told by its icon, never a color.
+[shows]
+"up to date" = "block-up-to-date"
+"needs update" = "block-update"
+"needs attention" = "block-attention"
+waiting = "block-waiting"
+running = "block-running"
+failed = "block-failed"
+
+# How a finding of each severity is marked: its word, its icon and its colour token — a severity is
+# told by its icon and word, never by a colour alone.
+[severities.error]
+label = "error"
+icon = "circle-x"
+color = "error"
+
+[severities.warning]
+label = "warning"
+icon = "triangle-alert"
+color = "warning"
+
+[severities.info]
+label = "note"
+icon = "info"
+color = "info"
+
+# The theme switch (web.md § 10.2): the system's first, the default, then each theme of theme.toml
+# by its name there. The choice is remembered in the browser alone.
+[[themes]]
+title = "System"
+icon = "monitor"
+
+[[themes]]
+theme = "light"
+title = "Light"
+icon = "sun"
+
+[[themes]]
+theme = "dark"
+title = "Dark"
+icon = "moon"
+
+# Each word a step of a run shows — how it ended, or running — with its colour token.
+[outcomes]
+done = "ok"
+failed = "error"
+killed = "warning"
+running = "accent"
+
+# The groups a diagram's cards are told apart by at a glance (web.md § 7.6): no card is drawn inside
+# another, and no frame is drawn round any. A card of a part takes its section's colour, shape and
+# icon, each section as the project layout names it; a card of a stage takes its kind's. The shapes
+# are a closed list: rounded, square, round, double, tab, notch.
+[sections.Definitions]
+colour = "section-definitions"
+shape = "tab"
+icon = "library"
+
+[sections.Component]
+colour = "section-component"
+shape = "square"
+icon = "shapes"
+
+[sections.Physics]
+colour = "section-physics"
+shape = "round"
+icon = "atom"
+
+[sections.Mesh]
+colour = "section-mesh"
+shape = "notch"
+icon = "grid-3x3"
+
+[sections.Study]
+colour = "section-study"
+shape = "double"
+icon = "flask-conical"
+
+[sections.Results]
+colour = "section-results"
+shape = "rounded"
+icon = "gauge"
+
+# What the canvas reads of the project layout (web.md § 2.2): the part kind that is the project's
+# master list — listed beside the canvas in the Parts panel, never drawn as a card, nor any wire to
+# or from it — and the object types drawn each as a small card of its own in its section's look,
+# placed and copied beside each card that uses it.
+[canvas]
+listed = "project"
+cards = ["definition"]
+
+# a stage in the shape of the section it is made from
+[stages.geometry]
+colour = "stage-geometry"
+shape = "square"
+icon = "box"
+
+[stages.mesh]
+colour = "stage-mesh"
+shape = "notch"
+icon = "grid-2x2"
+
+[stages.observe]
+colour = "stage-observe"
+shape = "rounded"
+icon = "eye"
+
+# What a wire carries, with the colour it and the slots it plugs into are drawn in: each part kind and
+# artifact type, and the object types a wire carries. A wire takes the longest key its type begins
+# with — every place of a group, `group:body` or `group:interface`, takes `group`'s.
+[wires]
+project = "wire-project"
+material = "wire-material"
+component = "wire-component"
+physics = "wire-physics"
+mesh = "wire-mesh"
+observables = "wire-observables"
+study = "wire-study"
+definition = "wire-definition"
+group = "wire-group"
+"geometry/xao" = "wire-geometry"
+"geometry/brep" = "wire-geometry"
+"geometry/groups" = "wire-geometry"
+"mesh/msh-2.2" = "wire-mesh-file"
+"mesh/regions" = "wire-mesh-file"
+
+# What the page shows before any token (web.md § 5), carried by the bundle itself: no route answers
+# before the token.
+[gate]
+label = "access token"
+icon = "key-round"
+help = "Use this access token, kept in this tab alone."
+
+[gate.says]
+token = "This server needs its access token. Open the address `serve start` printed, or paste the token here; it is kept in this tab alone."
+unreachable = "The server does not answer: it may have stopped. `femkit serve status` says whether it runs."
+unreadable = "The server answered with something the page cannot read."
+
+# Where the server serves the page (web.md § 1).
+[addresses]
+bundle = "/static/"
+documents = "/docs"
+
+# The document viewer opens on the documents' index.
+[documents]
+first = "docs/README.md"
+
+# The text editor (web.md § 9.2): each language it reads a file in, with the names of the files it
+# reads in it. A part's own file is TOML; `definitions.py` and a geometry script are Python. A file
+# named by none is plain text.
+[[editor.languages]]
+language = "toml"
+files = ["*.toml"]
+
+[[editor.languages]]
+language = "python"
+files = ["*.py"]
+
+# The page's own controls (web.md § 11): what a person presses that is no operation's action.
+[controls.documents]
+label = "Documents"
+icon = "book-open"
+help = "femkit's documents — this manual and the contracts — in a tab of their own."
+
+[controls.theme]
+label = "Theme"
+icon = "palette"
+help = "Light, dark, or as the system is set; remembered in this browser alone."
+
+[controls.close]
+label = "Close"
+icon = "x"
+help = "Close what is open."
+
+[controls.cancel]
+label = "Cancel"
+help = "Leave it, doing nothing."
+
+[controls.continue]
+label = "Continue"
+icon = "arrow-right"
+help = "Go on with the values given."
+
+[controls.run]
+label = "Run"
+icon = "play"
+help = "Run it: it only reads, and changes nothing."
+
+[controls.plan]
+label = "Plan"
+icon = "list-ordered"
+help = "Show what it would do, step by step, before anything is changed."
+
+[controls.apply]
+label = "Apply"
+icon = "check"
+help = "Do what the plan shows, exactly: refused if anything it rests on changed since."
+
+[controls.discard]
+label = "Discard"
+icon = "undo-2"
+help = "Leave the plan, doing nothing."
+
+[controls.find]
+label = "Find an operation"
+icon = "search"
+help = "Narrow the list to the operations whose name or help holds these words."
+
+[controls.fit]
+label = "Fit"
+icon = "maximize"
+help = "Show the whole diagram."
+
+[controls.zoom-in]
+label = "Zoom in"
+icon = "zoom-in"
+help = "Draw the diagram larger."
+
+[controls.zoom-out]
+label = "Zoom out"
+icon = "zoom-out"
+help = "Draw the diagram smaller."
+
+[controls.reset-layout]
+label = "Reset layout"
+icon = "layout-grid"
+help = "Put every block back where the layout places it, forgetting where you moved them."
+
+[controls.legend]
+label = "Legend"
+icon = "map"
+help = "Show what each card's shape, colour and icon, and each wire's colour, stand for."
+
+[controls.duplicate]
+label = "Duplicate here"
+icon = "copy-plus"
+help = "Put a copy of this card on the canvas, to bring its wires near what they join: the same file, kept in this page alone."
+
+[controls.remove-copy]
+label = "Remove this copy"
+icon = "copy-minus"
+help = "Take this copy off the canvas: the card and its file stay."
+
+[controls.open]
+label = "Open"
+icon = "chevron-down"
+help = "Unfold it: its slots, what each names, and what is inside it."
+
+[controls.fold]
+label = "Fold"
+icon = "chevron-up"
+help = "Fold it to its title, its wires reaching it there."
+
+[controls.details]
+label = "Details"
+icon = "panel-right"
+help = "Show or hide the selected node's text, findings and next steps."
+
+[controls.panels]
+label = "Panels"
+icon = "panel-bottom"
+help = "Show or hide the findings, the cases and the progress."
+
+[controls.copy]
+label = "Copy"
+icon = "copy"
+help = "Copy the line, to paste it into a shell."
+
+[controls.select]
+label = "choose…"
+help = "Choose one."
+
+[controls.add]
+label = "Add"
+icon = "plus"
+help = "Add one more."
+
+[controls.remove]
+label = "Remove"
+icon = "x"
+help = "Take this one out."
+
+[controls.edit]
+label = "Edit"
+icon = "pencil"
+help = "Edit the text here. Saving shows what the change does before anything is written."
+
+[controls.reload]
+label = "Reload"
+icon = "refresh-cw"
+help = "Read the file again as it is now, leaving what was typed here."
+
+[controls.redraw]
+label = "Reload the page"
+icon = "refresh-cw"
+help = "Read the page again from the server, as it is now; nothing of your files changes."
+
+# The page's own sentences (web.md §§ 9.1, 11): what it says of what is no document's.
+[says]
+loading = "Reading…"
+nothing-to-do = "Nothing to do: it changes nothing."
+refused = "Refused"
+defect = "An error femkit did not expect"
+applied = "Done"
+no-request = "It takes no values."
+running = "Running"
+none-yet = "Nothing yet."
+files = "Text"
+facts = "Facts"
+issues = "Findings"
+ports = "Ports"
+made-from = "Made from"
+actions = "Next steps"
+optional = "optional"
+preview = "What it would show, once applied — nothing is written yet"
+steps = "Its steps"
+outcome = "What it did"
+each = "Each one it is about"
+# the words around a value of the server's: a finding's file and line; a document's section
+line = "{file}, line {line}"
+section = "{document} § {section}"
+none = "—"
+edited = "edited, not saved"
+# a view the page could not draw — after femkit was rebuilt under an open page, or a defect
+cannot-draw = "This view could not be drawn. Reloading the page draws it again from what the server has now."
+
+# the legend of a diagram's wires: drawn solid, or dashed
+wire-checked = "checked"
+wire-unchecked = "waits for the built geometry"
+# what each copy of a card says: that it is one of so many on the canvas
+copies = "one of {count}"
+
+# What the canvas says of what it draws (web.md §§ 7.6, 9.2): a wire hovered, a port of an opened
+# block. Each is said by the first template of its list whose every placeholder it holds a value for —
+# a field of the vocabulary's `Wire` or `GraphPort`; a wire's ends by what a person calls them, the
+# part that names for `{target}` — so the last of each names only what every one holds.
+[sentences]
+wire = [
+    "{target} names {source_port} of {source} at {key}",
+    "{target} names {type} {source} at {key}",
+    "{target} takes {type} from {source}",
+]
+port = ["{name} → {names}", "{name}"]
 
 [[shortcuts]]
 key = "Escape"
 command = "cancel"
 help = "Close what is open."
+
+# The action machine (web.md § 9.1): one closed table every action runs by, in every view — each state
+# with what it shows and the page's controls it offers, and each move: from a state, told an event,
+# to a state. The page runs it as it is written; a move not written does not happen.
+[action]
+start = "idle"
+
+[[action.states]]
+key = "idle"
+shows = "nothing"
+
+[[action.states]]
+key = "filling"
+shows = "fills"
+offers = ["cancel", "continue"]
+
+[[action.states]]
+key = "running"
+shows = "busy"
+offers = ["close"]
+
+[[action.states]]
+key = "planning"
+shows = "busy"
+offers = ["close"]
+
+[[action.states]]
+key = "planned"
+shows = "plan"
+offers = ["discard", "apply"]
+
+[[action.states]]
+key = "applying"
+shows = "progress"
+offers = ["close"]
+
+[[action.states]]
+key = "done"
+shows = "outcome"
+offers = ["close"]
+
+[[action.states]]
+key = "failed"
+shows = "outcome"
+offers = ["close"]
+
+[[action.states]]
+key = "refused"
+shows = "refusal"
+offers = ["close"]
+
+[[action.states]]
+key = "defect"
+shows = "defect"
+offers = ["close"]
+
+[[action.states]]
+key = "lost"
+shows = "lost"
+offers = ["close"]
+
+# started: values still to fill, a read, a change or a removal
+[[action.transitions]]
+from = "idle"
+on = "fills"
+to = "filling"
+
+[[action.transitions]]
+from = "idle"
+on = "reads"
+to = "running"
+
+[[action.transitions]]
+from = "idle"
+on = "changes"
+to = "planning"
+
+# the values given: read, or planned; or left
+[[action.transitions]]
+from = "filling"
+on = "reads"
+to = "running"
+
+[[action.transitions]]
+from = "filling"
+on = "changes"
+to = "planning"
+
+[[action.transitions]]
+from = "filling"
+on = "discard"
+to = "idle"
+
+# a read answered
+[[action.transitions]]
+from = "running"
+on = "done"
+to = "done"
+
+[[action.transitions]]
+from = "running"
+on = "failed"
+to = "failed"
+
+[[action.transitions]]
+from = "running"
+on = "refused"
+to = "refused"
+
+[[action.transitions]]
+from = "running"
+on = "defect"
+to = "defect"
+
+[[action.transitions]]
+from = "running"
+on = "lost"
+to = "lost"
+
+# a plan answered: shown; its questions asked, then planned again (api.md § 3.1); nothing to do,
+# applied at once
+[[action.transitions]]
+from = "planning"
+on = "planned"
+to = "planned"
+
+[[action.transitions]]
+from = "planning"
+on = "asks"
+to = "filling"
+
+[[action.transitions]]
+from = "planning"
+on = "empty"
+to = "applying"
+
+[[action.transitions]]
+from = "planning"
+on = "refused"
+to = "refused"
+
+[[action.transitions]]
+from = "planning"
+on = "defect"
+to = "defect"
+
+[[action.transitions]]
+from = "planning"
+on = "lost"
+to = "lost"
+
+# the plan agreed, with its digest; or discarded
+[[action.transitions]]
+from = "planned"
+on = "apply"
+to = "applying"
+
+[[action.transitions]]
+from = "planned"
+on = "discard"
+to = "idle"
+
+# applying: each run as it starts, then how it ended
+[[action.transitions]]
+from = "applying"
+on = "started"
+to = "applying"
+
+[[action.transitions]]
+from = "applying"
+on = "done"
+to = "done"
+
+[[action.transitions]]
+from = "applying"
+on = "failed"
+to = "failed"
+
+[[action.transitions]]
+from = "applying"
+on = "refused"
+to = "refused"
+
+[[action.transitions]]
+from = "applying"
+on = "defect"
+to = "defect"
+
+[[action.transitions]]
+from = "applying"
+on = "lost"
+to = "lost"

@@ -1,4 +1,5 @@
-# The control environment: Python and the libraries the femkit command needs; no solver.
+# The control environment: Python and the libraries the femkit command needs — netCDF4 to read
+# a study's kept definitions (models.md § 3); no solver.
 # One package per line, as `conda create --file` reads it (definitions.md § 3); its
 # `python=` line is the Python minor every environment shares.
 python=3.12
@@ -8,3 +9,4 @@ tomlkit>=0.13,<1
 pyyaml>=6,<7
 pytest>=8,<9
 pytest-xdist>=3,<4
+netcdf4>=1.7.1,<2

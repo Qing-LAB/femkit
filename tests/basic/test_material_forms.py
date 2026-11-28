@@ -55,7 +55,7 @@ def named(slab: Path, dataset: str) -> None:
 
 
 def a_table(rows: str = ROWS, prop: str = "refractive_index", name: str = "measured",
-            range_: str = '["0.5 um", "0.6 um"]', convention: str = "exp(-iwt)") -> str:
+            range_: str = '{value = [0.5, 0.6], unit = "um"}', convention: str = "exp(-iwt)") -> str:
     """A table dataset of ``prop`` in µm, its file `measured.csv` holding ``rows``."""
     return (f'[properties.{prop}.{name}]\ntable = "measured.csv"\nsha256 = "{hashlib.sha256(rows.encode()).hexdigest()}"\n'
             f'variable = {{ name = "wavelength", unit = "um" }}\ninterpolation = "linear"\nconvention = "{convention}"\n'
@@ -64,10 +64,14 @@ def a_table(rows: str = ROWS, prop: str = "refractive_index", name: str = "measu
 
 MALITSON = ('[properties.relative_permittivity.malitson]\nmodel = "sellmeier"\nconvention = "real"\n'
             'source = "I. H. Malitson, J. Opt. Soc. Am. 55, 1205 (1965), doi:10.1364/JOSA.55.001205"\n'
-            'range = ["0.21 um", "3.71 um"]\n\n[properties.relative_permittivity.malitson.parameters]\nA = 0\n\n'
-            '[[properties.relative_permittivity.malitson.parameters.terms]]\nB = 0.6961663\nC = "0.0684043 um"\n\n'
-            '[[properties.relative_permittivity.malitson.parameters.terms]]\nB = 0.4079426\nC = "0.01351206307396 um^2"\n'
-            '\n[[properties.relative_permittivity.malitson.parameters.terms]]\nB = 0.8974794\nC = "9.896161 um"\n\n')
+            'range = {value = [0.21, 3.71], unit = "um"}\n\n'
+            '[properties.relative_permittivity.malitson.parameters]\nA = 0\n\n'
+            '[[properties.relative_permittivity.malitson.parameters.terms]]\nB = 0.6961663\n'
+            'C = {value = 0.0684043, unit = "um"}\n\n'
+            '[[properties.relative_permittivity.malitson.parameters.terms]]\nB = 0.4079426\n'
+            'C = {value = 0.01351206307396, unit = "um^2"}\n\n'
+            '[[properties.relative_permittivity.malitson.parameters.terms]]\nB = 0.8974794\n'
+            'C = {value = 9.896161, unit = "um"}\n\n')
 AT = "properties.refractive_index.measured"
 MODEL = "properties.relative_permittivity.malitson"
 
@@ -150,7 +154,7 @@ def test_a_property_or_a_step_kind_naming_no_variable_and_a_formulation_naming_n
 # ------------------------------------------------------------------ a dataset's form
 
 @pytest.mark.parametrize("dataset", [
-    'value = "2"\ntable = "measured.csv"\nconvention = "real"\nsource = "s"\nrange = "all"\n',
+    'value = 2\ntable = "measured.csv"\nconvention = "real"\nsource = "s"\nrange = "all"\n',
     'convention = "real"\nsource = "s"\nrange = "all"\n',
 ], ids=["two forms", "none"])
 def test_a_dataset_is_exactly_one_of_a_value_a_table_and_a_model(slab, dataset):
@@ -176,11 +180,11 @@ def test_a_table_is_its_file_with_its_digest_its_variable_and_a_range_within_its
     assert checked(slab, GLASS) == [("not-stated", GLASS, f"{AT}.sha256", digest, ())]
     glass(slab, a_table().replace(digest, f'"{"0" * 64}"'))
     assert checked(slab, GLASS) == [("digest-differs", GLASS, f"{AT}.sha256", digest, ())]
-    glass(slab, a_table(range_='["0.45 um", "0.6 um"]'))
+    glass(slab, a_table(range_='{value = [0.45, 0.6], unit = "um"}'))
     assert checked(slab, GLASS) == [("outside-table", GLASS, f"{AT}.range", None, ())]
-    glass(slab, a_table(range_='["2.1 eV", "2.4 eV"]'))
+    glass(slab, a_table(range_='{value = [2.1, 2.4], unit = "eV"}'))
     assert checked(slab, GLASS) == []
-    glass(slab, a_table(range_='["300 K", "400 K"]'))
+    glass(slab, a_table(range_='{value = [300, 400], unit = "K"}'))
     assert checked(slab, GLASS) == [("wrong-dimension", GLASS, f"{AT}.range", None, ())]
     glass(slab, a_table().replace('name = "wavelength"', 'name = "colour"'))
     assert checked(slab, GLASS) == [("no-such-variable", GLASS, f"{AT}.variable.name", None, VARIABLES)]
@@ -222,20 +226,20 @@ def test_a_tables_shape_is_found_before_its_digest(slab):
                                      f'"{hashlib.sha256(fixed.encode()).hexdigest()}"', ())]
 
 
-@pytest.mark.parametrize("range_, code", [
-    ('"all"', "outside-table"),
-    ('["0.6 um", "0.5 um"]', "range-reversed"),
-    ('["2.4 eV", "2.1 eV"]', "range-reversed"),
-    ('["0.5", "0.6"]', "wrong-dimension"),
+@pytest.mark.parametrize("range_, code, right", [
+    ('"all"', "outside-table", None),
+    ('{value = [0.6, 0.5], unit = "um"}', "range-reversed", None),
+    ('{value = [2.4, 2.1], unit = "eV"}', "range-reversed", None),
+    ('{value = [0.5, 0.6], unit = "1"}', "wrong-dimension", '{value = [0.5, 0.6], unit = "um"}'),
 ], ids=["all", "reversed", "reversed in another form", "no unit"])
-def test_a_tables_range_runs_from_below_to_within_its_rows(slab, range_, code):
+def test_a_tables_range_runs_from_below_to_within_its_rows(slab, range_, code, right):
     """Fails if a table's range of `all` — which a table never holds, being never extrapolated —
     one whose first bound is not below its second, in the form it is written in, or one with no
-    unit is not a finding at `range` with its code (materials.md § 3: "A table's range is
-    `[from, to]`, from below to, within its first and last rows — `all`, or a range beyond them,
-    is a finding at `range`")."""
+    unit is not a finding at `range` with its code — the range in its table's unit its right value
+    (materials.md § 3: "A table's range is `[from, to]`, from below to, within its first and last
+    rows — `all`, or a range beyond them, is a finding at `range`")."""
     glass(slab, a_table(range_=range_), measured_csv=ROWS)
-    assert checked(slab, GLASS) == [(code, GLASS, f"{AT}.range", None, ())]
+    assert checked(slab, GLASS) == [(code, GLASS, f"{AT}.range", right, ())]
 
 
 def test_a_table_row_whose_loss_gives_energy_is_a_finding_at_its_table(slab):
@@ -253,21 +257,23 @@ def test_a_table_row_whose_loss_gives_energy_is_a_finding_at_its_table(slab):
 
 
 DRUDE = ('[properties.relative_permittivity.metal]\nmodel = "drude_lorentz"\nconvention = "exp(-iwt)"\nsource = "s"\n'
-         'range = "all"\n\n[properties.relative_permittivity.metal.parameters]\neps_inf = 1\nplasma = "9 eV"\nf0 = 1\n'
-         'gamma0 = "0.05 eV"\n\n[[properties.relative_permittivity.metal.parameters.oscillators]]\nf = 0.5\n'
-         'energy = "2 eV"\ngamma = "0.25 eV"\n')
+         'range = "all"\n\n[properties.relative_permittivity.metal.parameters]\neps_inf = 1\n'
+         'plasma = {value = 9, unit = "eV"}\nf0 = 1\ngamma0 = {value = 0.05, unit = "eV"}\n\n'
+         '[[properties.relative_permittivity.metal.parameters.oscillators]]\nf = 0.5\n'
+         'energy = {value = 2, unit = "eV"}\ngamma = {value = 0.25, unit = "eV"}\n')
 METAL = "properties.relative_permittivity.metal.parameters"
 
 
-@pytest.mark.parametrize("old, new, at, code", [
-    ('gamma0 = "0.05 eV"', 'gamma0 = "-0.05 eV"', "gamma0", "wrong-sign"),
-    ("f = 0.5", "f = -0.5", "oscillators", "wrong-sign"),
-    ('plasma = "9 eV"', 'plasma = "0 eV"', "plasma", "wrong-sign"),
-    ('energy = "2 eV"', 'energy = "-2 eV"', "oscillators", "wrong-sign"),
-    ('plasma = "9 eV"', 'plasma = "14.98"', "plasma", "wrong-dimension"),
+@pytest.mark.parametrize("old, new, at, code, right", [
+    ('gamma0 = {value = 0.05, unit = "eV"}', 'gamma0 = {value = -0.05, unit = "eV"}', "gamma0", "wrong-sign", None),
+    ("f = 0.5", "f = -0.5", "oscillators", "wrong-sign", None),
+    ('plasma = {value = 9, unit = "eV"}', 'plasma = {value = 0, unit = "eV"}', "plasma", "wrong-sign", None),
+    ('energy = {value = 2, unit = "eV"}', 'energy = {value = -2, unit = "eV"}', "oscillators", "wrong-sign", None),
+    ('plasma = {value = 9, unit = "eV"}', "plasma = 14.98", "plasma", "wrong-dimension",
+     '{value = 14.98, unit = "eV"}'),
 ], ids=["a negative damping", "an oscillator's negative strength", "a plasma energy of zero",
         "a negative resonance energy", "a plasma energy with no unit"])
-def test_a_models_parameter_is_of_the_sign_and_dimension_its_model_declares(slab, old, new, at, code):
+def test_a_models_parameter_is_of_the_sign_and_dimension_its_model_declares(slab, old, new, at, code, right):
     """Fails if a `drude_lorentz` model with positive parameters is a finding; or if one with a
     negative damping, an oscillator's negative strength, a plasma energy of zero, a negative
     resonance energy, or a plasma energy with no unit, is not a finding at its parameter's key — a
@@ -277,7 +283,7 @@ def test_a_models_parameter_is_of_the_sign_and_dimension_its_model_declares(slab
     glass(slab, DRUDE)
     assert checked(slab, GLASS) == []
     glass(slab, DRUDE.replace(old, new))
-    assert checked(slab, GLASS) == [(code, GLASS, f"{METAL}.{at}", None, ())]
+    assert checked(slab, GLASS) == [(code, GLASS, f"{METAL}.{at}", right, ())]
 
 
 def test_a_parameters_sign_is_its_declaration(definitions, tmp_path):
@@ -288,7 +294,7 @@ def test_a_parameters_sign_is_its_declaration(definitions, tmp_path):
     _changed(definitions, "dispersion.toml", ("models", "drude_lorentz", "parameters", "gamma0", "sign"), "any")
     _changed(definitions, "dispersion.toml", ("models", "sellmeier", "parameters", "A", "sign"), "positive")
     slab = kit.copy_template(tmp_path / "projects", "two_material", "slab")
-    glass(slab, DRUDE.replace('gamma0 = "0.05 eV"', 'gamma0 = "-0.05 eV"'))
+    glass(slab, DRUDE.replace('gamma0 = {value = 0.05, unit = "eV"}', 'gamma0 = {value = -0.05, unit = "eV"}'))
     assert checked(slab, GLASS) == []
     glass(slab, MALITSON)
     assert checked(slab, GLASS) == [("wrong-sign", GLASS, f"{MODEL}.parameters.A", None, ())]
@@ -312,7 +318,8 @@ def test_a_model_is_one_of_the_list_with_its_parameters_in_their_dimensions_and_
         ("no-such-model", GLASS, "properties.refractive_index.malitson.model", None, ())]
     glass(slab, MALITSON.replace('convention = "real"', 'convention = "exp(-iwt)"'))
     assert checked(slab, GLASS) == [("wrong-convention", GLASS, f"{MODEL}.convention", '"real"', ())]
-    glass(slab, MALITSON.replace("A = 0\n", "D = 0\n").replace('C = "9.896161 um"', 'C = "9.896161 eV"'))
+    glass(slab, MALITSON.replace("A = 0\n", "D = 0\n").replace('C = {value = 9.896161, unit = "um"}',
+                                                                'C = {value = 9.896161, unit = "eV"}'))
     assert checked(slab, GLASS) == [
         ("no-such-parameter", GLASS, f"{MODEL}.parameters.D", None, ('"A"', '"terms"')),
         ("wrong-dimension", GLASS, f"{MODEL}.parameters.terms", None, ()),
@@ -324,7 +331,7 @@ def test_one_dataset_name_under_a_property_and_under_its_equivalent_form_is_a_fi
     equivalent form `refractive_index` is not a finding on the material at the form's dataset
     (materials.md § 1: "one name held under both the property and an equivalent is a finding on
     the material, naming both")."""
-    glass(slab, a_table(name="same") + '[properties.relative_permittivity.same]\nvalue = "2"\nconvention = "real"\n'
+    glass(slab, a_table(name="same") + '[properties.relative_permittivity.same]\nvalue = 2\nconvention = "real"\n'
                                        'source = "s"\nrange = "all"\n', measured_csv=ROWS)
     assert checked(slab, GLASS) == [("dataset-twice", GLASS, "properties.refractive_index.same", None, ())]
 
@@ -339,13 +346,13 @@ def _one(slab: Path, dataset: str, **files: str) -> None:
         (slab / "materials/dielectric_2" / name.replace("_", ".")).write_text(held)
 
 
-FORM = ('[properties.refractive_index.johnson]\nvalue = "2"\nconvention = "real"\nsource = "a test\'s own"\n'
+FORM = ('[properties.refractive_index.johnson]\nvalue = 2\nconvention = "real"\nsource = "a test\'s own"\n'
         'range = "all"\n')
 
 
 def test_a_material_holding_only_an_equivalent_form_provides_the_property_read(slab):
     """Fails if a material holding a formulation's property only under its equivalent form is
-    found missing it, or a material holding neither is not; or if `study expand` takes the form's
+    found missing it, or a material holding neither is not; or if `study prep` takes the form's
     data as the property's before a case converts it (materials.md § 1: "a formulation reading
     `relative_permittivity` takes a dataset held under an equivalent"; § 6)."""
     _one(slab, FORM)
@@ -353,7 +360,7 @@ def test_a_material_holding_only_an_equivalent_form_provides_the_property_read(s
     assert [(i.code, i.file, i.key) for i in found if i.severity == "error"] == [
         ("form-unconverted", COMPONENT, "assign.high.datasets.relative_permittivity")]
     with kit.refused(Refused, "has-findings", "component:slab"):
-        kit.apply("study.expand", project=slab.name, study="benchmark")
+        kit.apply("study.prep", project=slab.name, study="benchmark")
     _one(slab, "")
     assert checked(slab, HIGH) == [("property-missing", HIGH, "properties.relative_permittivity", None, ())]
 
@@ -384,15 +391,15 @@ VARIES = ("dataset-varies", COMPONENT, "assign.high.datasets.relative_permittivi
 def test_a_stationary_step_refuses_a_table_or_a_model_and_takes_a_value(slab):
     """Fails if a table, or a dispersion model, filling a body of a study whose step is
     `stationary` — which supplies no variable — is not an error at the component's
-    `assign.<group>.datasets.<property>`, or `study expand` writes a case resting on it; or if a
+    `assign.<group>.datasets.<property>`, or `study prep` writes a case resting on it; or if a
     value is a finding (materials.md § 6: "a table or a model for a `stationary` step … `project
-    check` gives it as an error … and `study expand` refuses a case resting on it")."""
+    check` gives it as an error … and `study prep` refuses a case resting on it")."""
     _one(slab, a_table(ROWS, "relative_permittivity"), measured_csv=ROWS)
     found = kit.run("project.check", project=slab.name).issues
     assert [(i.severity, *f) for i in found if (f := (i.code, i.file, i.key, i.right, i.choices)) == VARIES] == [
         ("error", *VARIES)]
     with kit.refused(Refused, "has-findings", "component:slab"):
-        kit.apply("study.expand", project=slab.name, study="benchmark")
+        kit.apply("study.prep", project=slab.name, study="benchmark")
     assert not (slab / "cases").exists()
     _one(slab, MALITSON)
     assert checked(slab, COMPONENT) == [VARIES]
@@ -425,11 +432,11 @@ def test_what_a_step_kind_supplies_is_its_declaration(definitions, tmp_path):
     assert checked(slab, COMPONENT) == []
     drude = ('[properties.relative_permittivity.metal]\nmodel = "drude_lorentz"\nconvention = "exp(-iwt)"\n'
              'source = "s"\nrange = "all"\n\n[properties.relative_permittivity.metal.parameters]\neps_inf = 1\n'
-             'plasma = "9 eV"\nf0 = 1\ngamma0 = "0.05 eV"\n')
+             'plasma = {value = 9, unit = "eV"}\nf0 = 1\ngamma0 = {value = 0.05, unit = "eV"}\n')
     _one(slab, drude)
     assert checked(slab, COMPONENT) == []
     hot = "temperature,eps\n300,2\n400,3\n"
-    _one(slab, a_table(hot, "relative_permittivity", range_='["300 K", "400 K"]', convention="real").replace(
+    _one(slab, a_table(hot, "relative_permittivity", range_='{value = [300, 400], unit = "K"}', convention="real").replace(
         'name = "wavelength", unit = "um"', 'name = "temperature", unit = "K"'), measured_csv=hot)
     assert checked(slab, COMPONENT) == [VARIES]
 

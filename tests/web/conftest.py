@@ -1,5 +1,5 @@
 """The web tier (testing.md § 1): run on the web environment's own Python, which holds flask
-(`<data>/environments/web/bin/python tools/testrun.py run web`)."""
+(`<prefix of femkit-web>/bin/python tools/testrun.py run web`, the prefix `conda env list` shows)."""
 
 from __future__ import annotations
 

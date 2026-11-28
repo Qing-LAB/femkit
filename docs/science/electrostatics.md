@@ -20,7 +20,7 @@ dimensional meanings and derived quantities; how each is stated in a model is
 4. Between two domains — `interface`
 5. Sources — `charge_density`
 6. What each dimension means
-7. Derived quantities — what an observable may name
+7. Derived quantities — what an observable may compute
 8. Validity
 9. Benchmarks
 
@@ -118,7 +118,9 @@ continuous without being named. Named as an interface region, it carries
 
 ## 7. Derived quantities
 
-What an observable may name (models.md § 5), each in its unit:
+What follows from $\phi$, each by its name and in its unit — what an
+observable's function may compute from a solve's output
+([`../contracts/models.md`](../contracts/models.md) § 5.2):
 
 | name | quantity | unit |
 |---|---|---|
@@ -136,14 +138,15 @@ potential (`potential`) or carrying a charge (`surface_charge`).
 
 ## 9. Benchmarks
 
-A benchmark is a problem with a known answer that an environment's translation
-must reproduce before its abilities count as proven
+A benchmark is a problem with a known answer that an environment's input
+writer and solve must reproduce before its abilities count as proven
 ([`../contracts/models.md`](../contracts/models.md) § 6.3). Each is chosen so
 that the error it guards against would show: $\phi=x$ on a square, say, is
 reproduced exactly by first-order elements whatever $\epsilon_r$ is taken to
 be, and proves nothing about materials. The formulation lists each
 (`femkit/data/formulations/electrostatics.toml`, `[benchmarks]`) with its
-model, its study and its reference values; manufactured solutions follow with
+project — a study per engine and the observables part that reads them — and
+its reference values; manufactured solutions follow with
 the expression language ([`../plans/plan.md`](../plans/plan.md) § 4, M6).
 
 ### 9.1 `two_material`: a layered capacitor
@@ -171,7 +174,9 @@ $$
 
 so the field is 1.6 V/m in `low` and 0.4 V/m in `high`.
 
-**Reference values**, each an observable of its study:
+**Reference values**, each an observable of the benchmark's observables
+part, computed by its function from each study's solution
+([`../contracts/models.md`](../contracts/models.md) § 5.2):
 
 | observable | where | value |
 |---|---|---|
@@ -185,7 +190,7 @@ The energies sum to $0.8\,\epsilon_0=\tfrac12 C V^2$, with $C=D/V=1.6\,\epsilon_
 F/m per unit depth, as they must. In the formulation they are written with
 $\epsilon_0$ of § 1.
 
-**What it catches.** A translation that ignores $\epsilon_r$ gives
+**What it catches.** An input writer that ignores $\epsilon_r$ gives
 $\phi(a)=\tfrac12$ V; one that swaps the materials, $\tfrac15$ V; one that
 loses the interface's continuity, a jump there. One whose $\epsilon_0$
 differs from § 1's moves both energies by the same factor while leaving the

@@ -1,0 +1,98 @@
+# The states of a stage of a case's pipeline (workflow.md § 6), observed from the facts
+# femkit/workflow/state.py gathers and names: `waits`, a stage it takes from has no finished newest
+# run; `in_launch`, its folder reads `in_launch`, as the folder's machine observes it — prepared with
+# a launch folder not launched yet, there and whole, whatever runs it made before (jobs.md § 5.5);
+# `folder`, its calculation folder is there for the machine its identity is formed with (§ 4). The
+# first rule that holds gives the state; where none holds, the stage is in its calculation folder's
+# state (jobs.md § 5.5), with that table's actions and words — a stage whose folder is there, in its
+# folder's state, whatever case first needed it; one in a job not launched yet, whatever it takes
+# from, `in_launch`, its next step the launch of that job.
+past = "calculation"
+
+[states]
+waiting = "a stage it takes from has no finished newest run, and its folder is not in a job not launched yet"
+to_prep = "it has no folder for this machine"
+
+[[rules]]
+state = "waiting"
+when = "waits and not in_launch"
+
+[[rules]]
+state = "to_prep"
+when = "not folder"
+
+# Each state's word, the one its block shows (web.md § 7.6).
+[shows]
+waiting = "waiting"
+to_prep = "needs update"
+
+# What `study prep` does to a stage (§ 6), each task with the sentence its plan and its outcome say,
+# and its guard, where it has one: the stage's facts where it is done — `folder`, its folder is there
+# for the machine its identity is formed with; `unready`, its folder is to be prepared: none there, or
+# one whose state allows `prepare` and not `launch`; `restated`, its request states other resources
+# than a stage inside the study's job states (§ 5); `held_back`, it waits on a
+# stage this prep places in no job, so it is placed only by a later prep. A stage is written where it
+# has no folder; prepared where its folder is to be prepared; its request's resources stated again
+# where they differ — a stage this prep puts in a job, or one in a job not launched yet, whose job is
+# stated again whole; placed unless held back.
+[tasks.write]
+describe = "writes its folder"
+when = "not folder"
+
+[tasks.prepare]
+describe = "prepares it"
+when = "unready"
+
+[tasks.restate]
+describe = "states its job's resources again in its request"
+when = "restated and (in_launch or not held_back)"
+
+[tasks.place]
+describe = "puts it in its study's job, whose prepare writes into it as a member"
+when = "not held_back"
+
+[tasks.use]
+describe = "uses it as it is: made once, never again"
+
+[tasks.leave]
+describe = "leaves it to the job that has it, never writes it a second"
+
+# What each state allows, each its next step: `study prep` of its study, for its project and
+# target, asking the engine that solves it — one of those that can solve the study — which may be
+# left unset (workflow.md § 7); past these states, its folder's.
+[actions.waiting]
+
+[actions.to_prep]
+prep = { describe = "make it", operation = "study.prep", request = { project = "{project}", study = "{study}", target = "{target}" }, fills = ["engine"] }
+
+# A waiting stage's next steps are those of the stage it waits on (§ 6), the subject its binding
+# hands as `source`.
+[next_from.waiting]
+subject = "source"
+
+# What `study prep` does in each state (§ 6), each task where its guard holds: its own states — a
+# waiting stage written, its request stated again, prepared as its folder's state allows and placed
+# behind what it waits on; one to prep written, prepared and placed — and each state of its
+# calculation folder's table (jobs.md § 5.5) past them, its own then its newest run's. A stage whose
+# folder is to be prepared is prepared and placed; one prepared, or whose run pended or failed, is
+# placed in a job, the failed one for a new run in its own folder; a finished one is used, never made
+# again; one a job holds or will make — held, its run queued or running — is left to that job, and one
+# in a job not launched yet too, its request stated again with that job. Where the list is empty — a
+# launch folder's states, which no stage's folder reads, and a run whose launch record does not read —
+# prep does nothing, and refuses, naming the state.
+[does]
+waiting = ["write", "restate", "prepare", "place"]
+to_prep = ["write", "prepare", "place"]
+unprepared = ["restate", "prepare", "place"]
+stale = ["restate", "prepare", "place"]
+held = ["leave"]
+launched = []
+regrouped = []
+in_launch = ["leave", "restate"]
+prepared = ["restate", "place"]
+unreadable = []
+queued = ["leave"]
+running = ["leave"]
+finished = ["use"]
+failed = ["restate", "place"]
+pending = ["restate", "place"]

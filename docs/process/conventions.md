@@ -93,6 +93,13 @@ top-level directory, a scientific observable or unit convention.
 
 ## 2. Design discipline
 
+**Find the one way first.** Before writing a helper, a reader, a builder or a
+style, find its concern in [`framework.md`](../contracts/framework.md) § 5,
+and the piece's recipe in § 6. A concern that is not there gains its one
+mechanism in its owner — the core where every domain needs it — and its row
+in § 5, in the same change; a second way beside an existing one is not
+finished work.
+
 - **Declarations, not branches.** Engines, environments, sources, builds,
   checks, manager kinds and scheduler kinds are data under a schema
   ([`definitions.md`](../contracts/definitions.md)). Generic code never
@@ -168,15 +175,22 @@ These hold for every change; a review checks each.
   outside `femkit/web/` imports flask; no domain module prints or reads a
   terminal.
 - **Through the core.** Files are written with `core.persist`, processes start
-  with `core.process.run`, locks come from `core.locks`, declared files load
-  with `core.schema`. No second way exists.
+  through `core.process` — `run`, or its one `Child` block — locks come from `core.locks`, declared files load
+  with `core.schema`. No second way exists. A program run in a stage's
+  job, which cannot import `core.persist`, holds to the same rule with the
+  modules that lie beside it ([`framework.md`](../contracts/framework.md) § 1): it starts a
+  process through the copied `process.run`, and writes its documents through
+  `documents.write`, a mesh through the library whose format it is.
 - **Refuse, do not guess.** A missing choice or a disallowed state is a
   `Refusal` with `next` commands, never a default chosen silently. What a
   machine record says, or does not say, follows
   [`framework.md`](../contracts/framework.md) § 4.
-- **Environments through their manager.** A command runs inside an environment
-  only through the manager's own mechanism or a generated run script, confined
-  to the declared variables ([`envs.md`](../contracts/envs.md) § 4.4). Code
+- **Environments through their manager.** A command femkit runs inside an
+  environment — an install step, a check — goes through the manager's own
+  mechanism, confined to the declared variables
+  ([`envs.md`](../contracts/envs.md) § 4.4); a job enters it as its run script
+  does, through the target's preamble and the environment's activation
+  ([`jobs.md`](../contracts/jobs.md) § 4). Code
   never sets `PATH` or `LD_LIBRARY_PATH` by hand, and never derives a prefix
   from where a program lives. femkit itself runs on the control environment's
   own `python`, and its web server's child on the `web` environment's own

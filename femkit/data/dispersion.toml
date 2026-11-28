@@ -9,12 +9,12 @@ science = "docs/science/material-data.md"
 [constants.speed_of_light]
 description = "c0, the speed of light in vacuum, exact"
 section = "1-terms-and-symbols"
-value = "299792458 m/s"
+value = {value = 299792458, unit = "m/s"}
 
 [constants.planck]
 description = "h, the Planck constant, exact"
 section = "1-terms-and-symbols"
-value = "6.62607015e-34 J s"
+value = {value = 6.62607015e-34, unit = "J s"}
 
 # The variables (materials.md § 2), each with a unit of its dimension. The three spectral ones
 # state one spectral position three ways: each is a constant times the frequency raised to a

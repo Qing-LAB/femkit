@@ -1,0 +1,6 @@
+/* Code: a block of text kept as it is. */
+.code {
+  margin: 0; padding: var(--space-3) var(--space-4); overflow: auto;
+  font-family: var(--type-mono); font-size: var(--type-size-xs); line-height: var(--type-leading-code);
+  color: var(--color-text); background: var(--color-code); border-radius: var(--size-radius-sm);
+}

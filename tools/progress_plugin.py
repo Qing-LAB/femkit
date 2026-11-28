@@ -1,4 +1,4 @@
-"""The pytest plugin that writes a batch's progress log (testing.md § 4.2).
+"""The pytest plugin that writes a tier run's progress log (testing.md § 4.2).
 
 One record per result, flushed at once, so the log is current while the run
 goes. A log is emptied only when its last record is `done`; otherwise the new
@@ -21,7 +21,7 @@ _STATE = {"path": None, "run": None, "collected": False}
 
 
 def pytest_addoption(parser):
-    parser.addoption("--progress-file", action="store", default=None, help="the batch's progress log")
+    parser.addoption("--progress-file", action="store", default=None, help="the tier run's progress log")
 
 
 def _write(record: dict) -> None:

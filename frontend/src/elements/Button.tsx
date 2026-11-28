@@ -1,20 +1,21 @@
-import type { ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Icon } from "./Icon";
 import "./Button.css";
 
-// A press (web.md § 9.2): primary for the one thing a place is for, quiet for the rest, danger
-// for what removes. Its name is its words; a tooltip is never its name.
+// A press (web.md § 9.2): primary for what changes things, quiet for what only reads or is the
+// page's own, danger for what removes. Its name is its words; a tooltip is never its name.
 
-export type Tone = "primary" | "quiet" | "danger" | "ghost";
+export type Tone = "primary" | "quiet" | "danger";
 
-export function Button({ tone = "quiet", icon, children, busy, small, ...rest }: {
-  tone?: Tone; icon?: string; children?: ReactNode; busy?: boolean; small?: boolean;
-} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+export function Button({ tone = "quiet", icon, children, small, bare, ...rest }: {
+  tone?: Tone; icon?: string | null; children?: ReactNode; small?: boolean; bare?: boolean;
+} & ButtonHTMLAttributes<HTMLButtonElement>) {
+  const classes = ["button", `button--${tone}`, small && "button--small", bare && "button--bare",
+                   !children && "button--icon"].filter(Boolean).join(" ");
   return (
-    <button type="button" className={`button button--${tone} ${small ? "button--small" : ""} ${busy ? "button--busy" : ""}`}
-            aria-busy={busy || undefined} {...rest}>
-      {icon && <Icon name={icon} size={small ? 14 : 16} />}
-      {children && <span>{children}</span>}
+    <button type="button" className={classes} {...rest}>
+      {icon && <Icon name={icon} size={small ? "sm" : "md"} />}
+      {children && <span className="button__words">{children}</span>}
     </button>
   );
 }

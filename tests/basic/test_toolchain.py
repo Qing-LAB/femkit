@@ -11,7 +11,7 @@ import shlex
 
 import pytest
 
-from tests.kit import apply, ctx, planned, refused
+from tests.kit import apply, ctx, made, planned, refused
 from femkit.core.errors import Unstated
 from femkit.definitions.catalogue import load_environments
 from femkit.engines.toolchain import LANGUAGES
@@ -57,15 +57,18 @@ INSIDE = ("toolchain", "configure", "compile", "install", "audit", "manifest")  
 
 def test_every_command_in_the_prefix_sees_none_of_the_shells_build_settings(manager_doing, monkeypatch, tmp_path):
     """Fails if a command femkit runs inside the prefix — the toolchain check, configure,
-    compile, install, the audit, the version probe, a check — sees a compiler, search path or
-    package root the person's shell set, or loses the locale; or if the manager's own create
-    loses the person's variables, which its configuration needs (envs.md § 4.4)."""
+    compile, install, the audit, the version probe, a check — or the manager's own create sees a
+    compiler, search path or package root the person's shell set, or loses the locale: each begins
+    from the clean start (envs.md § 4.4)."""
     for name, value in {**LEAKS, "LC_ALL": "C.UTF-8"}.items():
         monkeypatch.setenv(name, value)
     handed = tmp_path / "handed"   # the variables each command was handed, as the manager received them
     handed.mkdir()
-    manager_doing(f'  *) env -0 > "$(mktemp -p {shlex.quote(str(handed))})"; exit 1 ;;')   # each fails at once
+    manager_doing('  "env list") @LISTS@ ;;\n  "info --json") @FOLDERS@ ;;\n'   # where its environments are,
+                  '  "config --show-sources") @SETTINGS@ ;;\n'                # as it keeps them; the settings it read
+                  f'  *) env -0 > "$(mktemp -p {shlex.quote(str(handed))})"; exit 1 ;;')   # each fails at once
     apply("config.set", key="launch.mpi", value='["mpirun", "-np", "{ranks}"]')  # its toolchain check runs MPI
+    made("ngsolve")                                                  # as its create left it
     t = install.target(ctx(), "ngsolve")
     env = t.env
 
@@ -87,8 +90,9 @@ def test_every_command_in_the_prefix_sees_none_of_the_shells_build_settings(mana
     for step_id, envs in confined.items():
         for variables in envs:
             assert not set(LEAKS) & set(variables) and variables["LC_ALL"] == "C.UTF-8", step_id
-    create = next(s for s in steps if s.id == "create")            # the manager's own command keeps them
-    assert all(set(LEAKS) <= set(v) for v in seen(lambda: install.run_step(t, create, tmp_path / "logs")))
+    create = next(s for s in steps if s.id == "create")            # the manager's own command, from the same start
+    assert all(not set(LEAKS) & set(v) and v["LC_ALL"] == "C.UTF-8"
+               for v in seen(lambda: install.run_step(t, create, tmp_path / "logs")))
 
 
 def _report(prefix) -> dict:

@@ -16,8 +16,10 @@ from pathlib import Path
 
 from tests import kit
 from tests.kit import laplace, slab  # noqa: F401 -- fixtures
-from femkit.core.errors import Busy, PlanStale, Refused
+from femkit.core.errors import Busy, PlanStale, Refused, UsageError
 from femkit.definitions import catalogue
+from femkit.projects import door
+from femkit.projects.addresses import Address
 from femkit.projects.project import Library
 
 COMPONENT = "components/square/component.toml"     # the Laplace template's component
@@ -31,16 +33,16 @@ def shipped_names() -> list[str]:
     return sorted(p.parent.relative_to(folder).as_posix() for p in folder.rglob("material.toml"))
 
 
-def expanded(project: Path) -> list[dict]:
-    """The Laplace study expanded, and every case it makes now, as its file holds it."""
-    outcome = kit.apply("study.expand", project=project.name, study="check")
+def prepped_cases(project: Path) -> list[dict]:
+    """The Laplace study prepped, and every case it makes now, as its file holds it."""
+    outcome = kit.apply("study.prep", project=project.name, study="check")
     return [json.loads((project / "cases" / "check" / i / "case.json").read_text()) for i in outcome.added + outcome.kept]
 
 
 def permittivity(project: Path) -> set[str]:
     """The exact relative permittivity each case of the Laplace study holds for its one body."""
     return {d["component"]["assign"]["domain"]["properties"]["relative_permittivity"]["data"]["value"]["value"]
-            for d in expanded(project)}
+            for d in prepped_cases(project)}
 
 
 # ------------------------------------------------------------------ the seed
@@ -113,7 +115,7 @@ def test_global_names_the_librarys_material_and_any_other_name_the_projects_own_
     § 4: "`GLOBAL/metals/gold` names the global library's, explicitly"; "any other name … is the
     project's own first, then the global library's"; § 6)."""
     root = laplace.parent
-    kit.rewrite(root / VACUUM, 'value = "1"', 'value = "2"')             # the library's differs from the project's
+    kit.rewrite(root / VACUUM, 'value = 1', 'value = 2')             # the library's differs from the project's
     assert permittivity(laplace) == {"1"}
     kit.rewrite(laplace / COMPONENT, 'material = "vacuum"', 'material = "GLOBAL/vacuum"')
     assert permittivity(laplace) == {"2"}
@@ -124,7 +126,7 @@ def test_global_names_the_librarys_material_and_any_other_name_the_projects_own_
 
 def test_a_library_material_a_project_names_is_checked_and_its_findings_name_its_full_path(laplace):
     """Fails if a global library material the project names is not checked by the material check,
-    its findings naming its file by its full path, or a study resting on it expands while it has
+    its findings naming its file by its full path, or a study resting on it is prepped while it has
     one or does not load; or if a library material the project does not name is read (materials.md
     § 4: "A library material is loaded and checked when a project names it; its findings name its
     file by its full path"; models.md § 5.3)."""
@@ -138,14 +140,14 @@ def test_a_library_material_a_project_names_is_checked_and_its_findings_name_its
     assert [(i.code, i.subject, i.file, i.key) for i in checked.issues if i.severity != "info"] == [
         ("not-stated", f"material:GLOBAL/vacuum:{at}", str(root / VACUUM), at)]
     assert {p.part: (p.file, p.state) for p in checked.parts}["material:GLOBAL/vacuum"] == (str(root / VACUUM),
-                                                                                              "findings")
+                                                                                              "errors")
     with kit.refused(Refused, "has-findings", "material:GLOBAL/vacuum"):
-        kit.apply("study.expand", project="laplace_square", study="check")
+        kit.apply("study.prep", project="laplace_square", study="check")
     (root / VACUUM).write_text("schema = \n")
     assert [(i.code, i.subject, i.file) for i in kit.run("project.check", project="laplace_square").issues
             if i.severity != "info"] == [("unloadable", "material:GLOBAL/vacuum", str(root / VACUUM))]
-    with kit.refused(Refused, "unloadable", "material:GLOBAL/vacuum"):
-        kit.apply("study.expand", project="laplace_square", study="check")
+    with kit.refused(UsageError, "unloadable", "material:GLOBAL/vacuum"):
+        kit.apply("study.prep", project="laplace_square", study="check")
     assert not (laplace / "cases").exists()
 
 
@@ -230,20 +232,20 @@ def test_case_list_shows_each_bodys_material_where_it_is_found_now_its_dataset_a
     """Fails if `case list` does not show, for each case's assignment, the material, where its name
     finds it now — the project's own, or `GLOBAL` — and the dataset and source the case holds, in
     a table whose columns are headed; if an edited library material does not make new cases when
-    the study is expanded again, the old ones kept and shown as no longer made; or if copying the
+    the study is prepped again, the old ones kept and shown as no longer made; or if copying the
     library material into the project changes a case, rather than where it is found (materials.md
     § 4: "Where each material came from is always shown"; § 6: "copying a library material into
     the project … changes no case"; "A dataset edited after the case was written is new
     content")."""
     library = laplace.parent / LIBRARY
     shutil.rmtree(laplace / "materials" / "vacuum")                         # `vacuum` is the library's now
-    first = sorted(kit.apply("study.expand", project="laplace_square", study="check").added)
+    first = sorted(kit.apply("study.prep", project="laplace_square", study="check").added)
     source = tomllib.loads((library / "vacuum" / "material.toml").read_text())[
         "properties"]["relative_permittivity"]["definition"]["source"]
 
     def listed():
         result = kit.run("case.list", project="laplace_square")
-        (study,) = result.studies
+        study = next(s for s in result.studies if s.name == "check")
         return result, {c.id: (c.made, {(m.group, m.material, m.found, m.property, m.dataset, m.source)
                                         for m in c.materials}) for c in study.written}
 
@@ -253,14 +255,14 @@ def test_case_list_shows_each_bodys_material_where_it_is_found_now_its_dataset_a
     tables = [b for b in result.model_dump(mode="json")["report"]["blocks"] if b["kind"] == "table"]
     assert any({"material", "found", "dataset", "source"} <= {c["key"] for c in t["columns"]}
                and all(c["label"] for c in t["columns"]) and len(t["rows"]) == len(first) for t in tables)
-    kit.rewrite(library / "vacuum" / "material.toml", 'value = "1"', 'value = "2"')
+    kit.rewrite(library / "vacuum" / "material.toml", 'value = 1', 'value = 2')
     assert {i: made for i, (made, _) in listed()[1].items()} == {i: False for i in first}
-    again = kit.apply("study.expand", project="laplace_square", study="check")
+    again = kit.apply("study.prep", project="laplace_square", study="check")
     assert len(again.added) == len(first) and again.kept == [] and set(again.added).isdisjoint(first)
     assert {i: made for i, (made, _) in listed()[1].items()} == {**{i: False for i in first},
                                                                   **{i: True for i in again.added}}
     shutil.copytree(library / "vacuum", laplace / "materials" / "vacuum")
-    kept = kit.apply("study.expand", project="laplace_square", study="check")
+    kept = kit.apply("study.prep", project="laplace_square", study="check")
     assert kept.added == [] and sorted(kept.kept) == sorted(again.added)
     assert {found for _, rows in listed()[1].values() for _, _, found, *_ in rows} == {"vacuum"}
 
@@ -273,11 +275,11 @@ def test_case_list_finds_a_library_material_the_project_no_longer_names(laplace)
     root = laplace.parent
     shutil.rmtree(laplace / "materials" / "vacuum")
     kit.rewrite(laplace / COMPONENT, 'material = "vacuum"', 'material = "GLOBAL/vacuum"')
-    first = sorted(kit.apply("study.expand", project="laplace_square", study="check").added)
+    first = sorted(kit.apply("study.prep", project="laplace_square", study="check").added)
     (laplace / "materials" / "other").mkdir()
     shutil.copy(root / VACUUM, laplace / "materials" / "other" / "material.toml")
     kit.rewrite(laplace / COMPONENT, 'material = "GLOBAL/vacuum"', 'material = "other"')
-    (study,) = kit.run("case.list", project="laplace_square").studies
+    study = next(s for s in kit.run("case.list", project="laplace_square").studies if s.name == "check")
     assert {c.id: (c.made, [(m.material, m.found, m.changed) for m in c.materials]) for c in study.written} == {
         i: (False, [("vacuum", "GLOBAL/vacuum", [])]) for i in first}
 
@@ -288,48 +290,49 @@ def test_one_library_material_written_either_way_is_one_case_held_by_its_name_in
     in its library (materials.md § 6: "each material by its name in its library, never `GLOBAL/`,
     so one material written either way is one case")."""
     shutil.rmtree(laplace / "materials" / "vacuum")                         # `vacuum` is the library's now
-    first = sorted(kit.apply("study.expand", project="laplace_square", study="check").added)
+    first = sorted(kit.apply("study.prep", project="laplace_square", study="check").added)
     kit.rewrite(laplace / COMPONENT, 'material = "vacuum"', 'material = "GLOBAL/vacuum"')
-    again = kit.apply("study.expand", project="laplace_square", study="check")
+    again = kit.apply("study.prep", project="laplace_square", study="check")
     assert again.added == [] and sorted(again.kept) == first
-    assert {d["component"]["assign"]["domain"]["material"] for d in expanded(laplace)} == {"vacuum"}
+    assert {d["component"]["assign"]["domain"]["material"] for d in prepped_cases(laplace)} == {"vacuum"}
 
 
-def test_case_list_flags_each_case_whose_materials_data_changed_and_expand_says_it_writes_anew(laplace):
+def test_case_list_flags_each_case_whose_materials_data_changed_and_prep_says_it_writes_anew(laplace):
     """Fails if, for each case its study no longer makes, `case list` does not compare its
     materials' data with what they hold now — giving the body, the material, the dataset and what
     differs, the value as the case holds it and as the material holds it now, in its result and in
     its text — or flags a case whose materials hold what it holds; or if the plan of `study
-    expand` does not say, for each case it writes because its materials' data changed, the case
+    prep` does not say, for each case it writes because its materials' data changed, the case
     it takes the place of, or says so of one written for another reason (materials.md § 6: "`case
     list` flags each case whose data differs from what its materials now hold, naming the body,
-    the material and dataset, and what differs"; "the plan of `study expand` says which cases it
-    writes because their materials' data changed")."""
-    first = sorted(kit.apply("study.expand", project="laplace_square", study="check").added)
-    kit.rewrite(laplace / "materials" / "vacuum" / "material.toml", 'value = "1"', 'value = "1.0006"')
+    the material and dataset, and what differs"; "each step of the plan of `study prep` that writes
+    a case because its materials' data changed names the case it renews")."""
+    first = sorted(kit.apply("study.prep", project="laplace_square", study="check").added)
+    kit.rewrite(laplace / "materials" / "vacuum" / "material.toml", 'value = 1', 'value = 1.0006')
 
     def listed():
         result = kit.run("case.list", project="laplace_square")
-        (study,) = result.studies
+        study = next(s for s in result.studies if s.name == "check")
         rows = [r for b in result.model_dump(mode="json")["report"]["blocks"]
                 if b["kind"] == "table" and "changed" in {c["key"] for c in b["columns"]} for r in b["rows"]]
         return ({c.id: (c.made, [(m.group, m.material, m.dataset, [(d.key, d.case, d.now) for d in m.changed])
                                  for m in c.materials]) for c in study.written},
-                {r["case"]: bool(r["changed"]) for r in rows})
+                {r["id"]: bool(r["changed"]) for r in rows})
 
     cases, shown = listed()
     assert cases == {i: (False, [("domain", "vacuum", "definition", [("value", "1", "1.0006")])]) for i in first}
     assert shown == {i[:12]: True for i in first}
-    op, plan, c = kit.planned("study.expand", project="laplace_square", study="check")
-    assert sorted(plan.holds["renewed"].values()) == first and sorted(plan.holds["renewed"]) == sorted(
-        s.id for s in plan.steps)
+    op, plan, c = kit.planned("study.prep", project="laplace_square", study="check")
+    written = [s for s in plan.steps if s.id.startswith("cases:")]
+    assert sorted(s.describe.split(" — in place of ")[1][:12] for s in written) == sorted(i[:12] for i in first)
     second = op.apply(plan, c).added
     kit.rewrite(laplace / "mesh" / "uniform.toml", "tolerance = 1e-9", "tolerance = 1e-8")    # not the data
     cases, shown = listed()
     assert {i: changed for i, (_, [(*_, changed)]) in cases.items()} == {
         **{i: [("value", "1", "1.0006")] for i in first}, **{i: [] for i in second}}
     assert shown == {**{i[:12]: True for i in first}, **{i[:12]: False for i in second}}
-    assert kit.planned("study.expand", project="laplace_square", study="check")[1].holds["renewed"] == {}
+    assert not [s for s in kit.planned("study.prep", project="laplace_square", study="check")[1].steps
+                if "in place of" in s.describe]
 
 
 def test_project_check_shows_a_library_materials_file_from_home_as_femkit_shows_a_path(laplace, monkeypatch):
@@ -359,9 +362,10 @@ def test_a_library_materials_finding_and_a_name_found_nowhere_write_the_library_
     kit.rewrite(laplace / COMPONENT, 'material = "vacuum"', 'material = "GLOBAL/vacuum"')
     kit.rewrite(root / VACUUM, 'range = "all"\n', "")
     result = kit.run("project.check", project="laplace_square")
-    assert [i.file for i in result.issues if i.code == "not-stated"] == [str(root / VACUUM)]
+    (found,) = [i for i in result.issues if i.code == "not-stated"]
+    assert found.file == str(root / VACUUM) and found.line is not None
     shown = result.text()
-    assert f"~/{root.name}/{VACUUM}: properties.relative_permittivity.definition.range" in shown
+    assert f"~/{root.name}/{VACUUM}, line {found.line}: properties.relative_permittivity.definition.range" in shown
     assert str(root) not in shown
     kit.rewrite(laplace / COMPONENT, 'material = "GLOBAL/vacuum"', 'material = "GLOBAL/vacum"')
     (nowhere,) = [i for i in kit.run("project.check", project="laplace_square").issues if i.code == "no-such-material"]
@@ -371,16 +375,19 @@ def test_a_library_materials_finding_and_a_name_found_nowhere_write_the_library_
 def test_the_graph_wires_an_assignment_to_the_library_material_its_name_finds(laplace):
     """Fails if an assignment whose name finds a global library material — `GLOBAL/vacuum`, or
     `vacuum` once the project holds none — is not wired to that material's node, which says it is
-    the library's — its address `material:GLOBAL/<name>`, its group `GLOBAL` — and holds its
-    file's text; or if `GLOBAL/vacuum` is wired to the project's own of the same name
+    the library's — its address `material:GLOBAL/<name>`, in the box `GLOBAL` — and opens as its
+    file; or if `GLOBAL/vacuum` is wired to the project's own of the same name
     (materials.md § 4; models.md § 11.2: "Wires are the references between parts")."""
     root = laplace.parent
 
     def wired() -> set[str]:
         result = kit.run("project.graph", project="laplace_square")
-        library = {n.address: n for n in result.nodes}["material:GLOBAL/vacuum"]
-        assert (library.kind, library.group, library.text) == ("material", "GLOBAL", (root / VACUUM).read_text())
-        return {e.target for e in result.edges if e.source == "component:square:assign.domain"}
+        library = {n.address: n for n in result.graph.nodes}["material:GLOBAL/vacuum"]
+        boxes = {b.label: b.members for b in result.graph.boxes}
+        assert (library.kind, [f.address for f in library.files]) == ("material", [library.address])
+        assert library.address in boxes["GLOBAL"]
+        assert door.text(kit.opened(laplace), Address("material", "GLOBAL/vacuum")) == (root / VACUUM).read_text()
+        return {w.source for w in result.graph.wires if w.target == "component:square:assign.domain"}
 
     kit.rewrite(laplace / COMPONENT, 'material = "vacuum"', 'material = "GLOBAL/vacuum"')
     assert wired() == {"material:GLOBAL/vacuum"}

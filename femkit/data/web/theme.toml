@@ -1,0 +1,425 @@
+# The page's design values (web.md § 10.1): every colour for both themes, space, size, type, motion,
+# layer and layout value, each under its namespace. `schema docs` writes them into the page's
+# `tokens.css` as custom properties — `--color-*`, `--space-*`, `--size-*`, `--type-*`,
+# `--motion-*`, `--layer-*`, `--layout-*` — and no stylesheet or page code holds a value of these
+# kinds of its own. This is the one place a value changes; `schema check` loads it, and refuses a
+# colour that does not resolve, a pair of a text and its surface under WCAG AA, a space off the grid.
+schema = 2
+
+# The themes, by name, the first the default: each colour below is given for each. A theme's
+# `scheme` is what the browser and the system call it (CSS `color-scheme`): while no theme is chosen,
+# the system asking for a scheme draws the theme of that scheme.
+[themes.light]
+scheme = "light"
+
+[themes.dark]
+scheme = "dark"
+
+# ------------------------------------------------------------------ colour
+
+# The palette the theme's colours are chosen from: a cool neutral scale for surfaces and text, the
+# primary accent's indigo, and one hue for each group of operations and each block word. No element
+# names a scale colour: it names a colour of `[color.theme]`.
+[color.scale]
+white = "#ffffff"
+slate-25 = "#fafbfd"
+slate-50 = "#f5f7fb"
+slate-100 = "#eef2f7"
+slate-150 = "#e6ebf2"
+slate-200 = "#dde3ec"
+slate-300 = "#c7d0dd"
+slate-400 = "#8f9bb0"
+slate-500 = "#64708a"
+slate-600 = "#4a5570"
+slate-700 = "#333d55"
+slate-750 = "#283149"
+slate-800 = "#1d2539"
+slate-850 = "#161d2f"
+slate-900 = "#111727"
+slate-950 = "#0a0f1c"
+ink = "#0d1324"
+indigo-50 = "#eef0ff"
+indigo-100 = "#e0e4ff"
+indigo-200 = "#c5ccfe"
+indigo-300 = "#a3aefc"
+indigo-400 = "#8590f8"
+indigo-500 = "#6670f1"
+indigo-600 = "#4f4ee5"
+indigo-700 = "#4240c8"
+indigo-800 = "#3633a0"
+indigo-900 = "#2c2a7c"
+indigo-950 = "#1b1a4a"
+violet-700 = "#6d28d9"
+violet-300 = "#c4b5fd"
+teal-700 = "#0f766e"
+teal-800 = "#115e59"
+teal-900 = "#134e4a"
+teal-300 = "#5eead4"
+blue-700 = "#1d4ed8"
+blue-300 = "#93c5fd"
+sky-700 = "#0369a1"
+sky-300 = "#7dd3fc"
+cyan-700 = "#0e7490"
+cyan-300 = "#67e8f9"
+emerald-700 = "#047857"
+emerald-300 = "#6ee7b7"
+green-700 = "#15803d"
+green-300 = "#86efac"
+lime-700 = "#4d7c0f"
+lime-300 = "#bef264"
+amber-700 = "#b45309"
+amber-300 = "#fcd34d"
+orange-700 = "#c2410c"
+orange-300 = "#fdba74"
+red-700 = "#b91c1c"
+red-300 = "#fca5a5"
+rose-700 = "#be123c"
+rose-300 = "#fda4af"
+fuchsia-700 = "#a21caf"
+fuchsia-300 = "#f0abfc"
+purple-700 = "#7e22ce"
+purple-300 = "#d8b4fe"
+violet-600 = "#7c3aed"
+violet-400 = "#a78bfa"
+
+# Each colour the page names, for both themes.
+[color.theme]
+# surfaces, from the page's ground up
+canvas = { light = "slate-50", dark = "slate-950" }
+surface = { light = "white", dark = "slate-900" }
+surface-raised = { light = "white", dark = "slate-850" }
+surface-sunken = { light = "slate-100", dark = "#0d1220" }
+surface-hover = { light = "slate-100", dark = "slate-800" }
+code = { light = "slate-100", dark = "#0c111e" }
+# a file's text as the editor colours it, each read on the code surface, on the line being written
+# and on a selection
+code-active = { light = "white", dark = "slate-900" }
+code-comment = { light = "slate-600", dark = "slate-400" }
+code-key = { light = "indigo-700", dark = "indigo-300" }
+code-string = { light = "emerald-700", dark = "emerald-300" }
+code-number = { light = "orange-700", dark = "orange-300" }
+code-keyword = { light = "violet-700", dark = "violet-300" }
+line = { light = "slate-200", dark = "slate-750" }
+line-strong = { light = "slate-300", dark = "slate-700" }
+dots = { light = "slate-300", dark = "slate-750" }
+wire = { light = "slate-500", dark = "slate-500" }
+# text
+text = { light = "ink", dark = "slate-100" }
+text-muted = { light = "slate-600", dark = "slate-400" }
+text-faint = { light = "slate-500", dark = "#7f8ba1" }
+# the primary accent
+accent = { light = "indigo-600", dark = "indigo-400" }
+accent-strong = { light = "indigo-700", dark = "indigo-300" }
+accent-soft = { light = "indigo-50", dark = "indigo-950" }
+accent-text = { light = "indigo-700", dark = "indigo-300" }
+on-accent = { light = "white", dark = "slate-950" }
+# the primary press — what changes things: deep enough in both themes for light words on it
+primary = { light = "indigo-600", dark = "#5b58ee" }
+primary-strong = { light = "indigo-700", dark = "#6062f2" }
+on-primary = { light = "white", dark = "white" }
+ring = { light = "#6670f166", dark = "#8590f880" }
+# the hero banner: the accent's gradient, its words always light
+hero-from = { light = "indigo-900", dark = "indigo-950" }
+hero-via = { light = "indigo-700", dark = "indigo-900" }
+hero-to = { light = "teal-800", dark = "teal-900" }
+hero-glow = { light = "#a3aefc40", dark = "#8590f833" }
+hero-text = { light = "white", dark = "white" }
+hero-muted = { light = "indigo-100", dark = "indigo-200" }
+# what a finding is, by its severity
+error = { light = "red-700", dark = "red-300" }
+warning = { light = "amber-700", dark = "amber-300" }
+info = { light = "blue-700", dark = "blue-300" }
+ok = { light = "green-700", dark = "green-300" }
+# each block word's colour (web.md § 7.6): a block is coloured by its word alone
+block-up-to-date = { light = "emerald-700", dark = "emerald-300" }
+block-update = { light = "blue-700", dark = "blue-300" }
+block-attention = { light = "orange-700", dark = "orange-300" }
+block-waiting = { light = "slate-500", dark = "slate-400" }
+block-running = { light = "violet-700", dark = "violet-300" }
+block-failed = { light = "red-700", dark = "red-300" }
+# each group of operations' accent (web.md §§ 8.1, 10.2): the groups read as separate bands
+group-project = { light = "indigo-600", dark = "indigo-400" }
+group-material = { light = "amber-700", dark = "amber-300" }
+group-study = { light = "violet-600", dark = "violet-400" }
+group-case = { light = "fuchsia-700", dark = "fuchsia-300" }
+group-job = { light = "orange-700", dark = "orange-300" }
+group-env = { light = "emerald-700", dark = "emerald-300" }
+group-config = { light = "slate-500", dark = "slate-400" }
+group-serve = { light = "cyan-700", dark = "cyan-300" }
+group-web = { light = "sky-700", dark = "sky-300" }
+group-schema = { light = "rose-700", dark = "rose-300" }
+group-femkit = { light = "teal-700", dark = "teal-300" }
+# each section's colour, worn on the title of a block of a part in it (web.md § 7.6): the parts read as
+# groups by colour, apart from the block words' hues a state badge shows
+section-definitions = { light = "amber-700", dark = "amber-300" }
+section-component = { light = "teal-700", dark = "teal-300" }
+section-physics = { light = "fuchsia-700", dark = "fuchsia-300" }
+section-mesh = { light = "sky-700", dark = "sky-300" }
+section-study = { light = "indigo-600", dark = "indigo-400" }
+section-results = { light = "rose-700", dark = "rose-300" }
+# each stage kind's colour, in the hue of the section its stage is made from
+stage-geometry = { light = "teal-700", dark = "teal-300" }
+stage-mesh = { light = "sky-700", dark = "sky-300" }
+stage-observe = { light = "rose-700", dark = "rose-300" }
+# what a wire carries, its colour and its slots' (web.md § 7.6)
+wire-project = { light = "slate-500", dark = "slate-400" }
+wire-definition = { light = "slate-600", dark = "slate-300" }
+wire-material = { light = "amber-700", dark = "amber-300" }
+wire-component = { light = "teal-700", dark = "teal-300" }
+wire-group = { light = "lime-700", dark = "lime-300" }
+wire-physics = { light = "fuchsia-700", dark = "fuchsia-300" }
+wire-mesh = { light = "sky-700", dark = "sky-300" }
+wire-observables = { light = "rose-700", dark = "rose-300" }
+wire-study = { light = "indigo-600", dark = "indigo-400" }
+wire-geometry = { light = "cyan-700", dark = "cyan-300" }
+wire-mesh-file = { light = "blue-700", dark = "blue-300" }
+# the colours a box's tag takes on the blocks it holds, in turn (web.md § 7.6)
+tag-1 = { light = "indigo-600", dark = "indigo-400" }
+tag-2 = { light = "teal-700", dark = "teal-300" }
+tag-3 = { light = "fuchsia-700", dark = "fuchsia-300" }
+tag-4 = { light = "amber-700", dark = "amber-300" }
+tag-5 = { light = "sky-700", dark = "sky-300" }
+tag-6 = { light = "rose-700", dark = "rose-300" }
+# shadows and the scrim under a dialog
+shadow = { light = "#0d13240f", dark = "#00000059" }
+shadow-strong = { light = "#0d132424", dark = "#0000008c" }
+scrim = { light = "#0d132466", dark = "#000000a6" }
+
+# Each opacity: how much of what lies under a drawing shows through it.
+[color.opacity]
+echo = 0.08
+spent = 0.55
+# what stays of a diagram's block or wire while another is lit: still read, plainly behind
+dim = 0.3
+# how much of its group's colour a block's title is washed with, over its surface
+tint = 0.14
+
+# Each colour a person reads, with the surfaces it is read on: 4.5:1 (WCAG 2.2, 1.4.3).
+[color.contrast.text]
+text = ["canvas", "surface", "surface-raised", "surface-sunken", "surface-hover", "code", "code-active", "accent-soft"]
+text-muted = ["canvas", "surface", "surface-raised", "surface-sunken", "surface-hover", "code"]
+text-faint = ["canvas", "surface", "surface-raised"]
+accent-text = ["canvas", "surface", "surface-raised", "accent-soft", "surface-hover"]
+on-accent = ["accent", "accent-strong"]
+on-primary = ["primary", "primary-strong"]
+hero-text = ["hero-from", "hero-via", "hero-to"]
+hero-muted = ["hero-from", "hero-via", "hero-to"]
+error = ["surface", "surface-raised", "canvas"]
+warning = ["surface", "surface-raised", "canvas"]
+info = ["surface", "surface-raised", "canvas"]
+ok = ["surface", "surface-raised", "canvas"]
+code-comment = ["code", "code-active", "accent-soft"]
+code-key = ["code", "code-active", "accent-soft"]
+code-string = ["code", "code-active", "accent-soft"]
+code-number = ["code", "code-active", "accent-soft"]
+code-keyword = ["code", "code-active", "accent-soft"]
+block-up-to-date = ["surface", "surface-raised"]
+block-update = ["surface", "surface-raised"]
+block-attention = ["surface", "surface-raised"]
+block-waiting = ["surface", "surface-raised"]
+block-running = ["surface", "surface-raised"]
+block-failed = ["surface", "surface-raised"]
+
+# Each colour of a graphic a person must see, with the surfaces it is seen on: 3:1 (WCAG 2.2,
+# 1.4.11) — a group's accent beside the operations it bands, the line a focus draws.
+[color.contrast.graphic]
+accent = ["canvas", "surface", "surface-raised"]
+primary = ["canvas", "surface", "surface-raised"]
+group-project = ["surface", "canvas"]
+group-material = ["surface", "canvas"]
+group-study = ["surface", "canvas"]
+group-case = ["surface", "canvas"]
+group-job = ["surface", "canvas"]
+group-env = ["surface", "canvas"]
+group-config = ["surface", "canvas"]
+group-serve = ["surface", "canvas"]
+group-web = ["surface", "canvas"]
+group-schema = ["surface", "canvas"]
+group-femkit = ["surface", "canvas"]
+wire = ["canvas", "surface"]
+section-definitions = ["surface", "canvas"]
+section-component = ["surface", "canvas"]
+section-physics = ["surface", "canvas"]
+section-mesh = ["surface", "canvas"]
+section-study = ["surface", "canvas"]
+section-results = ["surface", "canvas"]
+stage-geometry = ["surface", "canvas"]
+stage-mesh = ["surface", "canvas"]
+stage-observe = ["surface", "canvas"]
+wire-project = ["surface", "canvas"]
+wire-definition = ["surface", "canvas"]
+wire-material = ["surface", "canvas"]
+wire-component = ["surface", "canvas"]
+wire-group = ["surface", "canvas"]
+wire-physics = ["surface", "canvas"]
+wire-mesh = ["surface", "canvas"]
+wire-observables = ["surface", "canvas"]
+wire-study = ["surface", "canvas"]
+wire-geometry = ["surface", "canvas"]
+wire-mesh-file = ["surface", "canvas"]
+tag-1 = ["surface", "canvas"]
+tag-2 = ["surface", "canvas"]
+tag-3 = ["surface", "canvas"]
+tag-4 = ["surface", "canvas"]
+tag-5 = ["surface", "canvas"]
+tag-6 = ["surface", "canvas"]
+
+# ------------------------------------------------------------------ space, on the 4px grid
+
+[space]
+1 = 4
+2 = 8
+3 = 12
+4 = 16
+5 = 20
+6 = 24
+8 = 32
+10 = 40
+12 = 48
+16 = 64
+20 = 80
+
+# ------------------------------------------------------------------ sizes, in px
+
+[size]
+hairline = 1
+rule = 2
+ring = 3
+stripe = 4
+dot = 8
+handle = 8
+radius-sm = 6
+radius = 10
+radius-lg = 16
+radius-pill = 999
+icon-xs = 12
+icon-sm = 14
+icon = 16
+icon-lg = 20
+icon-xl = 28
+control = 34
+control-sm = 28
+mark = 30
+mark-hero = 96
+badge = 20
+node = 240
+# a card of the diagram: its slots' words on a line or two, narrow enough that a project's cards fit
+# the canvas at once
+card = 264
+# the widest a card grows to hold its kind, state, engine and tags on one line, wrapping them past it
+card-wide = 432
+# a card of an object drawn on its own — a definition: its name, its value and its one slot
+card-small = 200
+# the tab a card of a tab-shaped group wears above its title
+tab = 56
+tip = 280
+# the smallest text a person reads on the diagram, on screen: a fit of the whole never draws it smaller
+# (the diagram's smallest type, type.size.2xs, at this size sets the least zoom of a fit)
+readable = 8
+
+# ------------------------------------------------------------------ type
+
+[type]
+family = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+mono = 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace'
+
+[type.size]
+2xs = 11
+xs = 12
+sm = 13
+md = 14
+lg = 16
+xl = 20
+2xl = 26
+3xl = 40
+
+[type.weight]
+normal = 400
+medium = 500
+strong = 600
+bold = 700
+
+[type.leading]
+tight = 1.2
+snug = 1.35
+normal = 1.5
+code = 1.6
+
+[type.tracking]
+tight = -0.02
+caps = 0.06
+
+# ------------------------------------------------------------------ motion
+
+[motion.duration]
+quick = 120
+base = 200
+slow = 360
+
+[motion.easing]
+standard = "cubic-bezier(0.2, 0, 0, 1)"
+out = "cubic-bezier(0, 0, 0.2, 1)"
+
+# Times the page waits that are no motion, kept under reduced motion.
+[motion.timing]
+linger = 6000
+poll = 1000
+
+# ------------------------------------------------------------------ layers: each plane's order and elevation
+
+[layer.behind]
+z = -1
+
+[layer.ground]
+z = 0
+
+[layer.raised]
+z = 1
+shadow = [{ y = 1, blur = 2, color = "shadow" }, { y = 2, blur = 8, color = "shadow" }]
+
+[layer.lifted]
+z = 2
+shadow = [{ y = 2, blur = 4, color = "shadow" }, { y = 10, blur = 24, color = "shadow-strong" }]
+
+[layer.sticky]
+z = 10
+shadow = [{ y = 1, blur = 0, color = "shadow" }]
+
+[layer.drawer]
+z = 30
+shadow = [{ y = 8, blur = 32, color = "shadow-strong" }]
+
+[layer.overlay]
+z = 40
+shadow = [{ y = 4, blur = 12, color = "shadow" }, { y = 16, blur = 40, color = "shadow-strong" }]
+
+[layer.dialog]
+z = 50
+shadow = [{ y = 8, blur = 24, color = "shadow" }, { y = 24, blur = 64, color = "shadow-strong" }]
+
+[layer.notice]
+z = 60
+shadow = [{ y = 4, blur = 16, color = "shadow-strong" }]
+
+# ------------------------------------------------------------------ layout, in px
+
+[layout]
+bar = 56
+content = 1280
+hero = 880
+hero-echo = 384
+inspector = 440
+inspector-min = 320
+canvas-min = 440
+panel = 280
+panel-min = 160
+# the tallest an action docked beside the workspaces stands — a save's impact — so the diagram it
+# marks stays in view; what it holds past it scrolls
+dock = 360
+operations = 300
+form-label = 160
+# the diagram: what ELK is given as spacing where it proposes the blocks' places (web.md § 2.2) —
+# between two blocks of a column, between columns — and the room a fit leaves around the whole
+graph-node-gap = 24
+graph-layer-gap = 80
+graph-pad = 16

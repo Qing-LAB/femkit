@@ -3,7 +3,11 @@
 **Role:** ADR
 
 **Status:** accepted (2026-11-23); decision 5's transactions and undo
-superseded by [ADR 0015](0015-the-persons-files.md)
+superseded by [ADR 0015](0015-the-persons-files.md); decisions 2–3's
+observable sets amended by
+[ADR 0025](0025-one-engine-per-study-observables-after.md) (decision 4): an
+observables part, a folder with its script, reads studies, and no study
+pairs it
 
 **Authority:** the reasons and the alternatives only;
 [`projects.md`](../contracts/projects.md) owns the rules
@@ -24,7 +28,7 @@ later, and observables that several studies share.
    person's material library and their projects. The page lists it; a command
    names a project from it, or by the folder it runs in.
 2. **A project is parts, each in its own file in a fixed tree**, side by side
-   as COMSOL's tree shows them: the project file (shared parameters; it names
+   as a model is read: the project file (shared parameters; it names
    its components and studies); components; physics; mesh recipes; observable
    sets; studies; analyses; the project's materials; and what runs write. Any
    kind's parts may be grouped in folders; a name is a path, and a folder only

@@ -1,0 +1,2 @@
+/* Text: a report's line. */
+.text { margin: 0; font-size: var(--type-size-sm); line-height: var(--type-leading-normal); overflow-wrap: anywhere; }

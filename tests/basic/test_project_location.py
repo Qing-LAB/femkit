@@ -41,14 +41,14 @@ def root(tmp_path) -> Path:
 
 def test_an_unset_root_is_refused_naming_the_setting_and_how_to_state_it(tmp_path):
     """Fails if, with `paths.projects` unset, finding or naming a project guesses a root instead of
-    refusing as unstated, or the refusal does not offer the `config set` that states it
-    (projects.md § 1, config.md § 3)."""
+    refusing as unstated, or the refusal does not offer the step its field's declaration chooses:
+    `config init`, which asks for it, since the key declares its question (projects.md § 1;
+    config.md § 3.2: "a setting's next step is built in one place … its step is `config init`")."""
     for call in (lambda c: location.root(c), lambda c: location.projects(c),
                  lambda c: location.locate(c, "bowtie", tmp_path), lambda c: location.locate(c, None, tmp_path)):
         with refused(Unstated, "setting-unset", "paths.projects") as caught:
             call(ctx())
-        assert [(a.call.operation, a.call.request) for a in caught.value.next] == \
-            [("config.set", {"key": "paths.projects"})]
+        assert [(a.call.operation, a.call.request) for a in caught.value.next] == [("config.init", {})]
 
 
 def test_a_root_that_is_no_folder_is_refused_naming_project_new(tmp_path):
@@ -154,3 +154,14 @@ def test_a_path_in_a_project_is_relative_and_stays_inside(root):
     for bad in ("/etc/hosts", "../groups/dimer/project.toml", "studies/../../groups"):
         with refused(UsageError, "outside-project", bad):
             project.path(bad)
+
+
+def test_the_doors_refusals_of_a_project_offer_the_projects_there(root):
+    """Fails if naming a project the root does not hold, or running a command in a folder of no
+    project, is refused with nothing to do instead — the person left to guess the names there
+    (projects.md § 8: "the door's refusals fill their `next`")."""
+    for call, code in ((lambda c: location.locate(c, "nowhere", root), "no-such-project"),
+                       (lambda c: location.locate(c, None, root), "not-in-a-project")):
+        with refused(UsageError, code) as caught:
+            call(ctx())
+        assert [a.call.operation for a in caught.value.next] == ["project.list"]

@@ -2,7 +2,7 @@
   "$defs": {
     "Action": {
       "additionalProperties": false,
-      "description": "Something a person may do: an operation with its request, or a shell line that is no\noperation \u2014 a shell's activation, a scheduler's interactive command.",
+      "description": "Something a person may do: an operation with its request, or a shell line that is no\noperation \u2014 a shell's activation, a scheduler's interactive command \u2014 on this machine, or on\nanother, `on`, where a surface writes it as a line for that machine and never runs it. Its\nline and its effect are its operation's, computed from its call and serialized with it (web.md\n\u00a7 7.2), never stored beside it: an action read back from a file femkit keeps computes them\nagain, from the verbs femkit has then.",
       "properties": {
         "call": {
           "anyOf": [
@@ -15,6 +15,30 @@
           ],
           "default": null,
           "description": "the operation it runs; none for a shell line"
+        },
+        "command": {
+          "description": "the line the command line writes for it: a value still to fill as what it asks for, never its example",
+          "doc": "web.md \u00a7 7.2",
+          "readOnly": true,
+          "type": "string"
+        },
+        "effect": {
+          "anyOf": [
+            {
+              "enum": [
+                "reads",
+                "changes",
+                "removes"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "what its operation does, as its verb declares it: it reads, changes or removes; none for a shell line",
+          "doc": "api.md \u00a7 2",
+          "readOnly": true
         },
         "fills": {
           "description": "each value still to fill, in the order asked",
@@ -51,6 +75,19 @@
           "default": null,
           "description": "a remark a command line writes after it"
         },
+        "on": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the machine it runs on, by its record's name, where that is not the one the page or the command line runs on: a line for that machine, its request's path fields from the project's folder, never run here; none: this machine",
+          "doc": "web.md \u00a7 7.2"
+        },
         "shell": {
           "anyOf": [
             {
@@ -70,9 +107,132 @@
         "call",
         "shell",
         "fills",
-        "help"
+        "help",
+        "on",
+        "command",
+        "effect"
       ],
       "title": "Action",
+      "type": "object"
+    },
+    "ActionMachine": {
+      "additionalProperties": false,
+      "description": "The action machine (web.md \u00a7 9.1; framework.md \u00a7 3): one closed table every action runs by, in\nevery view \u2014 its states, the one it starts in, and each move \u2014 run generically by the page.",
+      "properties": {
+        "start": {
+          "description": "the state an action starts in, before it is pressed",
+          "type": "string"
+        },
+        "states": {
+          "items": {
+            "$ref": "#/$defs/ActionState"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/Transition"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "start",
+        "states",
+        "transitions"
+      ],
+      "title": "ActionMachine",
+      "type": "object"
+    },
+    "ActionState": {
+      "additionalProperties": false,
+      "description": "One state of the action machine (web.md \u00a7 9.1): what it shows, and the controls it offers.",
+      "properties": {
+        "key": {
+          "description": "how the machine names it",
+          "type": "string"
+        },
+        "offers": {
+          "description": "the page's own controls it offers, in order",
+          "items": {
+            "enum": [
+              "documents",
+              "theme",
+              "close",
+              "cancel",
+              "continue",
+              "run",
+              "plan",
+              "apply",
+              "discard",
+              "find",
+              "fit",
+              "zoom-in",
+              "zoom-out",
+              "reset-layout",
+              "open",
+              "fold",
+              "details",
+              "panels",
+              "copy",
+              "select",
+              "add",
+              "remove",
+              "edit",
+              "reload",
+              "duplicate",
+              "remove-copy",
+              "legend",
+              "redraw"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "shows": {
+          "description": "what the place of the action shows in it",
+          "enum": [
+            "nothing",
+            "fills",
+            "busy",
+            "plan",
+            "progress",
+            "outcome",
+            "refusal",
+            "defect",
+            "lost"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "shows",
+        "offers"
+      ],
+      "title": "ActionState",
+      "type": "object"
+    },
+    "Addresses": {
+      "additionalProperties": false,
+      "description": "Where the server serves the page (web.md \u00a7 1): its bundle's files, and the document viewer.",
+      "properties": {
+        "bundle": {
+          "description": "the path the bundle's files are served under, ending in `/`: the mark among them",
+          "type": "string"
+        },
+        "documents": {
+          "description": "the path the document viewer opens at",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bundle",
+        "documents"
+      ],
+      "title": "Addresses",
       "type": "object"
     },
     "App": {
@@ -173,6 +333,12 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "rows": {
           "description": "each part, in order",
           "items": {
@@ -181,10 +347,12 @@
           "type": "array"
         },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -196,7 +364,8 @@
         "log",
         "rows",
         "doctor",
-        "entry"
+        "entry",
+        "report"
       ],
       "title": "BootstrapOutcome",
       "type": "object"
@@ -226,7 +395,14 @@
           "type": "string"
         },
         "status": {
-          "description": "done, failed, killed, refused, or left alone",
+          "description": "how the part ended",
+          "enum": [
+            "done",
+            "failed",
+            "killed",
+            "refused",
+            "left alone"
+          ],
           "type": "string"
         }
       },
@@ -237,6 +413,53 @@
         "log"
       ],
       "title": "BootstrapRow",
+      "type": "object"
+    },
+    "Box": {
+      "additionalProperties": false,
+      "description": "A box drawn around nodes: a grouping folder, a case, the stages several cases share, or a\njob \u2014 a box, since \"group\" names a geometry's named group. Boxes of one kind never overlap.",
+      "properties": {
+        "address": {
+          "description": "what it is: a grouping folder by its path in the project, a case by its file's, the stages several cases share by the addresses of those cases' boxes, joined by `+`",
+          "type": "string"
+        },
+        "kind": {
+          "description": "what it groups",
+          "enum": [
+            "folder",
+            "case",
+            "shared",
+            "job"
+          ],
+          "type": "string"
+        },
+        "label": {
+          "description": "what a person calls it",
+          "type": "string"
+        },
+        "members": {
+          "description": "the nodes and boxes inside it, by their addresses",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "serves": {
+          "description": "for a box of shared stages, the boxes of the cases they serve",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "address",
+        "label",
+        "kind",
+        "members",
+        "serves"
+      ],
+      "title": "Box",
       "type": "object"
     },
     "BuildOutcome": {
@@ -265,16 +488,24 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "static": {
           "default": "",
           "description": "the folder the bundle is written into",
           "type": "string"
         },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         },
@@ -292,7 +523,8 @@
         "status",
         "log",
         "written",
-        "static"
+        "static",
+        "report"
       ],
       "title": "BuildOutcome",
       "type": "object"
@@ -302,7 +534,7 @@
       "description": "An operation and its request \u2014 the values a fill leaves out are asked for.",
       "properties": {
         "operation": {
-          "description": "the operation's name, `study.expand`",
+          "description": "the operation's name, `study.prep`",
           "type": "string"
         },
         "request": {
@@ -318,6 +550,111 @@
       "title": "Call",
       "type": "object"
     },
+    "CancelOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "job": {
+          "default": "",
+          "description": "the job",
+          "type": "string"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "next": {
+          "description": "to see how it ended: `job list`",
+          "doc": "jobs.md \u00a7 5.4",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
+        "runs": {
+          "description": "each run it held that had not ended",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
+          "enum": [
+            "done",
+            "failed",
+            "planned"
+          ],
+          "type": "string"
+        },
+        "stopped": {
+          "default": false,
+          "description": "whether it was going when the signal came",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "job",
+        "stopped",
+        "runs",
+        "next",
+        "report"
+      ],
+      "title": "CancelOutcome",
+      "type": "object"
+    },
+    "Canvas": {
+      "additionalProperties": false,
+      "description": "What the canvas reads of the project layout (web.md \u00a7\u00a7 2.2, 8.1): the part kind that is the\nproject's master list \u2014 listed beside the canvas, never drawn, nor any wire to or from it \u2014 and\nthe object types drawn each as a card of its own, beside what uses it.",
+      "properties": {
+        "cards": {
+          "description": "the object types each drawn as a small card of its own, its wires leaving its one output slot",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "listed": {
+          "description": "the part kind listed and not drawn: the project's, whose file lists the parts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "listed",
+        "cards"
+      ],
+      "title": "Canvas",
+      "type": "object"
+    },
     "CaseList": {
       "additionalProperties": false,
       "properties": {
@@ -328,12 +665,26 @@
           },
           "type": "array"
         },
+        "next": {
+          "description": "what the studies' states allow, each step once: the prep of each study whose cases it can make \u2014 none while an error stands, the first error being the next step",
+          "doc": "projects.md \u00a7 8",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
         "project": {
           "description": "the project, by its path from the projects root",
           "type": "string"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "studies": {
-          "description": "each study, whether it expands and, if not, why, with the cases written for it",
+          "description": "each study, whether `study prep` can make its cases now and, if not, why, with the cases written for it",
           "items": {
             "$ref": "#/$defs/StudyCases"
           },
@@ -343,7 +694,9 @@
       "required": [
         "issues",
         "project",
-        "studies"
+        "studies",
+        "next",
+        "report"
       ],
       "title": "CaseList",
       "type": "object"
@@ -428,7 +781,7 @@
         },
         "materials": {
           "description": "each body's material, with the dataset and source of each property, as the case holds them, where its material is found now, and, for a case its study no longer makes, how that data differs from what the material holds now",
-          "doc": "materials.md \u00a7\u00a7 4, 6",
+          "doc": "materials.md \u00a7 6",
           "items": {
             "$ref": "#/$defs/CaseMaterial"
           },
@@ -438,8 +791,16 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "its axis values, as its study writes them \u2014 for a case the study no longer makes, as its file holds them, exactly, in canonical units",
+          "description": "its axis values, as its study writes them \u2014 for a case the study no longer makes, as its file holds them, exactly, in its study's display units, else in canonical units",
           "type": "object"
+        },
+        "stages": {
+          "description": "each stage made of it, for any machine, with its state",
+          "doc": "workflow.md \u00a7 4",
+          "items": {
+            "$ref": "#/$defs/CaseStage"
+          },
+          "type": "array"
         },
         "why": {
           "anyOf": [
@@ -459,9 +820,86 @@
         "point",
         "made",
         "why",
-        "materials"
+        "materials",
+        "stages"
       ],
       "title": "CaseRow",
+      "type": "object"
+    },
+    "CaseStage": {
+      "additionalProperties": false,
+      "description": "One stage of a case (workflow.md \u00a7\u00a7 4, 6), found by its `stage.json`, whichever machine made\nit.",
+      "properties": {
+        "shows": {
+          "description": "its block's one plain word",
+          "doc": "web.md \u00a7 7.6",
+          "enum": [
+            "up to date",
+            "needs update",
+            "needs attention",
+            "waiting",
+            "running",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "stage": {
+          "description": "the stage, by its address",
+          "doc": "workflow.md \u00a7 4",
+          "type": "string"
+        },
+        "state": {
+          "description": "its state",
+          "doc": "workflow.md \u00a7 6",
+          "type": "string"
+        },
+        "target": {
+          "description": "the machine it was made for, by its record's identity of the host",
+          "doc": "workflow.md \u00a7 4",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "target",
+        "state",
+        "shows"
+      ],
+      "title": "CaseStage",
+      "type": "object"
+    },
+    "Category": {
+      "additionalProperties": false,
+      "description": "How the cards of one group are told apart at a glance (web.md \u00a7 7.6): a part's section, a stage's\nkind \u2014 its colour, its shape and its icon, the legend showing each.",
+      "properties": {
+        "colour": {
+          "description": "the colour its cards wear on their titles and edges: a colour of the theme",
+          "doc": "web.md \u00a7 10.1",
+          "type": "string"
+        },
+        "icon": {
+          "description": "the icon its cards show, by the icon set's name",
+          "type": "string"
+        },
+        "shape": {
+          "description": "the shape its cards take",
+          "enum": [
+            "rounded",
+            "square",
+            "round",
+            "double",
+            "tab",
+            "notch"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "colour",
+        "shape",
+        "icon"
+      ],
+      "title": "Category",
       "type": "object"
     },
     "CheckOutcome": {
@@ -522,8 +960,17 @@
           },
           "type": "array"
         },
+        "next": {
+          "description": "what its parts' states allow, each step once, in the reading order: the prep of each study whose cases it can make \u2014 none while an error stands, the first error being the next step",
+          "doc": "models.md \u00a7 11.2",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
         "parts": {
-          "description": "each part, with its state; what a part rests on comes before it",
+          "description": "each part, with its state, in the reading order: by section, then what a part rests on before it",
+          "doc": "projects.md \u00a7 4",
           "items": {
             "$ref": "#/$defs/PartRow"
           },
@@ -532,12 +979,20 @@
         "project": {
           "description": "the project checked, by its path from the projects root",
           "type": "string"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
         }
       },
       "required": [
         "issues",
         "project",
-        "parts"
+        "parts",
+        "next",
+        "report"
       ],
       "title": "CheckResult",
       "type": "object"
@@ -573,11 +1028,19 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -587,14 +1050,15 @@
         "plan",
         "status",
         "log",
-        "name"
+        "name",
+        "report"
       ],
       "title": "CleanOutcome",
       "type": "object"
     },
     "Code": {
       "additionalProperties": false,
-      "description": "Text a person copies as it is \u2014 a diagram's source, a file's lines (web.md \u00a7 7.6): the\ncommand line prints it untouched, the page shows it as a block of code.",
+      "description": "Text a person copies as it is \u2014 a diagram's source, a file's lines (web.md \u00a7 7.7): the\ncommand line prints it untouched, the page shows it as a block of code.",
       "properties": {
         "kind": {
           "const": "code",
@@ -614,6 +1078,7 @@
     },
     "Column": {
       "additionalProperties": false,
+      "description": "One column of a table: one field of its row model (web.md \u00a7 7.5).",
       "properties": {
         "help": {
           "anyOf": [
@@ -625,14 +1090,14 @@
             }
           ],
           "default": null,
-          "description": "what it holds"
+          "description": "what it holds: its field's description, and where it is defined"
         },
         "key": {
-          "description": "the rows' key it shows",
+          "description": "the rows' key it shows: its field's name",
           "type": "string"
         },
         "label": {
-          "description": "its heading",
+          "description": "its heading: its field's title, else its key, spaces for underscores",
           "type": "string"
         }
       },
@@ -657,7 +1122,7 @@
             "enum": [
               "project",
               "study",
-              "environment"
+              "target"
             ],
             "type": "string"
           },
@@ -671,7 +1136,7 @@
           "enum": [
             "project",
             "study",
-            "environment"
+            "target"
           ],
           "type": "string"
         },
@@ -695,6 +1160,18 @@
           "description": "the field of that operation's result holding the choices",
           "type": "string"
         },
+        "unset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what it is while none is chosen, where the request that takes it has its own default \u2014 the machine a study's stages are for, this one; none: it is chosen before what needs it is shown"
+        },
         "value_key": {
           "anyOf": [
             {
@@ -712,6 +1189,7 @@
         "key",
         "label",
         "help",
+        "unset",
         "choices",
         "rows",
         "value_key",
@@ -719,6 +1197,106 @@
         "depends"
       ],
       "title": "ContextPart",
+      "type": "object"
+    },
+    "CopiedActivation": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "enum": [
+                "source activate",
+                "conda activate",
+                "mamba activate"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "ask": "How does a shell here enter an environment, after those lines?",
+          "cli": "--activation",
+          "default": null,
+          "description": "how a shell on this machine enters an environment after the preamble \u2014 by the activate script on PATH, which a cluster's module puts there, or by the manager's shell function, its own hook evaluated first",
+          "doc": "config.md \u00a7 3.1",
+          "examples": [
+            "source activate"
+          ],
+          "unset": "`job probe --write` is refused, naming this key"
+        },
+        "preamble": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "ask": "Which shell lines must a job here run before it enters an environment? If none, give --no-preamble instead",
+          "beside": "loaded-modules",
+          "default": null,
+          "description": "the shell lines a run script runs on this machine before it enters an environment \u2014 a batch job starts a fresh shell, so a `module load` that puts the manager on PATH belongs here; [] states that none are needed",
+          "doc": "config.md \u00a7 3.1",
+          "empty": {
+            "field": "no_preamble",
+            "says": "this machine needs none"
+          },
+          "examples": [
+            [
+              "module load mamba"
+            ]
+          ],
+          "unset": "`job probe --write` is refused, naming this key"
+        }
+      },
+      "required": [
+        "preamble",
+        "command"
+      ],
+      "title": "CopiedActivation",
+      "type": "object"
+    },
+    "CopiedLaunch": {
+      "additionalProperties": false,
+      "properties": {
+        "mpi": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "placeholders": [
+                "ranks"
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "how a multi-rank process starts, e.g. [\"mpirun\", \"-np\", \"{ranks}\"]; must pass {ranks}",
+          "examples": [
+            [
+              "mpirun",
+              "-np",
+              "{ranks}"
+            ]
+          ],
+          "propose": "scheduler-launcher",
+          "unset": "a multi-rank check or job, and installing an environment with MPI, are refused, naming this key"
+        }
+      },
+      "required": [
+        "mpi"
+      ],
+      "title": "CopiedLaunch",
       "type": "object"
     },
     "DataChange": {
@@ -791,7 +1369,15 @@
           "type": "array"
         },
         "name": {
-          "description": "one of config, data, cache, state, runtime",
+          "description": "which of femkit's directories",
+          "enum": [
+            "config",
+            "data",
+            "cache",
+            "state",
+            "runtime",
+            "bin"
+          ],
           "type": "string"
         },
         "path": {
@@ -879,11 +1465,19 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         },
@@ -900,7 +1494,8 @@
         "plan",
         "status",
         "log",
-        "written"
+        "written",
+        "report"
       ],
       "title": "DocsOutcome",
       "type": "object"
@@ -915,8 +1510,15 @@
           },
           "type": "array"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "rows": {
-          "description": "every subject of envs.md \u00a7 6.1",
+          "description": "every subject doctor checks, each with its state and what makes it ready",
+          "doc": "envs.md \u00a7 6.1",
           "items": {
             "$ref": "#/$defs/DoctorRow"
           },
@@ -925,7 +1527,8 @@
       },
       "required": [
         "issues",
-        "rows"
+        "rows",
+        "report"
       ],
       "title": "DoctorResult",
       "type": "object"
@@ -933,6 +1536,11 @@
     "DoctorRow": {
       "additionalProperties": false,
       "properties": {
+        "detail": {
+          "default": "",
+          "description": "what the state rests on, or why it could not be observed",
+          "type": "string"
+        },
         "next": {
           "description": "what makes it ready",
           "items": {
@@ -945,7 +1553,7 @@
           "type": "boolean"
         },
         "state": {
-          "description": "its state",
+          "description": "its state, as its machine observes it; for config.toml, whether it is found",
           "type": "string"
         },
         "subject": {
@@ -956,6 +1564,7 @@
       "required": [
         "subject",
         "state",
+        "detail",
         "ready",
         "next"
       ],
@@ -1003,6 +1612,51 @@
       "title": "Documents",
       "type": "object"
     },
+    "Editor": {
+      "additionalProperties": false,
+      "description": "The page's text editor (web.md \u00a7 9.2; ADR 0024): the languages it reads a file in.",
+      "properties": {
+        "languages": {
+          "description": "each language, once; a file named by none is plain text",
+          "items": {
+            "$ref": "#/$defs/EditorLanguage"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "languages"
+      ],
+      "title": "Editor",
+      "type": "object"
+    },
+    "EditorLanguage": {
+      "additionalProperties": false,
+      "description": "One language of the text editor's, with the files it reads in it (web.md \u00a7 9.2).",
+      "properties": {
+        "files": {
+          "description": "the names of the files read in it, each a pattern \u2014 `*` any run of characters, `?` one \u2014 matched against a file's name: a file is read by its declared language, never by code naming its extension",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "language": {
+          "description": "the language: its highlighting, its comments, its folding",
+          "enum": [
+            "toml",
+            "python"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "language",
+        "files"
+      ],
+      "title": "EditorLanguage",
+      "type": "object"
+    },
     "Ended": {
       "additionalProperties": false,
       "description": "The last line of an apply's answer, or the answer of an apply that ended before starting.",
@@ -1011,8 +1665,7 @@
           "type": "boolean"
         },
         "outcome": {
-          "additionalProperties": true,
-          "type": "object"
+          "$ref": "#/$defs/Shown"
         }
       },
       "required": [
@@ -1055,7 +1708,13 @@
           "doc": "envs.md \u00a7 3.2"
         },
         "status": {
-          "description": "done, failed, nothing to do, or not reached",
+          "description": "how its install ended; `not reached` when an earlier one failed",
+          "enum": [
+            "done",
+            "failed",
+            "nothing to do",
+            "not reached"
+          ],
           "type": "string"
         },
         "validation": {
@@ -1085,8 +1744,16 @@
       "additionalProperties": false,
       "properties": {
         "default": {
-          "description": "part of `env install --all`",
+          "description": "one of the default environments, which `env install` with `all`, and `env bootstrap`, install",
           "type": "boolean"
+        },
+        "deliver": {
+          "description": "the packages the projects declare for it that it does not hold yet, which `env install` delivers into it as it stands",
+          "doc": "envs.md \u00a7 4.1",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "description": {
           "description": "what it holds",
@@ -1095,21 +1762,41 @@
         "gpu": {
           "anyOf": [
             {
+              "enum": [
+                "none",
+                "not-run",
+                "passed",
+                "failed"
+              ],
               "type": "string"
             },
             {
               "type": "null"
             }
           ],
-          "description": "GPU qualification; absent unless ready or failing"
+          "description": "GPU qualification; absent unless ready or failing",
+          "doc": "envs.md \u00a7 5"
+        },
+        "managed": {
+          "description": "its name with the package manager",
+          "doc": "envs.md \u00a7 1",
+          "type": "string"
         },
         "name": {
           "description": "the environment",
           "type": "string"
         },
         "prefix": {
-          "description": "where it lives",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "where it lives, as the manager lists it; none where it lists none"
         },
         "state": {
           "description": "its observed state",
@@ -1123,36 +1810,17 @@
         "gpu",
         "description",
         "default",
-        "prefix"
+        "managed",
+        "prefix",
+        "deliver"
       ],
       "title": "EnvRow",
       "type": "object"
     },
-    "ExpandOutcome": {
+    "EnvSnapshot": {
       "additionalProperties": false,
       "properties": {
-        "added": {
-          "description": "each case written, by its ID",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "issues": {
-          "description": "findings a person should act on",
-          "items": {
-            "$ref": "#/$defs/Issue"
-          },
-          "type": "array"
-        },
-        "kept": {
-          "description": "each case it makes that was written already",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "log": {
+        "gpu": {
           "anyOf": [
             {
               "type": "string"
@@ -1162,40 +1830,91 @@
             }
           ],
           "default": null,
-          "description": "the operation directory holding its event log"
+          "description": "its GPU qualification, when ready or failing"
         },
-        "plan": {
-          "$ref": "#/$defs/Plan",
-          "description": "the plan that was applied"
-        },
-        "status": {
-          "description": "whether every step finished",
-          "enum": [
-            "done",
-            "failed"
+        "install_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "type": "string"
+          "default": null,
+          "description": "from its manifest"
         },
-        "study": {
-          "description": "the study, by its name",
+        "solver_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "from its manifest"
+        },
+        "state": {
+          "description": "its state when the probe ran",
+          "doc": "envs.md \u00a7 3.2",
           "type": "string"
         }
       },
       "required": [
-        "issues",
-        "plan",
-        "status",
-        "log",
-        "study",
-        "added",
-        "kept"
+        "state",
+        "gpu",
+        "install_fingerprint",
+        "solver_version"
       ],
-      "title": "ExpandOutcome",
+      "title": "EnvSnapshot",
+      "type": "object"
+    },
+    "Fact": {
+      "additionalProperties": false,
+      "description": "What a person reads of a node, built by the operation that draws it and drawn generically\n(web.md \u00a7 7.6): a study's cases written and made.",
+      "properties": {
+        "label": {
+          "description": "what it is",
+          "type": "string"
+        },
+        "shows": {
+          "anyOf": [
+            {
+              "enum": [
+                "up to date",
+                "needs update",
+                "needs attention",
+                "waiting",
+                "running",
+                "failed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the block word it shows, where it is a state's"
+        },
+        "value": {
+          "description": "what it is now, as a person reads it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value",
+        "shows"
+      ],
+      "title": "Fact",
       "type": "object"
     },
     "Field": {
       "additionalProperties": false,
-      "description": "One value as a person sees it, and the action that writes it.",
+      "description": "One value as a person sees it, and the action that writes it: a setting, or a key a part's\nfile may hold (web.md \u00a7 7.3).",
       "properties": {
         "help": {
           "anyOf": [
@@ -1207,12 +1926,25 @@
             }
           ],
           "default": null,
-          "description": "its sentence"
+          "description": "its sentence, and the manual's chapter that explains it"
         },
         "json_schema": {
           "additionalProperties": true,
-          "description": "the JSON schema fragment of what it may hold",
+          "description": "the JSON schema fragment of what it may hold: a closed list's values as `enum`; a quantity's dimension, the unit table's symbols for it as `units`, and a declared unit as `unit`",
           "type": "object"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a key a file may hold, its path from the file's top, as a finding names it (`Issue.key`)",
+          "doc": "web.md \u00a7 8.3"
         },
         "label": {
           "description": "what it is called",
@@ -1250,6 +1982,7 @@
       },
       "required": [
         "label",
+        "key",
         "required",
         "value",
         "json_schema",
@@ -1259,17 +1992,106 @@
       "title": "Field",
       "type": "object"
     },
-    "Fill": {
+    "File": {
       "additionalProperties": false,
-      "description": "A value an action still needs, asked of the person before it runs: a request field's\nwhole value.",
+      "description": "A file a node opens as (web.md \u00a7 7.6): its text as the file holds it and its SHA-256, read\nonce by the door (projects.md \u00a7 6), which a save sends back (projects.md \u00a7 7).",
       "properties": {
-        "accepts": {
-          "description": "the node kinds whose names may fill it, as `kind` or `kind:type`",
+        "address": {
+          "description": "the file, by its address: a part's own, `mesh:fine`, or a folder part's file, `component:bowtie@geometry.py`",
+          "doc": "projects.md \u00a7 5",
+          "type": "string"
+        },
+        "path": {
+          "description": "the file as a finding names it (`Issue.file`): a project's by its path from the project's folder, a global library's by its full path \u2014 so a finding is marked at its line of the file it names",
+          "doc": "core.md \u00a7 10",
+          "type": "string"
+        },
+        "save": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Action"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the action that writes it exactly as the person typed it \u2014 `project save` \u2014 its one value to fill the text; none where it is not saved from here",
+          "doc": "projects.md \u00a7 7"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the SHA-256 of its bytes as they were read; none where it could not be read"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its text as the file holds it, comments kept; none where it could not be read"
+        }
+      },
+      "required": [
+        "address",
+        "path",
+        "text",
+        "sha256",
+        "save"
+      ],
+      "title": "File",
+      "type": "object"
+    },
+    "FileRun": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "description": "the files it left",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
+        "run": {
+          "description": "the run, by its path",
+          "type": "string"
+        },
+        "state": {
+          "description": "its state",
+          "doc": "jobs.md \u00a7 5.2",
+          "type": "string"
+        },
+        "words": {
+          "default": "",
+          "description": "what its records say of it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "state",
+        "words",
+        "files"
+      ],
+      "title": "FileRun",
+      "type": "object"
+    },
+    "Fill": {
+      "additionalProperties": false,
+      "description": "A value an action still needs, asked of the person before it runs: a request field's\nwhole value.",
+      "properties": {
         "example": {
           "anyOf": [
             {
@@ -1300,12 +2122,17 @@
         },
         "json_schema": {
           "additionalProperties": true,
-          "description": "the JSON schema fragment of what it may hold",
+          "description": "the JSON schema fragment of what it may hold, whole: each definition it names carried with it",
           "type": "object"
         },
         "label": {
           "description": "what the value is",
           "type": "string"
+        },
+        "required": {
+          "default": true,
+          "description": "whether it must be given: a value an action still needs always; a form's field where its request has no default",
+          "type": "boolean"
         },
         "toml": {
           "anyOf": [
@@ -1327,83 +2154,163 @@
         "label",
         "help",
         "json_schema",
-        "accepts",
-        "example"
+        "example",
+        "required"
       ],
       "title": "Fill",
       "type": "object"
     },
-    "GraphEdge": {
+    "FlowResult": {
       "additionalProperties": false,
-      "description": "A reference from one node to another.",
       "properties": {
-        "address": {
-          "description": "where the reference is written",
-          "type": "string"
+        "graph": {
+          "$ref": "#/$defs/Graph",
+          "description": "each case's stages, the artifacts flowing between them \u2014 each output with the file its stage's newest finished run holds and the lines that open it \u2014 each case a box, the stages cases share one of their own",
+          "doc": "workflow.md \u00a7 3"
         },
-        "held": {
-          "description": "how: a table's key, a value, a list's item, or a name used inside a value's text",
-          "enum": [
-            "key",
-            "value",
-            "item",
-            "text"
-          ],
-          "type": "string"
-        },
-        "port": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the source's port it leaves by; none for a parameter a quantity uses"
-        },
-        "source": {
-          "description": "the node that refers",
-          "type": "string"
-        },
-        "target": {
-          "description": "the node referred to",
-          "type": "string"
-        },
-        "type": {
-          "description": "what it refers to, as the `ref` annotation states it, or `parameter`",
-          "type": "string"
-        }
-      },
-      "required": [
-        "source",
-        "target",
-        "port",
-        "type",
-        "address",
-        "held"
-      ],
-      "title": "GraphEdge",
-      "type": "object"
-    },
-    "GraphNode": {
-      "additionalProperties": false,
-      "description": "A part, or an object inside one, as the graph shows it.",
-      "properties": {
-        "address": {
-          "description": "its address",
-          "doc": "projects.md \u00a7 5",
-          "type": "string"
-        },
-        "findings": {
-          "description": "the findings that name it, in the chain's order",
+        "issues": {
+          "description": "findings a person should act on",
           "items": {
             "$ref": "#/$defs/Issue"
           },
           "type": "array"
         },
-        "group": {
+        "next": {
+          "description": "what its stages' states allow, each step once, with the words its state's table gives it",
+          "doc": "workflow.md \u00a7 6",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "the project, by its path from the projects root",
+          "type": "string"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
+        "study": {
+          "description": "the study, by its name",
+          "type": "string"
+        },
+        "target": {
+          "description": "the machine record each stage's identity is formed with",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "project",
+        "study",
+        "target",
+        "graph",
+        "next",
+        "report"
+      ],
+      "title": "FlowResult",
+      "type": "object"
+    },
+    "Gate": {
+      "additionalProperties": false,
+      "description": "What the page shows before any token (web.md \u00a7 5): what it asks for and how, and what it says\nwhen the server does not answer or answers what it cannot read \u2014 carried by the bundle itself,\ngenerated beside the declaration (`bundle`), since no route answers before the token.",
+      "properties": {
+        "help": {
+          "description": "what the press does, in one sentence",
+          "type": "string"
+        },
+        "icon": {
+          "description": "the icon of its press, by the icon set's name",
+          "type": "string"
+        },
+        "label": {
+          "description": "what a person reads beside the token's field",
+          "type": "string"
+        },
+        "says": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "what it says of the token, a server not answering, an answer it cannot read",
+          "propertyNames": {
+            "enum": [
+              "token",
+              "unreachable",
+              "unreadable"
+            ]
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "label",
+        "icon",
+        "help",
+        "says"
+      ],
+      "title": "Gate",
+      "type": "object"
+    },
+    "Graph": {
+      "additionalProperties": false,
+      "description": "Every diagram the page draws, one shape (web.md \u00a7 7.6): a block of a report (\u00a7 7.7).",
+      "properties": {
+        "boxes": {
+          "description": "its boxes",
+          "items": {
+            "$ref": "#/$defs/Box"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "graph",
+          "default": "graph",
+          "type": "string"
+        },
+        "nodes": {
+          "description": "its nodes, in the reading order: a description's by section, then rank, then its kind's place; a workflow's in its cases' order",
+          "items": {
+            "$ref": "#/$defs/GraphNode"
+          },
+          "type": "array"
+        },
+        "wires": {
+          "description": "its wires",
+          "items": {
+            "$ref": "#/$defs/Wire"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "nodes",
+        "wires",
+        "boxes"
+      ],
+      "title": "Graph",
+      "type": "object"
+    },
+    "GraphNode": {
+      "additionalProperties": false,
+      "description": "A part, an object inside one, or a stage, as a diagram shows it: one field list for every\nnode (web.md \u00a7 7.6).",
+      "properties": {
+        "actions": {
+          "description": "its state's next steps",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "address": {
+          "description": "its address",
+          "doc": "projects.md \u00a7 5",
+          "type": "string"
+        },
+        "engine": {
           "anyOf": [
             {
               "type": "string"
@@ -1413,28 +2320,88 @@
             }
           ],
           "default": null,
-          "description": "for a part, the grouping folder it lies in"
+          "description": "for a solve stage alone, the engine whose solve it is; none for a geometry or a mesh stage, its study's, made for no engine, nor for a study, which names none",
+          "doc": "web.md \u00a7 7.6"
+        },
+        "environment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a stage, the environment it runs in"
+        },
+        "facts": {
+          "description": "what a person reads of it, as its operation builds it",
+          "items": {
+            "$ref": "#/$defs/Fact"
+          },
+          "type": "array"
+        },
+        "family": {
+          "description": "what it is: a part, an object inside one, or a stage",
+          "enum": [
+            "part",
+            "object",
+            "stage"
+          ],
+          "type": "string"
+        },
+        "files": {
+          "description": "each file it opens as \u2014 a part's, a component's contract and its script \u2014 with its text; none for an object, whose part's the page shows, nor for a stage",
+          "doc": "web.md \u00a7 8.3",
+          "items": {
+            "$ref": "#/$defs/File"
+          },
+          "type": "array"
+        },
+        "folder": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a stage, its calculation folder's path",
+          "doc": "projects.md \u00a7 2"
+        },
+        "issues": {
+          "description": "the findings that name it",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "keys": {
+          "description": "for a part, every key its file may hold, each with its help and the fragment of what it may hold: what the page's text editor explains on hover and offers as the person types; none for an object, whose part's the page shows, nor for a stage",
+          "doc": "web.md \u00a7 8.3",
+          "items": {
+            "$ref": "#/$defs/Field"
+          },
+          "type": "array"
         },
         "kind": {
-          "description": "its part kind or object type, as the layout names it",
-          "doc": "projects.md \u00a7 4",
+          "description": "its kind within its family \u2014 its part kind, object type or stage kind \u2014 as its declaration names it",
           "type": "string"
         },
         "label": {
           "description": "what a person calls it",
           "type": "string"
         },
-        "name": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "the name another refers to it by"
+        "made_from": {
+          "description": "for a stage, the addresses of the parts and stages it is made from: the one relation between the diagrams",
+          "doc": "workflow.md \u00a7 3",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "part": {
           "anyOf": [
@@ -1449,16 +2416,57 @@
           "description": "for an object, the address of the part holding it"
         },
         "ports": {
-          "description": "its fields that name another part or a group",
+          "description": "the fields or the artifacts it takes or gives, each typed",
           "items": {
             "$ref": "#/$defs/GraphPort"
           },
           "type": "array"
         },
         "rank": {
-          "description": "its place in the chain's order: what it is made from comes first",
-          "doc": "models.md \u00a7 11.2",
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its place in the chain's order, its kind's \u2014 an object's its part's: what it is made from comes first; none for a stage",
+          "doc": "projects.md \u00a7 4"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "where a person finds it, its kind's \u2014 an object's its part's; none for a stage",
+          "doc": "projects.md \u00a7 4"
+        },
+        "shows": {
+          "anyOf": [
+            {
+              "enum": [
+                "up to date",
+                "needs update",
+                "needs attention",
+                "waiting",
+                "running",
+                "failed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a part or a stage, its block's one plain word"
         },
         "state": {
           "anyOf": [
@@ -1470,20 +2478,7 @@
             }
           ],
           "default": null,
-          "description": "for a part, its state",
-          "doc": "projects.md \u00a7 8"
-        },
-        "text": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "its text as its file holds it, comments kept; none for a part that cannot be read"
+          "description": "for a part or a stage, its state, in its machine's words"
         },
         "type": {
           "anyOf": [
@@ -1495,85 +2490,54 @@
             }
           ],
           "default": null,
-          "description": "its type within that, where its object type has one: a condition's kind"
+          "description": "its type within its kind, where its declaration has one: a condition's kind, a mesh stage's mesher"
         }
       },
       "required": [
         "address",
+        "family",
         "kind",
         "type",
-        "label",
-        "name",
         "part",
-        "group",
+        "label",
         "rank",
+        "section",
         "state",
-        "text",
+        "shows",
         "ports",
-        "findings"
+        "issues",
+        "files",
+        "keys",
+        "facts",
+        "made_from",
+        "engine",
+        "environment",
+        "folder",
+        "actions"
       ],
       "title": "GraphNode",
       "type": "object"
     },
     "GraphPort": {
       "additionalProperties": false,
-      "description": "A field of a node that names another part or a group (models.md \u00a7 11.2).",
+      "description": "A field or an artifact a node takes or gives, typed by its declaration: a `ref` annotation\n(core.md \u00a7 2), or an artifact type (workflow.md \u00a7 2.2).",
       "properties": {
         "accepts": {
-          "description": "the types it names, as its `ref` annotation states them: `physics`, `group:outer_boundary`",
+          "description": "the types it names, as its `ref` annotation states them \u2014 `physics`, `group:outer_boundary` \u2014 a group's, the places it may be; or its artifact's type, `geometry/xao`",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "address": {
-          "description": "where its names are written",
-          "type": "string"
-        },
-        "many": {
-          "description": "whether it names several: a list, or a table's keys",
-          "type": "boolean"
-        },
-        "name": {
-          "description": "the field, by its dotted path from the node",
-          "type": "string"
-        },
-        "names": {
-          "description": "the names it holds",
+        "actions": {
+          "description": "for a stage's output, the lines that open it; none for a file femkit opens no way",
+          "doc": "workflow.md \u00a7 8",
           "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "name",
-        "address",
-        "accepts",
-        "many",
-        "names"
-      ],
-      "title": "GraphPort",
-      "type": "object"
-    },
-    "GraphResult": {
-      "additionalProperties": false,
-      "properties": {
-        "edges": {
-          "description": "each reference between them",
-          "items": {
-            "$ref": "#/$defs/GraphEdge"
+            "$ref": "#/$defs/Action"
           },
           "type": "array"
         },
-        "issues": {
-          "description": "findings a person should act on",
-          "items": {
-            "$ref": "#/$defs/Issue"
-          },
-          "type": "array"
-        },
-        "mermaid": {
+        "file": {
           "anyOf": [
             {
               "type": "string"
@@ -1583,26 +2547,95 @@
             }
           ],
           "default": null,
-          "description": "the graph as Mermaid text, when asked"
+          "description": "for a stage's output, its file in the stage's newest finished run; none before one finished",
+          "doc": "workflow.md \u00a7 8"
         },
-        "nodes": {
-          "description": "each part, then the objects inside it; what a part rests on comes before it",
+        "many": {
+          "description": "whether it names several: a list, or a table's keys",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "the field, by its dotted path from the node; a group a component promises, by its name; or the artifact, by the name its stage's program calls it",
+          "type": "string"
+        },
+        "names": {
+          "description": "what it holds: the names a field holds; the nodes a group or an artifact flows to, or from",
           "items": {
-            "$ref": "#/$defs/GraphNode"
+            "type": "string"
           },
           "type": "array"
+        },
+        "side": {
+          "description": "`in`, what the node reads or takes \u2014 a field naming another node; `out`, what it gives \u2014 a component's groups, a stage's outputs",
+          "enum": [
+            "in",
+            "out"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "side",
+        "accepts",
+        "many",
+        "names",
+        "file",
+        "actions"
+      ],
+      "title": "GraphPort",
+      "type": "object"
+    },
+    "GraphResult": {
+      "additionalProperties": false,
+      "properties": {
+        "graph": {
+          "$ref": "#/$defs/Graph",
+          "description": "each part, then the objects inside it \u2014 what a part rests on before it \u2014 each reference between them, and the grouping folders",
+          "doc": "web.md \u00a7 7.6"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "mermaid": {
+          "default": false,
+          "description": "whether its graph is written as Mermaid text, to paste into a document that draws Mermaid diagrams",
+          "type": "boolean"
         },
         "project": {
           "description": "the project, by its path from the projects root",
           "type": "string"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
+        "study": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the study in view, through whose pairing each group is wired; none: no group is wired"
         }
       },
       "required": [
         "issues",
         "project",
-        "nodes",
-        "edges",
-        "mermaid"
+        "study",
+        "graph",
+        "mermaid",
+        "report"
       ],
       "title": "GraphResult",
       "type": "object"
@@ -1655,6 +2688,88 @@
         "doc"
       ],
       "title": "Help",
+      "type": "object"
+    },
+    "Host": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "description": "e.g. x86_64",
+          "type": "string"
+        },
+        "cores": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "the machine's logical CPUs"
+        },
+        "gpus": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/HostGPU"
+              },
+              "type": "array"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "its GPUs, as the driver reports them"
+        },
+        "memory_mib": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "its memory"
+        },
+        "os": {
+          "description": "operating system and release",
+          "type": "string"
+        }
+      },
+      "required": [
+        "os",
+        "architecture",
+        "cores",
+        "memory_mib",
+        "gpus"
+      ],
+      "title": "Host",
+      "type": "object"
+    },
+    "HostGPU": {
+      "additionalProperties": false,
+      "properties": {
+        "compute_capability": {
+          "description": "e.g. 8.0",
+          "type": "string"
+        },
+        "memory_mib": {
+          "description": "its memory",
+          "type": "integer"
+        },
+        "model": {
+          "description": "as the driver reports it; shown, never compared",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "compute_capability",
+        "memory_mib"
+      ],
+      "title": "HostGPU",
       "type": "object"
     },
     "Image": {
@@ -1717,6 +2832,14 @@
           "description": "the new material, by the name an assignment gives it: `GLOBAL/<name>` in the global library",
           "type": "string"
         },
+        "next": {
+          "description": "its next step: imported into a project, the project checked; into the library, none \u2014 a project naming it is checked as any other",
+          "doc": "projects.md \u00a7 8",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
         "path": {
           "description": "its folder",
           "type": "string"
@@ -1729,11 +2852,19 @@
           "description": "the property its dataset is held under",
           "type": "string"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -1747,7 +2878,9 @@
         "path",
         "property",
         "dataset",
-        "files"
+        "files",
+        "next",
+        "report"
       ],
       "title": "ImportOutcome",
       "type": "object"
@@ -1783,6 +2916,12 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "rows": {
           "description": "every key, in the model's order",
           "items": {
@@ -1791,10 +2930,12 @@
           "type": "array"
         },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -1805,7 +2946,8 @@
         "status",
         "log",
         "file",
-        "rows"
+        "rows",
+        "report"
       ],
       "title": "InitOutcome",
       "type": "object"
@@ -1823,7 +2965,12 @@
           "type": "string"
         },
         "status": {
-          "description": "added, kept or unset",
+          "description": "what config init did with it",
+          "enum": [
+            "added",
+            "kept",
+            "unset"
+          ],
           "type": "string"
         },
         "value": {
@@ -1869,15 +3016,30 @@
           "default": null,
           "description": "the operation directory holding its event log"
         },
+        "next": {
+          "description": "for each environment whose install failed, the command that shows its log",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
         "plan": {
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -1887,7 +3049,9 @@
         "plan",
         "status",
         "log",
-        "environments"
+        "environments",
+        "next",
+        "report"
       ],
       "title": "InstallOutcome",
       "type": "object"
@@ -1945,6 +3109,19 @@
           "default": null,
           "description": "what a person calls the subject, where its address is not that"
         },
+        "line": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the line of that file, from 1, where its key stands: every finding at a key, a TOML file's as a Python file's, read from the file's own text"
+        },
         "message": {
           "description": "one whole sentence for a person",
           "type": "string"
@@ -1991,11 +3168,315 @@
         "message",
         "file",
         "key",
+        "line",
         "right",
         "choices",
         "next"
       ],
       "title": "Issue",
+      "type": "object"
+    },
+    "JobListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "jobs": {
+          "description": "every job launched from this machine",
+          "items": {
+            "$ref": "#/$defs/JobRow"
+          },
+          "type": "array"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
+        "unreadable": {
+          "description": "each address that does not read, by its path",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "jobs",
+        "unreadable",
+        "report"
+      ],
+      "title": "JobListResult",
+      "type": "object"
+    },
+    "JobRow": {
+      "additionalProperties": false,
+      "properties": {
+        "folder": {
+          "description": "the calculation or launch folder",
+          "type": "string"
+        },
+        "going": {
+          "description": "whether it still goes: going, ended, or asked on another host",
+          "type": "string"
+        },
+        "how": {
+          "description": "how and when it went",
+          "type": "string"
+        },
+        "id": {
+          "description": "the job, as `job cancel` names it",
+          "type": "string"
+        },
+        "next": {
+          "description": "its `job status`, and while it goes its cancel",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "runs": {
+          "description": "each run it started, with its state",
+          "items": {
+            "$ref": "#/$defs/RunRow"
+          },
+          "type": "array"
+        },
+        "waiting": {
+          "description": "a sequence's parts not launched yet",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "how",
+        "folder",
+        "going",
+        "runs",
+        "waiting",
+        "next"
+      ],
+      "title": "JobRow",
+      "type": "object"
+    },
+    "JobStatusResult": {
+      "additionalProperties": false,
+      "properties": {
+        "describe": {
+          "default": "",
+          "description": "its state in words",
+          "type": "string"
+        },
+        "folder": {
+          "description": "the folder, as named",
+          "type": "string"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "members": {
+          "description": "a launch folder's members or parts",
+          "items": {
+            "$ref": "#/$defs/MemberRow"
+          },
+          "type": "array"
+        },
+        "next": {
+          "description": "what its state allows",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
+        "runs": {
+          "description": "each run, oldest first, and the files it left",
+          "items": {
+            "$ref": "#/$defs/FileRun"
+          },
+          "type": "array"
+        },
+        "state": {
+          "description": "its state",
+          "doc": "jobs.md \u00a7 5.5",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "folder",
+        "state",
+        "describe",
+        "runs",
+        "members",
+        "next",
+        "report"
+      ],
+      "title": "JobStatusResult",
+      "type": "object"
+    },
+    "Landing": {
+      "additionalProperties": false,
+      "description": "What a workspace shows before its context is chosen, under the hero (web.md \u00a7 10.2): a context's\nchoices as cards, each opening it; and its first step started from each choice one of its request's\nfields names.",
+      "properties": {
+        "cards": {
+          "description": "the context whose choices are drawn as cards, each choosing it",
+          "enum": [
+            "project",
+            "study",
+            "target"
+          ],
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "each choice's row key a card lists beneath its name \u2014 a project's studies; none: its name alone"
+        },
+        "starts": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the field of the first step's request whose declared choices each start it \u2014 a template to copy; none: it starts bare"
+        }
+      },
+      "required": [
+        "cards",
+        "detail",
+        "starts"
+      ],
+      "title": "Landing",
+      "type": "object"
+    },
+    "LaunchOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "closed": {
+          "default": true,
+          "description": "waited on: whether its runs closed before the launch read them",
+          "type": "boolean"
+        },
+        "folder": {
+          "default": "",
+          "description": "the folder launched, as named",
+          "type": "string"
+        },
+        "how": {
+          "default": "background",
+          "description": "how the job went",
+          "enum": [
+            "background",
+            "waited on",
+            "in a sequence"
+          ],
+          "type": "string"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "job": {
+          "default": "",
+          "description": "the job, as `job list` names it",
+          "type": "string"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "next": {
+          "description": "to follow it: `job status` of its folder, by its full path, and, for a job in the background, the line that stops it \u2014 for one not closed at its terminal, `job list`",
+          "doc": "jobs.md \u00a7 5",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
+        "runs": {
+          "description": "each run it started; waited on, as each ended",
+          "items": {
+            "$ref": "#/$defs/RunRow"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
+          "enum": [
+            "done",
+            "failed",
+            "planned"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "folder",
+        "how",
+        "job",
+        "runs",
+        "closed",
+        "next",
+        "report"
+      ],
+      "title": "LaunchOutcome",
       "type": "object"
     },
     "Lines": {
@@ -2025,8 +3506,14 @@
           },
           "type": "array"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "rows": {
-          "description": "every engine environment",
+          "description": "every environment, an engine's or a tool's",
           "items": {
             "$ref": "#/$defs/EnvRow"
           },
@@ -2035,7 +3522,8 @@
       },
       "required": [
         "issues",
-        "rows"
+        "rows",
+        "report"
       ],
       "title": "ListResult",
       "type": "object"
@@ -2105,6 +3593,12 @@
           "default": null,
           "description": "how it ended; none when it did not"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "steps": {
           "description": "its steps, in order",
           "items": {
@@ -2117,9 +3611,101 @@
         "issues",
         "operation",
         "outcome",
-        "steps"
+        "steps",
+        "report"
       ],
       "title": "LogResult",
+      "type": "object"
+    },
+    "LogState": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "additionalProperties": true,
+          "default": {},
+          "type": "object"
+        },
+        "ended": {
+          "type": "boolean"
+        },
+        "failed_step": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished_steps": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "interrupted": {
+          "type": "boolean"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "done",
+                "failed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "running": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "started": {
+          "type": "boolean"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/StepState"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "operation",
+        "basis",
+        "started",
+        "ended",
+        "outcome",
+        "steps",
+        "finished_steps",
+        "failed_step",
+        "interrupted",
+        "running"
+      ],
+      "title": "LogState",
       "type": "object"
     },
     "MachineRow": {
@@ -2139,7 +3725,12 @@
           "type": "string"
         },
         "status": {
-          "description": "ok, stale, or does not load",
+          "description": "`ok` for a record that loads and is current, or cannot be compared from here",
+          "enum": [
+            "ok",
+            "stale",
+            "does not load"
+          ],
           "type": "string"
         },
         "summary": {
@@ -2173,11 +3764,34 @@
           },
           "type": "array"
         },
+        "now": {
+          "additionalProperties": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "description": "for the one record asked for, of this machine: each environment whose state here differs from the record's \u2014 its state there, and now",
+          "type": "object"
+        },
         "record": {
           "anyOf": [
             {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/$defs/Record"
             },
             {
               "type": "null"
@@ -2185,6 +3799,12 @@
           ],
           "default": null,
           "description": "the one record asked for"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
         },
         "rows": {
           "description": "every record listed",
@@ -2198,9 +3818,148 @@
         "issues",
         "rows",
         "record",
-        "directory"
+        "now",
+        "directory",
+        "report"
       ],
       "title": "MachinesResult",
+      "type": "object"
+    },
+    "ManagerFacts": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "the manager kind (femkit/data/managers/)"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "the manager executable"
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "what an environment built here is for, e.g. linux-64"
+        },
+        "root": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "its root (base) prefix"
+        },
+        "run_enters": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "whether `<manager> run -n femkit` runs inside the prefix the manager lists for the control environment here"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "its version"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "version",
+        "root",
+        "platform",
+        "run_enters"
+      ],
+      "title": "ManagerFacts",
+      "type": "object"
+    },
+    "Measured": {
+      "additionalProperties": false,
+      "properties": {
+        "time": {
+          "description": "when the probe ran, UTC",
+          "type": "string"
+        },
+        "where": {
+          "description": "where it ran",
+          "enum": [
+            "workstation",
+            "login node",
+            "scheduler job"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "time",
+        "where"
+      ],
+      "title": "Measured",
+      "type": "object"
+    },
+    "MemberRow": {
+      "additionalProperties": false,
+      "properties": {
+        "folder": {
+          "description": "a member or part of a launch folder, by its path",
+          "type": "string"
+        },
+        "run": {
+          "default": "",
+          "description": "its newest run",
+          "type": "string"
+        },
+        "state": {
+          "description": "its state",
+          "doc": "jobs.md \u00a7 5.5",
+          "type": "string"
+        },
+        "words": {
+          "default": "",
+          "description": "what its newest run's records say",
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder",
+        "state",
+        "run",
+        "words"
+      ],
+      "title": "MemberRow",
       "type": "object"
     },
     "NewOutcome": {
@@ -2236,6 +3995,14 @@
           "description": "the new project's name: its path from the projects root",
           "type": "string"
         },
+        "next": {
+          "description": "its next step: the new project checked, as any other",
+          "doc": "projects.md \u00a7 8",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
         "path": {
           "description": "its folder",
           "type": "string"
@@ -2244,15 +4011,23 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "source": {
           "description": "what it copies: a template by its bare name, or a project by its path from the projects root",
           "type": "string"
         },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -2265,14 +4040,16 @@
         "name",
         "path",
         "source",
-        "copied"
+        "copied",
+        "next",
+        "report"
       ],
       "title": "NewOutcome",
       "type": "object"
     },
     "Next": {
       "additionalProperties": false,
-      "description": "A heading and the actions under it: what a person may do next (web.md \u00a7 7.6).",
+      "description": "A heading and the actions under it: what a person may do next (web.md \u00a7 7.7).",
       "properties": {
         "actions": {
           "items": {
@@ -2297,16 +4074,136 @@
       "title": "Next",
       "type": "object"
     },
+    "NodeGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "e.g. x86_64, aarch64"
+        },
+        "cores": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "cores per node"
+        },
+        "count": {
+          "description": "how many nodes are alike in the four facts below",
+          "type": "integer"
+        },
+        "gpus": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "GPUs per node, {type: count}; {} is none"
+        },
+        "memory_mib": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "memory per node"
+        }
+      },
+      "required": [
+        "count",
+        "cores",
+        "memory_mib",
+        "gpus",
+        "architecture"
+      ],
+      "title": "NodeGroup",
+      "type": "object"
+    },
+    "OperationGroup": {
+      "additionalProperties": false,
+      "description": "One of the registry's groups of operations, as the page bands it apart (web.md \u00a7\u00a7 8.1, 10.2).",
+      "properties": {
+        "accent": {
+          "description": "the design token of its accent, which sets it apart wherever it is listed: a colour of the theme",
+          "doc": "web.md \u00a7 10.1",
+          "type": "string"
+        },
+        "icon": {
+          "description": "its icon, by the icon set's name",
+          "type": "string"
+        },
+        "title": {
+          "description": "what a person reads on it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "icon",
+        "accent"
+      ],
+      "title": "OperationGroup",
+      "type": "object"
+    },
     "OperationInfo": {
       "additionalProperties": false,
       "description": "One operation as `GET /api/operations` lists it.",
       "properties": {
-        "changes": {
-          "description": "whether it is planned, shown and applied once the person agrees",
-          "type": "boolean"
+        "choices": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": "each request field whose values are declared data \u2014 the templates, the importers, the environments \u2014 with the names declared now",
+          "doc": "api.md \u00a7 4.1",
+          "type": "object"
         },
         "description": {
           "description": "its help",
+          "type": "string"
+        },
+        "effect": {
+          "description": "what it does, as its verb declares it: it only reads, run at once; or it changes or removes, planned, shown and applied once the person agrees",
+          "doc": "api.md \u00a7 2",
+          "enum": [
+            "reads",
+            "changes",
+            "removes"
+          ],
+          "type": "string"
+        },
+        "fills": {
+          "description": "each field of its request as a value to fill, built by the one builder of a fill: what its form asks",
+          "items": {
+            "$ref": "#/$defs/Fill"
+          },
+          "type": "array"
+        },
+        "group": {
+          "description": "its command group, by the registry's name \u2014 `\"\"` femkit's own \u2014 the group the page bands it with",
+          "doc": "api.md \u00a7 6",
           "type": "string"
         },
         "name": {
@@ -2322,21 +4219,33 @@
           "additionalProperties": true,
           "description": "its result's JSON schema",
           "type": "object"
+        },
+        "words": {
+          "description": "its command, the words after `femkit`, as the command line spells it",
+          "doc": "api.md \u00a7 4.1",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "name",
         "description",
-        "changes",
+        "effect",
+        "group",
+        "words",
+        "fills",
         "request",
-        "result"
+        "result",
+        "choices"
       ],
       "title": "OperationInfo",
       "type": "object"
     },
     "Outcome": {
       "additionalProperties": false,
-      "description": "The result of ``apply``.",
+      "description": "The result of ``apply`` \u2014 or, `planned`, the outcome a plan foresees, before anything is\nwritten, whose report says what is to be done and never that it was (api.md \u00a7 3, `report`).",
       "properties": {
         "issues": {
           "description": "findings a person should act on",
@@ -2361,11 +4270,19 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -2374,7 +4291,8 @@
         "issues",
         "plan",
         "status",
-        "log"
+        "log",
+        "report"
       ],
       "title": "Outcome",
       "type": "object"
@@ -2383,8 +4301,18 @@
       "additionalProperties": false,
       "description": "`femkit/data/web/page.toml`.",
       "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionMachine"
+        },
+        "addresses": {
+          "$ref": "#/$defs/Addresses"
+        },
         "app": {
           "$ref": "#/$defs/App"
+        },
+        "canvas": {
+          "$ref": "#/$defs/Canvas",
+          "description": "the part kind the canvas lists and does not draw, and the object types it draws as cards of their own (web.md \u00a7\u00a7 2.2, 8.1)"
         },
         "context": {
           "items": {
@@ -2392,23 +4320,209 @@
           },
           "type": "array"
         },
+        "controls": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Words"
+          },
+          "description": "each of the page's own controls, with its words, icon and help (web.md \u00a7 11)",
+          "propertyNames": {
+            "enum": [
+              "documents",
+              "theme",
+              "close",
+              "cancel",
+              "continue",
+              "run",
+              "plan",
+              "apply",
+              "discard",
+              "find",
+              "fit",
+              "zoom-in",
+              "zoom-out",
+              "reset-layout",
+              "open",
+              "fold",
+              "details",
+              "panels",
+              "copy",
+              "select",
+              "add",
+              "remove",
+              "edit",
+              "reload",
+              "duplicate",
+              "remove-copy",
+              "legend",
+              "redraw"
+            ]
+          },
+          "type": "object"
+        },
+        "documents": {
+          "$ref": "#/$defs/Viewer"
+        },
+        "editor": {
+          "$ref": "#/$defs/Editor"
+        },
+        "gate": {
+          "$ref": "#/$defs/Gate"
+        },
+        "groups": {
+          "additionalProperties": {
+            "$ref": "#/$defs/OperationGroup"
+          },
+          "description": "each of the registry's groups of operations by its name \u2014 `\"\"` femkit's own \u2014 with its title, icon and accent, in the order listed, the person's order of work (web.md \u00a7 8.1)",
+          "type": "object"
+        },
         "kinds": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "description": "each kind's icon, keyed by a node's family and its kind: each part kind and object type as the project layout names them, each stage kind as `stages.toml` names it (web.md \u00a7\u00a7 7.6, 8.2)",
+          "propertyNames": {
+            "enum": [
+              "part",
+              "object",
+              "stage"
+            ]
+          },
+          "type": "object"
+        },
+        "notices": {
+          "description": "how many notices the stack shows at once: the newest (web.md \u00a7 9.2)",
+          "exclusiveMinimum": 0,
+          "type": "integer"
+        },
+        "outcomes": {
           "additionalProperties": {
             "type": "string"
           },
-          "description": "each part kind's and object type's icon, as the project layout names them (web.md \u00a7 8.2)",
+          "description": "each word a step of a run may show \u2014 how it ended, or running \u2014 with the design token it is marked with: a colour of the theme (web.md \u00a7 9.2, `Progress`)",
+          "type": "object"
+        },
+        "says": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "each of the page's own sentences: what it says of what is no document's, a template's placeholders in the core's grammar (web.md \u00a7\u00a7 9.1, 11)",
+          "propertyNames": {
+            "enum": [
+              "loading",
+              "nothing-to-do",
+              "refused",
+              "defect",
+              "applied",
+              "no-request",
+              "running",
+              "none-yet",
+              "files",
+              "facts",
+              "issues",
+              "ports",
+              "made-from",
+              "actions",
+              "optional",
+              "preview",
+              "steps",
+              "outcome",
+              "each",
+              "line",
+              "section",
+              "none",
+              "edited",
+              "wire-checked",
+              "wire-unchecked",
+              "copies",
+              "cannot-draw"
+            ]
+          },
           "type": "object"
         },
         "schema": {
-          "const": 1,
+          "const": 5,
           "description": "this file's shape; raised when it changes",
           "type": "integer"
+        },
+        "sections": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Category"
+          },
+          "description": "each section of the project layout, by its name, with the colour, shape and icon a card of a part in it takes (web.md \u00a7\u00a7 7.6, 10.2)",
+          "type": "object"
+        },
+        "sentences": {
+          "$ref": "#/$defs/Sentences",
+          "description": "what the canvas says of a wire and of a port: each a list of templates, the first a wire or port fills used (web.md \u00a7\u00a7 7.6, 9.2)"
+        },
+        "severities": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SeverityLook"
+          },
+          "description": "each severity a finding may have, with its word, its icon and its colour (web.md \u00a7 7.4)",
+          "propertyNames": {
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ]
+          },
+          "type": "object"
         },
         "shortcuts": {
           "items": {
             "$ref": "#/$defs/Shortcut"
           },
           "type": "array"
+        },
+        "shows": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "each block word of the vocabulary's closed list, with the design token a block showing it is colored by: a colour of the theme (web.md \u00a7\u00a7 7.6, 10.2)",
+          "propertyNames": {
+            "enum": [
+              "up to date",
+              "needs update",
+              "needs attention",
+              "waiting",
+              "running",
+              "failed"
+            ]
+          },
+          "type": "object"
+        },
+        "stages": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Category"
+          },
+          "description": "each stage kind, as `stages.toml` names it, with the colour, shape and icon a card of a stage of it takes (web.md \u00a7\u00a7 7.6, 10.2)",
+          "type": "object"
+        },
+        "tags": {
+          "description": "the colours a box's tag takes on the blocks it holds \u2014 a case, the stages several cases share, a grouping folder \u2014 one for each box in the graph's order, in turn: colours of the theme (web.md \u00a7 7.6)",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "themes": {
+          "description": "the theme switch's choices, in the order offered: the system's first, the default, then each theme of theme.toml (web.md \u00a7 10.2)",
+          "items": {
+            "$ref": "#/$defs/ThemeChoice"
+          },
+          "type": "array"
+        },
+        "wires": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "what a wire carries \u2014 a part kind or an object type as the project layout names it, or an artifact type \u2014 with the colour the wire and the slots it plugs into are drawn in: a wire takes the longest of these its type begins with, so every place of a group takes `group`'s (web.md \u00a7 7.6)",
+          "type": "object"
         },
         "workspaces": {
           "items": {
@@ -2423,21 +4537,136 @@
         "app",
         "workspaces",
         "context",
+        "groups",
         "kinds",
+        "shows",
+        "severities",
+        "outcomes",
+        "sections",
+        "stages",
+        "canvas",
+        "wires",
+        "tags",
+        "themes",
+        "gate",
+        "addresses",
+        "documents",
+        "action",
+        "editor",
+        "notices",
+        "controls",
+        "says",
+        "sentences",
         "shortcuts"
       ],
       "title": "Page",
       "type": "object"
     },
+    "Panel": {
+      "additionalProperties": false,
+      "description": "What a workspace shows beside its document (web.md \u00a7 8.1).",
+      "properties": {
+        "context": {
+          "description": "the context its operation needs",
+          "items": {
+            "enum": [
+              "project",
+              "study",
+              "target"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "document": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the read-only operation whose answer it shows; none: the progress of the running operation, the page's own"
+        },
+        "help": {
+          "description": "what it shows, in one sentence",
+          "type": "string"
+        },
+        "key": {
+          "description": "how the page names it",
+          "type": "string"
+        },
+        "shows": {
+          "default": "report",
+          "description": "what of its document it shows: its report, or its findings alone \u2014 where what else it holds the workspace's document already shows, as the graph each part's state; or, with no document, the parts its workspace's own graph holds, listed: the master list (web.md \u00a7 2.2)",
+          "enum": [
+            "report",
+            "issues",
+            "parts"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "description": "what a person reads on it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "title",
+        "help",
+        "document",
+        "context",
+        "shows"
+      ],
+      "title": "Panel",
+      "type": "object"
+    },
     "PartRow": {
       "additionalProperties": false,
       "properties": {
+        "engines": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a study, the engines that can solve it: those that take its recipe's mesh at each geometry order of its cases; none where that cannot be told, or for another part",
+          "doc": "models.md \u00a7 5.1"
+        },
         "file": {
           "description": "its file, from the project's folder; a global library's by its full path, shown from `~` where it lies under the home folder",
           "type": "string"
         },
         "part": {
           "description": "the part, by its address",
+          "type": "string"
+        },
+        "section": {
+          "description": "where a person finds it",
+          "doc": "projects.md \u00a7 4",
+          "type": "string"
+        },
+        "shows": {
+          "description": "its block's one plain word",
+          "doc": "web.md \u00a7 7.6",
+          "enum": [
+            "up to date",
+            "needs update",
+            "needs attention",
+            "waiting",
+            "running",
+            "failed"
+          ],
           "type": "string"
         },
         "state": {
@@ -2449,16 +4678,132 @@
       "required": [
         "part",
         "file",
-        "state"
+        "section",
+        "state",
+        "shows",
+        "engines"
       ],
       "title": "PartRow",
+      "type": "object"
+    },
+    "Partition": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_qos": {
+          "anyOf": [
+            {
+              "const": "all",
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "description": "AllowQos"
+        },
+        "def_mem_per_cpu_mib": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "DefMemPerCPU, when the partition states it"
+        },
+        "def_mem_per_node_mib": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "DefMemPerNode, when the partition states it"
+        },
+        "deny_qos": {
+          "description": "DenyQos",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_cpus_per_node": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "MaxCPUsPerNode"
+        },
+        "max_time": {
+          "anyOf": [
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "MaxTime"
+        },
+        "node_groups": {
+          "description": "its nodes, grouped",
+          "items": {
+            "$ref": "#/$defs/NodeGroup"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "max_time",
+        "max_cpus_per_node",
+        "def_mem_per_cpu_mib",
+        "def_mem_per_node_mib",
+        "allow_qos",
+        "deny_qos",
+        "node_groups"
+      ],
+      "title": "Partition",
       "type": "object"
     },
     "PathResult": {
       "additionalProperties": false,
       "properties": {
         "directories": {
-          "description": "femkit's directories: config, data, cache, state, runtime",
+          "description": "femkit's directories: config, data, cache, state, runtime, bin",
           "items": {
             "$ref": "#/$defs/DirectoryRow"
           },
@@ -2470,11 +4815,18 @@
             "$ref": "#/$defs/Issue"
           },
           "type": "array"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
         }
       },
       "required": [
         "issues",
-        "directories"
+        "directories",
+        "report"
       ],
       "title": "PathResult",
       "type": "object"
@@ -2492,7 +4844,8 @@
         },
         "basis": {
           "additionalProperties": true,
-          "description": "the facts the plan rests on, observed before it was made; apply refuses when they differ then (api.md \u00a7 3)",
+          "description": "the facts the plan rests on, observed before it was made; apply refuses when they differ then",
+          "doc": "api.md \u00a7 3",
           "type": "object"
         },
         "holds": {
@@ -2512,6 +4865,11 @@
           "description": "the operation's name; `Operation.plan` writes it",
           "type": "string"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what its outcome would show, before anything is written \u2014 the page's Preview; the runner gives it from the outcome the operation's plan foresees, where it foresees one",
+          "doc": "api.md \u00a7 3"
+        },
         "request": {
           "additionalProperties": true,
           "description": "the request, as JSON; `Operation.plan` writes it",
@@ -2519,7 +4877,8 @@
         },
         "shared": {
           "default": [],
-          "description": "those it holds shared: what it uses and does not change (core.md \u00a7 5)",
+          "description": "those it holds shared: what it uses and does not change",
+          "doc": "core.md \u00a7 5",
           "items": {
             "type": "string"
           },
@@ -2551,14 +4910,15 @@
         "holds",
         "steps",
         "issues",
-        "asks"
+        "asks",
+        "report"
       ],
       "title": "Plan",
       "type": "object"
     },
     "PlanAnswer": {
       "additionalProperties": false,
-      "description": "A changing operation's plan, and the digest its apply must carry.",
+      "description": "A changing operation's plan, and the digest its apply must carry: the one answer of a plan,\nas `--dry-run --json` prints it and the page's `/plan` answers it (api.md \u00a7 4.4).",
       "properties": {
         "digest": {
           "type": "string"
@@ -2577,6 +4937,371 @@
         "text"
       ],
       "title": "PlanAnswer",
+      "type": "object"
+    },
+    "PrepJob": {
+      "additionalProperties": false,
+      "description": "One job `study prep` writes, or states again (workflow.md \u00a7\u00a7 5, 7): the sequence of its\nbatches.",
+      "properties": {
+        "batches": {
+          "description": "its batches, by their launch folders' names",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "restated": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a job a prep before wrote, how its resources are stated again; none for one written now"
+        },
+        "sequence": {
+          "description": "the job, by its sequence's launch folder's full path",
+          "doc": "jobs.md \u00a7 1.2",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sequence",
+        "batches",
+        "restated"
+      ],
+      "title": "PrepJob",
+      "type": "object"
+    },
+    "PrepOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "added": {
+          "description": "each case written, by its ID \u2014 or, planned, to write",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the engine the study is prepared for, as `--engine` names it; none where none is chosen",
+          "doc": "workflow.md \u00a7 7"
+        },
+        "heading": {
+          "default": "",
+          "description": "the sentence its next steps are headed by",
+          "type": "string"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "jobs": {
+          "description": "each job written, or stated again, with its launch folders \u2014 or, planned, to write",
+          "items": {
+            "$ref": "#/$defs/PrepJob"
+          },
+          "type": "array"
+        },
+        "kept": {
+          "description": "each case it makes that was written already",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "next": {
+          "description": "what to do next, once the machine step went on: the launch the state of each job not launched yet that holds the study's stages allows \u2014 one written now, or by a prep before \u2014 by its full path, or, for another machine's target, a line for that machine, by its path from the project's folder; no launch the target cannot make; with no such job, `study flow`",
+          "doc": "workflow.md \u00a7 7",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "points": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "each case it makes, by its ID, with every value of its point, as the study writes it",
+          "type": "object"
+        },
+        "project": {
+          "default": "",
+          "description": "the project, by its path from the projects root",
+          "type": "string"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
+        "stages": {
+          "description": "each case's geometry and meshes, each with its state, what was done to it and its folder",
+          "items": {
+            "$ref": "#/$defs/PrepRow"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
+          "enum": [
+            "done",
+            "failed",
+            "planned"
+          ],
+          "type": "string"
+        },
+        "study": {
+          "default": "",
+          "description": "the study, by its name",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the machine record the stages were prepared for; none where the machine step could not go on, and what the stages wait for is a finding, with the steps that settle it",
+          "doc": "workflow.md \u00a7 7"
+        },
+        "values": {
+          "description": "the project's computed definitions at each set of its constants the study's sweep reaches, as the study keeps them; none where it computes none",
+          "doc": "models.md \u00a7 3",
+          "items": {
+            "$ref": "#/$defs/PrepValue"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "project",
+        "study",
+        "engine",
+        "target",
+        "added",
+        "kept",
+        "points",
+        "values",
+        "stages",
+        "jobs",
+        "next",
+        "heading",
+        "report"
+      ],
+      "title": "PrepOutcome",
+      "type": "object"
+    },
+    "PrepRow": {
+      "additionalProperties": false,
+      "properties": {
+        "describe": {
+          "description": "the same, each in the stage table's sentence",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "does": {
+          "description": "what `study prep` does to it, each by the stage table's own task",
+          "doc": "workflow.md \u00a7 6",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "folder": {
+          "description": "its calculation folder, for the machine prepped for",
+          "doc": "projects.md \u00a7 2",
+          "type": "string"
+        },
+        "stage": {
+          "description": "the stage, by its address",
+          "doc": "workflow.md \u00a7 4",
+          "type": "string"
+        },
+        "state": {
+          "description": "its state",
+          "doc": "workflow.md \u00a7 6",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "state",
+        "does",
+        "describe",
+        "folder"
+      ],
+      "title": "PrepRow",
+      "type": "object"
+    },
+    "PrepValue": {
+      "additionalProperties": false,
+      "description": "The project's computed definitions at one set of its constants, as `study prep` keeps them\n(models.md \u00a7 3).",
+      "properties": {
+        "at": {
+          "default": "",
+          "description": "the constants that differ from one set to another, as they are at this one; none where one set is computed",
+          "type": "string"
+        },
+        "values": {
+          "description": "every constant and computed definition, each in its declared unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "values"
+      ],
+      "title": "PrepValue",
+      "type": "object"
+    },
+    "PrepareOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "folder": {
+          "default": "",
+          "description": "the folder, as named",
+          "type": "string"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "next": {
+          "description": "the launch its folder's state allows, by its full path; none for another machine's target, or one a launch here cannot send a job to",
+          "doc": "jobs.md \u00a7 5.5",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
+        "rows": {
+          "description": "each folder prepared: a launch folder's members and parts first",
+          "items": {
+            "$ref": "#/$defs/PreparedRow"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
+          "enum": [
+            "done",
+            "failed",
+            "planned"
+          ],
+          "type": "string"
+        },
+        "target": {
+          "default": "",
+          "description": "the machine record it was prepared for",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "target",
+        "folder",
+        "rows",
+        "next",
+        "report"
+      ],
+      "title": "PrepareOutcome",
+      "type": "object"
+    },
+    "PreparedRow": {
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "description": "the environment its run enters; none for a launch folder",
+          "type": "string"
+        },
+        "folder": {
+          "description": "a folder prepared",
+          "type": "string"
+        },
+        "script": {
+          "description": "its run script; none for a launch folder, whose walk its launch writes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder",
+        "environment",
+        "script"
+      ],
+      "title": "PreparedRow",
       "type": "object"
     },
     "ProbeOutcome": {
@@ -2618,15 +5343,22 @@
           "description": "the plan that was applied"
         },
         "record": {
-          "additionalProperties": true,
-          "description": "the record, as measured",
-          "type": "object"
+          "$ref": "#/$defs/Record",
+          "description": "the record, as measured"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
         },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         },
@@ -2650,7 +5382,8 @@
         "log",
         "record",
         "file",
-        "write"
+        "write",
+        "report"
       ],
       "title": "ProbeOutcome",
       "type": "object"
@@ -2672,6 +5405,12 @@
           },
           "type": "array"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "root": {
           "description": "the projects root, `paths.projects`",
           "type": "string"
@@ -2680,7 +5419,8 @@
       "required": [
         "issues",
         "root",
-        "projects"
+        "projects",
+        "report"
       ],
       "title": "ProjectList",
       "type": "object"
@@ -2726,6 +5466,221 @@
       "title": "Proof",
       "type": "object"
     },
+    "Queue": {
+      "additionalProperties": false,
+      "properties": {
+        "max_cpus": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "the QOS's per-job cpu cap (MaxTRESPerJob)"
+        },
+        "max_gpus": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "the QOS's per-job GPU cap"
+        },
+        "max_memory_mib": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "the QOS's per-job memory cap"
+        },
+        "max_submit_jobs_per_user": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "MaxSubmitJobsPerUser; shown, never counted"
+        },
+        "max_time": {
+          "anyOf": [
+            {
+              "const": "unlimited",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "the shorter of the partition's MaxTime and the QOS's MaxWall"
+        },
+        "partition": {
+          "description": "the partition",
+          "type": "string"
+        },
+        "qos": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the QOS; absent when the account's QOS list could not be read"
+        }
+      },
+      "required": [
+        "partition",
+        "qos",
+        "max_time",
+        "max_cpus",
+        "max_memory_mib",
+        "max_gpus",
+        "max_submit_jobs_per_user"
+      ],
+      "title": "Queue",
+      "type": "object"
+    },
+    "Record": {
+      "additionalProperties": false,
+      "description": "One machine's record, as measured on it (jobs.md \u00a7 9.1). Its file states the record's\nschema version, `schema`, first; a record of another version does not load.",
+      "properties": {
+        "environments": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/EnvSnapshot"
+              },
+              "type": "object"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "`env list` here when the probe ran"
+        },
+        "host": {
+          "$ref": "#/$defs/Host",
+          "description": "the machine the probe ran on; on a cluster, never what a job is fit against"
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "the scheduler's cluster name, or the host name"
+        },
+        "manager": {
+          "$ref": "#/$defs/ManagerFacts",
+          "description": "the package manager here"
+        },
+        "measured": {
+          "$ref": "#/$defs/Measured",
+          "description": "when and where the probe ran"
+        },
+        "notes": {
+          "description": "what the probe could not do, and why",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "partitions": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Partition"
+              },
+              "type": "object"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "each partition's limits and node groups"
+        },
+        "queues": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Queue"
+              },
+              "type": "array"
+            },
+            {
+              "$ref": "#/$defs/Unknown"
+            }
+          ],
+          "description": "each (partition, QOS) pair this account may submit to"
+        },
+        "scheduler": {
+          "$ref": "#/$defs/SchedulerFacts",
+          "description": "the scheduler kind, and where its commands are"
+        },
+        "settings": {
+          "$ref": "#/$defs/Settings",
+          "description": "this machine's config.toml values a job run here needs, copied"
+        },
+        "sources": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "dotted part -> what measured it",
+          "type": "object"
+        }
+      },
+      "required": [
+        "measured",
+        "identity",
+        "host",
+        "manager",
+        "scheduler",
+        "partitions",
+        "queues",
+        "environments",
+        "settings",
+        "sources",
+        "notes"
+      ],
+      "title": "Record",
+      "type": "object"
+    },
     "RefusalAnswer": {
       "additionalProperties": false,
       "description": "A refusal, as `--json` prints it and a route answers it: its kind, why, and what a person\nmay do instead.",
@@ -2733,6 +5688,14 @@
         "code": {
           "description": "which refusal of its kind: what a script tells it apart by",
           "type": "string"
+        },
+        "issues": {
+          "description": "the findings it rests on, every one, shown before its sentence",
+          "doc": "core.md \u00a7 9",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
         },
         "message": {
           "description": "why",
@@ -2767,6 +5730,7 @@
         "code",
         "subject",
         "message",
+        "issues",
         "next"
       ],
       "title": "RefusalAnswer",
@@ -2774,13 +5738,14 @@
     },
     "Report": {
       "additionalProperties": false,
-      "description": "What a result shows a person, as data; its findings follow its blocks (web.md \u00a7 7.6).",
+      "description": "What a result shows a person, as data; its findings follow its blocks (web.md \u00a7 7.7). A graph\nis a block like any other: the page draws it, the command line writes it as its tables.",
       "properties": {
         "blocks": {
           "items": {
             "discriminator": {
               "mapping": {
                 "code": "#/$defs/Code",
+                "graph": "#/$defs/Graph",
                 "next": "#/$defs/Next",
                 "table": "#/$defs/Table",
                 "text": "#/$defs/Text"
@@ -2798,6 +5763,9 @@
                 "$ref": "#/$defs/Table"
               },
               {
+                "$ref": "#/$defs/Graph"
+              },
+              {
                 "$ref": "#/$defs/Next"
               }
             ]
@@ -2813,7 +5781,7 @@
     },
     "Result": {
       "additionalProperties": false,
-      "description": "Every operation's result (api.md \u00a7 2.3).",
+      "description": "Every operation's result (api.md \u00a7 2.3). Its report is a field of its schema, computed from its\nfields: each result declares it as a property, which this one field serializes, so the JSON a\nprogram or the page reads carries it and the page's type of it is generated (web.md \u00a7 7.7).",
       "properties": {
         "issues": {
           "description": "findings a person should act on",
@@ -2821,10 +5789,17 @@
             "$ref": "#/$defs/Issue"
           },
           "type": "array"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
         }
       },
       "required": [
-        "issues"
+        "issues",
+        "report"
       ],
       "title": "Result",
       "type": "object"
@@ -2837,8 +5812,7 @@
           "type": "boolean"
         },
         "result": {
-          "additionalProperties": true,
-          "type": "object"
+          "$ref": "#/$defs/Shown"
         }
       },
       "required": [
@@ -2846,6 +5820,148 @@
         "result"
       ],
       "title": "RunAnswer",
+      "type": "object"
+    },
+    "RunRow": {
+      "additionalProperties": false,
+      "properties": {
+        "run": {
+          "description": "the run, by its path",
+          "type": "string"
+        },
+        "state": {
+          "description": "its state",
+          "doc": "jobs.md \u00a7 5.2",
+          "type": "string"
+        },
+        "words": {
+          "default": "",
+          "description": "what its records say of it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "state",
+        "words"
+      ],
+      "title": "RunRow",
+      "type": "object"
+    },
+    "SaveOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "default": "",
+          "description": "the file, by its address",
+          "doc": "projects.md \u00a7 5",
+          "type": "string"
+        },
+        "file": {
+          "default": "",
+          "description": "the file, as a finding names it: from the project's folder; a global library's by its full path, shown from `~` where it lies under the home folder",
+          "type": "string"
+        },
+        "issues": {
+          "description": "findings a person should act on",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation directory holding its event log"
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan",
+          "description": "the plan that was applied"
+        },
+        "project": {
+          "default": "",
+          "description": "the project, by its path from the projects root",
+          "type": "string"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
+        "status": {
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
+          "enum": [
+            "done",
+            "failed",
+            "planned"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "issues",
+        "plan",
+        "status",
+        "log",
+        "project",
+        "address",
+        "file",
+        "report"
+      ],
+      "title": "SaveOutcome",
+      "type": "object"
+    },
+    "SchedulerFacts": {
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/Unknown"
+              }
+            ]
+          },
+          "description": "each job command by role: where it is",
+          "type": "object"
+        },
+        "kind": {
+          "description": "the scheduler kind (femkit/data/schedulers/)",
+          "type": "string"
+        },
+        "probe": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/Unknown"
+              }
+            ]
+          },
+          "description": "each probe command by role: where it is",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind",
+        "commands",
+        "probe"
+      ],
+      "title": "SchedulerFacts",
       "type": "object"
     },
     "SchemaCheckResult": {
@@ -2864,13 +5980,50 @@
             "$ref": "#/$defs/Loaded"
           },
           "type": "array"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
         }
       },
       "required": [
         "issues",
-        "loaded"
+        "loaded",
+        "report"
       ],
       "title": "SchemaCheckResult",
+      "type": "object"
+    },
+    "Sentences": {
+      "additionalProperties": false,
+      "description": "What the canvas says of what it draws (web.md \u00a7 9.2): for each wire and each port of an opened\nblock, the first template of its list whose every placeholder the wire or the port holds a value\nfor, filled \u2014 so a sentence is always the declaration's, and the last template of each list names\nonly what every one holds.",
+      "properties": {
+        "port": {
+          "description": "the words a port of an opened block is said in, the first it fills used: each placeholder a field of the port (`GraphPort`), the nodes it names said by what a person calls them",
+          "doc": "web.md \u00a7 7.6",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "wire": {
+          "description": "the sentences a wire is said in, the first it fills used: each placeholder a field of the wire (`Wire`), its ends said by what a person calls them \u2014 `{source}` the node named or giving, `{target}` the part that names, or the node that takes",
+          "doc": "web.md \u00a7 7.6",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "wire",
+        "port"
+      ],
+      "title": "Sentences",
       "type": "object"
     },
     "ServeOutcome": {
@@ -2891,7 +6044,7 @@
         "forwarding": {
           "anyOf": [
             {
-              "type": "string"
+              "$ref": "#/$defs/Action"
             },
             {
               "type": "null"
@@ -2935,6 +6088,12 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "server_log": {
           "anyOf": [
             {
@@ -2948,10 +6107,12 @@
           "description": "the server's log"
         },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -2964,7 +6125,8 @@
         "listen",
         "address",
         "forwarding",
-        "server_log"
+        "server_log",
+        "report"
       ],
       "title": "ServeOutcome",
       "type": "object"
@@ -3031,7 +6193,7 @@
           "type": "string"
         },
         "state": {
-          "description": "its state, observed (web.md \u00a7 4)",
+          "description": "its state, observed",
           "doc": "web.md \u00a7 4",
           "type": "string"
         },
@@ -3094,11 +6256,19 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -3108,9 +6278,56 @@
         "plan",
         "status",
         "log",
-        "file"
+        "file",
+        "report"
       ],
       "title": "SetOutcome",
+      "type": "object"
+    },
+    "Settings": {
+      "additionalProperties": false,
+      "description": "config.toml's values a job run here needs, copied",
+      "properties": {
+        "activation": {
+          "$ref": "#/$defs/CopiedActivation",
+          "description": "how a job's shell gets ready"
+        },
+        "launch": {
+          "$ref": "#/$defs/CopiedLaunch",
+          "description": "how processes start"
+        }
+      },
+      "required": [
+        "launch",
+        "activation"
+      ],
+      "title": "Settings",
+      "type": "object"
+    },
+    "SeverityLook": {
+      "additionalProperties": false,
+      "description": "How a finding of one severity is marked (core.md \u00a7 10; web.md \u00a7 7.4).",
+      "properties": {
+        "color": {
+          "description": "the design token it is marked with: a colour of the theme",
+          "doc": "web.md \u00a7 10.1",
+          "type": "string"
+        },
+        "icon": {
+          "description": "its icon, by the icon set's name: a severity is told by its icon and its word, never by a colour alone",
+          "type": "string"
+        },
+        "label": {
+          "description": "what a person reads for it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "icon",
+        "color"
+      ],
+      "title": "SeverityLook",
       "type": "object"
     },
     "Shortcut": {
@@ -3159,6 +6376,12 @@
           },
           "type": "array"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "rows": {
           "description": "every key, in the model's order",
           "items": {
@@ -3170,7 +6393,8 @@
       "required": [
         "issues",
         "file",
-        "rows"
+        "rows",
+        "report"
       ],
       "title": "ShowResult",
       "type": "object"
@@ -3183,7 +6407,11 @@
           "type": "string"
         },
         "source": {
-          "description": "`config.toml`, or `unset`",
+          "description": "where its value came from",
+          "enum": [
+            "config.toml",
+            "unset"
+          ],
           "type": "string"
         },
         "unset": {
@@ -3202,6 +6430,61 @@
         "unset"
       ],
       "title": "ShowRow",
+      "type": "object"
+    },
+    "Shown": {
+      "additionalProperties": true,
+      "description": "What the page reads of every result (api.md \u00a7 2.3): its report and its findings, and, for an\noutcome, how it ended and its log \u2014 every other field the result's own, carried as it is.",
+      "properties": {
+        "issues": {
+          "description": "its findings",
+          "items": {
+            "$ref": "#/$defs/Issue"
+          },
+          "type": "array"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for an outcome, its operation directory"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data",
+          "doc": "web.md \u00a7 7.7"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "done",
+                "failed",
+                "planned"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for an outcome, how it ended; `planned` the outcome a plan foresees"
+        }
+      },
+      "required": [
+        "report",
+        "issues",
+        "status",
+        "log"
+      ],
+      "title": "Shown",
       "type": "object"
     },
     "Started": {
@@ -3241,6 +6524,19 @@
           },
           "type": "array"
         },
+        "next": {
+          "description": "for each server up and not answering: the line that dumps its child's stacks into the stacks log, and its restart",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "servers": {
           "items": {
             "$ref": "#/$defs/ServerRow"
@@ -3251,7 +6547,9 @@
       "required": [
         "issues",
         "servers",
-        "address"
+        "address",
+        "next",
+        "report"
       ],
       "title": "StatusResult",
       "type": "object"
@@ -3345,8 +6643,24 @@
           "description": "how many cases it makes",
           "type": "integer"
         },
-        "expands": {
-          "description": "whether it expands into cases now",
+        "engines": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the engines that can solve it: those that take its recipe's mesh at each geometry order of its cases; none where that cannot be told",
+          "doc": "models.md \u00a7 5.1"
+        },
+        "makes": {
+          "description": "whether `study prep` can make its cases now",
           "type": "boolean"
         },
         "name": {
@@ -3363,7 +6677,7 @@
             }
           ],
           "default": null,
-          "description": "why it does not expand"
+          "description": "why `study prep` cannot make them now"
         },
         "written": {
           "description": "every case of the study written, by its ID",
@@ -3375,9 +6689,10 @@
       },
       "required": [
         "name",
-        "expands",
+        "makes",
         "cases",
         "why",
+        "engines",
         "written"
       ],
       "title": "StudyCases",
@@ -3393,12 +6708,26 @@
           },
           "type": "array"
         },
+        "next": {
+          "description": "what the studies' states allow, each step once: the prep of each study whose cases it can make \u2014 none while an error stands, the first error being the next step",
+          "doc": "projects.md \u00a7 8",
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "type": "array"
+        },
         "project": {
           "description": "the project, by its path from the projects root",
           "type": "string"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "studies": {
-          "description": "each study, whether it expands and, if not, why",
+          "description": "each study, whether `study prep` can make its cases now and, if not, why",
           "items": {
             "$ref": "#/$defs/StudyRow"
           },
@@ -3408,7 +6737,9 @@
       "required": [
         "issues",
         "project",
-        "studies"
+        "studies",
+        "next",
+        "report"
       ],
       "title": "StudyList",
       "type": "object"
@@ -3421,8 +6752,24 @@
           "description": "how many cases it makes",
           "type": "integer"
         },
-        "expands": {
-          "description": "whether it expands into cases now",
+        "engines": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the engines that can solve it: those that take its recipe's mesh at each geometry order of its cases; none where that cannot be told",
+          "doc": "models.md \u00a7 5.1"
+        },
+        "makes": {
+          "description": "whether `study prep` can make its cases now",
           "type": "boolean"
         },
         "name": {
@@ -3439,21 +6786,22 @@
             }
           ],
           "default": null,
-          "description": "why it does not expand"
+          "description": "why `study prep` cannot make them now"
         }
       },
       "required": [
         "name",
-        "expands",
+        "makes",
         "cases",
-        "why"
+        "why",
+        "engines"
       ],
       "title": "StudyRow",
       "type": "object"
     },
     "Table": {
       "additionalProperties": false,
-      "description": "Rows under their columns (web.md \u00a7 7.5); a cell holds a value, or an `Action`.",
+      "description": "Rows under their columns (web.md \u00a7 7.5): each column a field of a row model, `column`; a cell\nholds a value, or an `Action` \u2014 a row's own next step.",
       "properties": {
         "columns": {
           "items": {
@@ -3484,7 +6832,7 @@
     },
     "Text": {
       "additionalProperties": false,
-      "description": "One line a person reads (web.md \u00a7 7.6).",
+      "description": "One line a person reads (web.md \u00a7 7.7).",
       "properties": {
         "kind": {
           "const": "text",
@@ -3502,10 +6850,15 @@
       "title": "Text",
       "type": "object"
     },
-    "ValidateOutcome": {
+    "ThemeChoice": {
       "additionalProperties": false,
+      "description": "One choice of the theme switch (web.md \u00a7 10.2): a theme of `theme.toml`, or the system's.",
       "properties": {
-        "gpu": {
+        "icon": {
+          "description": "its icon, by the icon set's name",
+          "type": "string"
+        },
+        "theme": {
           "anyOf": [
             {
               "type": "string"
@@ -3515,7 +6868,98 @@
             }
           ],
           "default": null,
-          "description": "its GPU qualification afterwards"
+          "description": "the theme it chooses, by its name in theme.toml; none: the system's, the default"
+        },
+        "title": {
+          "description": "what a person reads on it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "theme",
+        "title",
+        "icon"
+      ],
+      "title": "ThemeChoice",
+      "type": "object"
+    },
+    "Transition": {
+      "additionalProperties": false,
+      "description": "One move of the action machine: from a state, told an event, to a state.",
+      "properties": {
+        "from": {
+          "description": "the state it leaves",
+          "type": "string"
+        },
+        "on": {
+          "description": "what it is told",
+          "enum": [
+            "fills",
+            "reads",
+            "changes",
+            "planned",
+            "asks",
+            "empty",
+            "apply",
+            "started",
+            "done",
+            "failed",
+            "refused",
+            "defect",
+            "lost",
+            "discard"
+          ],
+          "type": "string"
+        },
+        "to": {
+          "description": "the state it reaches",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "on",
+        "to"
+      ],
+      "title": "Transition",
+      "type": "object"
+    },
+    "Unknown": {
+      "additionalProperties": false,
+      "description": "A fact that could not be measured, and why. Never read as zero or none.",
+      "properties": {
+        "unknown": {
+          "description": "why it could not be measured",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unknown"
+      ],
+      "title": "Unknown",
+      "type": "object"
+    },
+    "ValidateOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "gpu": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "not-run",
+                "passed",
+                "failed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its GPU qualification afterwards",
+          "doc": "envs.md \u00a7 5"
         },
         "issues": {
           "description": "findings a person should act on",
@@ -3552,6 +6996,12 @@
           "$ref": "#/$defs/Plan",
           "description": "the plan that was applied"
         },
+        "report": {
+          "$ref": "#/$defs/Report",
+          "description": "what a person reads, as data: built from the result's fields alone, deciding nothing; its findings follow its blocks",
+          "doc": "web.md \u00a7 7.7",
+          "readOnly": true
+        },
         "state": {
           "anyOf": [
             {
@@ -3566,10 +7016,12 @@
           "doc": "envs.md \u00a7 3.2"
         },
         "status": {
-          "description": "whether every step finished",
+          "description": "whether every step finished; `planned` for the outcome a plan foresees, nothing written yet",
+          "doc": "api.md \u00a7 2.3",
           "enum": [
             "done",
-            "failed"
+            "failed",
+            "planned"
           ],
           "type": "string"
         }
@@ -3582,9 +7034,143 @@
         "name",
         "state",
         "gpu",
-        "outcomes"
+        "outcomes",
+        "report"
       ],
       "title": "ValidateOutcome",
+      "type": "object"
+    },
+    "Viewer": {
+      "additionalProperties": false,
+      "description": "The document viewer (web.md \u00a7 2.3).",
+      "properties": {
+        "first": {
+          "description": "the document it opens on, by its path from the repository's root",
+          "type": "string"
+        }
+      },
+      "required": [
+        "first"
+      ],
+      "title": "Viewer",
+      "type": "object"
+    },
+    "Wire": {
+      "additionalProperties": false,
+      "description": "One reference, or one artifact flowing, of the type both ends declare, in one direction\neverywhere: from what gives or is named to what takes or names it (web.md \u00a7 7.6).",
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a reference, the address of the value that names; none for an artifact flowing"
+        },
+        "checked": {
+          "default": true,
+          "description": "false for a wire through a group whose kind waits on the built geometry, not checked yet",
+          "doc": "models.md \u00a7 11.2",
+          "type": "boolean"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "for a reference, the key that names it, within the naming part's file, as a finding names its key (`Issue.key`)",
+          "doc": "web.md \u00a7 7.6"
+        },
+        "source": {
+          "description": "the node that gives, or is named",
+          "type": "string"
+        },
+        "source_port": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the port it leaves by: an output, a group a component promises; none for a node named whole"
+        },
+        "target": {
+          "description": "the node that takes, or names",
+          "type": "string"
+        },
+        "target_port": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the port it reaches: the input it feeds, the field that names; none for a definition a value's text uses, or what an axis varies"
+        },
+        "type": {
+          "description": "what it carries: the `ref` annotation's type, `definition`, a node's kind, or an artifact type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "source_port",
+        "target",
+        "target_port",
+        "type",
+        "address",
+        "key",
+        "checked"
+      ],
+      "title": "Wire",
+      "type": "object"
+    },
+    "Words": {
+      "additionalProperties": false,
+      "description": "What a person reads on one of the page's own controls, and its icon.",
+      "properties": {
+        "help": {
+          "description": "what it does, in one sentence",
+          "type": "string"
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "its icon, by the icon set's name; none: its words alone"
+        },
+        "label": {
+          "description": "what a person reads on it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "icon",
+        "help"
+      ],
+      "title": "Words",
       "type": "object"
     },
     "Workspace": {
@@ -3596,7 +7182,7 @@
             "enum": [
               "project",
               "study",
-              "environment"
+              "target"
             ],
             "type": "string"
           },
@@ -3618,6 +7204,32 @@
           "description": "what it says before there is anything to show",
           "type": "string"
         },
+        "families": {
+          "description": "the families of node its document's graph draws \u2014 where an address of each is opened; none for a workspace of no graph",
+          "doc": "web.md \u00a7 2.4",
+          "items": {
+            "enum": [
+              "part",
+              "object",
+              "stage"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "first": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the operation it offers as the first step to take before there is anything to show, beside its context's choices; none: its choices alone",
+          "doc": "web.md \u00a7 10.2"
+        },
         "help": {
           "description": "how it is used",
           "type": "string"
@@ -3629,6 +7241,25 @@
         "key": {
           "description": "how the address names it",
           "type": "string"
+        },
+        "landing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Landing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "what it shows under the hero before its context is chosen; none: what it says first alone"
+        },
+        "panels": {
+          "description": "what it shows beside its document, in order",
+          "items": {
+            "$ref": "#/$defs/Panel"
+          },
+          "type": "array"
         },
         "tagline": {
           "description": "what it is, in one sentence",
@@ -3647,7 +7278,11 @@
         "help",
         "document",
         "context",
-        "empty"
+        "panels",
+        "empty",
+        "first",
+        "landing",
+        "families"
       ],
       "title": "Workspace",
       "type": "object"

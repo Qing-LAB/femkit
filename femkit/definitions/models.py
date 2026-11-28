@@ -6,14 +6,17 @@ description. `femkit schema docs` renders `docs/reference/` from them.
 
 from __future__ import annotations
 
+import functools
 import re
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, Field, FiniteFloat, PositiveInt, field_validator, model_validator
+from pydantic import (AfterValidator, Field, FiniteFloat, PositiveInt, ValidationInfo, field_validator,
+                      model_validator)
 
 from femkit.core.schema import SHA256, Model, check_placeholders, matching, placeholders, refuse
-from femkit.engines import GENERIC, registered
+from femkit.engines import GENERIC
 from femkit.engines.toolchain import LANGUAGES
 
 # ------------------------------------------------- channels.txt and control.txt
@@ -75,23 +78,25 @@ RelativePath = Annotated[str, AfterValidator(_relative_path)]
 class Packages(Model):
     conda: list[str] = Field(default_factory=list, description="conda constraints the manager solves")
     pip: list[str] = Field(default_factory=list,
-                           description="Python packages conda-forge does not have; not built yet, so an environment "
-                                       "that lists one does not load (definitions.md § 4.1)")
+                           description="Python packages from pip: none — an environment that lists one does not "
+                                       "load, since what pip installs sits outside the solve (definitions.md § 4.1)")
     forbid: list[str] = Field(
         default_factory=list, description="package families that must be absent from the solved lock"
     )
 
     @field_validator("pip")
     @classmethod
-    def _no_pip_yet(cls, pip: list[str]) -> list[str]:
+    def _no_pip(cls, pip: list[str]) -> list[str]:
         if pip:
-            raise ValueError("femkit installs nothing with pip yet: take each from conda-forge, or build it "
-                             "(definitions.md § 4.1)")
+            raise ValueError("femkit installs nothing with pip: what it installs sits outside the solve; take each "
+                             "from conda-forge, or build it (definitions.md § 4.1)")
         return pip
 
 
 class Provides(Model):
-    executables: list[str] = Field(default_factory=list, description="executables the install's audit step finds in the prefix")
+    executables: list[str] = Field(default_factory=list, description="executables the install's audit step finds in "
+                                                                     "the prefix, beyond its toolchain's tools, which "
+                                                                     "the toolchain step proves")
     modules: list[str] = Field(default_factory=list, description="Python modules the install's audit step imports")
 
 
@@ -135,16 +140,32 @@ class Source(Model):
     )
 
 
-# The options the framework owns (definitions.md § 4.2), with the CMake type of each it sets; those
-# without one it leaves at CMake's own default. A definition may declare none of them.
-FRAMEWORK_OPTIONS: dict[str, str | None] = {
-    "CMAKE_BUILD_TYPE": "STRING", "BUILD_TESTING": "BOOL",
-    "CMAKE_INSTALL_PREFIX": "PATH", "CMAKE_PREFIX_PATH": "PATH", "CMAKE_FIND_ROOT_PATH": "PATH",
-    "CMAKE_FIND_ROOT_PATH_MODE_PACKAGE": "STRING", "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY": "STRING",
-    "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE": "STRING", "CMAKE_FIND_ROOT_PATH_MODE_PROGRAM": "STRING",
-    "CMAKE_FIND_USE_PACKAGE_REGISTRY": "BOOL", "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY": "BOOL",
-    "CMAKE_INSTALL_RPATH_USE_LINK_PATH": "BOOL", "CMAKE_INSTALL_RPATH": "STRING",
-    "CMAKE_CUDA_ARCHITECTURES": "STRING",
+@dataclass(frozen=True)
+class FrameworkOption:
+    """A CMake cache entry the framework sets on every build: its type and its value, `{prefix}`,
+    `{rpath}` (the build's, under the prefix) and `{cuda_architectures}` filled when it is
+    configured; ``cuda``: set only on a build compiled for CUDA."""
+
+    type: str
+    value: str
+    cuda: bool = False
+
+
+# The options the framework owns (definitions.md § 4.2): each it sets, in order, and those it leaves
+# at CMake's own default (None). A definition may declare none of them.
+FRAMEWORK_OPTIONS: dict[str, FrameworkOption | None] = {
+    "CMAKE_BUILD_TYPE": FrameworkOption("STRING", "Release"), "BUILD_TESTING": FrameworkOption("BOOL", "ON"),
+    "CMAKE_INSTALL_PREFIX": FrameworkOption("PATH", "{prefix}"), "CMAKE_PREFIX_PATH": FrameworkOption("PATH", "{prefix}"),
+    "CMAKE_FIND_ROOT_PATH": FrameworkOption("PATH", "{prefix}"),
+    "CMAKE_FIND_ROOT_PATH_MODE_PACKAGE": FrameworkOption("STRING", "ONLY"),
+    "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY": FrameworkOption("STRING", "ONLY"),
+    "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE": FrameworkOption("STRING", "ONLY"),
+    "CMAKE_FIND_ROOT_PATH_MODE_PROGRAM": FrameworkOption("STRING", "ONLY"),
+    "CMAKE_FIND_USE_PACKAGE_REGISTRY": FrameworkOption("BOOL", "OFF"),
+    "CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY": FrameworkOption("BOOL", "OFF"),
+    "CMAKE_INSTALL_RPATH_USE_LINK_PATH": FrameworkOption("BOOL", "ON"),
+    "CMAKE_INSTALL_RPATH": FrameworkOption("STRING", "{rpath}"),
+    "CMAKE_CUDA_ARCHITECTURES": FrameworkOption("STRING", "{cuda_architectures}", cuda=True),
     "CMAKE_GENERATOR": None, "CMAKE_BUILD_RPATH": None, "CMAKE_SKIP_RPATH": None,
     "CMAKE_SKIP_INSTALL_RPATH": None, "CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY": None,
     "CMAKE_EXPORT_NO_PACKAGE_REGISTRY": None,
@@ -205,6 +226,9 @@ class Build(Model):
 
 
 CHECK_PLACEHOLDERS = frozenset({"prefix", "work", "ranks", "threads"})
+#: What a check runs on, each a field of the check and the quantity its reader reports of the run:
+#: the runner compares the two (definitions.md § 5.2), so `expect` never names them.
+RUN_QUANTITIES = ("ranks", "threads")
 
 
 class Expectation(Model):
@@ -260,6 +284,9 @@ class Check(Model):
         problems = [((name,), f"a {self.kind} check needs {name}") for name in needs if not getattr(self, name)]
         if not self.upstream_verdict and self.kind != "ctest":
             problems.append((("upstream_verdict",), "only a ctest has an upstream verdict to set aside"))
+        problems += [(("expect", name), f"the runner compares the {name} the reader reports with the check's own "
+                                        f"`{name}`: `expect` does not name them") for name in RUN_QUANTITIES
+                     if name in self.expect]
         refuse(type(self).__name__, problems)
         return self
 
@@ -285,17 +312,23 @@ class Agreement(Model):
 
 class EnvironmentDefinition(Model):
     """`femkit/data/environments/<name>.toml` — one environment: an engine's (definitions.md § 4),
-    or a tool's, which states its `version_command` instead of an `engine` (§ 4.7)."""
+    or a tool's, which states no `engine` (§ 4.7)."""
 
     engine: str | None = Field(default=None, description="the registered engine adapter ID; absent for a tool "
                                                          "environment")
-    version_command: list[str] | None = Field(default=None, description="a tool environment's: the command, run "
-                                              "in the prefix, whose last line of output is its version")
-    version: str = Field(description="what the version probe must report")
+    version_command: list[str] = Field(min_length=1, description="the command, run in the prefix, that states its "
+                                       "version: the last line it prints, or what its engine's version reader "
+                                       "reads where that output is irregular (definitions.md § 4)")
+    version: str = Field(description="what the version command must state")
     control_packages: bool = Field(default=False, description="a tool environment's: the control environment's "
                                    "packages (control.txt), solved with its own (definitions.md § 4.7)")
     description: str = Field(description="one line for `env list`")
-    default: bool = Field(default=False, description="part of `env install --all`")
+    default: bool = Field(default=False, description="one of the default environments, which `env install` with "
+                                                     "`all`, and `env bootstrap`, install")
+    projects: bool = Field(default=False, description="a tool environment's: it takes, beside its own packages, "
+                           "the conda packages every project under the projects root declares for the scripts that "
+                           "run in it — solved with its own when it is built, delivered into it as it stands when a "
+                           "project adds one — never in its install fingerprint (definitions.md § 4.7)")
     thread_variables: list[str] = Field(
         default_factory=list, description="variables set to a run's threads per rank"
     )
@@ -332,29 +365,48 @@ class EnvironmentDefinition(Model):
         """A tool environment: it runs no engine (definitions.md § 4.7)."""
         return self.engine is None
 
-    @field_validator("engine")
-    @classmethod
-    def _engine_registered(cls, engine: str | None) -> str | None:
-        known = registered()
-        if engine is not None and engine not in known:
-            raise ValueError(f"no engine adapter registers {engine!r} (registered: {', '.join(sorted(known)) or 'none'})")
-        return engine
+    @property
+    def holds_python(self) -> bool:
+        """It provides Python, on which femkit's own programs run in it: the minor control.txt
+        names (definitions.md §§ 3, 4.7)."""
+        return "python" in self.provides.executables
+
+    @property
+    def held(self) -> frozenset[str]:
+        """Every package its recipe declares or pins, by name: its own constraints — the control
+        environment's among them where it takes them — and Python, whose minor control.txt pins where
+        it provides Python. What goes into it is the recipe's alone (envs.md § 4.4): a package a
+        project declares under one of these names is never delivered (definitions.md § 4.7)."""
+        names = {CONSTRAINT.match(c).group("name") for c in self.packages.conda if CONSTRAINT.match(c)}
+        return frozenset(names | ({"python"} if self.holds_python else set()))
 
     @model_validator(mode="after")
-    def _references(self) -> "EnvironmentDefinition":
+    def _references(self, info: ValidationInfo) -> "EnvironmentDefinition":
+        """Every cross-reference, at its key path; the engine and its readers against `engines`,
+        the registered engines with the reader IDs each registers, when the context gives them
+        (core.md § 2: an outside fact arrives in the context, never from a global)."""
+        engines = (info.context or {}).get("engines")
         problems: list[tuple[tuple, str]] = []
-        if (self.engine is None) == (self.version_command is None):
-            problems.append((("engine",), "give an `engine`, or a tool's `version_command` (definitions.md § 4.7)"))
+        if engines is not None and self.engine is not None and self.engine not in engines:
+            problems.append((("engine",), f"no engine adapter registers {self.engine!r} "
+                                          f"(registered: {', '.join(sorted(engines)) or 'none'})"))
         if self.tool:
-            for key in ("toolchain", "sources", "builds", "checks", "agreements", "cuda", "thread_variables",
-                        "fixed_variables"):
+            for key in ("toolchain", "sources", "builds", "agreements", "cuda", "thread_variables", "fixed_variables"):
                 if getattr(self, key):
                     problems.append(((key,), "a tool environment has none: it runs no engine (definitions.md § 4.7)"))
-            if self.default:
-                problems.append((("default",), "a tool environment is installed when asked, never by default"))
+            for n, c in enumerate(self.checks):  # no build or source to test, no engine to read with
+                if c.kind != "command":
+                    problems.append((("checks", n, "kind"), f"a tool environment's checks are commands, not {c.kind} "
+                                                             "(definitions.md § 4.7)"))
+                if c.read not in GENERIC:
+                    problems.append((("checks", n, "read"), f"no reader {c.read!r} for a tool environment, which has "
+                                     f"no engine: the generic readers are {', '.join(sorted(GENERIC))}"))
         elif self.control_packages:
             problems.append((("control_packages",), "only a tool environment takes the control environment's "
                                                    "packages; an engine's are its own"))
+        if not self.tool and self.projects:
+            problems.append((("projects",), "only a tool environment takes the packages projects declare; a "
+                                            "solver's stay as femkit ships them (definitions.md § 4.7)"))
         for var in sorted(set(self.thread_variables) & set(self.fixed_variables)):
             problems.append((("fixed_variables", var), "also in thread_variables; a variable is in one or the other"))
         part = self.cuda_part
@@ -420,7 +472,7 @@ class EnvironmentDefinition(Model):
         cycle = _cycle({b.id: b.after for b in [*self.builds, *part.builds]})
         if cycle:
             problems.append((("builds",), f"builds depend on each other in a cycle: {' -> '.join(cycle)}"))
-        readers = registered().get(self.engine)
+        readers = engines.get(self.engine) if engines is not None and self.engine is not None else None
         if readers is not None:
             for n, c in enumerate(self.checks):
                 if c.read not in readers | GENERIC.keys():
@@ -510,6 +562,11 @@ Launcher = Annotated[list[str], AfterValidator(_launcher),
                      Field(json_schema_extra={"placeholders": sorted(LAUNCH_PLACEHOLDERS)})]
 
 
+#: A conda constraint as femkit and a project write one: the package's name, then the version it is
+#: held to if any, as conda reads it — `numpy`, `netcdf4=1.7.4`, `scikit-image>=0.24`.
+CONSTRAINT = re.compile(r"(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?P<version>\s*[=<>!~][^\s]*)?")
+
+
 # ----------------------------------------------------------------------- kinds
 
 def _manager_argv(*passes: str) -> Any:
@@ -532,8 +589,8 @@ def _manager_argv(*passes: str) -> Any:
 
 
 ManagerArgv = _manager_argv()                    # the version and the queries: the manager alone
-PrefixArgv = _manager_argv("prefix")             # a command on one prefix
-LockArgv = _manager_argv("prefix", "file")       # a create from a saved lock
+NamedArgv = _manager_argv("name")                # a command on one environment, by its name (envs.md § 1)
+LockArgv = _manager_argv("name", "file")         # a create from a saved lock
 
 
 def _channel(argv: list[str]) -> list[str]:
@@ -553,35 +610,78 @@ class JsonQuery(Model):
                                              "of them the object has, where versions of a manager differ")
 
 
+class NamesQuery(JsonQuery):
+    """Where the manager says its own name for each environment it lists (envs.md § 1)."""
+
+    name: str = Field(description="the key, in each listed prefix's entry of the answer, of the manager's own name "
+                                  "for it — empty for one outside the folders where it keeps environments")
+
+
+class Refusal(Model):
+    """A setting of the person's that nothing femkit's commands carry sets aside (envs.md § 4.4)."""
+
+    when: bool | str | None = Field(default=None, description="the value refused; none: any value")
+    change: str = Field(description="why it is refused, and what the person changes in the file that holds it")
+
+
+class Settings(Model):
+    """The person's own settings of a manager that change what a create, a delivery or a create from a
+    lock puts into an environment, and where the manager says it read each (envs.md § 4.4)."""
+
+    argv: ManagerArgv = Field(description="prints one JSON object: each place the manager reads settings from — a "
+                                          "file, its variables — with the settings it read there, by their keys")
+    neutralised: dict[str, str] = Field(default_factory=dict, description="each setting femkit's commands set aside, "
+                                        "by its key, with how: the flag or the form of channel each such command "
+                                        "carries")
+    refused: dict[str, Refusal] = Field(default_factory=dict, description="each setting nothing sets aside, by its "
+                                        "key: an install is refused before any create while it is set so")
+
+    @model_validator(mode="after")
+    def _once(self) -> "Settings":
+        both = sorted(set(self.neutralised) & set(self.refused))
+        if both:
+            raise ValueError(f"{', '.join(both)}: a setting is set aside or refused, never both")
+        return self
+
+
 def _activation_line(argv: list[str]) -> list[str]:
     for arg in argv:
-        check_placeholders(arg, frozenset({"prefix"}))
-    if not any("{prefix}" in a for a in argv):
-        raise ValueError("must pass {prefix}")
+        check_placeholders(arg, frozenset({"name"}))
+    if not any("{name}" in a for a in argv):
+        raise ValueError("must pass {name}")
     return argv
 
 
 ActivationLine = Annotated[list[str], AfterValidator(_activation_line),
-                           Field(json_schema_extra={"placeholders": ["prefix"]})]
+                           Field(json_schema_extra={"placeholders": ["name"]})]
 
 
 class Activation(Model):
     """The two ways a shell enters a prefix with this manager; this machine's activation.command
     chooses one (config.md § 3.1; envs.md § 6.2)."""
 
-    hook: str = Field(description="the file whose sourcing defines the activation in a fresh shell, under {root} "
-                                  "(the manager's root query); checked on disk, never derived from the "
-                                  "executable's path, which on a cluster may be a module's wrapper",
-                      json_schema_extra={"placeholders": ["root"]})
-    with_hook: ActivationLine = Field(description="the shell function, e.g. `conda activate {prefix}`: it "
-                                                  "exists once the hook is sourced, which femkit does first")
-    without_hook: ActivationLine = Field(description="the activate script on PATH, `source activate {prefix}`, "
-                                                     "which needs no hook — what a cluster's module provides")
+    hook: ManagerArgv = Field(description="the manager's own command that prints its shell hook for bash, which a "
+                                          "fresh shell evaluates before `with_hook`: the manager's way, never a "
+                                          "file guessed from where its executable lies, which on a cluster may be "
+                                          "a module's wrapper")
+    with_hook: ActivationLine = Field(description="the shell function, e.g. `conda activate {name}`: it "
+                                                  "exists once the hook is evaluated, which femkit does first")
+    without_hook: ActivationLine = Field(description="the activate script on PATH, `source activate {name}`, "
+                                                     "which needs no hook — what a cluster's module provides "
+                                                     "where the preamble puts it on PATH")
+    script: str = matching(r"[A-Za-z0-9._-]+",
+                           description="the script `without_hook` sources, found on PATH: a run script stops, saying "
+                                       "so, where nothing put it there after its clean start",
+                           json_schema_extra={"doc": "jobs.md § 4"})
+    active: str = matching(r"[A-Z][A-Z0-9_]*",
+                           description="the variable either form sets to the prefix it entered, which a run "
+                                       "script reads to verify it entered the prefix it was prepared for",
+                           json_schema_extra={"doc": "jobs.md § 4"})
+    executable: str = matching(r"[A-Z][A-Z0-9_]*",
+                               description="the variable either form sets to the manager's own executable, by which "
+                                           "femkit finds the manager in a shell where it is initialised",
+                               json_schema_extra={"doc": "envs.md § 7.1"})
 
-    @field_validator("hook")
-    @classmethod
-    def _hook(cls, text: str) -> str:
-        return check_placeholders(text, frozenset({"root"}))
 
 
 class ManagerKind(Model):
@@ -596,22 +696,46 @@ class ManagerKind(Model):
     platform: JsonQuery | None = Field(
         default=None, description="the platform an environment built by this manager is for, e.g. linux-64", json_schema_extra={"doc": "jobs.md § 9.1"}
     )
-    run: PrefixArgv = Field(description="runs the command that follows inside {prefix}")
+    run: NamedArgv = Field(description="runs the command that follows inside the environment {name}")
     activate: Activation = Field(description="how a shell enters a prefix: the day-to-day entry line, the run script")
-    create: PrefixArgv = Field(
-        description="creates {prefix} from constraints, overriding the person's own channels and default "
+    environments: JsonQuery = Field(description="every environment the manager lists, by prefix: where femkit asks "
+                                                "the prefix of one by its name", json_schema_extra={"doc": "envs.md § 1"})
+    names: NamesQuery | None = Field(default=None, description="the manager's own name for each environment it "
+                                     "lists; where it says none, an environment is known by its name only in "
+                                     "`envs_dirs`", json_schema_extra={"doc": "envs.md § 1"})
+    envs_dirs: JsonQuery = Field(description="the folders where the manager keeps environments by their names, in "
+                                             "its order: where it would make one, and where a listed one is named",
+                                 json_schema_extra={"doc": "envs.md § 1"})
+    settings: Settings | None = Field(default=None, description="the person's own settings that change what a "
+                                      "create installs, where the manager read each, and how each is set aside or "
+                                      "refused; none where no way to read them is measured",
+                                      json_schema_extra={"doc": "envs.md § 4.4"})
+    create: NamedArgv = Field(
+        description="creates the environment {name}, where the manager keeps environments, from constraints, "
+                    "overriding the person's own channels and default "
                     "packages; `channel` follows once per channel, then the constraints — for the control "
                     "environment, `--file` and its package list"
     )
     channel: ChannelArgs = Field(description="the arguments that add one channel, e.g. [\"-c\", \"{channel}\"]")
-    create_from_lock: LockArgv = Field(description="creates {prefix} from the exact package list in {file}")
-    export_lock: PrefixArgv = Field(description="prints the exact package list of {prefix}, one URL a line")
-    remove: PrefixArgv = Field(description="removes {prefix}")
+    create_from_lock: LockArgv = Field(description="creates the environment {name} from the exact package list in "
+                                                   "{file}")
+    install: NamedArgv = Field(
+        description="installs the constraints that follow into the environment {name} as it stands, overriding the "
+                    "person's own "
+                    "channels; `channel` follows once per channel, then the constraints: what delivers a package a "
+                    "project adds into `postprocess`", json_schema_extra={"doc": "envs.md § 4.1"})
+    export_lock: NamedArgv = Field(description="prints the exact package list of the environment {name}, one URL a "
+                                               "line")
+    remove: NamedArgv = Field(description="removes the environment {name}")
     channels_named: list[Literal["create_from_lock", "remove"]] = Field(
         default_factory=list,
         description="the commands beside `create` that name the declared channels, `channel` once per channel after "
                     "the command: conda 26 otherwise checks the terms of its base configuration's defaults and stops; "
                     "mamba 2.9.0 refuses channels on a removal (both measured, envs.md § 4.4)")
+    environment: str = matching(r"[A-Za-z0-9._-]+",
+                                description="the folder every environment this manager makes holds, by which a "
+                                            "prefix it lists is known for a manager environment",
+                                json_schema_extra={"doc": "envs.md § 3.1"})
 
     @field_validator("version_pattern")
     @classmethod
@@ -623,6 +747,85 @@ class ManagerKind(Model):
         if compiled.groups < 1:
             raise ValueError("needs a group that captures the version")
         return pattern
+
+
+class Naming(Model):
+    """`femkit/data/naming.toml` — every environment's name with the package manager (envs.md § 1)."""
+
+    control: str = matching(r"[A-Za-z0-9][A-Za-z0-9._-]*", description="the control environment's name")
+    other: str = Field(description="every other environment's name, `{name}` its name in femkit",
+                       json_schema_extra={"placeholders": ["name"]})
+
+    @field_validator("other")
+    @classmethod
+    def _named(cls, text: str) -> str:
+        check_placeholders(text, frozenset({"name"}))
+        if "{name}" not in text:
+            raise ValueError("must pass {name}: two environments would have one name")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", text.replace("{name}", "x")):
+            raise ValueError("a name is a letter or digit, then letters, digits, '.', '_' or '-'")
+        return text
+
+
+#: A variable's name, or a pattern of names where `*` stands for any text (envs.md § 4.4): what the
+#: clean start and a scheduler kind's `passes` name.
+VARIABLE_PATTERN = r"[A-Za-z_*][A-Za-z0-9_*]*"
+
+
+def meet(a: str, b: str) -> bool:
+    """Whether some variable's name is named by both patterns, each its letters and `*`, any text."""
+    @functools.cache
+    def from_(i: int, j: int) -> bool:
+        if i == len(a) or j == len(b):
+            return set(a[i:] + b[j:]) <= {"*"}
+        if a[i] == "*":
+            return from_(i + 1, j) or from_(i, j + 1)
+        if b[j] == "*":
+            return from_(i, j + 1) or from_(i + 1, j)
+        return a[i] == b[j] and from_(i + 1, j + 1)
+    return from_(0, 0)
+
+
+class ProcessStart(Model):
+    """`femkit/data/process.toml` — how every process femkit starts for an environment begins
+    (envs.md § 4.4): the invocation's variables `passes` names, none `removes` names, `PATH` the
+    system's, then `sets`. Read by `femkit/envs/start.py` alone, and by the install script."""
+
+    path: str = matching(r"/[^:]*(:/[^:]*)*", description="`PATH` at the start: the system's own folders, where the "
+                                                          "manager's wrapper finds its shell")
+    passes: list[Annotated[str, matching(VARIABLE_PATTERN)]] = Field(
+        description="the invocation's variables kept, each a name or a pattern of names")
+    removes: list[Annotated[str, matching(VARIABLE_PATTERN)]] = Field(
+        description="variables never kept, even where a pattern of `passes` takes them: the outside Python, "
+                    "another active environment, library injection, the outside toolchain")
+    sets: dict[Annotated[str, matching(r"[A-Za-z_][A-Za-z0-9_]*")], str] = Field(
+        default_factory=dict, description="variables set at the start, each with its value")
+    femkit_sheds: list[Annotated[str, matching(r"[A-Za-z_][A-Za-z0-9_]*")]] = Field(
+        default_factory=list, description="what femkit's own process — the `femkit` command — sheds of the shell "
+                                          "it is typed in, each a name: it keeps the rest, so it sees the machine it "
+                                          "probes as the person does, and every process it starts begins clean")
+    function: str = Field(description="how a shell function a scheduler kind declares is passed among the "
+                                      "variables, `{name}` its name: bash's own spelling of an exported function",
+                          json_schema_extra={"placeholders": ["name"]})
+
+    @model_validator(mode="after")
+    def _no_path(self) -> "ProcessStart":
+        named = [*self.passes, *self.sets]
+        if "PATH" in named:
+            raise ValueError("`PATH` is `path`, the system's own: it is neither passed nor set")
+        idle = [r for r in self.removes if not any(meet(r, p) for p in self.passes)]
+        if idle:
+            raise ValueError(f"removes {', '.join(idle)}, which no pattern of passes takes: a variable no pattern "
+                             "passes is never kept, so the entry removes nothing")
+        return self
+
+    @field_validator("function")
+    @classmethod
+    def _function(cls, text: str) -> str:
+        check_placeholders(text, frozenset({"name"}))
+        if "{name}" not in text:
+            raise ValueError("must pass {name}")
+        return text
 
 
 #: The job commands a scheduler kind names, by role (jobs.md § 7): send a job, ask
@@ -657,6 +860,15 @@ class SchedulerKind(Model):
         description=f"role ({', '.join(JOB_ROLES)}) -> the variable a job sees; "
                     "`id` set means the process runs inside a job",
     )
+    passes: list[Annotated[str, matching(VARIABLE_PATTERN)]] = Field(
+        default_factory=list,
+        description="the variables a job of this kind sees that a clean start passes, each a name or a pattern of "
+                    "names — `SLURM_*`", json_schema_extra={"doc": "envs.md § 4.4"})
+    functions: list[Annotated[str, matching(r"[A-Za-z_][A-Za-z0-9_]*")]] = Field(
+        default_factory=list,
+        description="the shell functions a job of this kind needs passed, by name — the module system's `module`, "
+                    "which a preamble's `module load` calls; a clean start passes these and no other",
+        json_schema_extra={"doc": "envs.md § 4.4"})
     interactive: str | None = Field(
         default=None,
         description="the command that opens an interactive allocation, named by bootstrap's login-node "

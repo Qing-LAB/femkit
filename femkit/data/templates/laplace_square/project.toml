@@ -17,9 +17,32 @@ components = ["square"]
 # the project's studies, by name: each the file `studies/<name>.toml`
 studies = ["check"]
 
-# the shared parameters, by name: each a quantity with its unit, or an expression of other parameters with `+`, `-`, `*`, `/` and parentheses (manual: 3 · Write each part)
-[parameters]
+# what the project's observables scripts need beyond femkit's `postprocess` environment, so a copy of the project carries it (manual: 3 · Write each part)
+# [postprocess]
+# the conda packages its scripts import beyond what femkit's `postprocess` environment holds, each installed into it on every machine: a package by its name, which a script imports by that name, or `{ conda = "scikit-image", module = "skimage" }` for one it imports by another
+# packages = ["pint"]
+
+# the project's definitions, by name: each a number of its type with its unit, written as its value or computed by a function in `definitions.py`; every other part uses one by its name (manual: 3 · Write each part)
+[definitions]
+
 # the square's side; its script reads it
-side = "1 m"
+[definitions.side]
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its value, a number of its type — a `float` may be written `10`, a `complex` as `[real, imaginary]` — its unit written apart, in `unit`; else `function`
+value = 1
+# else the name of the function in the project's `definitions.py` that computes it: it takes no arguments, reads every other definition as `defs.<name>`, a plain number in SI units — an angle in degrees — and returns its own the same way
+# function = "side"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "m"
+
 # the potential the right side is held at
-bias = "1 V"
+[definitions.bias]
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its value, a number of its type — a `float` may be written `10`, a `complex` as `[real, imaginary]` — its unit written apart, in `unit`; else `function`
+value = 1
+# else the name of the function in the project's `definitions.py` that computes it: it takes no arguments, reads every other definition as `defs.<name>`, a plain number in SI units — an angle in degrees — and returns its own the same way
+# function = "bias"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "V"

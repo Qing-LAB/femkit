@@ -1,0 +1,5 @@
+/* Sentence: a command inside it as code. */
+.sentence__code {
+  font-family: var(--type-mono); font-size: var(--type-size-sm); padding: 0 var(--space-1);
+  background: var(--color-code); border-radius: var(--size-radius-sm);
+}

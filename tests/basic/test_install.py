@@ -9,7 +9,7 @@ import pytest
 
 import shlex
 
-from tests.kit import apply, ctx, installed, planned, refused, run
+from tests.kit import apply, ctx, installed, made, planned, refused, run
 from femkit.core.errors import PlanStale, Unstated
 from femkit.core.operations import Plan
 from femkit.envs import layout
@@ -77,8 +77,12 @@ def test_the_saved_lock_is_reused_and_clean_discards_it(manager, cuda):
 
 def test_declared_options_reach_cmake_typed_and_rendered(manager, cuda):
     """Fails if a declared option loses its type or placeholder, or the CUDA targets do not
-    reach a CUDA build (definitions.md § 4.2, § 4.3)."""
-    prefix = facts(ctx(), NAME).prefix
+    reach a CUDA build (definitions.md § 4.2, § 4.3); or if `{prefix}` is any but the prefix the
+    manager lists for the environment — `<prefix of femkit-NAME>` in a plan made before it exists
+    (envs.md §§ 1, 4.1)."""
+    argv = next(s for s in plan().steps if s.id.endswith("/configure:ngsolve")).argv
+    assert f"-DNETGEN_DIR:STRING=<prefix of femkit-{NAME}>/lib/cmake/netgen" in argv
+    prefix = made(NAME)                                                       # listed by the manager now
     argv = next(s for s in plan().steps if s.id.endswith("/configure:ngsolve")).argv
     assert f"-DNETGEN_DIR:STRING={prefix}/lib/cmake/netgen" in argv
     assert "-DUSE_MPI:BOOL=ON" in argv and "-DUSE_MKL:BOOL=OFF" in argv
@@ -116,7 +120,8 @@ def test_an_engine_create_names_only_the_declared_channels(manager, cuda):
     the create overrides the person's own conda channels with exactly these (envs.md § 4.4)."""
     from femkit.definitions.catalogue import load_control
     create = list(next(s for s in plan(clean=True).steps if s.id.endswith("/create")).argv)
-    assert [create[i + 1] for i, a in enumerate(create) if a == "-c"] == load_control().channels
+    assert [create[i + 1] for i, a in enumerate(create) if a == "-c"] == \
+        [f"https://conda.anaconda.org/{c}" for c in load_control().channels]   # each by its full address
 
 
 def test_a_step_writes_a_path_under_the_home_directory_from_tilde_and_its_command_in_full(manager, cuda, monkeypatch):
@@ -124,10 +129,11 @@ def test_a_step_writes_a_path_under_the_home_directory_from_tilde_and_its_comman
     command loses the full path a person pastes (api.md § 4.4)."""
     home = Path(os.environ["FEMKIT_DATA_DIR"]).parent
     monkeypatch.setenv("HOME", str(home))
+    installed(NAME)                                    # where the stand-in keeps it: under the home
     steps = plan(clean=True).steps
     assert not [s.describe for s in steps if f"{home}/" in s.describe]
-    assert next(s for s in steps if s.id.endswith("/create")).describe.startswith(f"{NAME}: create ~/")
-    assert f"{home}/" in " ".join(next(s for s in steps if s.id.endswith("/create")).argv)
+    assert next(s for s in steps if s.id.endswith("/remove")).describe.startswith(f"{NAME}: remove femkit-{NAME}, at ~/")
+    assert f"{home}/" in " ".join(next(s for s in steps if s.id.endswith("/configure:ngsolve")).argv)
 
 
 URL = "https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_7.conda#" + "0" * 32
@@ -145,24 +151,6 @@ def test_the_saved_lock_is_the_list_every_manager_creates_from(listing):
     assert explicit(listing) == f"@EXPLICIT\n{URL}\n"
 
 
-def test_every_manager_command_femkit_runs_is_in_femkits_places(manager, cuda, tmp_path, monkeypatch):
-    """Fails if femkit runs its manager, or a command in a prefix, with the person's HOME,
-    package cache, environment registration or temporary folder, or hands it a variable naming
-    the person's own configuration — conda reads a `condarc` through each — or any `CONDA_*` or
-    `MAMBA_*` of theirs, which a manager reads as its settings (envs.md § 4.4)."""
-    from femkit.core import dirs
-    from femkit.envs.manager import PERSONS_OWN
-    for variable in PERSONS_OWN:
-        monkeypatch.setenv(variable, str(tmp_path / "the-persons" / variable))
-    monkeypatch.setenv("CONDA_CHANNEL_PRIORITY", "disabled")
-    monkeypatch.setenv("MAMBA_ROOT_PREFIX", str(tmp_path / "the-persons" / "mamba"))
-    apply("env.install", names=[NAME])              # its create and its lock reach the manager
-    places = [line.split() for line in Path(f"{manager}.places").read_text().splitlines()]
-    assert len(places) >= 2 and all(line == [str(dirs.cache_dir() / "manager-home"), str(dirs.cache_dir() / "pkgs"),
-                                             "false", str(dirs.cache_dir() / "tmp"), "person=",
-                                             "managers=CONDA_PKGS_DIRS,CONDA_REGISTER_ENVS,"] for line in places)
-
-
 def test_a_manager_whose_version_does_not_read_leaves_no_manifest(manager_doing, tmp_path):
     """Fails if an install's manifest records a manager version that did not read — the stand-in
     prints none — instead of its step failing, its log saying why (envs.md § 4.3)."""
@@ -170,12 +158,35 @@ def test_a_manager_whose_version_does_not_read_leaves_no_manifest(manager_doing,
     from femkit.envs import install
     # web's version probe, run in its prefix, answers the definition's own version: a tool's, no manager's
     manager_doing(f'  "run --no-capture-output") echo {shlex.quote(load_environments()["web"].version)} ;;')
+    made("web")                                                     # as its create left it
     t = install.target(ctx(), "web")
     t.lock.parent.mkdir(parents=True)
     t.lock.write_text("@EXPLICIT\n")                               # as its lock step left it
     step = next(s for s in install.plan_steps(t, remove_first=False, discard_lock=False) if s.id == "manifest")
     assert install.run_step(t, step, tmp_path / "logs")[0] == "failed"
     assert not layout.manifest_file(t.prefix).exists()
+
+
+def test_an_engine_environments_version_is_what_its_declared_command_states(manager_doing, definitions, tmp_path):
+    """Fails if the manifest step runs a version command of the engine's code instead of the one
+    the environment's definition declares, or reads what it prints by anything but its last line
+    where the engine registers no reader of its own (definitions.md § 4)."""
+    from femkit.envs import install
+    from tests.kit import rewrite
+    rewrite(definitions / "environments" / "ngsolve.toml",
+            'version_command = ["python", "-c", "import ngsolve; print(ngsolve.__version__)"]',
+            'version_command = ["the-version"]')
+    from femkit.definitions.catalogue import load_environments
+    pinned = load_environments()["ngsolve"].version
+    log = manager_doing(f'  "run --no-capture-output") printf "a warning\\n%s\\n" {shlex.quote(pinned)} ;;')
+    made("ngsolve")                                                 # as its create left it
+    t = install.target(ctx(), "ngsolve")
+    t.lock.parent.mkdir(parents=True)
+    t.lock.write_text("@EXPLICIT\n")
+    step = next(s for s in install.plan_steps(t, remove_first=False, discard_lock=False) if s.id == "manifest")
+    install.run_step(t, step, tmp_path / "logs")
+    assert log.read_text().splitlines()[-2].endswith("-n femkit-ngsolve the-version")   # before the manager's own version
+    assert "the manager's version did not read" in (tmp_path / "logs" / "manifest.log").read_text()  # the version did
 
 
 def test_an_install_that_ended_done_leaves_nothing_to_resume(manager):

@@ -1,0 +1,82 @@
+# The states of one run (jobs.md § 5.2), observed from the facts femkit/jobs/runs.py, the run
+# door, gathers and names — the earlier tool's order of evidence: `launched_unreadable`,
+# launched.json there and not reading; `launched`, launched.json there; `ended_ok`, ended.json
+# reading with status 0; `ended_not_ok`, ended.json with another status, or not reading;
+# `checked_passed`, checked.json reading and passed; `checked_not_passed`, checked.json failed or
+# not reading; `checked`, checked.json there; `check_stated`, the run's own job.toml states a check
+# (or does not read); `job_over`, the job's word says it is over — gone.json, read or not;
+# `monitor_closed`, the monitor's closing record in monitor.log; `wall_passed`, started, sent with
+# a wall, and its newest own write older than it; `started`, started.json, read or not. A run's
+# start comes before its launch record, and silence is not death. The first rule that holds gives
+# the state.
+
+[states]
+unreadable = "its launch record, launched.json, does not read"
+finished = "ended.json with status 0, and its check passed or no check stated"
+failed = "it ended with another status, its check did not hold, or its job is over with no exit recorded"
+running = "started, and nothing says it is over"
+queued = "launched, not started"
+pending = "otherwise: opened, never launched"
+
+[[rules]]
+state = "unreadable"
+when = "launched_unreadable"
+
+[[rules]]
+state = "finished"
+when = "ended_ok and (checked_passed or not check_stated)"
+
+[[rules]]
+state = "failed"
+when = "ended_not_ok or checked_not_passed or (ended_ok and check_stated and not checked)"
+
+[[rules]]
+state = "failed"
+when = "job_over"
+
+[[rules]]
+state = "failed"
+when = "monitor_closed"
+
+[[rules]]
+state = "failed"
+when = "wall_passed"
+
+[[rules]]
+state = "running"
+when = "started"
+
+[[rules]]
+state = "queued"
+when = "launched"
+
+[[rules]]
+state = "pending"
+when = "otherwise"
+
+# Each state's word, the one its block shows (jobs.md § 5.5; web.md § 7.6).
+[shows]
+unreadable = "needs attention"
+finished = "up to date"
+failed = "failed"
+running = "running"
+queued = "waiting"
+pending = "needs update"
+
+# What each state allows (jobs.md § 5.3): `launch` — of a pending run, filling it again; of a
+# finished or failed one, a new run, as asked. Cancelling is a job's, not a run's (§ 5.4). A
+# request names the run's calculation folder, `{dir}`.
+[actions.pending]
+launch = { describe = "fill it again, and launch it", operation = "job.launch", request = { dir = "{dir}" } }
+
+[actions.queued]
+
+[actions.running]
+
+[actions.finished]
+launch = { describe = "launch a new run", operation = "job.launch", request = { dir = "{dir}" } }
+
+[actions.failed]
+launch = { describe = "launch a new run", operation = "job.launch", request = { dir = "{dir}" } }
+
+[actions.unreadable]

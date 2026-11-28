@@ -1,6 +1,8 @@
 """The meshing path a study uses: gmsh meshes a unit square, ElmerGrid converts it for Elmer.
 
-Summary quantities, from ElmerGrid's `mesh.header`: nodes, elements, boundary_elements.
+Summary quantities, from ElmerGrid's `mesh.header`: nodes, elements, boundary_elements; its
+version entry, Elmer's, as `ElmerSolver -v` states it — the Elmer this check ran
+(definitions.md § 5.3).
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from pathlib import Path
 
 from femkit.core import process
 from femkit.engines import summary
+from femkit.engines.elmer import ENGINE, read_version
 
 GEOMETRY = Path(__file__).with_name("square.geo")
 
@@ -32,8 +35,14 @@ def main(argv: list[str]) -> int:
     if not header.is_file():
         print("ElmerGrid wrote no mesh.header", file=sys.stderr)
         return 1
+    stated = process.run(["ElmerSolver", "-v"], cwd=work, timeout=120)
+    version = read_version(stated.stdout, stated.stderr)
+    if version is None:
+        print(f"ElmerSolver -v stated no version ({stated.returncode}):\n{stated.stdout}{stated.stderr}",
+              file=sys.stderr)
+        return 1
     nodes, elements, boundary = (int(v) for v in header.read_text(encoding="utf-8").split()[:3])
-    summary.write(work, {"nodes": nodes, "elements": elements, "boundary_elements": boundary}, {})
+    summary.write(work, {"nodes": nodes, "elements": elements, "boundary_elements": boundary}, {ENGINE: version})
     return 0
 
 

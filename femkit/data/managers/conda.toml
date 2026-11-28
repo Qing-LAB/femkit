@@ -2,16 +2,70 @@ version = ["{exe}", "--version"]
 version_pattern = '(\d+\.\d+(?:\.\d+)?)'
 root = { argv = ["{exe}", "info", "--json"], key = "root_prefix" }
 platform = { argv = ["{exe}", "info", "--json"], key = "platform" }
-run = ["{exe}", "run", "--no-capture-output", "-p", "{prefix}"]
-activate = { hook = "{root}/etc/profile.d/conda.sh", with_hook = ["conda", "activate", "{prefix}"], without_hook = ["source", "activate", "{prefix}"] }
-# Nothing from the person's own conda settings enters a prefix (envs.md § 4.4): a create
-# overrides their channels with the declared ones and adds none of their default packages.
-# The control environment is this create too, its packages read from control.txt (`--file`).
-create = ["{exe}", "create", "-y", "-p", "{prefix}", "--override-channels", "--no-default-packages"]
-channel = ["-c", "{channel}"]
-create_from_lock = ["{exe}", "create", "-y", "-p", "{prefix}", "--file", "{file}", "--no-default-packages", "--override-channels"]
-export_lock = ["{exe}", "list", "--explicit", "--md5", "-p", "{prefix}"]
-remove = ["{exe}", "remove", "--all", "-y", "-p", "{prefix}", "--override-channels"]
+# Every environment the manager lists, by prefix (read in conda 26.7.1's `conda/core/envs_manager.py`:
+# the sorted prefixes it knows, under `envs`), and conda's own name for each (its
+# `cli/main_info.py`: `envs_details`, each prefix's `name` — `PrefixData.name`, the folder's name
+# where it lies in one of conda's `envs_dirs`, empty elsewhere): femkit takes as an environment's
+# prefix only the one conda names so, never forming it (envs.md § 1).
+environments = { argv = ["{exe}", "env", "list", "--json"], key = "envs" }
+names = { argv = ["{exe}", "env", "list", "--json"], key = "envs_details", name = "name" }
+# The folders where conda keeps environments by their names, in its order: where `create -n` makes
+# one, and where a folder of an environment's name it does not list stands in the way (envs.md § 3).
+envs_dirs = { argv = ["{exe}", "info", "--json"], key = "envs_dirs" }
+# Each command acts on one environment by its name: the manager keeps it where it keeps its
+# environments (envs.md § 1).
+run = ["{exe}", "run", "--no-capture-output", "-n", "{name}"]
+# How a shell enters an environment: the shell function, once conda's own hook for bash is evaluated
+# (`conda shell.bash hook`, conda's way: its `cli/main_init.py` and `activate.py`), or the activate
+# script, found on PATH; `active` is the variable either sets to the prefix it entered, which a run
+# script verifies (jobs.md § 4); `executable`, the one it sets to conda itself, by which femkit finds
+# it in a shell where conda is initialised (envs.md § 7.1).
+activate = { hook = ["{exe}", "shell.bash", "hook"], with_hook = ["conda", "activate", "{name}"], without_hook = ["source", "activate", "{name}"], script = "activate", active = "CONDA_PREFIX", executable = "CONDA_EXE" }
+# Every environment conda makes holds conda-meta/: a prefix without it is no environment (envs.md § 3.1).
+environment = "conda-meta"
+# What goes into an environment is the recipe's alone (envs.md § 4.4: conda manages, the recipe
+# decides). Each command that solves or installs carries the flags that set the person's own
+# settings aside — read in conda 26.7.1's source, not run: `--override-channels`, their channels;
+# `--no-default-packages`, their `create_default_packages` (a create only; `cli/install.py` adds them
+# otherwise, a create from a lock among them); `--no-pin`, their `pinned_packages`
+# (`core/solve.py`'s `get_pinned_specs`, which conda-libmamba-solver reads, gives none with it) — and
+# names each channel by its full address, which their `channel_alias`, `custom_channels` and
+# `custom_multichannels` never re-route (`models/channel.py`: they act on a channel's name, or on an
+# address under their own locations).
+create = ["{exe}", "create", "-y", "-n", "{name}", "--override-channels", "--no-default-packages", "--no-pin"]
+channel = ["-c", "https://conda.anaconda.org/{channel}"]
+create_from_lock = ["{exe}", "create", "-y", "-n", "{name}", "--file", "{file}", "--no-default-packages", "--override-channels"]
+# A package a project adds is delivered into `postprocess` as it stands (envs.md § 4.1): installed
+# from the declared channels alone, the person's set aside as a create sets them aside, every
+# package already there frozen, so a project's package only adds. Measured on conda 26.7.1 by a dry
+# run into femkit-postprocess (2026-11-28): scikit-image installed new, nothing updated or downgraded.
+install = ["{exe}", "install", "-y", "-n", "{name}", "--override-channels", "--no-pin", "--freeze-installed"]
+export_lock = ["{exe}", "list", "--explicit", "--md5", "-n", "{name}"]
+remove = ["{exe}", "remove", "--all", "-y", "-n", "{name}", "--override-channels"]
 # With the declared channels: conda 26 otherwise checks the terms of the base configuration's
 # defaults, and a create from a saved lock or a removal stops (measured, envs.md § 4.4).
 channels_named = ["create_from_lock", "remove"]
+
+# The person's own settings, where conda read each (`conda config --show-sources --json`: each file,
+# and its variables, with what it read there): each one that would change what a create, a delivery
+# or a create from a lock puts into an environment is set aside by the commands above — and the
+# install's manifest records which were found — or, where nothing sets it aside, refuses an install
+# before any create, naming it and its file (envs.md § 4.4).
+[settings]
+argv = ["{exe}", "config", "--show-sources", "--json"]
+
+[settings.neutralised]
+channels = "--override-channels"
+default_channels = "--override-channels"
+create_default_packages = "--no-default-packages"
+pinned_packages = "--no-pin"
+channel_alias = "each channel named by its full address"
+custom_channels = "each channel named by its full address"
+custom_multichannels = "each channel named by its full address"
+
+[settings.refused]
+override_channels_enabled = { when = false, change = "conda then refuses --override-channels, by which femkit names the channels an environment is made from: remove it, or set it true" }
+subdir = { change = "it forces the platform conda builds for, and femkit's environments are built for this machine's own: remove it" }
+subdirs = { change = "it changes the platforms conda solves from, and femkit's environments are built for this machine's own: remove it" }
+migrated_channel_aliases = { change = "it re-routes a channel named by its full address, as femkit names each, to your channel_alias: remove it" }
+migrated_custom_channels = { change = "it re-routes a channel named by its full address, as femkit names each: remove it" }

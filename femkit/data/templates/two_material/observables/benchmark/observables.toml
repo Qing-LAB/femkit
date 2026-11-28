@@ -1,0 +1,104 @@
+# The benchmark's observables (manual: 3 · Write each part; docs/science/electrostatics.md
+# § 9.1): the potential at the middle of each layer and on the interface, halfway up, and the
+# energy in each layer, each computed by its function in observe.py beside this file, from the
+# solve's output of the study's case. The solve is not built yet, so no value is computed yet.
+# The formulation's reference values name them.
+
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `2` (manual: 3 · Write each part)
+schema = 2
+
+# the studies it reads, by name: any whose components promise the groups it takes (manual: 3 · Write each part)
+studies = ["benchmark"]
+
+# its observables, by name, unique across the parts reading one study: each computed by its function (manual: 3 · Write each part)
+[observables]
+
+# the potential halfway through the first layer
+[observables.potential_low]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "potential_low"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "V"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.potential_low.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+definitions = ["interface", "height"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+# groups = ["low"]
+
+# the potential on the interface
+[observables.potential_middle]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "potential_middle"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "V"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.potential_middle.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+definitions = ["interface", "height"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+# groups = ["low"]
+
+# the potential halfway through the second layer
+[observables.potential_high]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "potential_high"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "V"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.potential_high.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+definitions = ["interface", "length", "height"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+# groups = ["low"]
+
+# the field's energy in the first layer, per metre of depth
+[observables.energy_low]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "energy_low"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "J/m"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.energy_low.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+# definitions = ["interface"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+groups = ["low"]
+
+# the field's energy in the second layer, per metre of depth
+[observables.energy_high]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "energy_high"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "J/m"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.energy_high.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+# definitions = ["interface"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+groups = ["high"]

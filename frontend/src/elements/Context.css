@@ -1,0 +1,23 @@
+/* ContextBar: each context a labelled chooser. */
+.context__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.context {
+  display: inline-flex; align-items: center; gap: var(--space-2); padding-left: var(--space-3);
+  background: var(--color-surface); border: var(--size-hairline) solid var(--color-line-strong); border-radius: var(--size-radius-pill);
+  transition: border-color var(--motion-quick) var(--motion-ease-standard);
+}
+.context:hover { border-color: var(--color-wire); }
+.context:focus-within { border-color: var(--color-accent); box-shadow: 0 0 0 var(--size-ring) var(--color-ring); }
+.context__label {
+  font-size: var(--type-size-2xs); font-weight: var(--type-weight-strong); letter-spacing: var(--type-tracking-caps);
+  text-transform: uppercase; color: var(--color-text-muted);
+}
+.context__choice {
+  min-height: var(--size-control-sm); max-width: var(--layout-form-label); padding: 0 var(--space-3) 0 var(--space-1);
+  font: inherit; font-size: var(--type-size-sm); font-weight: var(--type-weight-medium); color: var(--color-text);
+  background: transparent; border: none; border-radius: var(--size-radius-pill); cursor: pointer;
+}
+.context__choice:focus { outline: none; }
+.context__choice:disabled { color: var(--color-text-faint); cursor: default; }
+.context__choice option { color: var(--color-text); background: var(--color-surface); }
+.context--hero { padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4); border-color: transparent; box-shadow: var(--layer-lifted-shadow); }
+.context--hero .context__choice { min-height: var(--size-control); max-width: var(--layout-inspector-min); font-size: var(--type-size-md); }

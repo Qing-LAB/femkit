@@ -8,47 +8,76 @@ output is that engine's, registered in its package.
 
 from __future__ import annotations
 
-import json
 import math
 import re
-import time
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from femkit.config import settings
-from femkit.core import clock, paths, process, text
+from femkit.core import clock, dirs, paths, text
 from femkit.core.operations import Context, Plan, Step, run_steps
 from femkit.core import persist
 from femkit.core.persist import write_json
 from femkit.core.schema import render
-from femkit.definitions.models import Check, EnvironmentDefinition, Expectation
-from femkit.engines import GENERIC, Output, junit, reader, toolchain
-from femkit.envs import layout, manager
-from femkit.envs.manager import Manager, resolve
+from femkit.definitions.models import RUN_QUANTITIES, Check, EnvironmentDefinition, Expectation
+from femkit.engines import Output, junit, reader
+from femkit.envs import layout
+from femkit.envs.inside import Inside, entered
 from femkit.envs.records import CheckOutcome, ChecksRecord
 from femkit.envs.requests import ENV_VALIDATE, ValidateRequest
 
-# The shared code that runs and judges checks: this file and every module directly in `femkit/engines/`
-# but the toolchain's program, which checks nothing (envs.md § 2). A change to one re-validates.
-JUDGING = (Path(__file__).resolve(), *sorted(p.resolve() for p in Path(toolchain.__file__).parent.glob("*.py")
-                                         if p.name != Path(toolchain.__file__).name))
 START_MARKER = ".femkit-check-start"
 
 
 @dataclass(frozen=True)
 class Runner:
-    """Everything a check needs that is not in the check itself."""
+    """Everything a check needs that is not in the check itself: the environment it runs in,
+    entered through the one door (envs.md § 4.4)."""
 
+    name: str
     env: EnvironmentDefinition
-    prefix: Path
-    manager: Manager
+    inside: Inside
     launcher: list[str] | None
+
+    @property
+    def prefix(self) -> Path:
+        """Its prefix as the manager lists it, or — in a plan made before the environment exists —
+        `<prefix of femkit-NAME>`, which each check runs with the listed one in place of (envs.md § 4.1)."""
+        return self.inside.prefix or layout.unmade(self.inside.managed)
 
 
 def runner(ctx: Context, name: str) -> Runner:
     from femkit.envs.state import definition
-    return Runner(env=definition(ctx, name), prefix=layout.prefix(ctx, name), manager=resolve(ctx),
+    return Runner(name=name, env=definition(ctx, name), inside=entered(ctx, name),
                   launcher=settings.load(ctx).config.launch.mpi)
+
+
+# ------------------------------------------------------------------ what decides a verdict
+
+def code(env: EnvironmentDefinition) -> dict[str, str]:
+    """Every file of the code that decides the checks' verdicts, by its path from the checkout,
+    with its SHA-256 (envs.md § 2): this runner, which runs and judges them; what each check
+    runs — for `python -m <module>`, every file of that module's package, as the checkout holds
+    it; and the module of each reader they name. Nothing else: no other file changes a verdict."""
+    root = dirs.checkout()
+    files = {Path(__file__).resolve()}
+    for c in env.checks:
+        if c.run and len(c.run) > 2 and c.run[1] == "-m":   # the interpreter's own `-m <module>`
+            files |= _package(root, c.run[2])
+        files.add(Path(sys.modules[reader(env.engine, c.read).__module__].__file__).resolve())
+    return {str(path.relative_to(root)): persist.sha256(path) for path in sorted(files)}
+
+
+def _package(root: Path, module: str) -> set[Path]:
+    """Every file of the package that holds ``module``, as the checkout holds it — the one place a
+    check program is imported from inside an environment (definitions.md § 5.1); none for a
+    module the checkout does not hold."""
+    where = root.joinpath(*module.split("."))
+    folder = where if (where / "__init__.py").is_file() else where.parent if where.with_suffix(".py").is_file() else None
+    if folder is None:
+        return set()
+    return {p.resolve() for p in folder.rglob("*") if p.is_file() and "__pycache__" not in p.parts}
 
 
 # ------------------------------------------------------------------ which checks
@@ -72,11 +101,15 @@ def refusals(ctx: Context, checks: list[Check]) -> None:
 WORK = "{work}"  # a check's own folder in its operation's: known when it runs, filled in then
 
 
+def command(r: Runner, check: Check) -> tuple[str, ...]:
+    """What a check runs — inside the environment, with the launcher when on several ranks — its
+    own folder `{work}`, filled in when it runs."""
+    return tuple(r.inside.argv(_argv(r, check, Path(WORK))))
+
+
 def steps(r: Runner, checks: list[Check]) -> list[Step]:
-    """Each check with the command it runs — in the prefix, with the launcher when on several
-    ranks — and the step that records the verdicts (envs.md § 5)."""
-    out = [Step(id=f"check:{c.id}", describe=_describe(c),
-                argv=tuple(r.manager.in_prefix(r.prefix, _argv(r, c, Path(WORK))))) for c in checks]
+    """Each check with the command it runs and the step that records the verdicts (envs.md § 5)."""
+    out = [Step(id=f"check:{c.id}", describe=_describe(c), argv=command(r, c)) for c in checks]
     out.append(Step(id="record", describe="judge the agreement groups and write the check results"))
     return out
 
@@ -90,25 +123,22 @@ def _describe(c: Check) -> str:
 
 # ------------------------------------------------------------------ running one check
 
-def _variables(r: Runner, check: Check) -> dict[str, str]:
-    """The confined variables with the checkout (envs.md § 4.4), and the declared thread and
-    fixed variables."""
-    variables = manager.confined(r.manager.environment, checkout=True)
-    variables.update({v: str(check.threads) for v in r.env.thread_variables})
-    variables.update(r.env.fixed_variables)
-    return variables
+def _declared(r: Runner, check: Check) -> dict[str, str]:
+    """What a check runs with beside the clean start and the checkout (envs.md § 4.4): its
+    environment's declared thread and fixed variables."""
+    return {**{v: str(check.threads) for v in r.env.thread_variables}, **r.env.fixed_variables}
 
 
 def _ctest_dir(r: Runner, check: Check) -> Path:
     """The test's working directory, from CTest's own listing; it must lie inside the build tree."""
     build = layout.build_dir(r.prefix, check.build)
-    listing = process.run(r.manager.in_prefix(r.prefix, [
+    listing = r.inside.run(r.inside.argv([
         "ctest", "--test-dir", str(build), "--show-only=json-v1", "--tests-regex", f"^{re.escape(check.test)}$"]),
-        env=manager.confined(r.manager.environment), timeout=120)
+        timeout=120)
     if not listing.ok:
         raise ValueError(f"ctest could not list {check.test}: {listing.stderr.strip() or listing.stdout.strip()}")
     try:
-        tests = [t for t in json.loads(listing.stdout)["tests"] if t.get("name") == check.test]
+        tests = [t for t in persist.json_value(listing.stdout)["tests"] if t.get("name") == check.test]
     except (ValueError, KeyError, TypeError) as exc:
         raise ValueError(f"ctest's listing does not load: {exc}") from None
     if len(tests) != 1:
@@ -154,47 +184,60 @@ def run_check(r: Runner, check: Check, argv: tuple[str, ...], work: Path) -> Che
     def failed(reason: str) -> CheckOutcome:
         return CheckOutcome(id=check.id, outcome="failed", reason=reason, log=str(log))
 
-    started = time.time()
     try:
-        test_dir = _ctest_dir(r, check) if check.kind == "ctest" else None
+        outputs = _ctest_dir(r, check) if check.kind == "ctest" else work
     except ValueError as exc:
         return failed(str(exc))
-    if test_dir is not None:  # its outputs are dated by the file system holding them: start by that clock
-        marker = test_dir / START_MARKER
-        persist.touch(marker)
-        started = marker.stat().st_mtime
-    variables = _variables(r, check)
+    # What the check writes is dated by the file system holding it: its start is a marker's time there.
+    marker = persist.touch(outputs / START_MARKER)
+    started = marker.stat().st_mtime
+    declared = _declared(r, check)
     if check.kind == "pytest":  # the upstream tests alone: no plugin installed in the prefix loads by itself
-        variables.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYTHONDONTWRITEBYTECODE="1")
-    result = process.run([a.replace(WORK, str(work)) for a in argv],
-                         env=variables, cwd=work, timeout=check.timeout, log=log)
+        declared.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYTHONDONTWRITEBYTECODE="1")
+    result = r.inside.run([a.replace(WORK, str(work)) for a in argv], checkout=True, more=declared,
+                          cwd=work, timeout=check.timeout, log=log)
     if result.timed_out:
         return failed(f"stopped after {check.timeout} s")
     if not result.ok and check.upstream_verdict:  # set aside, only the check's expectations judge it
         return failed(f"exited with {result.returncode}")
-    output = Output(work=work, log=log, test_dir=test_dir, started=started, ranks=check.ranks, threads=check.threads,
-                    version=r.env.version, upstream_verdict=check.upstream_verdict)
+
+    def written(pattern: str) -> dict[str, bytes]:
+        """What the check wrote in this run, read here for its reader: each file matching
+        ``pattern`` where it writes, no older than its start (definitions.md § 5.3)."""
+        found = sorted(p for p in outputs.glob(pattern) if p.is_file() and p.name != START_MARKER
+                       and p.stat().st_mtime >= started)
+        return {p.name: held for p in found if (held := persist.read_bytes(p)) is not None}
+
+    output = Output(written=written, ranks=check.ranks, threads=check.threads, product=r.env.engine or r.name,
+                    version=r.env.version, tests=tuple(check.tests), upstream_verdict=check.upstream_verdict)
     try:
-        quantities = read(r.env.engine, check, output)
+        quantities = reader(r.env.engine, check.read)(output)
     except ValueError as exc:
         return failed(str(exc))
-    problems = judge(check.expect, quantities)
+    problems = ran_as_asked(check, quantities) + judge(check.expect, quantities)
     return CheckOutcome(id=check.id, outcome="failed" if problems else "passed", quantities=quantities,
                         reason="; ".join(problems), log=str(log))
-
-
-# ------------------------------------------------------------------ readers
-
-def read(engine: str, check: Check, output: Output) -> dict:
-    if check.read in GENERIC:
-        return GENERIC[check.read](output, engine, check.tests)
-    return reader(engine, check.read)(output)
 
 
 # ------------------------------------------------------------------ judging
 
 def _is_number(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def ran_as_asked(check: Check, quantities: dict) -> list[str]:
+    """Every way the run the reader reports differs from the one the check asks for, in words
+    (definitions.md § 5.2): the ranks and threads it reports must be the check's own, and a check
+    on more than one must have them reported — its outcome proves what was asked ran
+    (framework.md § 4)."""
+    problems = []
+    for name in RUN_QUANTITIES:
+        asked, reported = getattr(check, name), quantities.get(name)
+        if reported is None and asked > 1:
+            problems.append(f"{name}: the reader did not report it; the check runs on {asked}")
+        elif reported is not None and reported != asked:
+            problems.append(f"{name} = {reported}, the check's own {asked}")
+    return problems
 
 
 def judge(expect: dict[str, Expectation], quantities: dict) -> list[str]:
@@ -295,8 +338,8 @@ def run_validation(ctx: Context, name: str, gpu: bool, plan_steps: tuple[Step, .
                 check_fingerprint=f.check_fingerprint, outcomes=recorded,
                 time=clock.stamp(ctx.now())).model_dump())
             return "done", None
-        check = by_id[step.id.split(":", 1)[1]]
-        outcome = run_check(r, check, step.argv, where / check.id)
+        check = by_id[step.id.split(":", 1)[1]]   # with the prefix the manager lists now (envs.md § 4.1)
+        outcome = run_check(r, check, command(r, check), where / check.id)
         ran[check.id] = outcome
         observer.note(f"verdict: {outcome.outcome}" + (f" -- {outcome.reason}" if outcome.reason else ""))
         return "done", Path(outcome.log) if outcome.log else None

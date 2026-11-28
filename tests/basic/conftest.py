@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.kit import REACHED, tripwire_dir, tripwire_text, tripwires  # noqa: F401
+from tests.kit import REACHED, answering, manager_root, tripwire_dir, tripwire_text, tripwires  # noqa: F401
 
 
 @pytest.fixture
@@ -18,44 +18,53 @@ def tripwire_script(tripwire_dir) -> str:
     return tripwire_text(tripwire_dir / REACHED)
 
 
-# A stand-in manager: it records each call, the places and the manager's own variables it was
-# handed, and makes the folders a create would, with a `python` that records how it was called
-# and the Python path it was given (the install script's forward);
-# `running_manager`'s also runs what it is asked to run in a prefix.
-# The stand-in prints nothing, so no manager output is typed in; the real managers run
-# the same forms in the field tier. Its own settings are written into it, as a real manager's
-# are its installation: femkit hands commands run in a prefix only the confined variables
-# (envs.md § 4.4), and a stand-in that read its log path from them would lose it.
-STAND_IN = r"""#!/bin/sh
+# A stand-in manager: it records each call, and every variable each call was handed — a line
+# `----` before each call's `env` — keeps its environments where a manager does, `<root>/envs/<name>`
+# (`kit.manager_root`), lists them, says where it keeps them and which of the person's settings it
+# read (`kit.answering`), makes one a create names, with a `python` that records how it was called,
+# the Python path it was given and every variable it began with (the install script's forward, the
+# `femkit` command), and removes one;
+# `running_manager`'s also runs what it is asked to run in an environment. Apart from its list of
+# environments it prints nothing, so no manager output is typed in; the real managers run the same
+# forms in the field tier. Its own settings are written into it, as a real manager's are its
+# installation: femkit hands each command a clean start (envs.md § 4.4), and a stand-in that read
+# its log path from the variables would lose it. It is bash, as its python is, so the shell functions
+# it is handed reach what it records — another shell drops them.
+STAND_IN = r"""#!/bin/bash
 printf '%s\n' "$*" >> @LOG@
-printf '%s %s %s %s person=%s managers=%s\n' "$HOME" "${CONDA_PKGS_DIRS:-unset}" "${CONDA_REGISTER_ENVS:-unset}" \
-  "${TMPDIR:-unset}" "${XDG_CONFIG_HOME-}${XDG_CACHE_HOME-}${XDG_DATA_HOME-}${XDG_STATE_HOME-}${CONDARC-}${MAMBARC-}" \
-  "$(env | sed -n 's/^\(CONDA_[^=]*\)=.*/\1/p; s/^\(MAMBA_[^=]*\)=.*/\1/p' | sort | tr '\n' ,)" >> @LOG@.places
+printf '%s\n' ---- >> @LOG@.env
+env >> @LOG@.env
 case "$1 $2" in
 RUN_LINE
-  "create -y") prefix="$4"; mkdir -p "$prefix/conda-meta" "$prefix/bin"
-                printf '#!/bin/sh\necho "python $*" >> %s\necho "${PYTHONPATH-unset} ${PYTHONNOUSERSITE-unset}" >> %s.python\n' \
-                  @LOG@ @LOG@ > "$prefix/bin/python"
+  "env list") @LISTS@ ;;
+  "info --json") @FOLDERS@ ;;
+  "config --show-sources") @SETTINGS@ ;;
+  "shell.bash hook") @HOOK@ ;;
+  "create -y") prefix=@ROOT@/envs/"$4"; mkdir -p "$prefix/conda-meta" "$prefix/bin"
+                printf '#!/bin/bash\necho "python $*" >> %s\necho "${PYTHONPATH-unset} ${PYTHONNOUSERSITE-unset}" >> %s.python\nenv > %s.python.env\n' \
+                  @LOG@ @LOG@ @LOG@ > "$prefix/bin/python"
                 chmod +x "$prefix/bin/python" ;;
-  "env remove") rm -rf "$5" ;;
-  "remove --all") rm -rf "$5" ;;
+  "env remove") rm -rf @ROOT@/envs/"$5" ;;
+  "remove --all") rm -rf @ROOT@/envs/"$5" ;;
 esac
 exit 0
 """
 
 
-# run COMMAND in the prefix: as an activation would, put the environment's own interpreter (here, the
-# test process's) on PATH — after the tripwires, so a command run in a prefix that reaches an outside
-# program still fails the test instead of finding the host's copy on the confined PATH.
+# run COMMAND in the environment NAME: as an activation would, put the environment's own interpreter
+# (here, the test process's) on PATH — after the tripwires, so a command run in an environment that
+# reaches an outside program still fails the test instead of finding the host's copy on the system
+# PATH of the clean start.
 RUNS = '  "run --no-capture-output") shift 4; PATH=@TRIPWIRES@:@ACTIVATION@:"$PATH" exec "$@" ;;'
 
 
 def _stand_in(tmp_path, monkeypatch, tripwires: Path, runs: bool, case: str = "") -> Path:
     fake = tmp_path / "stand-in" / "conda"
-    fake.parent.mkdir()
+    fake.parent.mkdir(exist_ok=True)
     log = tmp_path / "manager.log"
     script = STAND_IN.replace("RUN_LINE\n", (RUNS + "\n" if runs else "") + (case + "\n" if case else ""))
-    fake.write_text(script.replace("@LOG@", shlex.quote(str(log))).replace("@TRIPWIRES@", shlex.quote(str(tripwires)))
+    fake.write_text(answering(script).replace("@LOG@", shlex.quote(str(log)))
+                    .replace("@TRIPWIRES@", shlex.quote(str(tripwires)))
                     .replace("@ACTIVATION@", shlex.quote(str(Path(sys.executable).parent))))
     fake.chmod(0o755)
     monkeypatch.setenv("FEMKIT_ENV_MANAGER", str(fake))

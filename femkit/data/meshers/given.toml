@@ -1,0 +1,18 @@
+# The pass-through (workflow.md § 2.3; geometry.md § 3): for a mesh the component's script makes
+# itself — a transfinite block, an extruded layer, any control a mesh recipe does not state — which
+# its contract declares with its geometry order. Its program passes the script's mesh on
+# unchanged and writes its region map from it and the geometry's groups, under the same check as
+# every mesher's; it honours no recipe key but that check's tolerance and quality. A mesh recipe
+# states it, `mesher = "given"`.
+description = "the mesh the component's script wrote, passed on unchanged"
+provided_by = "gmsh"
+dimensions = [2, 3]
+orders = [1, 2]
+order = "contract"
+program = "pass_mesh.py"
+arguments = ["{given}", "{groups}", "{mesh}", "{regions}"]
+reads = { given = "mesh/msh-2.2", groups = "geometry/groups" }
+writes = { mesh = "mesh/msh-2.2", regions = "mesh/regions" }
+honours = ["tolerance", "quality"]
+basis = """the script's own mesh, which its contract declares at its geometry order (geometry.md § 3); \
+whether geometry.xao keeps a mesh control a script sets is not measured"""

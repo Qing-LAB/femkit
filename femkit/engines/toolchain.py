@@ -2,6 +2,8 @@
 
 It measures and reports, as one JSON object on stdout; femkit judges the report. Like every
 program under `femkit/engines/`, it imports only the standard library and `femkit.core.process`.
+What it is asked (`spec`) and what it reports (`read`) are defined here alone, the control side
+building the one and reading the other through them.
 
     python -m femkit.engines.toolchain check SPEC WORK
         before any source is fetched: where each tool and compiler resolves, and whether a
@@ -113,6 +115,22 @@ def check(spec: dict, work: Path) -> dict:
     if spec["mpi"]:
         report["launcher"] = shutil.which(spec["launcher"][0])
     return report
+
+
+def spec(compilers: dict[str, str], mpi: dict[str, str], launcher: list[str] | None, tools: list[str]) -> dict:
+    """What the program is asked to measure: each language's compiler variable, each language's MPI
+    wrapper, the launcher that runs an MPI program — its ranks filled in — and the build tools."""
+    return {"compilers": compilers, "mpi": mpi, "launcher": launcher, "tools": tools}
+
+
+def read(stdout: str) -> dict | None:
+    """The report the program printed — its last line — or None where it printed none."""
+    lines = stdout.strip().splitlines()
+    try:
+        report = json.loads(lines[-1]) if lines else None
+    except ValueError:
+        return None
+    return report if isinstance(report, dict) and {"tools", "compilers", "mpi"} <= set(report) else None
 
 
 def main(argv: list[str]) -> int:

@@ -1,3 +1,4 @@
-"""The `models` domain: a calculation described once — the project file's parameters, physics,
-observable sets and studies, each a part with its schema and its check; a study's cases — and,
-to come, matched, prepared and reduced for each environment (models.md)."""
+"""The `models` domain: a calculation described once — the project file and its definitions,
+physics, studies and observables parts, each a part with its schema and its check; the engines
+that can solve a study; a study's cases — and, to come, matched against an engine's abilities and
+prepared (models.md)."""

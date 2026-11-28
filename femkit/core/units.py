@@ -1,25 +1,36 @@
-"""Exact quantities: the unit table, one grammar, conversion (core.md § 11).
+"""Exact quantities: the unit table, one grammar of units, the one quantity form read, conversion
+(core.md § 11).
 
-A number is read from its decimal text as an exact rational and a value is held in
-its dimension's canonical unit; no binary float is ever involved.
+A value is written in one form — `{value, unit}`, a plain number where it has no unit, or, where a
+field may cite one, a definition's name, alone or in place of any number of a `{value, unit}` —
+its number read from its decimal text as an exact rational; it is held in its dimension's
+canonical unit, and no binary float is ever involved. The grammar reads a unit, and nothing else:
+no quantity and no expression is read from a text.
 """
 
 from __future__ import annotations
 
-import difflib
 import re
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from fractions import Fraction
+from typing import Any, Iterable
 
 from pydantic import Field, model_validator
 
-from femkit.core.schema import NEAR, Model, refuse
+from femkit.core import persist
+from femkit.core.schema import Measure, Model, meant, nearest, refuse
 
 
 class UnitError(ValueError):
-    """A text the grammar or the table does not read: names the text and what in it is wrong."""
+    """A value or a unit not read: names what is written and what in it is wrong — and, where one
+    value would be right, that value, a plain one, as the file would hold it (`right`)."""
+
+    def __init__(self, message: str, right: Any = None):
+        super().__init__(message)
+        self.right = right
 
 
 Dimension = tuple[tuple[str, int], ...]
@@ -52,6 +63,13 @@ class Quantity:
 DIMENSION_NAME = re.compile(r"[a-z][a-z_]*")
 SYMBOL = re.compile(r"[^\W\d]\w*")          # a unit symbol or a name: a letter or `_`, then word characters
 PREFIX = re.compile(r"[^\W\d_]+")           # letters only
+
+#: The letter a memory amount's number is written with — a job request's `memory` (jobs.md § 2), and
+#: a scheduler's answer, as SLURM writes one (jobs.md § 9.1) — each the binary multiple of the byte
+#: the unit table names (`femkit/data/units.toml`), through which the amount is read and converted. A
+#: scheduler's reader takes it from here, the one module of femkit's it may read a quantity by
+#: (framework.md § 1).
+MEMORY_LETTERS = {"K": "KiB", "M": "MiB", "G": "GiB", "T": "TiB", "P": "PiB"}
 
 
 class UnitEntry(Model):
@@ -112,7 +130,7 @@ def _build(table: UnitTable) -> tuple[dict[str, Quantity], list[tuple[tuple, str
             continue
         field, text = ("factor", entry.factor) if entry.dimension is not None else ("equals", entry.equals)
         try:
-            quantity = _Parser(symbols, text, {}).parse()
+            quantity = _Parser(symbols, text).parse()
         except UnitError as exc:
             problems.append((("units", symbol, field), str(exc)))
             continue
@@ -155,23 +173,14 @@ _SIGNED = re.compile(rf"[-+]?{NUMBER}")
 def decimal(value: Fraction) -> str:
     """``value`` for a person, still exact: its decimal where it has one — `1/40` is `0.025` —
     else `p/q`, as `1/3`; the inverse of `number` where the decimal exists."""
-    rest, twos, fives = value.denominator, 0, 0
-    while rest % 2 == 0:
-        rest, twos = rest // 2, twos + 1
-    while rest % 5 == 0:
-        rest, fives = rest // 5, fives + 1
-    if rest != 1:
-        return str(value)
-    places = max(twos, fives)
-    digits = str(abs(value.numerator) * 10 ** places // value.denominator).rjust(places + 1, "0")
-    whole, part = digits[:len(digits) - places], digits[len(digits) - places:]
-    return ("-" if value < 0 else "") + whole + ("." + part if places else "")
+    return persist.number_text(Fraction(value)) or str(value)
 
 
 def number(text: str) -> Fraction:
     """A decimal number alone, a sign before it where it has one — `-0.25`, `1.602176634e-19` —
-    read exactly, never through a binary float: a cell of a material's table (materials.md § 3);
-    a `UnitError` naming the text for anything else, a unit or an expression among it."""
+    read exactly, never through a binary float: a cell of a material's table (materials.md § 3),
+    a number a source's file writes as text (§ 7); a `UnitError` naming the text for anything
+    else, a unit or an expression among it."""
     if not _SIGNED.fullmatch(text):
         raise UnitError(f"{text!r} is no decimal number")
     return Fraction(text)
@@ -201,29 +210,24 @@ def _tokens(text: str) -> list[_Token]:
 
 
 class _Parser:
-    """expression = term {("+" | "-") term}
+    """What a unit is, as the table and a unit's text write it:
+
+    expression = term {("+" | "-") term}
     term       = unary {("*" | "/") unary | atom}        -- juxtaposition multiplies
     unary      = "-" unary | atom
-    atom       = number | name | symbol ["^" ["-"] integer] | "(" expression ")"
-    """
+    atom       = number | symbol ["^" ["-"] integer] | "(" expression ")"
 
-    def __init__(self, symbols: Mapping[str, Quantity], text: str, names: Mapping[str, Quantity],
-                 known: Iterable[str] = ()):
-        self.symbols, self.text, self.names = symbols, text, names
-        self.given = sorted({*names, *known})
+    A unit's text (`Units.unit`) takes no number but a power's and the `1` of a plain number, and
+    no sum; the table's own `factor` and `equals` take numbers (`1.602176634e-19 J`)."""
+
+    def __init__(self, symbols: Mapping[str, Quantity], text: str):
+        self.symbols, self.text = symbols, text
         self.tokens = _tokens(text)
         self.at = 0
 
     def unknown(self, name: str) -> UnitError:
-        """A name that is neither a unit nor a parameter given here, said one way (core.md § 11):
-        the name; that it is neither; the parameter given here closest to it, "did you mean"; and
-        every parameter given here, the choices. Where none is given, that it is no unit."""
-        if not self.given:
-            return UnitError(f"`{name}` is not a unit")
-        near = difflib.get_close_matches(name, self.given, n=1, cutoff=NEAR)
-        return UnitError(f"`{name}` is neither a unit nor a parameter given here"
-                         + (f"; did you mean `{near[0]}`?" if near else "")
-                         + f" (the parameters: {', '.join(f'`{g}`' for g in self.given)})")
+        """A symbol that is no unit, with the unit it most likely means."""
+        return UnitError(f"`{name}` is not a unit" + meant(name, self.symbols))
 
     def parse(self) -> Quantity:
         if not self.tokens:
@@ -286,8 +290,6 @@ class _Parser:
         token = self._take()
         if token.kind == "number":
             value, end = Quantity(Fraction(token.text)), token.end
-        elif token.kind == "name" and token.text in self.names:
-            value, end = self.names[token.text], token.end
         elif token.kind == "name":
             value = self.symbols.get(token.text)
             if value is None:
@@ -316,15 +318,6 @@ class _Parser:
         return value, token.start, end
 
 
-def name_spans(text: str) -> list[tuple[int, int, str]]:
-    """Each name a quantity text uses — a parameter, or a unit symbol — with its span; empty
-    when the text is not one the grammar reads."""
-    try:
-        return [(t.start, t.end, t.text) for t in _tokens(text) if t.kind == "name"]
-    except UnitError:
-        return []
-
-
 class Units:
     """The unit table, read: every symbol it holds, each prefixed form included."""
 
@@ -337,30 +330,154 @@ class Units:
         """The canonical unit of a base dimension, as the table writes it: `m` for a length."""
         return self._canonical.get(dimension)
 
-    def symbols(self) -> list[str]:
-        """Every symbol read, prefixed ones included."""
-        return sorted(self._symbols)
-
     def of(self, dimension: Dimension) -> list[str]:
         """Every symbol of ``dimension``, prefixed ones included: what a quantity of it may be
         written in."""
         if dimension not in self._of:  # the table never changes: each dimension is read once
-            self._of[dimension] = sorted(s for s in self._symbols if self.parse(s).dimension == dimension)
+            self._of[dimension] = sorted(s for s, q in self._symbols.items() if q.dimension == dimension)
         return list(self._of[dimension])
 
-    def parse(self, text: str, names: Mapping[str, Quantity] = {}, *, known: Iterable[str] = ()) -> Quantity:
-        """A quantity, a unit or an expression of the names given, exactly. ``known``: the other
-        parameters given here that hold no value to read with — one that does not resolve, one a
-        text does not use — named with ``names`` when a name is neither a unit nor one of them."""
-        return _Parser(self._symbols, text, names, known).parse()
+    def unit(self, text: str) -> Quantity:
+        """A unit alone — one of the table, or a product of them, `1` for a plain number (`nm`,
+        `F/m`, `C^2/(N m^2)`, `1/s`): what one of it is, exactly. A `UnitError` naming the text
+        for any other: one that does not read, or a number in it but a power's and the `1` of a
+        plain number or of `1/s`, or a sum — the one reading of a unit (core.md § 11)."""
+        if not isinstance(text, str):
+            raise UnitError(f"{_written(text)} is no unit: a unit is a text, in quotes")
+        found = _Parser(self._symbols, text).parse()
+        tokens = _tokens(text)
+        for i, token in enumerate(tokens):
+            power = i > 0 and tokens[i - 1].text == "^" or i > 1 and tokens[i - 2].text == "^" and \
+                tokens[i - 1].text == "-"
+            one = token.text == "1" and i == 0 and (len(tokens) == 1 or tokens[1].text == "/")
+            if token.kind == "number" and not (power or one):
+                raise UnitError(f"{text!r} is no unit: it holds the number {token.text}, and a unit is one of the "
+                                "table's or a product of them, `1` for a plain number")
+            if token.kind == "op" and token.text in "+-" and not (token.text == "-" and i > 0
+                                                                    and tokens[i - 1].text == "^"):
+                raise UnitError(f"{text!r} is no unit: a unit is one of the table's or a product of them, never a "
+                                "sum")
+        return found
+
+    def shown(self, quantity: Quantity, display: Iterable[str] = ()) -> str:
+        """``quantity`` as a person reads it — the one formatter wherever a value is shown (core.md
+        § 11; models.md § 5): in the first unit of ``display``, a study's display units, that
+        measures its dimension, else in its canonical unit — SI, an angle in degrees — exactly: its
+        decimal where it has one, else `p/q` (`decimal`); a plain number bare. A display unit the
+        table does not read is passed by: the study's check says so."""
+        for unit in display:
+            try:
+                one = self.unit(unit)
+            except UnitError:
+                continue
+            if one.dimension == quantity.dimension:
+                return decimal(quantity.value / one.value) + ("" if unit == "1" else f" {unit}")
+        return f"{decimal(quantity.value)} {self.si(quantity.dimension)}" if quantity.dimension else \
+            decimal(quantity.value)
+
+    def si(self, dimension: Dimension) -> str:
+        """The SI unit of ``dimension`` as text — each base dimension's canonical unit with its
+        power, `kg^-1 m^-3 s^4 A^2`; `1` for a plain number (core.md § 11)."""
+        return " ".join((self.canonical(((n, 1),)) or n) + ("" if p == 1 else f"^{p}") for n, p in dimension) or "1"
 
     def convert(self, quantity: Quantity, unit: str) -> Fraction:
         """The quantity's value in ``unit``; refused when the unit measures another dimension."""
-        one = self.parse(unit)
+        one = self.unit(unit)
         if one.dimension != quantity.dimension:
             raise UnitError(f"a value of dimension {_show(quantity.dimension)} is not in {unit!r}, "
                             f"of dimension {_show(one.dimension)}")
         return quantity.value / one.value
+
+    def measure(self, written: Any, names: Mapping[str, Quantity] | None = None) -> Any:
+        """A value written in the one quantity form, exactly (core.md § 11): `{value, unit}`, its
+        number times one of its unit — each of its numbers, for a range, as a
+        list of quantities; a plain number as itself, of no dimension; and, where ``names`` is
+        given — the definitions a field of a kind that may cite one may name, each with its value —
+        a definition's name, as its value, alone or in place of any number of a `{value, unit}`,
+        where the unit states the other numbers and each definition its own. The one reader of
+        every field written as a quantity.
+
+        A `UnitError` otherwise, saying what is written and what would be right: a unit that does
+        not read; a text naming no definition given, or where none may stand — never read as a
+        quantity, but where it reads as a number and a unit, the table to write as its `right`
+        value, and, among a `{value, unit}`'s numbers, the whole table with a name put right; a
+        binary float — TOML's `inf` or `nan` — a truth value, a list, a table of other keys."""
+        if isinstance(written, Measure):
+            one = self.unit(written.unit)
+
+            def each(value: Any) -> Any:
+                if isinstance(value, list):
+                    return [each(v) for v in value]
+                if isinstance(value, str):
+                    return self._named(value, names, within=written)
+                return Quantity(Fraction(self._number(value))) * one
+            return each(written.value)
+        if isinstance(written, str):
+            return self._named(written, names)
+        return Quantity(Fraction(self._number(written)))
+
+    def _named(self, text: str, names: Mapping[str, Quantity] | None, within: Measure | None = None) -> Quantity:
+        """The value of the definition ``text`` names, among ``names``; a `UnitError` saying why it
+        is no value here — and, ``within`` a `{value, unit}`, what would be right, the whole table
+        with the name put right."""
+        if names is not None and text in names:
+            return names[text]
+        if within is None:
+            raise self._text(text, names)
+        wrong = self._text(text, names, among=True)
+        right = None
+        if isinstance(wrong.right, str):
+
+            def put(value: Any) -> Any:
+                return [put(v) for v in value] if isinstance(value, list) else wrong.right if value == text else value
+            right = {"value": put(within.value), "unit": within.unit}
+        raise UnitError(str(wrong), right=right)
+
+    def _number(self, value: Any) -> Fraction | int | Decimal:
+        """A number as a file writes it, or as femkit computed it: a whole number, a decimal read
+        exactly from its text, an exact rational."""
+        if isinstance(value, bool) or not isinstance(value, (int, Fraction, Decimal)) or \
+                isinstance(value, Decimal) and not value.is_finite():
+            raise UnitError(f"{_written(value)} is no number"
+                            + (", and a number is finite" if isinstance(value, float) else
+                               ": write a number, or `{value = <number>, unit = \"<unit>\"}`"))
+        return value
+
+    def _text(self, text: str, names: Mapping[str, Quantity] | None, among: bool = False) -> UnitError:
+        """Why a text is no value here — ``among`` the numbers of a `{value, unit}` or alone: no
+        definition of that name, or none may stand here; never a quantity read from it — and,
+        alone, the table it would be where it reads as a number and a unit."""
+        head, _, unit = text.strip().partition(" ")
+        try:
+            value = number(head)
+            right: Any = value if not unit.strip() or self.unit(unit.strip()) == Quantity(Fraction(1)) \
+                else {"value": value, "unit": unit.strip()}
+        except UnitError:
+            right = None
+        if right is not None and among:
+            return UnitError(f"{_written(text)} among the numbers of `value` is a text, and a quantity is never "
+                             "written as one: each is a number, in its `unit`")
+        if right is not None:
+            return UnitError(f"{_written(text)} is a text, and a quantity is never written as one: write "
+                             f"{_written(right)}", right=right)
+        if names is None and among:
+            return UnitError(f"{_written(text)} among the numbers of `value` is a text, and each is a number, in its "
+                             "`unit`: no definition's name stands here")
+        if names is None:
+            return UnitError(f"{_written(text)} is a text, and a quantity here is written as `{{value = <number>, "
+                             'unit = "<unit>"}`, a plain number where it has no unit: it names no definition')
+        if not text.isidentifier():
+            return UnitError(f"{_written(text)} is a text that names no definition, and no expression is read: a "
+                             "value computed from others is a definition its function in definitions.py computes")
+        return UnitError(f"the project defines no `{text}`" + meant(text, names), right=nearest(text, names))
+
+
+def _written(value: Any) -> str:
+    """A value as its file writes it, for a sentence."""
+    try:
+        return persist.inline_text(value)
+    except (TypeError, ValueError):
+        return repr(value)
 
 
 def _show(dimension: Dimension) -> str:

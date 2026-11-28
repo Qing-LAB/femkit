@@ -7,16 +7,22 @@ not a queue; and no queue is named or preferred.
 
 Every reader returns plain data shaped like the record's parts, validated by the record
 model (`femkit/jobs/record.py`). A fact that could not be read is ``{"unknown": reason}``;
-a limit the scheduler states as none is ``"unlimited"`` (jobs.md § 9.1).
+a limit the scheduler states as none is ``"unlimited"`` (jobs.md § 9.1). A memory amount is read
+and converted by the unit table, the one reader of a quantity (core.md § 11; framework.md § 1,
+rule 3), which the probe hands the readers.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import re
+from decimal import Decimal
 from typing import Any
 
 from femkit.core import process
+from femkit.core.schema import Measure, Number
+from femkit.core.units import MEMORY_LETTERS, Units
 
 UNLIMITED = "unlimited"
 _NONE_WORDS = {"unlimited", "infinite", "n/a", ""}
@@ -25,6 +31,11 @@ _KEY_VALUE = re.compile(r"(\w+)=(.*?)(?=\s+\w+=|\s*$)")
 
 def unknown(reason: str) -> dict:
     return {"unknown": reason}
+
+
+def _unknown(value: Any) -> bool:
+    """Whether ``value`` is an unknown with its reason, not a table that holds one."""
+    return isinstance(value, dict) and set(value) == {"unknown"} and isinstance(value["unknown"], str)
 
 
 # ------------------------------------------------------------------ running
@@ -64,7 +75,7 @@ def wall(text: str | None) -> Any:
     try:
         wall_seconds(text)
     except ValueError:
-        return unknown(f"not a wall time: {text!r}")
+        return unknown(f"not a wall time: `{text.strip()}`")
     return text.strip()
 
 
@@ -79,21 +90,30 @@ def count(text: str | None) -> Any:
     try:
         return int(text)
     except ValueError:
-        return unknown(f"not a number: {text!r}")
+        return unknown(f"not a number: `{text.strip()}`")
 
 
-def mib(text: str) -> int:
-    """A SLURM memory amount -> MiB; a bare number is MiB, as SLURM reads it."""
-    m = re.fullmatch(r"(\d+(?:\.\d+)?)([KMGTP]?)", text.strip().upper())
+#: The unit of a memory amount SLURM writes with no suffix, as SLURM reads one (jobs.md § 7) — not
+#: measured, as core.md § 11 says; a suffix is one of the unit table's letters (`MEMORY_LETTERS`). A
+#: record keeps memory in whole MiB (jobs.md § 9.1).
+BARE = "MiB"
+KEPT = "MiB"
+
+
+def mib(text: str, units: Units) -> int:
+    """A SLURM memory amount -> whole MiB, rounded down: its number and its suffix's unit — the
+    letter's, `MEMORY_LETTERS`; none, `BARE` — read and converted by the unit table."""
+    m = re.fullmatch(rf"(\d+(?:\.\d+)?)([{''.join(MEMORY_LETTERS)}]?)", text.strip().upper())
     if not m:
-        raise ValueError(f"not a memory amount: {text!r}")
-    scale = {"K": 1 / 1024, "": 1, "M": 1, "G": 1024, "T": 1024 ** 2, "P": 1024 ** 3}[m.group(2)]
-    return int(float(m.group(1)) * scale)
+        raise ValueError(f"not a memory amount: `{text.strip()}`")
+    held = units.measure(Measure[Number](value=Decimal(m.group(1)), unit=MEMORY_LETTERS.get(m.group(2), BARE)))
+    return math.floor(units.convert(held, KEPT))
 
 
-def gres(text: str | None) -> dict[str, int]:
+def gres(text: str | None) -> Any:
     """SLURM's gres spelling -> {type: count}: the affinity tail dropped, other generic
-    resources ignored, an untyped count is type `gpu`, `(null)` is none."""
+    resources ignored, an untyped count is type `gpu`, `(null)` is none; a GPU entry whose count
+    does not read makes the node's GPUs unknown, naming it — never a count guessed."""
     out: dict[str, int] = {}
     g = (text or "").strip()
     if not g or g.lower() in ("(null)", "none"):
@@ -107,7 +127,7 @@ def gres(text: str | None) -> dict[str, int]:
         try:
             n = int(number)
         except ValueError:
-            n = 1
+            return unknown(f"the GPU entry `{token.strip()}` states no count")
         out[kind] = max(out.get(kind, 0), n)
     return out
 
@@ -148,29 +168,33 @@ def read_partitions(text: str) -> dict[str, dict]:
 def read_nodes(text: str) -> dict[str, list[dict]]:
     """`scontrol show node -o` -> each partition's node groups: nodes alike in cores,
     memory, GPUs and architecture, counted (jobs.md § 9.1)."""
-    groups: dict[str, dict[tuple, int]] = {}
+    groups: dict[str, dict[str, int]] = {}
     for line in text.splitlines():
         kv = key_values(line)
         if "NodeName" not in kv:
             continue
-        key = (count(kv.get("CPUTot")) if kv.get("CPUTot") else None,
-               count(kv.get("RealMemory")) if kv.get("RealMemory") else None,
-               tuple(sorted(gres(kv.get("Gres")).items())),
-               kv.get("Arch") or None)
+        # A node's four facts, each a value or unknown with its reason: nodes alike in all four are
+        # one group, told alike by their JSON text, since an unknown is a table.
+        node = {"cores": _node_count(kv, "CPUTot"), "memory_mib": _node_count(kv, "RealMemory"),
+                "gpus": gres(kv.get("Gres")), "architecture": kv.get("Arch") or unknown("Arch not stated")}
+        key = json.dumps(node, sort_keys=True)
         for partition in (p for p in kv.get("Partitions", "").split(",") if p):
             groups.setdefault(partition, {})
             groups[partition][key] = groups[partition].get(key, 0) + 1
-    out: dict[str, list[dict]] = {}
-    for partition, found in groups.items():
-        rows = []
-        for (cores, memory, gpus, arch), n in sorted(found.items(), key=lambda kv: str(kv[0])):
-            rows.append({"count": n,
-                         "cores": cores if cores is not None else unknown("CPUTot not stated"),
-                         "memory_mib": memory if memory is not None else unknown("RealMemory not stated"),
-                         "gpus": dict(gpus),
-                         "architecture": arch or unknown("Arch not stated")})
-        out[partition] = rows
-    return out
+    return {partition: [{"count": n, **json.loads(key)} for key, n in sorted(found.items())]
+            for partition, found in groups.items()}
+
+
+def _node_count(kv: dict[str, str], key: str) -> Any:
+    """A node's count `key` states: a number, or unknown naming what it states instead. `unlimited`
+    is no count a node has."""
+    said = kv.get(key)
+    if not said:
+        return unknown(f"{key} not stated")
+    try:
+        return int(said)
+    except ValueError:
+        return unknown(f"{key} is not a number: `{said}`")
 
 
 def read_pairs(text: str) -> dict[str, str]:
@@ -199,14 +223,14 @@ def read_associations(text: str) -> dict[str, set[str]]:
     return out
 
 
-def tres_caps(text: str) -> dict[str, Any]:
+def tres_caps(text: str, units: Units) -> dict[str, Any]:
     """A QOS's MaxTRES (per job) -> its cpu, memory and GPU caps; a term not stated is
     `unlimited`, a GPU cap stated only per GPU type is `unknown`, naming it."""
     terms = dict(t.split("=", 1) for t in text.split(",") if "=" in t)
     caps: dict[str, Any] = {"max_cpus": count(terms.get("cpu")), "max_memory_mib": UNLIMITED}
     if "mem" in terms:
         try:
-            caps["max_memory_mib"] = mib(terms["mem"])
+            caps["max_memory_mib"] = mib(terms["mem"], units)
         except ValueError as exc:
             caps["max_memory_mib"] = unknown(str(exc))
     typed = sorted(k for k in terms if k.startswith("gres/gpu:"))
@@ -222,12 +246,12 @@ def tres_caps(text: str) -> dict[str, Any]:
 PROBES = ("control", "accounts")
 
 
-def probe(paths: dict[str, Any], user: str) -> dict:
+def probe(paths: dict[str, Any], user: str, units: Units) -> dict:
     """Run SLURM's probe commands and read them into the record's parts (jobs.md § 9.1).
 
     ``paths``: the kind's located commands by role (`control` = scontrol, `accounts` =
-    sacctmgr), each a path or ``{"unknown": why}``. Returns ``identity``, ``partitions``,
-    ``queues``, ``notes`` and ``sources``.
+    sacctmgr), each a path or ``{"unknown": why}``; ``units``, the unit table a memory amount is
+    read by. Returns ``identity``, ``partitions``, ``queues``, ``notes`` and ``sources``.
     """
     notes: list[str] = []
     sources: dict[str, str] = {}
@@ -254,8 +278,8 @@ def probe(paths: dict[str, Any], user: str) -> dict:
             sources["partitions"] = "scontrol show partition, scontrol show node"
 
     queues: Any = unknown("no partitions were read")
-    if isinstance(partitions, dict):
-        queues = _queues(partitions, accounts if have_accounts else None, user, notes, sources)
+    if not _unknown(partitions):     # an unknown is a table too: its reason is no partition
+        queues = _queues(partitions, accounts if have_accounts else None, user, notes, sources, units)
     return {"identity": identity, "partitions": partitions, "queues": queues,
             "notes": notes, "sources": sources}
 
@@ -265,7 +289,8 @@ def _qos_column(accounts: str, column: str) -> tuple[dict[str, str] | None, str]
     return (read_pairs(text) if text is not None else None), why
 
 
-def _queues(partitions: dict, accounts: str | None, user: str, notes: list, sources: dict) -> list[dict]:
+def _queues(partitions: dict, accounts: str | None, user: str, notes: list, sources: dict,
+            units: Units) -> list[dict]:
     allowed: dict[str, set[str]] = {}
     reason = "sacctmgr not found"
     if accounts:
@@ -294,11 +319,11 @@ def _queues(partitions: dict, accounts: str | None, user: str, notes: list, sour
         else:
             qos_here = [None]
         for qos in qos_here:
-            out.append(_queue(name, part, qos, walls, trs, submits))
+            out.append(_queue(name, part, qos, walls, trs, submits, units))
     return out
 
 
-def _queue(partition: str, part: dict, qos: str | None, walls, trs, submits) -> dict:
+def _queue(partition: str, part: dict, qos: str | None, walls, trs, submits, units: Units) -> dict:
     row: dict[str, Any] = {"partition": partition}
     no_qos = unknown("no QOS: the account's default applies")
     if qos is None:
@@ -320,7 +345,7 @@ def _queue(partition: str, part: dict, qos: str | None, walls, trs, submits) -> 
     else:
         row["max_time"] = min((p_wall, qos_wall), key=_wall_key)
     if trs is not None and qos in trs:
-        row.update(tres_caps(trs[qos]))
+        row.update(tres_caps(trs[qos], units))
     else:
         why = unknown(f"QOS {qos} not listed" if trs is not None else "QOS caps not read")
         row.update(max_cpus=why, max_memory_mib=why, max_gpus=why)

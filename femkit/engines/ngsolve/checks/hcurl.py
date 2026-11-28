@@ -41,11 +41,11 @@ def _check_export(work: Path, stem: str) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
-        print("usage: python -m femkit.engines.ngsolve.checks.hcurl WORK", file=sys.stderr)
+    if len(argv) != 2 or not argv[1].isdigit():
+        print("usage: python -m femkit.engines.ngsolve.checks.hcurl WORK THREADS", file=sys.stderr)
         return 2
-    work = Path(argv[0])
-    comm, threads = start()
+    work, threads = Path(argv[0]), int(argv[1])
+    comm = start(threads)
     distributed = comm.size > 1
 
     import netgen.meshing

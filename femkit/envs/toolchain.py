@@ -6,30 +6,26 @@ whether the toolchain is proven and says what a person reads. No source is fetch
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from femkit.core import paths, process
 from femkit.core.schema import render
 from femkit.definitions.models import Toolchain
+from femkit.definitions.programs import Program
+from femkit.engines import toolchain as program
 from femkit.engines.toolchain import LANGUAGES
-from femkit.envs import manager
-from femkit.envs.manager import Manager
+from femkit.envs.inside import Inside
 
-PROGRAM = ["python", "-m", "femkit.engines.toolchain"]
 RANKS = 2  # the MPI program's run: two ranks prove the launcher starts more than one
 
 
-def run(m: Manager, prefix: Path, *args: str, timeout: float = 1800) -> tuple[dict | None, process.ProcessResult]:
-    """The toolchain program inside ``prefix``, confined (§ 4.4), with the checkout to import
-    it from: (its report, or None when it gave none; what ran)."""
-    result = process.run(m.in_prefix(prefix, [*PROGRAM, *args]),
-                         env=manager.confined(m.environment, checkout=True), timeout=timeout)
-    try:
-        return json.loads(result.stdout.strip().splitlines()[-1]), result
-    except (ValueError, IndexError):
-        return None, result
+def run(inside: Inside, declared: Program, *args: str) -> tuple[dict | None, process.ProcessResult]:
+    """The toolchain program, as `programs.toml` declares it, inside the environment through the
+    one door (§ 4.4): (its report, read as the program defines it, or None when it gave none; what
+    ran)."""
+    result = inside.run(inside.program(declared, *args), declared=declared)
+    return program.read(result.stdout), result
 
 
 @dataclass(frozen=True)
@@ -46,10 +42,10 @@ def describe(toolchain: Toolchain) -> str:
 
 
 def spec(toolchain: Toolchain, launcher: list[str] | None) -> dict:
-    """What the program is asked to measure."""
-    return {"compilers": toolchain.compilers, "mpi": toolchain.mpi,
-            "launcher": [render(a, {"ranks": str(RANKS)}) for a in launcher] if toolchain.mpi and launcher else None,
-            "tools": toolchain.tools}
+    """What the program is asked to measure, in the shape it defines: the launcher's ranks filled in."""
+    return program.spec(toolchain.compilers, toolchain.mpi,
+                        [render(a, {"ranks": str(RANKS)}) for a in launcher] if toolchain.mpi and launcher else None,
+                        toolchain.tools)
 
 
 def judge(report: dict, prefix: Path) -> Verdict:

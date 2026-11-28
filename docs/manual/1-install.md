@@ -13,8 +13,9 @@ own files.
 ```mermaid
 flowchart LR
     G["git clone<br/>~/femkit"] --> B["bash scripts/install-env.sh bootstrap"]
-    B --> C["control environment<br/>(femkit's own Python)"]
-    B --> E["engine environments<br/>elmer, ngsolve"]
+    B --> C["control environment femkit<br/>(femkit's own Python)"]
+    B --> E["conda environments<br/>femkit-elmer, femkit-ngsolve, femkit-gmsh,<br/>femkit-model_prep, femkit-postprocess"]
+    B --> L["~/.local/bin/femkit:<br/>femkit in every shell with ~/.local/bin on its path"]
     B --> R["this machine's record"]
     B --> D["doctor: ready?"]
     D --> P["config set paths.projects<br/>your projects root"]
@@ -32,23 +33,33 @@ femkit runs from its own folder — the copy of its repository you clone,
 called the **checkout** — and is never installed into Python. This manual
 puts the checkout at `~/femkit`. The install writes a `femkit` command into
 femkit's own environment, which runs femkit from that checkout in whatever
-folder you are in. If you move the checkout, run the install script again
-from its new place; until then `femkit` says the checkout is gone.
+folder you are in, and puts a link to it at `~/.local/bin/femkit`. If you
+move the checkout, run the install script again from its new place; until
+then `femkit` says the checkout is gone.
 
 ## Install
 
 One script builds everything femkit needs, each piece in its own
 environment — a self-contained folder of programs and libraries that your
-own Python and packages never see:
+own Python and packages never see. Each is an ordinary conda environment,
+which conda keeps where it keeps all of yours and lists in `conda env list`;
+femkit names each `femkit-…`:
 
-- the **control environment**, femkit's own Python, which runs every
-  `femkit` command;
+- the **control environment**, `femkit`, femkit's own Python, which runs
+  every `femkit` command;
 - one **engine environment** for each solver — femkit calls a solver an
-  **engine** — `elmer` for Elmer and `ngsolve` for NGSolve, each compiled
+  **engine** — `elmer` for Elmer and `ngsolve` for NGSolve (`femkit-elmer`
+  and `femkit-ngsolve` to conda), each compiled
   from pinned sources and then proven: before any source is downloaded, its
   compilers must build and run a small program on your machine, and
   afterwards the solver must solve small problems with known answers to
   within their tolerances;
+- the `gmsh` environment, where your geometry scripts run and femkit meshes
+  them, proven the same way on a small geometry of known size;
+- the `model_prep` environment, where the functions of your
+  `definitions.py` run (chapter 3), and the `postprocess` environment, where
+  your observables scripts run — numpy, scipy, matplotlib, netCDF4, xarray
+  and meshio, and the packages your projects add (below);
 - **this machine's record**: what femkit measured about the machine — its
   cores, memory, GPUs, and on a cluster its scheduler and queues.
 
@@ -64,38 +75,96 @@ bash scripts/install-env.sh bootstrap
   cluster, typically a `module load` line; on a workstation, often none;
 - how a shell enters an environment here: `source activate`,
   `conda activate` or `mamba activate`;
-- where the engine environments go — they take several gigabytes, so on a
-  cluster choose project storage rather than a small home folder;
 - your **projects root**: the one folder that holds all your projects and
   your material library (chapter 2).
+
+Where the environments go is conda's to decide, as for every environment of
+yours: they take several gigabytes, so on a cluster with a small home folder,
+point conda at project storage in your own conda settings (`envs_dirs` and
+`pkgs_dirs` in `~/.condarc`) before you install.
+
+Conda manages the environments; femkit's recipe decides what goes into them.
+Conda keeps them where it keeps yours, with its own package cache, its list
+and its activation, all as you set conda up. What each holds is femkit's
+list alone: your own channels, pinned packages and the packages conda adds
+to every new environment of yours are set aside for femkit's, and femkit
+names its channel by its full address, so no mirror or alias of yours sends
+it elsewhere. A setting of yours that nothing can set aside stops the
+install before anything is made, naming the setting and the file it is in —
+conda's `override_channels_enabled: false`, for instance, which forbids
+femkit to name its own channels:
+
+```text
+[femkit] refused: your setting override_channels_enabled, in /home/you/.condarc: conda then refuses --override-channels, by which femkit names the channels an environment is made from: remove it, or set it true
+```
+
+Each environment records which of your settings it set aside.
+
+What it can find out on the machine it proposes instead of asking: the GPU
+architectures your graphics driver reports, which the GPU builds are compiled
+for, and how a program starts on several processors — each environment's own
+`mpirun`, which femkit proposes on a workstation and on a cluster whose
+scheduler it knows. Each proposal is a line of the plan, written only when you
+agree to the plan.
 
 It shows its plan — every step it will take, including an install it would
 refuse and why — and asks before it starts. To answer everything on the
 command line and be asked nothing, give `--yes` with the answers:
 
 ```bash
-bash scripts/install-env.sh bootstrap --yes --no-preamble --activation 'conda activate' --environments ~/femkit-environments --projects ~/femkit-projects
+bash scripts/install-env.sh bootstrap --yes --no-preamble --activation 'conda activate' --projects ~/femkit-projects
 ```
 
 On a cluster, `--preamble 'module load conda'` (once per line) takes the
-place of `--no-preamble`.
+place of `--no-preamble`. The activation must be one your package manager
+has: `bootstrap` refuses `mamba activate` with conda before it starts, naming
+the ones it has.
 
-`bootstrap` ends with a report of each part and the lines that enter femkit
-day to day on this machine.
+`bootstrap` ends with a report of each part and the lines that enter
+femkit's control environment the way you enter any conda environment of yours.
+
+Your conda environments now include femkit's:
+
+```bash
+conda env list
+```
+
+```text
+# conda environments:
+#
+base                     /home/you/miniforge3
+femkit                   /home/you/miniforge3/envs/femkit
+femkit-elmer             /home/you/miniforge3/envs/femkit-elmer
+femkit-gmsh              /home/you/miniforge3/envs/femkit-gmsh
+femkit-model_prep        /home/you/miniforge3/envs/femkit-model_prep
+femkit-ngsolve           /home/you/miniforge3/envs/femkit-ngsolve
+femkit-postprocess       /home/you/miniforge3/envs/femkit-postprocess
+```
 
 ## Every day
 
-Each time you open a shell to use femkit, enter its control environment.
-`bootstrap` prints the exact lines for your machine; on a workstation with
-conda they look like this:
+Open a shell and type `femkit …`: nothing needs activating first. The install
+linked the command at `~/.local/bin/femkit`, a folder most shells put on
+their path once it exists. Where this shell's path lacks it, `bootstrap` says
+so and prints the one line to add to your `~/.bashrc`:
+
+```text
+[femkit] /home/you/.local/bin is not on this shell's PATH, so a new shell does not find femkit; add this line to your ~/.bashrc:
+    export PATH=/home/you/.local/bin:"$PATH"
+[femkit] or enter the control environment the way you enter any of conda's: conda activate femkit
+```
+
+femkit finds conda the way your shell does: where conda is set up in your
+shell (`conda init`), or on a cluster once its module is loaded.
 
 ```bash
-source /home/you/miniforge3/etc/profile.d/conda.sh
-conda activate /home/you/.local/share/femkit/environments/control
 femkit doctor
 ```
 
-From then on `femkit …` works in any folder. A command that works on one
+`conda activate femkit` enters femkit's own environment as you enter any of
+yours, and also puts `femkit` on your path.
+
+`femkit …` works in any folder. A command that works on one
 project takes the project you are in — your shell inside its folder — or
 names it with `--project` from anywhere else:
 
@@ -131,7 +200,7 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  case      the cases a study's expansion wrote, each with its study and...
+  case      the cases a study's prep wrote, each with its study and point
   config    this machine's settings, femkit's own
   doctor    Whether this machine is ready: control environment, configuration,
             this machine's record, every engine environment.
@@ -141,7 +210,7 @@ Commands:
   project   a project: start one from a template, check it, list them,...
   schema    femkit's own definitions and the reference pages written from...
   serve     the web page's server: start, stop, status
-  study     a project's studies: list them, write their cases
+  study     a project's studies: list them, prep each for its jobs — its...
   web       the web page's bundle, built from its sources
 
   (manual: 1 · Install and set up)
@@ -203,7 +272,6 @@ $ femkit config show
 [config show] no config.toml: every key is unset
   key                       value  when unset
   paths.projects            unset  no project is listed, made or named; each says so, naming this key
-  paths.environments        unset  <data>/environments
   build.cuda_architectures  unset  installing an environment with a build compiled for CUDA is refused, naming this key
   build.jobs                unset  the CPUs this process may use (its CPU affinity: on a cluster, the allocation's share, never the whole login node)
   launch.mpi                unset  a multi-rank check or job, and installing an environment with MPI, are refused, naming this key
@@ -257,7 +325,6 @@ $ femkit config show
 [config show] read ~/.config/femkit/config.toml
   key                       value              when unset
   paths.projects            ~/femkit-projects
-  paths.environments        unset              <data>/environments
   build.cuda_architectures  unset              installing an environment with a build compiled for CUDA is refused, naming this key
   build.jobs                unset              the CPUs this process may use (its CPU affinity: on a cluster, the allocation's share, never the whole login node)
   launch.mpi                unset              a multi-rank check or job, and installing an environment with MPI, are refused, naming this key
@@ -275,34 +342,43 @@ femkit config path    # where femkit keeps its files on this machine, and what c
 `config init` is what `bootstrap` runs to write your settings, asking for
 each one nothing on the machine reveals; it never replaces a value you set,
 and `config set` changes one. Its options give the answers on the command
-line instead — `--projects`, `--environments`, `--preamble`,
-`--no-preamble`, `--activation`, and the same on `bootstrap`. Every key, with
+line instead — `--projects`, `--cuda-architectures`,
+`--jobs`, `--mpi`, `--preamble`, `--no-preamble`, `--activation`, and the
+same on `bootstrap`. Every key, with
 its type, is listed in the [settings reference](../reference/config.md).
 
 ## Where femkit puts things
 
 femkit writes only into its own folders, each under your home folder by
-default, and into your projects root:
+default, and into your projects root; its environments are conda's, kept
+where conda keeps all of yours:
 
 ```text
 ~/.config/femkit/            your settings: config.toml, and machines/ with this machine's record
-~/.local/share/femkit/       the control environment and its `femkit` command, the engine environments, their exact package lists
+~/.local/share/femkit/       the exact package list of each environment, to rebuild it as it was
 ~/.cache/femkit/             downloads and build files: safe to empty at any time
 ~/.local/state/femkit/       the log of every command that changed something
+~/.local/bin/femkit          the link that puts `femkit` on your path
 ~/femkit-projects/           your projects root: your projects and your material library
 ```
 
-`femkit config path` prints the folders on your machine. Each can
-be moved by a variable, for instance `FEMKIT_CONFIG_DIR`; the engine
-environments can go elsewhere with the `paths.environments` setting.
+`femkit config path` prints the folders on your machine. Each can be moved
+by a variable, for instance `FEMKIT_CONFIG_DIR`; where the environments go is
+your conda settings' (`envs_dirs`).
 
-## The engine environments — `env`
+## The environments — `env`
 
-`bootstrap` installs and checks the two default environments. These commands
-look after them afterwards:
+Each step of a calculation runs in an environment of its own: a project's
+definitions in `model_prep`, a geometry in `gmsh`, a mesh in the environment
+of the mesher its recipe names — Gmsh's in `gmsh` — the solve in the engine
+you choose when you prep the study, `elmer` or `ngsolve` (chapter 5), and the
+observables in `postprocess`.
+`bootstrap` installs and checks the five default environments, `elmer`,
+`ngsolve`, `gmsh`, `model_prep` and `postprocess`. These commands look after
+them afterwards:
 
 ```bash
-femkit env list                 # every environment, its state, and whether its GPU path is proven
+femkit env list                 # every environment, its name with conda, its state, and whether its GPU path is proven
 femkit env install ngsolve      # install one; an interrupted install resumes where it stopped
 femkit env install --all        # every default environment
 femkit env validate ngsolve     # run its checks again: small problems with known answers
@@ -313,9 +389,26 @@ femkit env bootstrap            # what the install script runs: set up this mach
 ```
 
 An environment is `ready` only when its checks pass on this machine. GPU
-builds are separate environments, `ngsolve-cuda` and `elmer-cuda`, installed
-only when you ask for them by name; so is `web`, which the web page needs
-(below). `env install NAME --clean` rebuilds one from scratch.
+builds are separate environments, `ngsolve-cuda` and `elmer-cuda`
+(`femkit-ngsolve-cuda` and `femkit-elmer-cuda` to conda), installed only when
+you ask for them by name; so is `web`, which the web page needs (below). `env
+install NAME --clean` rebuilds one from scratch.
+
+femkit knows each environment by the name conda gives it, `femkit-…`, in the
+folders where conda keeps environments. A folder of that name there which
+conda does not list as an environment — left over from something else — is
+in the way: `env list` says so, naming the folder, and femkit never makes an
+environment over it nor removes it; remove it or move it aside yourself, and
+install again.
+
+Whatever femkit starts — femkit itself, from the `femkit` command; an
+install's build, a check, your `definitions.py`, the web page's server, a
+job — starts clean: it keeps your home, your locale and your conda settings,
+and none of what your own shell has set for other work — another active
+environment, your own Python's settings, compilers and library paths, shell
+functions of your own — so nothing of your shell reaches femkit or a solver
+but what the environment itself sets. Then conda enters the environment, by
+its name, as it enters any of yours.
 
 ## This machine's record — `job`
 
@@ -325,9 +418,50 @@ femkit job probe              # measure this machine and show the record; --writ
 ```
 
 `job probe --write` writes the record after `activation.preamble` and
-`activation.command` are set. On a cluster, `--scheduler` names the
-scheduler when femkit cannot tell, and `--set` says where one of its
-commands is.
+`activation.command` are set. On a cluster, `--set` says where one of the
+scheduler's commands is, when femkit cannot find it — your site's own submit
+command, `--set scheduler.commands.submit=PATH`, is enough for femkit to know
+the scheduler — and `--scheduler` names the scheduler when femkit still
+cannot tell.
+
+To prepare calculations on your workstation for a cluster, carry the
+cluster's record over: on the cluster, `femkit job probe --write --name
+cluster-a` writes it as `machines/cluster-a.toml` in femkit's settings
+folder; copy that file into the same folder on your workstation, and
+`femkit job machines` there lists it.
+
+## Computed definitions — `model_prep`
+
+A project that computes a value in Python (chapter 3, `definitions.py`)
+needs femkit's `model_prep` environment — numpy, scipy, netCDF4 and xarray,
+nothing built — which `bootstrap` installs with the others:
+
+```bash
+femkit env install model_prep
+```
+
+`project check` and `study prep` say so when a project needs it and it is
+not there.
+
+## Your observables scripts — `postprocess`
+
+The scripts that compute your observables (chapter 3, `observe.py`) run in
+femkit's `postprocess` environment — numpy, scipy, matplotlib, netCDF4,
+xarray and meshio. A project whose scripts need more says so in its project
+file, `[postprocess] packages` (chapter 3), so a copy of the project carries
+it; each machine installs them:
+
+```bash
+femkit env install postprocess
+```
+
+installs femkit's set and every package any project under your projects root
+names, in one solve. Adding a package to a project later leaves `postprocess`
+as it is: `femkit env list` and `femkit doctor` say a package is to be
+delivered, and the same `femkit env install postprocess` installs it into the
+environment as it stands. A package femkit's own set already holds — numpy,
+say — is never installed again, nor held to another version: `project check`
+says so at its line of your project file.
 
 ## The web page — `serve`
 
@@ -347,8 +481,37 @@ femkit serve foreground   # run it in this terminal; Ctrl-C stops it
 On a workstation the page listens on `127.0.0.1`, port 8000 (`--port` to
 change). On a cluster's login node it listens on a socket only your account
 can open (`--socket`; `--tcp` for a port instead), which you reach from your
-own computer through `ssh -L`. Showing and checking your projects on the page
-is not built yet ([plan](../plans/plan.md) § 4, G).
+own computer through `ssh -L`. The page shows your projects as cards; open
+one to see it as a flowchart — a card for each file, its section told by the
+card's colour, shape and icon (the legend button shows each), its state in its
+badge, its findings counted; and a small card for each definition, with its
+value — and Runs to see a study's geometries and meshes, each card tagged
+with its case on the same line as its state, with Preview and Prep. The project
+file itself is no card: the Parts tab beside the flowchart lists it, then every
+part by section — your definitions and materials first — each with its state
+or value and its findings; press one to find its card. Each card lists its
+slots — `domain material → vacuum` among them — each with a dot a wire plugs
+into, on the side facing the cards its wires come from, and a finding counted
+on the slot it belongs to. A study's card names no engine — you choose the
+engine when you prepare it; an observables part stands after the studies it
+reads, a wire running from each study into its `studies` slot. The wires
+are coloured by what they carry, and a dashed one waits for the built
+geometry. Drag any card anywhere: where it stands is the page's alone, kept
+while the page is open and never saved, and Reset layout puts every card
+back. A card's copy button, or its menu, puts a copy of it elsewhere — the
+same file, so selecting either lights both — and each wire runs to whichever
+copy stands nearer; copies too live only in the page. Click a wire to light
+it and its two cards and read what names what, and at which key — moving the
+mouse over the canvas lights nothing; a card's chevron folds it to its title.
+Settings, environments and
+every other command are forms under Operations; light and dark are switched
+from the top bar.
+
+To change a file on the page, open its card: the page's text editor shows
+the file, each finding at its line, a key's help when the mouse rests on it,
+and the values a key allows as you type. Save first shows what the change
+affects — the stages it would make anew — and writes the file only when you
+agree. Your `definitions.py` cannot be saved from the page yet.
 
 ## Commands for changing femkit itself
 
@@ -363,8 +526,8 @@ femkit web build       # build the web page from its sources, with the web envir
 
 ## What is not built yet
 
-Running a calculation — building the geometry, meshing it, solving it on a
-workstation or through a cluster's scheduler, and reading the results — is
-not built yet ([plan](../plans/plan.md) § 4, X, M4, M6). Today femkit
-installs and proves the solvers, and starts, checks and expands your
-projects: chapters 2 to 6.
+Solving a calculation on a workstation or through a cluster's scheduler, and
+reading the results, are not built yet ([plan](../plans/plan.md) § 4, M4,
+M6). Today femkit installs and proves the solvers; starts and checks your
+projects; and preps a study — its cases, and the jobs that make each case's
+geometry and mesh: chapters 2 to 7.

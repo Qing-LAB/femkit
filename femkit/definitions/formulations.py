@@ -9,7 +9,7 @@ from pydantic import ConfigDict, Field, RootModel, ValidationInfo, model_validat
 
 from femkit.core import dirs, persist
 from femkit.core.markdown import headings
-from femkit.core.schema import Model, refuse
+from femkit.core.schema import Measure, Model, Number, as_quantity, refuse
 from femkit.core.units import UnitError
 from femkit.definitions.properties import NAME
 
@@ -84,13 +84,13 @@ class KindSpec(Described):
 
 
 class DerivedSpec(Described):
-    """A quantity an observable may name."""
+    """A quantity the formulation derives from its unknown, which a later step may take."""
     unit: str = Field(description="its unit")
 
 
 class Constant(Described):
     """A physical constant the formulation's equation uses, as every engine must be given it."""
-    value: str = Field(description="its value, with its unit")
+    value: Measure[Number] = as_quantity("its value, with its unit", "constant")
 
 
 class Benchmark(Described):
@@ -100,9 +100,11 @@ class Benchmark(Described):
                                      "folder of `femkit/data/templates/` (projects.md § 7)")
     exercises: list[str] = Field(min_length=1, description="the formulation's condition, source and property "
                                                            "kinds it exercises")
-    tolerance: str = Field(description="the relative difference a run may show from each reference value, a plain "
-                                       "number; its basis is in the science document's section")
-    reference: dict[str, str] = Field(min_length=1, description="each observable of its study, and its exact value")
+    tolerance: Number = Field(description="the relative difference a run may show from each reference value, a "
+                                          "plain number; its basis is in the science document's section")
+    reference: dict[str, Measure[Number]] = as_quantity("each observable of the observables part reading its "
+                                                        "studies, by its name, and its exact value, with its unit",
+                                                        "constant", min_length=1)
 
 
 class FormulationDefinition(Model):
@@ -123,7 +125,8 @@ class FormulationDefinition(Model):
                                                 json_schema_extra={"doc": "materials.md § 1"})
     conditions: dict[str, KindSpec] = Field(description="the condition kinds it allows")
     sources: dict[str, KindSpec] = Field(default_factory=dict, description="the source kinds it allows")
-    derived: dict[str, DerivedSpec] = Field(description="each quantity an observable may name")
+    derived: dict[str, DerivedSpec] = Field(description="each quantity it derives, which a later step of a study may "
+                                                         "take from the step that solves it")
     benchmarks: dict[str, Benchmark] = Field(default_factory=dict, description="its benchmark set: problems with "
                                              "known answers (models.md § 6.3)")
 
@@ -138,17 +141,16 @@ class FormulationDefinition(Model):
         texts += [((table, k, "parameters", p, "unit"), spec.unit) for table in ("conditions", "sources")
                   for k, kind in getattr(self, table).items() for p, spec in kind.parameters.items()]
         texts += [(("derived", n, "unit"), d.unit) for n, d in self.derived.items()]
-        texts += [(("constants", n, "value"), c.value) for n, c in self.constants.items()]
-        texts += [(("benchmarks", b, "reference", o), v) for b, spec in self.benchmarks.items()
+        texts += [(("constants", n, "value", "unit"), c.value.unit) for n, c in self.constants.items()]
+        texts += [(("benchmarks", b, "reference", o, "unit"), v.unit) for b, spec in self.benchmarks.items()
                   for o, v in spec.reference.items()]
-        texts += [(("benchmarks", b, "tolerance"), spec.tolerance) for b, spec in self.benchmarks.items()]
         for at, text in texts if units is not None else []:
             try:
-                units.parse(text)
+                units.unit(text)
             except UnitError as exc:
                 problems.append((at, str(exc)))
         if self.unknown.name not in self.derived:
-            problems.append((("derived",), f"names the unknown, {self.unknown.name!r}, as an observable may"))
+            problems.append((("derived",), f"names the unknown, {self.unknown.name!r}, as a step taking it does"))
         anchors = {h.anchor for h in headings(science)} if science is not None else set()
         described = [((t, k), d) for t in ("constants", "properties", "conditions", "sources", "derived",
                                             "benchmarks")

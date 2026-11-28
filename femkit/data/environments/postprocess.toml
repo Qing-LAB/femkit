@@ -1,0 +1,21 @@
+# Where a project's observe.py scripts run (models.md § 5.2; ADR 0025 decision 5): numpy, scipy,
+# matplotlib, the netCDF4 library and xarray, through which the one store writes (decision 6), and
+# meshio, to read what an engine wrote. A tool environment (definitions.md § 4.7): conda-forge
+# packages alone, nothing built, no engine. Beside its own packages it takes, `projects`, every
+# conda package the projects under the projects root declare in their `[postprocess]` tables, on
+# each machine: solved with its own when it is built, and delivered into it as it stands when a
+# project adds one (envs.md § 4.1) — never in its install fingerprint. What observe.py may import is what this file lists under
+# `modules`, with the modules its own project's packages declare. A default: every project's
+# observables run here.
+description = "numpy, scipy, matplotlib, netCDF4, xarray and meshio: where a project's observe.py scripts run"
+version = "1.7.4"
+version_command = ["python", "-c", "import netCDF4; print(netCDF4.__version__)"]
+default = true
+projects = true
+
+[packages]
+conda = ["python", "numpy", "scipy", "matplotlib", "netcdf4=1.7.4", "xarray", "meshio"]
+
+[provides]
+executables = ["python"]
+modules = ["numpy", "scipy", "matplotlib", "netCDF4", "xarray", "meshio"]

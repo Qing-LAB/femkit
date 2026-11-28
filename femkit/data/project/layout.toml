@@ -1,9 +1,11 @@
 # A project's layout (projects.md § 4): each part kind — its folder, whether each part is one
-# file or a folder holding its own, the files every part of its kind holds by a fixed name, the
-# schema it loads with, its place in the chain's order, whether the projects root holds a global
-# library of it, and the chapter of the user manual that explains it, which its keys' help names;
-# each folder that holds no part, with its writer; and the object types inside the parts. The project file is fixed, `project.toml`. The door, the graph, the checks
-# and the page read this one declaration; `project new` copies what the person writes.
+# file or a folder holding its own, the files every part of its kind holds by a fixed name and
+# those it may hold, the schema it loads with, its place in the chain's order, the section a person finds it in, whether
+# the projects root holds a global library of it, and the chapter of the user manual that explains
+# it, which its keys' help names; each folder that holds no part, with its writer and what the door
+# forms inside it; and the object types inside the parts, each in its part's place. The project file
+# is fixed, `project.toml`. The door, the graph, the checks and the page read this one declaration;
+# `project new` copies what the person writes.
 
 # The files an editor keeps beside the one it edits — a backup, a swap file, a lock: no part, no
 # stray, and never copied.
@@ -12,12 +14,20 @@ editor_files = ["*~", ".*.swp", ".*.swo", "#*#", ".#*"]
 # The kind whose parts `project list` names beside each project (web.md § 8.6).
 listed = "study"
 
+# The sections a person finds the parts in, read from what is shared to what is computed (ADR 0019): the
+# reading order is by section, then rank, then the kind's place in this file, then name; the
+# chain's order — what a part is made from first: loading, checking, the findings — by rank, then
+# the kind's place in this file, then name.
+sections = ["Definitions", "Component", "Physics", "Mesh", "Study", "Results"]
+
 # ------------------------------------------------------------------ the part kinds
 
 [kinds.project]
 shape = "single"
+optional = ["definitions.py"]   # the functions that compute its computed definitions, at the project's top
 schema = "models.project"
 rank = 0
+section = "Definitions"
 manual = "3-write-each-part.md"
 
 [kinds.material]
@@ -26,6 +36,7 @@ shape = "folder"
 file = "material.toml"
 schema = "materials.material"
 rank = 1
+section = "Definitions"
 library = true
 manual = "6-materials.md"
 
@@ -36,6 +47,7 @@ file = "component.toml"
 files = ["geometry.py"]
 schema = "geometry.component"
 rank = 2
+section = "Component"
 manual = "3-write-each-part.md"
 
 [kinds.physics]
@@ -43,6 +55,7 @@ folder = "physics"
 shape = "file"
 schema = "models.physics"
 rank = 3
+section = "Physics"
 manual = "3-write-each-part.md"
 
 [kinds.mesh]
@@ -50,13 +63,7 @@ folder = "mesh"
 shape = "file"
 schema = "geometry.recipe"
 rank = 3
-manual = "3-write-each-part.md"
-
-[kinds.observables]
-folder = "observables"
-shape = "file"
-schema = "models.observables"
-rank = 3
+section = "Mesh"
 manual = "3-write-each-part.md"
 
 [kinds.study]
@@ -64,9 +71,28 @@ folder = "studies"
 shape = "file"
 schema = "models.study"
 rank = 4
+section = "Study"
+manual = "3-write-each-part.md"
+
+# An observables part reads studies after they solve, so it ranks after them (ADR 0025): its own
+# file and the script whose functions compute its observables. It was once one file,
+# `observables/<name>.toml`: a file of that form is told the part is now a folder.
+[kinds.observables]
+folder = "observables"
+shape = "folder"
+file = "observables.toml"
+files = ["observe.py"]
+was = "file"
+schema = "models.observables"
+rank = 5
+section = "Results"
 manual = "3-write-each-part.md"
 
 # ------------------------------------------------------------------ the folders that hold no part
+#
+# What the door forms inside one — a case's file, a stage's calculation folder, a launch folder, a
+# study's kept definitions — is declared once, under `holds`, its path from the folder each step it
+# is formed from in braces.
 
 [folders.custom]
 writer = "person"
@@ -75,10 +101,17 @@ moves = "yes"
 [folders.cases]
 writer = "femkit"
 moves = "yes"
+holds = { case = "{study}/{id}/case.json" }
+
+[folders.computed]
+writer = "femkit"
+moves = "yes"
+holds = { definitions = "{study}/definitions.nc" }
 
 [folders.runs]
 writer = "run"
 moves = "yes"
+holds = { stage = "{study}/{kind}/{id}", launch = "{study}/launch/{name}" }
 
 [folders.results]
 writer = "femkit"
@@ -90,109 +123,92 @@ moves = "local"
 
 # ------------------------------------------------------------------ the object types inside the parts
 
-[objects.parameter]
+[objects.definition]
 part = "project"
-table = "parameters"
+table = "definitions"
 named = true
-rank = 0
 
 [objects.property]
 part = "material"
 table = "properties"
 named = true
-rank = 1
 
 [objects.frame]
 part = "component"
 table = "frame"
 named = false
-rank = 2
 
 [objects.input]
 part = "component"
-table = "inputs.parameters"
+table = "inputs.definitions"
 named = true
-rank = 2
 
 [objects.input_file]
 part = "component"
 table = "inputs.files"
 named = true
-rank = 2
 
 [objects.group]
 part = "component"
 table = "groups"
 named = true
-rank = 2
 
 [objects.assignment]
 part = "component"
 table = "assign"
 named = true
-rank = 2
 
 [objects.condition]
 part = "physics"
 table = "conditions"
 named = true
 typed = "kind"
-rank = 3
 
 [objects.source]
 part = "physics"
 table = "sources"
 named = true
 typed = "kind"
-rank = 3
 
 [objects.radiation]
 part = "physics"
 table = "radiation"
 named = false
-rank = 3
 
 [objects.size]
 part = "mesh"
 table = "sizes"
 named = true
-rank = 3
 
 [objects.observable]
 part = "observables"
 table = "observables"
 named = true
-typed = "quantity"
-rank = 3
+typed = "type"
 
 [objects.step]
 part = "study"
 table = "steps"
 named = true
 typed = "kind"
-rank = 4
 
 [objects.numerics]
 part = "study"
 table = "numerics"
 named = false
-rank = 4
 
 [objects.axis]
 part = "study"
 table = "axes"
 named = true
 typed = "class"
-rank = 4
 
 [objects.crossing]
 part = "study"
 table = "crossing"
 named = false
-rank = 4
 
-[objects.binding]
+[objects.together]
 part = "study"
-table = "environments"
+table = "together"
 named = true
-rank = 4

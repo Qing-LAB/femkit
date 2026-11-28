@@ -1,0 +1,34 @@
+/* Shell: the top bar over the workspace. */
+.shell { display: flex; flex-direction: column; height: 100%; }
+.shell__bar {
+  position: sticky; top: 0; z-index: var(--layer-sticky); display: flex; align-items: center; gap: var(--space-4);
+  min-height: var(--layout-bar); padding: 0 var(--space-5); background: var(--color-surface);
+  border-bottom: var(--size-hairline) solid var(--color-line); box-shadow: var(--layer-sticky-shadow);
+}
+.shell__spacer { flex: 1; }
+.shell__documents {
+  display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3);
+  font-size: var(--type-size-sm); font-weight: var(--type-weight-medium); color: var(--color-text-muted);
+  text-decoration: none; border-radius: var(--size-radius-sm);
+  transition: background var(--motion-quick) var(--motion-ease-standard), color var(--motion-quick) var(--motion-ease-standard);
+}
+.shell__documents:hover { color: var(--color-text); background: var(--color-surface-hover); }
+.shell__documents:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-ring) var(--color-ring); }
+.shell__main { flex: 1; min-height: 0; overflow: auto; }
+.shell__gate {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3);
+  height: 100%; padding: var(--space-6); text-align: center;
+}
+.shell__gate-mark { width: var(--size-mark-hero); height: var(--size-mark-hero); }
+.shell__gate-says { margin: 0; max-width: var(--layout-inspector); color: var(--color-text-muted); }
+.shell__gate-field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--type-size-xs); color: var(--color-text-muted); }
+.shell__gate input {
+  min-height: var(--size-control); padding: 0 var(--space-3); font: inherit; color: var(--color-text);
+  background: var(--color-surface); border: var(--size-hairline) solid var(--color-line-strong); border-radius: var(--size-radius-sm);
+}
+.shell__gate input:focus { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 var(--size-ring) var(--color-ring); }
+.shell__gate-go {
+  display: grid; place-items: center; width: var(--size-control); height: var(--size-control); border: none;
+  border-radius: var(--size-radius-sm); color: var(--color-on-accent); background: var(--color-accent); cursor: pointer;
+}
+.shell__gate-go:disabled { opacity: var(--color-opacity-spent); cursor: default; }

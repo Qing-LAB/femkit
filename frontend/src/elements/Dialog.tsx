@@ -1,12 +1,16 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { useControl } from "../kernel/declared";
+import { Button } from "./Button";
 import "./Dialog.css";
 
-// The one dialog (web.md § 9.2), never the browser's own: Esc and a click off it close it.
+// The one dialog (web.md § 9.2), never the browser's own: Esc and a press beside it close it. Its
+// close control's words are the declaration's.
 
 export function Dialog({ title, children, foot, onClose, wide }: {
   title: ReactNode; children: ReactNode; foot?: ReactNode; onClose: () => void; wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const close = useControl("close");
   useEffect(() => {
     const d = ref.current!;
     if (!d.open) d.showModal();
@@ -15,10 +19,13 @@ export function Dialog({ title, children, foot, onClose, wide }: {
     return () => d.removeEventListener("cancel", cancel);
   }, [onClose]);
   return (
-    <dialog ref={ref} className={`dialog ${wide ? "dialog--wide" : ""}`} onClick={(e) => { if (e.target === ref.current) onClose(); }}>
+    <dialog ref={ref} className={`dialog ${wide ? "dialog--wide" : ""}`}
+            onClick={(e) => { if (e.target === ref.current) onClose(); }}>
       <div className="dialog__surface">
-        <header className="dialog__head"><h2 className="dialog__title">{title}</h2>
-          <button type="button" className="dialog__close" aria-label="close" onClick={onClose}>×</button></header>
+        <header className="dialog__head">
+          <h2 className="dialog__title">{title}</h2>
+          <Button bare small icon={close.icon} aria-label={close.label} title={close.help} onClick={onClose} />
+        </header>
         <div className="dialog__body">{children}</div>
         {foot && <footer className="dialog__foot">{foot}</footer>}
       </div>

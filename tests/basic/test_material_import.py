@@ -23,8 +23,9 @@ import pytest
 from tests import kit
 from tests.kit import laplace, slab  # noqa: F401 -- fixtures
 from femkit.core.errors import Busy, PlanStale, Refused, UsageError
-from femkit.core.persist import key_comments
-from femkit.core.schema import help_findings, key_path
+from femkit.core.persist import exact_number, key_comments
+from femkit.core.schema import Measure, Number, declared_by, help_findings, key_path
+from femkit.core.units import Quantity
 from femkit.definitions import catalogue
 from femkit.definitions.catalogue import CatalogueError
 from femkit.materials import data, material
@@ -50,11 +51,16 @@ def importing(project: Path, name: str, file: str | Path, into: str = "project")
 
 
 def written(folder: Path) -> dict:
-    """A written material's file, as TOML reads it."""
-    return tomllib.loads((folder / "material.toml").read_text(encoding="utf-8"))
+    """A written material's file, as femkit reads it: each number exactly, as written."""
+    return tomllib.loads((folder / "material.toml").read_text(encoding="utf-8"), parse_float=exact_number)
 
 
-def taken(opened, address: str, prop: str, dataset: str, at: str, convention: str) -> Complex:
+def q(value: str, unit: str) -> Quantity:
+    """``value`` in ``unit``, exactly, as the one quantity form reads it (core.md § 11)."""
+    return catalogue.units(kit.ctx()).measure(Measure[Number](value=Decimal(value), unit=unit))
+
+
+def taken(opened, address: str, prop: str, dataset: str, at: Quantity, convention: str) -> Complex:
     """A material's dataset, as the door opened it, taken by `femkit.materials.data` for a
     formulation reading the relative permittivity in ``convention`` at ``at``."""
     ctx = kit.ctx()
@@ -62,7 +68,7 @@ def taken(opened, address: str, prop: str, dataset: str, at: str, convention: st
     held = part.data.properties[prop][dataset]
     files = opened.held_by(part.address)
     units = catalogue.units(ctx)
-    return data.taken(held, prop, "relative_permittivity", units.parse(at), convention,
+    return data.taken(held, prop, "relative_permittivity", at, convention,
                       file=files[held.table].data if isinstance(held, material.Table) else None,
                       properties=catalogue.properties(ctx), dispersion=catalogue.dispersion(ctx), units=units,
                       subject=address)
@@ -90,9 +96,9 @@ def test_gold_and_silica_imported_pass_project_check_and_give_the_science_docume
     assert {p.part: p.state for p in checked.parts if p.part in ours} == dict.fromkeys(ours, "complete")
     assert [i for i in checked.issues if any(i.subject.startswith(a) for a in ours)] == []
     opened = kit.opened(slab)
-    gold = taken(opened, f"material:{prefix}{GOLD[0]}", GOLD[2], GOLD[3], "0.5821 um", "exp(-iwt)")
+    gold = taken(opened, f"material:{prefix}{GOLD[0]}", GOLD[2], GOLD[3], q("0.5821", "um"), "exp(-iwt)")
     assert gold == Complex(Fraction("-8.112669"), Fraction("1.66054"))
-    eps = taken(opened, f"material:{prefix}{SILICA[0]}", SILICA[2], SILICA[3], "0.5876 um", "real")
+    eps = taken(opened, f"material:{prefix}{SILICA[0]}", SILICA[2], SILICA[3], q("0.5876", "um"), "real")
     assert eps.im == 0 and Fraction("1.45845") ** 2 <= eps.re < Fraction("1.45855") ** 2
 
 
@@ -106,15 +112,28 @@ def test_an_import_into_a_project_adds_no_finding_to_its_check(laplace):
     assert kit.run("project.check", project=laplace.name).issues == before
 
 
+def test_a_material_imported_into_a_project_offers_its_check_and_one_into_the_library_none(laplace):
+    """Fails if `material import` into a project does not end with `project check` of that project
+    as its next step, or an import into the global library, which no project names yet, offers one
+    (plan.md § 2, rows 3–5: a project's files written, the project is checked)."""
+    name, file, _, _ = GOLD
+    into_project = importing(laplace, name, file)
+    assert [(a.call.operation, a.call.request) for a in into_project.next] == [
+        ("project.check", {"project": laplace.name})]
+    assert importing(laplace, "kept", file, into="library").next == []
+
+
 def keys_of(value: dict, at: tuple = ()) -> set[tuple]:
     """Every key a TOML text sets, by its path as `key_comments` gives it — a list's tables' keys
-    under the list's own path."""
+    under the list's own path; a quantity's `{value, unit}` one value, written on its key's line
+    (core.md § 11)."""
     out = set()
     for key, held in value.items():
+        quantity = isinstance(held, dict) and set(held) == {"value", "unit"}
         tables = isinstance(held, list) and held and all(isinstance(v, dict) for v in held)
-        for each in (held if tables else [held] if isinstance(held, dict) else []):
+        for each in (held if tables else [held] if isinstance(held, dict) and not quantity else []):
             out |= keys_of(each, (*at, key))
-        if not tables and not isinstance(held, dict):
+        if not tables and (quantity or not isinstance(held, dict)):
             out.add((*at, key))
     return out
 
@@ -141,7 +160,7 @@ def test_the_written_material_carries_each_keys_help_as_a_template_does(laplace,
     for name, file in ((GOLD[0], GOLD[1]), (SILICA[0], SILICA[1]), ("rangeless", rangeless)):
         importing(laplace, name, file)
         text = (laplace / "materials" / name / "material.toml").read_text(encoding="utf-8")
-        helps = material.declared(catalogue.properties(ctx), catalogue.dispersion(ctx), text)
+        helps = declared_by(material.keys(catalogue.properties(ctx), catalogue.dispersion(ctx), text))
         entries = key_comments(text)
         found[name] = [str(f) for f in help_findings(text, material.Material, helps, manual)]
         found[name] += [f"cites {cited[0]}" for cited in [CITED.search(text)] if cited is not None]
@@ -152,7 +171,8 @@ def test_the_written_material_carries_each_keys_help_as_a_template_does(laplace,
     assert found == {GOLD[0]: [], SILICA[0]: [], "rangeless": []}
     assert ranges == {GOLD[0]: [False], SILICA[0]: [False], "rangeless": [True]}
     held = written(laplace / "materials" / "rangeless")["properties"]["relative_permittivity"]["rangeless"]
-    assert "range" not in held and held["parameters"]["terms"][2] == {"B": "0.8974794", "C": "9.896161 um"}
+    assert "range" not in held and held["parameters"]["terms"][2] == {
+        "B": Decimal("0.8974794"), "C": {"value": Decimal("9.896161"), "unit": "um"}}
 
 
 # ------------------------------------------------------------------ what it writes
@@ -175,9 +195,10 @@ def test_a_table_record_becomes_a_table_dataset_and_its_file_the_numbers_as_the_
     assert ["1.30", "1.350"] in [r[1:] for r in rows]                        # trailing zeros, as written
     assert (held["display"], list(held["properties"]), held["notes"]) == ("gold", ["refractive_index"],
                                                                          {"johnson": "Room temperature"})
+    assert 'range = {value = [0.1879, 1.9370], unit = "um"}' in (folder / "material.toml").read_text()  # as written
     assert dataset == {
         "table": "johnson.csv", "sha256": hashlib.sha256(table).hexdigest(), "interpolation": "linear",
-        "convention": "exp(-iwt)", "range": ["0.1879 um", "1.9370 um"],
+        "convention": "exp(-iwt)", "range": {"value": [Decimal("0.1879"), Decimal("1.9370")], "unit": "um"},
         "variable": {"name": "wavelength", "unit": "um"},
         "source": "P. B. Johnson and R. W. Christy. Optical constants of the noble metals. Phys. Rev. B 6, "
                   "4370-4379 (1972), doi:10.1103/PhysRevB.6.4370"}
@@ -193,10 +214,11 @@ def test_a_formula_record_becomes_a_sellmeier_model_its_coefficients_as_material
     importing(laplace, SILICA[0], SILICA[1])
     dataset = written(laplace / "materials" / SILICA[0])["properties"]["relative_permittivity"]["malitson"]
     assert {k: v for k, v in dataset.items() if k != "source"} == {
-        "model": "sellmeier", "convention": "real", "range": ["0.21 um", "6.7 um"], "temperature": "293 K",
-        "parameters": {"A": "0", "terms": [{"B": "0.6961663", "C": "0.0684043 um"},
-                                           {"B": "0.4079426", "C": "0.1162414 um"},
-                                           {"B": "0.8974794", "C": "9.896161 um"}]}}
+        "model": "sellmeier", "convention": "real", "range": {"value": [Decimal("0.21"), Decimal("6.7")], "unit": "um"},
+        "temperature": {"value": 293, "unit": "K"},
+        "parameters": {"A": 0, "terms": [{"B": Decimal(b), "C": {"value": Decimal(c), "unit": "um"}}
+                                         for b, c in (("0.6961663", "0.0684043"), ("0.4079426", "0.1162414"),
+                                                      ("0.8974794", "9.896161"))]}}
     assert "doi:10.1364/JOSA.55.001205" in dataset["source"]
     assert "doi:10.1016/S0022-3093(97)00438-9" in dataset["source"]
     assert not any(mark in dataset["source"] for mark in ("*", "[", "](", "<br>", "\n"))
@@ -207,10 +229,10 @@ def test_a_formula_record_becomes_a_sellmeier_model_its_coefficients_as_material
     (tmp_path / "Squares.yml").write_text(squares, encoding="utf-8")
     importing(laplace, "squares", tmp_path / "Squares.yml")
     terms = written(laplace / "materials" / "squares")["properties"]["relative_permittivity"]["squares"]["parameters"]
-    assert [t["C"] for t in terms["terms"]] == [f"{Decimal(p) ** 2} um^2" for p in poles]
+    assert [t["C"] for t in terms["terms"]] == [{"value": Decimal(p) ** 2, "unit": "um^2"} for p in poles]
     opened = kit.opened(laplace)
-    assert taken(opened, "material:squares", "relative_permittivity", "squares", "0.5876 um", "real") == \
-        taken(opened, f"material:{SILICA[0]}", "relative_permittivity", "malitson", "0.5876 um", "real")
+    assert taken(opened, "material:squares", "relative_permittivity", "squares", q("0.5876", "um"), "real") == \
+        taken(opened, f"material:{SILICA[0]}", "relative_permittivity", "malitson", q("0.5876", "um"), "real")
 
 
 def test_a_record_of_real_values_becomes_a_real_table(laplace, tmp_path):
@@ -222,7 +244,8 @@ def test_a_record_of_real_values_becomes_a_real_table(laplace, tmp_path):
     importing(laplace, "own", tmp_path / "Own-2026.yml")
     folder = laplace / "materials" / "own"
     dataset = written(folder)["properties"]["refractive_index"]["own_2026"]
-    assert (dataset["convention"], dataset["range"]) == ("real", ["0.5 um", "0.6 um"])
+    assert (dataset["convention"], dataset["range"]) == ("real", {"value": [Decimal("0.5"), Decimal("0.6")],
+                                                                   "unit": "um"})
     assert (folder / "own_2026.csv").read_text() == "wavelength,n\n0.5,1.50\n0.6,1.49\n"
     assert kit.run("project.check", project=laplace.name).issues == before
 
@@ -473,3 +496,14 @@ def test_an_importer_that_misstates_itself_does_not_load(definitions, old, new, 
     with pytest.raises(CatalogueError) as caught:
         catalogue.load_importers()
     assert any(where.endswith(f":{at}") for where, _ in caught.value.problems), caught.value.problems
+
+
+def test_an_import_says_the_projects_is_found_first_when_applied_without_asking(slab):
+    """Fails if an import into a project under the name a library material has says the project's
+    is found first in its plan alone — so `--yes`, which prints the plan's steps and not its findings,
+    never says it — rather than in its outcome too, where the runner carries a plan's findings (api.md
+    § 4.4: "its findings come with the outcome — carried there by the runner, once"; materials.md
+    § 7)."""
+    outcome = kit.apply("material.import", source=SOURCE, file=str(DATA / SILICA[1]), name="vacuum", into="project",
+                        project=slab.name)
+    assert outcome.ok() and [(i.code, i.subject) for i in outcome.issues] == [("found-first", "material:vacuum")]

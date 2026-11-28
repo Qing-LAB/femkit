@@ -1,7 +1,7 @@
 """A component's `[assign]` table (materials.md § 5): for each body group its contract promises, the
 material that fills it and, for each property whose material holds several datasets, the one
 used. The table is this package's part of the component's schema (projects.md § 2), and so is its
-check: declared here, beside the table, for the component's schema key (`PART_CHECKS`), and
+check: declared here, beside the table, for the component's schema key (`REGISTERS`, `checks`), and
 registered at femkit's start after the component's own (api.md § 6; projects.md § 6). It reads
 the component's frame and groups through the layout's object types (projects.md § 4), since the
 `geometry` package that owns them sits above this one (framework.md § 1).
@@ -39,11 +39,11 @@ from typing import Any, Iterator
 
 from femkit.core import text
 from femkit.core.issues import Issue
-from femkit.core.schema import Model, as_reference
+from femkit.core.schema import Model, as_reference, meant, nearest
 from femkit.definitions.places import possible
 from femkit.materials import material as materials
 from femkit.projects import door, names
-from femkit.projects.checking import Checking
+from femkit.projects.checking import Checking, Registration
 from femkit.projects.door import Part
 from femkit.projects.layout import held
 
@@ -127,13 +127,13 @@ def _nowhere(checking: Checking, part: Part, group: str, name: str, kind: str) -
         [f"the global library {text.path(listed.library.place)}"] if there else [])
     choices = door.known(opened, kind)
     pool = sorted(choices, key=lambda c: c.startswith(names.GLOBAL) != explicit)   # where the name points first
-    meant = names.nearest(names.bare(name), pool, names.whole_or_last)
+    near = nearest(names.bare(name), pool, names.whole_or_last)
     none = (f"; your projects root has no global library yet, {text.path(listed.library.place)}: the next project "
             "new makes it, holding femkit's shipped materials" if missing else "")
-    return checking.issue(part, TABLE, group, "material", code="no-such-material", label=name, right=meant,
-                          choices=choices if meant is None else (), next=(door.seeding(),) if missing else (),
+    return checking.issue(part, TABLE, group, "material", code="no-such-material", label=name, right=near,
+                          choices=choices if near is None else (), next=(door.seeding(),) if missing else (),
                           message=f"no material `{name}`" + (f" in {' or in '.join(looked)}" if looked else "") + none
-                                  + (f"; did you mean `{meant}`?" if meant else ""))
+                                  + meant(names.bare(name), pool, names.whole_or_last))
 
 
 def _datasets(checking: Checking, part: Part, group: str, assignment: Assignment,
@@ -160,5 +160,4 @@ def _datasets(checking: Checking, part: Part, group: str, assignment: Assignment
                                          "one used, as there is no default")
 
 
-PART_SCHEMAS: dict[str, type[Model]] = {}   # the table is a field of the component's schema, not a schema
-PART_CHECKS = {COMPONENT: check}
+REGISTERS = Registration(checks={COMPONENT: check})

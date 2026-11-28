@@ -14,10 +14,10 @@ from typing import Any, Literal, Mapping
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
-from femkit.core.schema import PLACEHOLDER, alternatives, field_extras, items_of
+from femkit.core.schema import alternatives, closed, field_extras, items_of, parsed
 
-#: How a person runs femkit: the `femkit` command the activated control environment puts on the
-#: path, in any folder (envs.md § 7). Every printed command starts with it (api.md § 4.4).
+#: How a person runs femkit: the `femkit` command the install script links from `~/.local/bin`, on the
+#: path of every shell, in any folder (envs.md § 7). Every printed command starts with it (api.md § 4.4).
 PROG = "femkit"
 
 #: A request field's annotation that makes it a positional argument (api.md § 4.1).
@@ -58,11 +58,29 @@ def spelling(name: str, field: FieldInfo) -> Spelling:
     return Spelling("option", flag, many, element)
 
 
+def written(name: str, field: FieldInfo) -> str:
+    """A request field as a person types it (api.md § 4.1): an argument by its name in capitals,
+    `STUDY`, `NAMES...`; a flag as itself; an option with its value — its choices, `--into
+    library|project`, or its name in capitals, `--as NAME` — what a refusal of a request names it
+    by, on every surface."""
+    s = spelling(name, field)
+    if s.kind == "argument":
+        return name.upper() + ("..." if s.many else "")
+    if s.kind == "flag":
+        return s.flag
+    return f"{s.flag} {'|'.join(closed(s.element)) or name.upper()}"
+
+
 def word(value: Any) -> str:
     """One word of a command line, quoted for the shell only when it needs it; a placeholder
     (`{ranks}`) is part of the template, written as it is typed."""
     shown = str(value)
-    bare = PLACEHOLDER.sub(lambda m: "x" if m.group(1).isidentifier() and m.group(2) is None else m.group(0), shown)
+    bare, at = [], 0
+    for p in parsed(shown):   # a placeholder of a template stands for one shell-safe word
+        safe = p.name.isidentifier() and p.argument is None and not p.optional
+        bare += [shown[at:p.span[0]], "x" if safe else shown[p.span[0]:p.span[1]]]
+        at = p.span[1]
+    bare = "".join(bare) + shown[at:]
     return shown if shlex.quote(bare) == bare else shlex.quote(shown)
 
 

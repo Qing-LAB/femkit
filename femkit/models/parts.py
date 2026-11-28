@@ -16,10 +16,11 @@ from decimal import Decimal
 from fractions import Fraction
 from typing import Any, Iterable, Iterator, Mapping
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from femkit.core.issues import Issue
-from femkit.core.schema import Model, allowed, classes, field_extras, field_named, references, values_of
+from femkit.core.schema import (Measured, Model, allowed, classes, field_extras, field_named, meant, nearest,
+                                references, values_of)
 from femkit.definitions.places import PlaceKind, possible
 from femkit.materials.assign import ASSIGNMENT, DATASETS, DIMENSION, FRAME, GROUP, PROPERTY
 from femkit.materials.material import Answer, answering
@@ -28,7 +29,6 @@ from femkit.projects.addresses import Address
 from femkit.projects.checking import Checking
 from femkit.projects.door import Opened, Part
 from femkit.projects.layout import held
-from femkit.projects.names import nearest
 
 #: The object types this package reads of other parts, by their names in the layout, beside those
 #: the materials package reads of a component and a material (`femkit/materials/assign.py`).
@@ -38,9 +38,11 @@ SYMMETRY, AXIS = "symmetry", "axis"   # the frame's axis of revolution, as its f
 
 class Parameterized(Model):
     """A model whose keys beyond its fields are the parameters a declaration lists for its kind —
-    a condition's or a source's, as its formulation lists them (models.md § 3) — each a quantity."""
+    a condition's or a source's, as its formulation lists them (models.md § 3) — each a quantity
+    in the one form (core.md § 11)."""
 
     model_config = ConfigDict(extra="allow", frozen=True)
+    __pydantic_extra__: dict[str, Measured] = Field(init=False)
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -88,7 +90,7 @@ class Contract:
     dimension: int | None         # the frame's dimension: 2 or 3
     axis: str | None              # the axis it is revolved about, for an axisymmetric physics
     groups: dict[str, int]        # each promised group, with its dimension
-    inputs: dict[str, Any]        # each project parameter the script reads, with what it must be
+    inputs: dict[str, Any]        # each project definition the script reads, with what it must be
     assign: dict[str, Assigned]   # each body group's material
 
     def places(self, group: str, places: Mapping[str, PlaceKind]) -> list[str]:
@@ -136,16 +138,10 @@ def datasets(c: Checking, part: Part) -> dict[str, dict[str, Answer]]:
 
 # ------------------------------------------------------------------ what every part of this package checks
 
-def meant(name: str, among: Iterable[str]) -> str:
-    """`; did you mean `x`?` for the one of ``among`` closest to ``name``; nothing where none is."""
-    near = nearest(name, among)
-    return f"; did you mean `{near}`?" if near is not None else ""
-
-
 def called(address: Address) -> str:
     """A part as a sentence names it: `the project file`; any other by its address, as a person
     names it in a command and `project check` lists it — `` `observables:benchmark` `` — so a
-    kind named in the plural, as an observable set's is, never reads as many (projects.md § 5)."""
+    kind named in the plural, as an observables part's is, never reads as many (projects.md § 5)."""
     if address.name is None:
         return "the project file"
     return f"`{address}`"

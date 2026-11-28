@@ -64,9 +64,9 @@ class BuildRequest(Model):
 
 # ------------------------------------------------------------------ the operations these requests are for
 
-SERVE_FOREGROUND = Verb("serve.foreground", ServeRequest)
-SERVE_RESTART = Verb("serve.restart", TargetRequest)
-SERVE_START = Verb("serve.start", ServeRequest)
-SERVE_STATUS = Verb("serve.status", StatusRequest)
-SERVE_STOP = Verb("serve.stop", TargetRequest)
-WEB_BUILD = Verb("web.build", BuildRequest)
+SERVE_FOREGROUND = Verb("serve.foreground", ServeRequest, on_machine=True, effect="changes")
+SERVE_RESTART = Verb("serve.restart", TargetRequest, on_machine=True, effect="changes")
+SERVE_START = Verb("serve.start", ServeRequest, on_machine=True, effect="changes")
+SERVE_STATUS = Verb("serve.status", StatusRequest, on_machine=True, effect="reads")
+SERVE_STOP = Verb("serve.stop", TargetRequest, on_machine=True, effect="changes")
+WEB_BUILD = Verb("web.build", BuildRequest, on_machine=True, effect="changes")

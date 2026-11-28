@@ -2,9 +2,9 @@
 
 Elmer's test harness writes `test-stdout_<ranks>.log` (an MPI build) or
 `test-stdout.log`, and a `TEST.PASSED*` marker, into the test's working directory;
-the log must be no older than the check's start, and its `Version:` the pinned one.
-Where the test's own verdict counts, every marker must hold 1; where the check sets
-it aside (`upstream_verdict = false`), only the quantities are judged.
+the runner hands over those written since the check started, and the log's `Version:`
+must be the pinned one. Where the test's own verdict counts, every marker must hold 1;
+where the check sets it aside (`upstream_verdict = false`), only the quantities are judged.
 
 Quantities:
 
@@ -43,27 +43,19 @@ _ADAPTIVE_CONVERGED = re.compile(r"Mesh convergence limit reached")
 _ADAPTIVE_DEPTH_LIMITED = re.compile(r"Max adaptive depth reached")
 
 
-def _fresh(output: Output, name: str):
-    path = output.test_dir / name
-    if path.is_file() and path.stat().st_mtime >= output.started:
-        return path
-    return None
-
-
 def solver_log(output: Output) -> dict:
-    if output.test_dir is None:
-        raise ValueError("elmer-solver-log reads a CTest case's log; this check is not a ctest")
-    log = _fresh(output, f"test-stdout_{output.ranks}.log") or _fresh(output, "test-stdout.log")
-    if log is None:
-        raise ValueError(f"no test-stdout log from this run in {output.test_dir}")
-    markers = [p for p in output.test_dir.glob("TEST.PASSED*") if p.stat().st_mtime >= output.started]
+    logs = output.written(f"test-stdout_{output.ranks}.log") or output.written("test-stdout.log")
+    if not logs:
+        raise ValueError("no test-stdout log from this run in the test's working directory")
+    (name, held), = logs.items()
+    markers = output.written("TEST.PASSED*")
     if output.upstream_verdict and (not markers or any(
-            p.read_text(encoding="utf-8", errors="replace").strip() != "1" for p in markers)):
+            m.decode("utf-8", errors="replace").strip() != "1" for m in markers.values())):
         raise ValueError("Elmer wrote no passing TEST.PASSED marker in this run")
-    text = log.read_text(encoding="utf-8", errors="replace")
+    text = held.decode("utf-8", errors="replace")
     version = VERSION.search(text)
     if version is None or version.group(1) != output.version:
-        raise ValueError(f"{log.name} reports Elmer {version.group(1) if version else 'of no version'}; "
+        raise ValueError(f"{name} reports Elmer {version.group(1) if version else 'of no version'}; "
                          f"the environment pins {output.version}")
 
     norms, errors, by_solver = [], [], {}

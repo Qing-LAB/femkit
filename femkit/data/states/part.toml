@@ -1,21 +1,21 @@
 # The states of a part of a project (projects.md § 8), observed from the facts
-# femkit/projects/state.py gathers and names: `loads`, its file loads; `findings`, a finding on
-# it besides what cannot be checked yet; `unchecked`, something it names that cannot be checked
-# yet. The first rule that holds gives the state.
+# femkit/projects/state.py gathers and names: `loads`, its file loads; `errors`, an error on it —
+# a warning or a note changes no state, one predicate with what refuses prep; `unchecked`,
+# something it names that cannot be checked yet. The first rule that holds gives the state.
 
 [states]
 unloadable = "its file does not load"
-findings = "it loads, and `project check` has findings on it"
-unchecked = "it loads with no findings, but what it names cannot be checked yet"
-complete = "it loads with no findings, and all it names is checked"
+errors = "it loads, and `project check` has an error on it"
+unchecked = "it loads with no error, but what it names cannot be checked yet"
+complete = "it loads with no error, and all it names is checked"
 
 [[rules]]
 state = "unloadable"
 when = "not loads"
 
 [[rules]]
-state = "findings"
-when = "findings"
+state = "errors"
+when = "errors"
 
 [[rules]]
 state = "unchecked"
@@ -25,10 +25,27 @@ when = "unchecked"
 state = "complete"
 when = "otherwise"
 
-# What each state allows: nothing yet. The person changes a part in their own editor
-# (projects.md § 7), and the operations that read one come with `project check`.
+# Each state's word, the one a part's block shows (web.md § 7.6): a part to fix needs attention, one
+# whose geometry is not built yet waits for it.
+[shows]
+unloadable = "needs attention"
+errors = "needs attention"
+unchecked = "waiting"
+complete = "up to date"
+
+# What each state allows (projects.md § 8): a study with no error whose cases `study prep` can
+# make, its prep — the part's `{study}`, which only such a study gives; a key the subject leaves
+# unset is left out, and an action whose operation then lacks a value it requires is no step for it
+# (core.md § 7) — asking the engine that solves it, one of those that can solve the study, which may
+# be left unset (workflow.md § 7). A
+# study waiting for its component's geometry, `unchecked`, is offered it too: prep is what makes
+# that geometry. The person changes a part in their own editor (projects.md § 7).
 [actions]
 unloadable = {}
-findings = {}
-unchecked = {}
-complete = {}
+errors = {}
+
+[actions.unchecked]
+prep = { describe = "make its cases, geometries and meshes, and the jobs that make them", operation = "study.prep", request = { project = "{project}", study = "{study}" }, fills = ["engine"] }
+
+[actions.complete]
+prep = { describe = "make its cases, geometries and meshes, and the jobs that make them", operation = "study.prep", request = { project = "{project}", study = "{study}" }, fills = ["engine"] }

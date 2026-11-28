@@ -40,7 +40,7 @@ $ femkit project list
 [project list] refused: the projects root ~/femkit-projects (paths.projects) is no folder: the first project new makes it
 next -- instead:
     femkit project new NAME --from SOURCE   # the first project makes the root
-    femkit config set paths.projects '"/path/to/projects"'   # the folder that holds your projects
+    femkit config set paths.projects VALUE   # the folder that holds your projects; VALUE e.g. "/path/to/projects"
 ```
 
 Under `next -- instead:`, femkit prints the commands that would get you
@@ -56,8 +56,8 @@ answer is known:
 
 | template | what it is |
 |---|---|
-| `laplace_square` | a square of vacuum, 0 V on its left side and a bias on its right, insulated top and bottom; the potential rises linearly, so the centre holds half the bias on any mesh. Its study refines the mesh three times. |
-| `two_material` | a layered capacitor: two materials side by side between the same two potentials, relative permittivities 1 and 4, with the face between them named. Its study is one calculation, whose values have exact reference answers. |
+| `laplace_square` | a square of vacuum, 0 V on its left side and a bias on its right, insulated top and bottom; the potential rises linearly, so the centre holds half the bias on any mesh. Its study `check` refines the mesh three times; its observables part reads it. |
+| `two_material` | a layered capacitor: two materials side by side between the same two potentials, relative permittivities 1 and 4, with the face between them named. Its study `benchmark` is one calculation; its observables have exact reference answers. |
 
 `project new` needs to know what to copy; without `--from` it lists the
 templates:
@@ -77,7 +77,7 @@ $ femkit project new square --from laplace_square --dry-run
 [project new] plan: 3 steps
   1. make the projects root ~/femkit-projects
   2. make the global library ~/femkit-projects/materials, holding a copy of femkit's shipped materials: vacuum
-  3. copy 8 files of laplace_square to ~/femkit-projects/square
+  3. copy 10 files of laplace_square to ~/femkit-projects/square
 ```
 
 Your first project makes the projects root, and with it your **material
@@ -91,20 +91,25 @@ $ femkit project new square --from laplace_square --yes
 [project new] plan: 3 steps
   1. make the projects root ~/femkit-projects
   2. make the global library ~/femkit-projects/materials, holding a copy of femkit's shipped materials: vacuum
-  3. copy 8 files of laplace_square to ~/femkit-projects/square
-[project new] 3 steps; logs in ~/.local/state/femkit/operations/project-square/20261125T164701.911331Z
+  3. copy 10 files of laplace_square to ~/femkit-projects/square
+[project new] 3 steps; logs in ~/.local/state/femkit/operations/project-square/20261128T040235.656467Z
 [1/3] make the projects root ~/femkit-projects
 [2/3] make the global library ~/femkit-projects/materials, holding a copy of femkit's shipped materials: vacuum
-[3/3] copy 8 files of laplace_square to ~/femkit-projects/square
-[project new] made ~/femkit-projects/square from laplace_square: 8 files
+[3/3] copy 10 files of laplace_square to ~/femkit-projects/square
+[project new] made ~/femkit-projects/square from laplace_square: 10 files
+  copied
   components/square/component.toml
   components/square/geometry.py
+  definitions.py
   materials/vacuum/material.toml
   mesh/uniform.toml
-  observables/midpoint.toml
+  observables/midpoint/observables.toml
+  observables/midpoint/observe.py
   physics/electrostatics.toml
   project.toml
   studies/check.toml
+next -- check the new project, as any other:
+    femkit project check --project square
 ```
 
 The second project has only its own files to copy:
@@ -112,19 +117,24 @@ The second project has only its own files to copy:
 ```console
 $ femkit project new layers --from two_material --yes
 [project new] plan: 1 step
-  1. copy 9 files of two_material to ~/femkit-projects/layers
-[project new] 1 step; logs in ~/.local/state/femkit/operations/project-layers/20261125T164702.540227Z
-[1/1] copy 9 files of two_material to ~/femkit-projects/layers
-[project new] made ~/femkit-projects/layers from two_material: 9 files
+  1. copy 11 files of two_material to ~/femkit-projects/layers
+[project new] 1 step; logs in ~/.local/state/femkit/operations/project-layers/20261128T040236.600272Z
+[1/1] copy 11 files of two_material to ~/femkit-projects/layers
+[project new] made ~/femkit-projects/layers from two_material: 11 files
+  copied
   components/slab/component.toml
   components/slab/geometry.py
+  definitions.py
   materials/dielectric_1/material.toml
   materials/dielectric_2/material.toml
   mesh/uniform.toml
-  observables/benchmark.toml
+  observables/benchmark/observables.toml
+  observables/benchmark/observe.py
   physics/electrostatics.toml
   project.toml
   studies/benchmark.toml
+next -- check the new project, as any other:
+    femkit project check --project layers
 ```
 
 Your projects root now holds this:
@@ -139,10 +149,13 @@ Your projects root now holds this:
 │   │   ├── component.toml           what the geometry script promises, and the material of each body
 │   │   └── geometry.py              the geometry script
 │   ├── materials/vacuum/material.toml   the project's own vacuum
-│   ├── mesh/uniform.toml            a mesh recipe
-│   ├── observables/midpoint.toml    what to report
+│   ├── mesh/uniform.toml            a mesh recipe, and the mesher that makes its mesh
+│   ├── observables/midpoint/        an observables part: what each solved case gives
+│   │   ├── observables.toml         the studies it reads, and each observable
+│   │   └── observe.py               the functions that compute them
 │   ├── physics/electrostatics.toml  the physics: the equation and the conditions on each boundary
-│   └── studies/check.toml           a study: what is solved, and what varies
+│   └── studies/
+│       └── check.toml               a study: what is solved, on which geometry, and what varies
 └── layers/                          another project
     └── …
 ```
@@ -156,6 +169,7 @@ first (chapter 6).
 ```console
 $ femkit project list
 [project list] 2 projects in ~/femkit-projects
+  name    studies
   layers  benchmark
   square  check
 ```
@@ -169,20 +183,26 @@ your own, to keep related projects together:
 ```console
 $ femkit project new gaps/narrow --from laplace_square --yes
 [project new] plan: 1 step
-  1. copy 8 files of laplace_square to ~/femkit-projects/gaps/narrow
-[project new] 1 step; logs in ~/.local/state/femkit/operations/project-gaps.narrow/20261125T164703.716953Z
-[1/1] copy 8 files of laplace_square to ~/femkit-projects/gaps/narrow
-[project new] made ~/femkit-projects/gaps/narrow from laplace_square: 8 files
+  1. copy 10 files of laplace_square to ~/femkit-projects/gaps/narrow
+[project new] 1 step; logs in ~/.local/state/femkit/operations/project-gaps.narrow/20261128T040238.463751Z
+[1/1] copy 10 files of laplace_square to ~/femkit-projects/gaps/narrow
+[project new] made ~/femkit-projects/gaps/narrow from laplace_square: 10 files
+  copied
   components/square/component.toml
   components/square/geometry.py
+  definitions.py
   materials/vacuum/material.toml
   mesh/uniform.toml
-  observables/midpoint.toml
+  observables/midpoint/observables.toml
+  observables/midpoint/observe.py
   physics/electrostatics.toml
   project.toml
   studies/check.toml
+next -- check the new project, as any other:
+    femkit project check --project gaps/narrow
 $ femkit project list
 [project list] 3 projects in ~/femkit-projects
+  name         studies
   gaps/narrow  check
   layers       benchmark
   square       check
@@ -218,22 +238,27 @@ print("my own plotting script")
 ```console
 $ femkit project new layers_thin --from layers --yes
 [project new] plan: 1 step
-  1. copy 10 files of layers to ~/femkit-projects/layers_thin, leaving out what each note below names
-[project new] 1 step; logs in ~/.local/state/femkit/operations/project-layers_thin/20261125T164705.976645Z
-[1/1] copy 10 files of layers to ~/femkit-projects/layers_thin, leaving out what each note below names
-[project new] made ~/femkit-projects/layers_thin from layers: 10 files
+  1. copy 12 files of layers to ~/femkit-projects/layers_thin, leaving out what each note below names
+[project new] 1 step; logs in ~/.local/state/femkit/operations/project-layers_thin/20261128T040242.138267Z
+[1/1] copy 12 files of layers to ~/femkit-projects/layers_thin, leaving out what each note below names
+[project new] made ~/femkit-projects/layers_thin from layers: 12 files
+  copied
   components/slab/component.toml
   components/slab/geometry.py
   custom/plot.py
+  definitions.py
   materials/dielectric_1/material.toml
   materials/dielectric_2/material.toml
   mesh/uniform.toml
-  observables/benchmark.toml
+  observables/benchmark/observables.toml
+  observables/benchmark/observe.py
   physics/electrostatics.toml
   project.toml
   studies/benchmark.toml
   - not copied: femkit does not read this file, as it is none of the project's parts
       notes.txt
+next -- check the new project, as any other:
+    femkit project check --project layers_thin
 ```
 
 The copy keeps `custom/plot.py`, and leaves out `notes.txt`, saying so in a
@@ -241,8 +266,9 @@ The copy keeps `custom/plot.py`, and leaves out `notes.txt`, saying so in a
 a project is made of is one of its **parts** (chapter 3); femkit reads only
 those, so a file that is none of them is not copied. Your notes belong in
 `custom/`.
-Whatever femkit itself writes into a project — its cases (chapter 5), and
-later its runs and results — is never copied either, nor the backup files an
+Whatever femkit itself writes into a project — its cases (chapter 5), its
+stages and jobs under `runs/` (chapter 7), and later its results — is never
+copied either, nor the backup files an
 editor keeps beside the file you edit: a copy starts clean.
 
 ## Your files are yours

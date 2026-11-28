@@ -2,6 +2,7 @@
 # Constraint rationale: docs/decisions/0004-elmer-stability-first-baseline.md
 engine = "elmer"
 version = "26.2"                      # what `ElmerSolver -v` reports for release-26.2.1
+version_command = ["ElmerSolver", "-v"]   # read by Elmer's own version reader: no line it prints is the version alone
 description = "Elmer with MPI and OpenMP"
 default = true
 thread_variables = ["OMP_NUM_THREADS"]
@@ -12,7 +13,6 @@ conda = [
   "openmpi", "mpi4py", "libblas=*=*openblas", "liblapack=*=*openblas", "scalapack",
   "mumps-mpi", "hypre", "parmetis", "gmsh=4.15.2", "meshio", "numpy",
 ]
-pip = []
 forbid = ["rocm", "rocalution", "cudss", "ngsolve", "netgen"]
 
 [toolchain]                           # its own compilers and build tools, proven before any source is fetched (definitions.md § 4.6)
@@ -31,8 +31,8 @@ tools = ["cmake", "make", "pkg-config", "git", "bash", "sed", "grep", "gawk", "t
 compilers = { c = "CC", cxx = "CXX", fortran = "FC" }  # language -> the variable the activation sets
 mpi = { c = "mpicc", cxx = "mpicxx", fortran = "mpifort" }  # its MPI's compiler wrappers: two ranks are run
 
-[provides]
-executables = ["python", "cmake", "make", "git", "mpirun", "ElmerGrid", "ElmerSolver", "ElmerSolver_mpi", "gmsh"]
+[provides]                            # beyond its toolchain's tools, which the toolchain step proves
+executables = ["python", "mpirun", "ElmerGrid", "ElmerSolver", "ElmerSolver_mpi", "gmsh"]
 modules = ["meshio"]
 
 [[sources]]
@@ -148,7 +148,8 @@ AMGX_ROOT = "{prefix}"
 # ---- checks (envs.md § 5).
 # Elmer's own CTest cases, read from the solver's Norm / RefNorm lines: one case
 # with one and two threads must agree; Hypre and MUMPS each over two ranks; AmgX
-# on the GPU must match MUMPS. gmsh and ElmerGrid mesh a square.
+# on the GPU must match MUMPS. gmsh and ElmerGrid mesh a square. The runner holds the
+# ranks and threads each log reports to the check's own (definitions.md § 5.2).
 
 [[checks]]
 id = "mesh"
@@ -174,7 +175,7 @@ build = "elmer"
 test = "VectorHelmholtzWaveguide"
 threads = 2
 read = "elmer-solver-log"
-expect = { reference_error = { max = 1e-3 }, threads = { equals = 2 } }
+expect = { reference_error = { max = 1e-3 } }
 agree = "vector-helmholtz"
 
 [[checks]]
@@ -184,7 +185,7 @@ build = "elmer"
 test = "mgdyn_hypre_ams2_np2"
 ranks = 2
 read = "elmer-solver-log"
-expect = { reference_error = { max = 1e-5 }, ranks = { equals = 2 } }
+expect = { reference_error = { max = 1e-5 } }
 
 [[checks]]
 id = "mumps-mpi"
@@ -193,7 +194,7 @@ build = "elmer"
 test = "WinkelBmPoissonMumps_np2"
 ranks = 2
 read = "elmer-solver-log"
-expect = { reference_error = { max = 1e-5 }, ranks = { equals = 2 }, amgx_solves = { equals = 0 } }
+expect = { reference_error = { max = 1e-5 }, amgx_solves = { equals = 0 } }
 agree = "winkel-poisson"
 
 # Adaptive re-meshing: Elmer's own electrostatic cases, re-meshed by Mmg on one rank and
@@ -224,7 +225,7 @@ test = "StatElecSolveParMMG3D_np3"
 ranks = 3
 upstream_verdict = false
 read = "elmer-solver-log"
-expect = { parmmg_runs = { min = 1 }, adaptive_converged = { min = 1 }, adaptive_depth_limited = { equals = 0 }, ranks = { equals = 3 } }
+expect = { parmmg_runs = { min = 1 }, adaptive_converged = { min = 1 }, adaptive_depth_limited = { equals = 0 } }
 agree = "adaptive-remesh"
 
 [[checks]]

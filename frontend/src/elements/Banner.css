@@ -1,14 +1,47 @@
-.banner { display: flex; align-items: center; gap: var(--space-4); height: var(--bar-height); padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--line); background: var(--banner), var(--surface); }
-.banner__brand { display: flex; align-items: center; gap: var(--space-2); text-decoration: none; color: var(--text); flex: none; }
-.banner__mark { border-radius: 8px; box-shadow: var(--shadow-sm); }
-.banner__name { font-size: var(--text-lg); font-weight: var(--weight-bold); letter-spacing: -0.01em;
-  background: linear-gradient(90deg, var(--brand-from), var(--brand-to)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.banner__workspace { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--line); background: var(--banner), var(--surface); }
-.banner__workspace-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--radius);
-  background: var(--accent-soft); color: var(--accent); flex: none; }
+/* Banner: the brand in the top bar; the hero — the accent's gradient with a quiet depth — before a
+   project is open; a workspace's title and tagline. */
+.banner { display: inline-flex; align-items: center; gap: var(--space-2); text-decoration: none; color: inherit; }
+.banner__mark { width: var(--size-mark); height: var(--size-mark); }
+.banner__name { font-size: var(--type-size-lg); font-weight: var(--type-weight-bold); letter-spacing: var(--type-tracking-tight); }
+
+.banner--hero {
+  position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; align-items: stretch; gap: var(--space-8);
+  padding: var(--space-12) var(--space-10); border-radius: var(--size-radius-lg); color: var(--color-hero-text);
+  background: linear-gradient(to bottom right, var(--color-hero-from), var(--color-hero-via), var(--color-hero-to));
+  box-shadow: var(--layer-lifted-shadow);
+}
+.banner__depth {
+  position: absolute; inset: 0; z-index: var(--layer-behind); pointer-events: none;
+  background:
+    radial-gradient(circle at top right, var(--color-hero-glow), transparent),
+    radial-gradient(ellipse at bottom left, var(--color-hero-glow), transparent);
+}
+.banner__echo {
+  position: absolute; right: calc(var(--space-16) * -1); bottom: calc(var(--space-20) * -1);
+  width: var(--layout-hero-echo); height: var(--layout-hero-echo);
+  opacity: var(--color-opacity-echo); filter: blur(var(--size-rule));
+}
+.banner__words { display: flex; align-items: center; gap: var(--space-6); }
+.banner__mark--hero {
+  width: var(--size-mark-hero); height: var(--size-mark-hero);
+  border-radius: var(--size-radius-lg); box-shadow: var(--layer-lifted-shadow);
+}
+.banner__title {
+  margin: 0; font-size: var(--type-size-3xl); font-weight: var(--type-weight-bold);
+  letter-spacing: var(--type-tracking-tight); line-height: var(--type-leading-tight);
+}
+.banner__tagline { margin: var(--space-2) 0 0; max-width: var(--layout-hero); font-size: var(--type-size-lg); color: var(--color-hero-muted); }
+.banner__first { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+
+.banner__workspace { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.banner__workspace-mark {
+  display: grid; place-items: center; width: var(--size-control); height: var(--size-control); flex: none;
+  color: var(--color-accent); background: var(--color-accent-soft); border-radius: var(--size-radius);
+}
 .banner__workspace-words { min-width: 0; flex: 1; }
-.banner__workspace-title { margin: 0; font-size: var(--text-xl); font-weight: var(--weight-bold); letter-spacing: -0.01em; }
-.banner__workspace-tagline { margin: 0; font-size: var(--text-sm); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.banner__workspace-aside { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.banner__workspace-title { margin: 0; font-size: var(--type-size-md); font-weight: var(--type-weight-strong); line-height: var(--type-leading-tight); }
+.banner__workspace-tagline {
+  margin: 0; font-size: var(--type-size-xs); color: var(--color-text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.banner__workspace-aside { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }

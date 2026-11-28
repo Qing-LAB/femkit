@@ -1,4 +1,6 @@
-"""`serve start`, `foreground`, `status`, `restart`, `stop` (web.md § 4)."""
+"""`serve start`, `foreground`, `status`, `restart`, `stop` (web.md § 4): each but `status` offered on
+the command line alone, since run from the page it would stop, replace or hold the very server the
+page talks to (api.md § 2, `surfaces`)."""
 
 from __future__ import annotations
 
@@ -18,16 +20,17 @@ from pydantic import Field
 
 from femkit.config import settings
 from femkit.config.probe import place
-from femkit.core import dirs, locks, persist, text, view
+from femkit.core import dirs, locks, persist, process, text, view
 from femkit.core.errors import PlanStale, Refused, UsageError
-from femkit.core.operations import Context, Outcome, Plan, Result, Step, operation, run_steps
+from femkit.core.operations import CLI_ALONE, Context, Outcome, Plan, Result, Step, operation, run_steps
 from femkit.core.persist import open_private, private_dir
 from femkit.core.process import GRACE, TAIL_LINES, Identity, end, start_detached, tail
 from femkit.core.schema import DefinitionError, Model
 from femkit.definitions import catalogue
-from femkit.server import build, health, protocol, startup, supervisor
+from femkit.envs import start
+from femkit.server import health, protocol, startup, supervisor
 from femkit.server.protocol import LOOPBACK, Listen
-from femkit.server.state import facts, machine, require
+from femkit.server.state import CLEAN, NEW_CHILD, RESTART, START, STOP, does, facts, machine, require
 from femkit.config.requests import CONFIG_SHOW
 from femkit.server.requests import (DEFAULT_PORT, SERVE_FOREGROUND, SERVE_RESTART, SERVE_START, SERVE_STATUS,
                                     SERVE_STOP, ServeRequest, StatusRequest, TargetRequest)
@@ -64,16 +67,29 @@ def _listen(req: ServeRequest, ctx: Context) -> Listen:
 
 # ------------------------------------------------------------------ what start refuses
 
-def _web_subject() -> str:
-    """The web environment's lock subject: a running server holds it shared (web.md § 4)."""
+SERVER = "server"   # the server's child, by its name in programs.toml: its environment and module (envs.md § 4.4)
+
+
+def _child(ctx: Context):
+    """The server's child as `programs.toml` declares it: the environment it runs in, its module."""
+    from femkit.envs import inside
+    return inside.program(ctx, SERVER)
+
+
+def _uses(ctx: Context) -> tuple[str, ...]:
+    """The environments a running server uses, each held shared for as long as it runs (web.md § 4):
+    the web environment, which runs its child, and the control environment, which runs its
+    supervisor — its subject the control environment's name (envs.md § 7.3)."""
     from femkit.envs import layout
-    return layout.subject(build.TOOL)
+    return (layout.subject(_child(ctx).environment), dirs.CONTROL)
 
 
 def web_python(ctx: Context) -> str:
-    """The web environment's Python, which runs the server's child; refused until that
-    environment is `ready` (web.md § 4)."""
-    return str(build.ready(ctx) / "bin" / "python")
+    """The Python of the environment the server's child runs in, `web`; refused where that
+    environment's state does not allow its use, with that state's own next steps (web.md § 4;
+    envs.md § 3.3)."""
+    from femkit.envs.state import usable
+    return str(usable(ctx, _child(ctx).environment, "the web server").prefix / "bin" / "python")
 
 
 def _preflight(listen: Listen, ctx: Context) -> None:
@@ -96,7 +112,10 @@ def _preflight(listen: Listen, ctx: Context) -> None:
     private_dir(dirs.runtime_dir(), make=False)   # made by the apply, never by a plan
     if listen.socket and len(listen.socket.encode()) > protocol.SOCKET_PATH_MAX:
         raise UsageError(f"the socket's path is longer than a Unix socket's {protocol.SOCKET_PATH_MAX} bytes: "
-                         f"{listen.socket}", (view.shell(f"export {dirs.VARIABLES['runtime']}=/a/shorter/path"),),
+                         f"{listen.socket}", (view.shell(
+                             f"export {dirs.VARIABLES['runtime']}={{path}}",
+                             fills=[view.Fill(field="path", label="a runtime directory with a shorter absolute path",
+                                              example="/a/shorter/path")]),),
                          code="socket-path-too-long", subject=listen.socket)
 
 
@@ -188,7 +207,7 @@ def _end_stale(f) -> list[str]:
     """A stale server's leftovers: a child it names that still runs is ended, the files removed."""
     said = []
     if f.pidfile is not None and f.pidfile.child is not None and f.pidfile.child.alive():
-        end(f.pidfile.child)
+        end(f.pidfile.child, group=True)   # a child leads its own group, as every child femkit starts
         said.append(f"ended the child still running, pid {f.pidfile.child.pid}")
     listen = f.pidfile.listen if f.pidfile else Listen.named(f.name)
     supervisor.remove_files(listen)
@@ -214,29 +233,43 @@ def _wait_answer(listen: Listen, token: str, alive, *, previous: Identity | None
 
 # ------------------------------------------------------------------ results
 
+def _serving(listen: str, forwarding: view.Action | None, address: str) -> list:
+    """What a person reads once a server answers: where it listens; for a socket, the line to
+    run on their own machine, an action as every command to run is; the address to open."""
+    blocks: list = [view.Text(text=f"serving on {listen}")]
+    if forwarding:
+        blocks.append(view.Next(label="on your own machine", actions=[forwarding]))
+    return blocks + [view.Text(text=f"open:  {address}")]
+
+
 class ServeOutcome(Outcome):
     listen: str | None = Field(default=None, description="where it listens")
     address: str | None = Field(default=None, description="the address to open, with its token")
-    forwarding: str | None = Field(default=None, description="for a socket: the line to run on your own machine")
+    forwarding: view.Action | None = Field(default=None, description="for a socket: the line to run on your own "
+                                                                     "machine")
     server_log: str | None = Field(default=None, description="the server's log")
 
+    @property
     def report(self) -> view.Report:
         blocks: list = []
         if self.status == "failed":
             blocks += [view.Text(text=line) for line in self.plan.text(brief=True).splitlines()]
         if self.address and self.status == "done":
-            blocks.append(view.Text(text=f"serving on {self.listen}"))
-            if self.forwarding:
-                blocks.append(view.Next(label="on your own machine", actions=[view.shell(self.forwarding)]))
-            blocks.append(view.Text(text=f"open:  {self.address}"))
+            blocks += _serving(self.listen or "", self.forwarding, self.address)
         if self.server_log:
             blocks.append(view.Text(text=f"log: {self.server_log}"))
         return view.Report(blocks=blocks)
 
 
+def _forwarding(listen: Listen) -> view.Action | None:
+    """For a socket, the line to run on the person's own machine, as every step a person runs is."""
+    line = forwarding(listen)
+    return view.shell(line) if line else None
+
+
 def _outcome(plan: Plan, status: str, where: Path, listen: Listen, token: str | None) -> ServeOutcome:
     return ServeOutcome(plan=plan, status=status, log=str(where), listen=listen.describe(),
-                        address=address(listen, token) if token else None, forwarding=forwarding(listen),
+                        address=address(listen, token) if token else None, forwarding=_forwarding(listen),
                         server_log=str(protocol.log_file(listen.name)))
 
 
@@ -246,9 +279,9 @@ def _start_basis(req: ServeRequest, ctx: Context) -> dict:
     """Where it would listen, that server's state, and the state of the environment it runs
     in: what a start rests on."""
     from femkit.envs.state import observe
-    listen = _listen(req, ctx)
+    listen, environment = _listen(req, ctx), _child(ctx).environment
     return {"state": machine(ctx).observe(facts(listen.name)).value, "listen": listen.as_json(),
-            build.TOOL: observe(ctx, build.TOOL)[1].value}
+            environment: observe(ctx, environment)[1].value}
 
 
 def _start_plan(req: ServeRequest, ctx: Context, detached: bool) -> Plan:
@@ -258,22 +291,26 @@ def _start_plan(req: ServeRequest, ctx: Context, detached: bool) -> Plan:
     state = m.observe(f)
     require(ctx, f, state, "start")
     _preflight(listen, ctx)
+    done = does(ctx, f, state)     # what its table gives the state: a stale one's files removed first
     steps = [Step(id="clean", describe="remove the stale server's files, ending a child it left")] \
-        if state is m.states.stale else []
+        if CLEAN in done else []
+    if START not in done:
+        return Plan(subjects=(protocol.subject(listen.name),), steps=tuple(steps))
     steps += [Step(id="listen", describe=f"listen on {listen.describe()}"),
               Step(id="token", describe=f"write the access token to {text.path(protocol.token_file(listen.name))}")]
+    uses, module = _uses(ctx), _child(ctx).module
     if detached:
-        shown = supervisor.argv(sys.executable, web_python(ctx), listen,
-                                {"socket": "<socket>", "lock": "<lock>", "use": "<use>"}, json.dumps(_holds(listen)),
-                                req.log_max_mb * 1024 * 1024, req.log_keep)
+        shown = supervisor.argv(sys.executable, web_python(ctx), module, listen,
+                                {"socket": "<socket>", "lock": "<lock>", "use": [f"<{s}>" for s in uses]},
+                                json.dumps(_holds(listen)), req.log_max_mb * 1024 * 1024, req.log_keep)
         steps += [Step(id="supervise", describe="start the supervisor, detached, which runs the web application",
                        argv=tuple(shown)),
                   Step(id="answer", describe="wait until it answers with the token")]
     else:
         steps += [Step(id="supervise", describe="run the supervisor here, until Ctrl-C or `serve stop`, which "
                                                 "runs the web application", argv=tuple(supervisor.child_argv(
-                                                    web_python(ctx), listen, "<socket>", "<this process>")))]
-    return Plan(subjects=(protocol.subject(listen.name),), shared=(_web_subject(),), steps=tuple(steps))
+                                                    web_python(ctx), module, listen, "<socket>", "<this process>")))]
+    return Plan(subjects=(protocol.subject(listen.name),), shared=uses, steps=tuple(steps))
 
 
 def _started(plan: Plan) -> tuple[Listen, object]:
@@ -282,7 +319,7 @@ def _started(plan: Plan) -> tuple[Listen, object]:
     return listen, facts(listen.name)
 
 
-@operation(SERVE_START, result=ServeOutcome, changes=True, subject="plan")
+@operation(SERVE_START, result=ServeOutcome, subject="plan", surfaces=CLI_ALONE)
 class ServeStart:
     """Start the web server in the background, supervised; print the address to open."""
 
@@ -308,10 +345,11 @@ class ServeStart:
                 held["token"] = _write_token(listen)
             elif step.id == "supervise":
                 sock, lock_fd = held["socket"], locks.held_fd(protocol.subject(listen.name))
-                use_fd = locks.held_fd(_web_subject())
-                fds = {"<socket>": str(sock.fileno()), "<lock>": str(lock_fd), "<use>": str(use_fd)}
+                use_fds = {f"<{s}>": locks.held_fd(s) for s in plan.shared}
+                fds = {"<socket>": str(sock.fileno()), "<lock>": str(lock_fd), **{k: str(v) for k, v in use_fds.items()}}
                 argv = [fds.get(a, a) for a in step.argv]   # the plan's command, its descriptors now known
-                held["supervisor"] = start_detached(argv, keep_fds=(sock.fileno(), lock_fd, use_fd), cwd=dirs.checkout(),
+                held["supervisor"] = start_detached(argv, keep_fds=(sock.fileno(), lock_fd, *use_fds.values()),
+                                                    env=dirs.femkit_env(start.clean(ctx)), cwd=dirs.checkout(),
                                                     log=protocol.supervisor_log(listen.name))
                 sock.close()  # the supervisor holds it now
             elif step.id == "answer":
@@ -334,15 +372,12 @@ class ServeStart:
         return _outcome(plan, status, where, listen, held.get("token") if status == "done" else None)
 
 
-@operation(SERVE_FOREGROUND, result=ServeOutcome, changes=True, subject="plan")
+@operation(SERVE_FOREGROUND, result=ServeOutcome, subject="plan", surfaces=CLI_ALONE)
 class ServeForeground:
     """Run the web server in this terminal, supervised; Ctrl-C stops it. `serve status`,
     `restart` and `stop` act on it from another terminal."""
 
     def plan(self, req: ServeRequest, ctx: Context) -> Plan:
-        if threading.current_thread() is not threading.main_thread():
-            raise UsageError("serve foreground runs in a terminal; from here, use serve start", code="no-terminal",
-                             subject="serve.foreground")
         return _start_plan(req, ctx, detached=False)
 
     def observe(self, req: ServeRequest, ctx: Context) -> dict:
@@ -357,11 +392,11 @@ class ServeForeground:
         def announce(child: Identity) -> None:
             def wait() -> None:
                 ok, said = _wait_answer(listen, held["token"], lambda: True)
-                if ok:
-                    lines = [f"serving on {listen.describe()}"]
-                    lines += [f"on your own machine:  {forwarding(listen)}"] if listen.socket else []
-                    lines += [f"open:  {address(listen, held['token'])}"]
-                    observer.note("\n".join(lines))
+                if ok:   # the report `start` ends with, written as every report is (web.md § 7.6)
+                    served = view.Report(blocks=_serving(listen.describe(), _forwarding(listen),
+                                                         address(listen, held["token"])))
+                    for line in text.report(served).splitlines():
+                        observer.note(line)
             threading.Thread(target=wait, daemon=True).start()
 
         def do(step: Step, where: Path):
@@ -374,9 +409,10 @@ class ServeForeground:
             elif step.id == "token":
                 held["token"] = _write_token(listen)
             elif step.id == "supervise":
-                for subject in (protocol.subject(listen.name), _web_subject()):  # the runner's holds, named as the server
+                for subject in (protocol.subject(listen.name), *plan.shared):  # the runner's holds, named as the server
                     locks.adopt(locks.held_fd(subject), *_holds(listen))
                 code = supervisor.supervise(listen, held["socket"].fileno(), step.argv[0],  # the plan's Python
+                                            _child(ctx).module, start.clean(ctx),
                                             log_max_bytes=req.log_max_mb * 1024 * 1024,
                                             log_keep=req.log_keep, echo=sys.stdout.buffer,
                                             on_child=announce)
@@ -409,16 +445,15 @@ def _child_locks(f, force: bool, verb: view.Verb) -> None:
 
 
 def _signal(f, sig: int) -> Identity:
-    """Signal the supervisor the pidfile names, only when it is that process."""
+    """Signal the supervisor the pidfile names, only when it is that process (core.md § 8)."""
     who = f.pidfile.supervisor
-    if not who.alive():
+    if not process.signal(who, sig):
         raise PlanStale("the supervisor ended since the plan; plan again", (view.command(SERVE_STATUS),),
                         code="supervisor-ended", subject=f.name)
-    os.kill(who.pid, sig)
     return who
 
 
-@operation(SERVE_RESTART, result=ServeOutcome, changes=True)
+@operation(SERVE_RESTART, result=ServeOutcome, surfaces=CLI_ALONE)
 class ServeRestart:
     """Replace the server's child with a fresh one, keeping its address and token: how a
     change to the application's code takes effect."""
@@ -428,6 +463,8 @@ class ServeRestart:
         f = facts(name)
         state = machine(ctx).observe(f)
         require(ctx, f, state, "restart")
+        if NEW_CHILD not in does(ctx, f, state):   # what its table gives the state
+            return Plan()
         _preflight(f.pidfile.listen, ctx)
         _child_locks(f, req.force, SERVE_RESTART)
         return Plan(steps=(Step(id="signal", describe=f"ask the supervisor, pid {f.pidfile.supervisor.pid}, "
@@ -458,7 +495,7 @@ class ServeRestart:
         return _outcome(plan, status, where, listen, token if status == "done" else None)
 
 
-@operation(SERVE_STOP, result=ServeOutcome, changes=True, subject="plan")
+@operation(SERVE_STOP, result=ServeOutcome, subject="plan", surfaces=CLI_ALONE)
 class ServeStop:
     """Stop the server: its child, then its supervisor; the pidfile, the token and the
     socket go with them."""
@@ -466,15 +503,14 @@ class ServeStop:
     def plan(self, req: TargetRequest, ctx: Context) -> Plan:
         name = _target(req).name
         f = facts(name)
-        m = machine(ctx)
-        state = m.observe(f)
+        state = machine(ctx).observe(f)
         require(ctx, f, state, "stop")
-        if state is m.states.stopped:
-            steps = ()
-        elif state is m.states.stale:
+        done = does(ctx, f, state)    # what its table gives the state: nothing, a stale one's files, a stop
+        if CLEAN in done:
             return Plan(subjects=(protocol.subject(name),),   # free since its supervisor ended: held while cleaning
                         steps=(Step(id="clean", describe="remove the stale server's files, ending a child it left"),))
-        else:
+        steps: tuple[Step, ...] = ()
+        if STOP in done:
             _child_locks(f, req.force, SERVE_STOP)
             steps = (Step(id="signal", describe=f"stop the supervisor, pid {f.pidfile.supervisor.pid} (SIGTERM)"),
                      Step(id="gone", describe="wait until it has ended and released its lock"))
@@ -490,7 +526,7 @@ class ServeStop:
         name = _target(req).name
         f = facts(name)
         listen = f.pidfile.listen if f.pidfile else Listen.named(name)
-        if plan.basis["state"] == machine(ctx).states.running.value:
+        if any(s.id == "signal" for s in plan.steps):
             _child_locks(f, req.force, SERVE_STOP)  # again: the page may have started one since the plan
 
         def do(step: Step, where: Path):
@@ -504,9 +540,9 @@ class ServeStop:
                 while locks.is_held(protocol.subject(name)) and time.monotonic() < deadline:
                     time.sleep(0.1)
                 if locks.is_held(protocol.subject(name)):
-                    end(f.pidfile.supervisor, grace=0)
+                    end(f.pidfile.supervisor, grace=0)   # alone: in a terminal it may share a group with others
                     if f.pidfile.child:
-                        end(f.pidfile.child, grace=0)
+                        end(f.pidfile.child, grace=0, group=True)
                     supervisor.remove_files(listen)
                     observer.note("it did not end in time: killed")
             return "done", None
@@ -520,7 +556,7 @@ class ServeStop:
 class ServerRow(Model):
     name: str = Field(description="the port, or `sock`")
     host: str = Field(description="the host its pidfile was written on")
-    state: str = Field(description="its state, observed (web.md § 4)", json_schema_extra={"doc": "web.md § 4"})
+    state: str = Field(description="its state, observed", json_schema_extra={"doc": "web.md § 4"})
     listen: str | None = Field(default=None, description="where it listens")
     supervisor: int | None = Field(default=None, description="the supervisor's process ID")
     child: int | None = Field(default=None, description="the child's process ID")
@@ -533,28 +569,39 @@ class ServerRow(Model):
 class StatusResult(Result):
     servers: list[ServerRow] = Field(default_factory=list)
     address: str | None = Field(default=None, description="for one named, running server: the address with its token")
+    next: list[view.Action] = Field(default_factory=list, description="for each server up and not answering: the "
+                                    "line that dumps its child's stacks into the stacks log, and its restart")
 
+    @property
     def report(self) -> view.Report:
         if not self.servers:
             return view.Report(blocks=[view.Text(text="no server is running")])
-        rows = [{"server": s.listen or s.name,
+        rows = [{"listen": s.listen or s.name,
                  "state": s.state + (" (foreground)" if s.foreground else ""),
-                 "pids": f"pid {s.supervisor}" + (f", child {s.child}" if s.child else "") if s.supervisor else "",
+                 "supervisor": (f"pid {s.supervisor}" + (f", child {s.child}" if s.child else ""))
+                 if s.supervisor else "",
                  "answers": "" if s.answers is None else "answers" if s.answers else f"NOT ANSWERING: {s.said}"}
                 for s in self.servers]
-        columns = view.columns("server", "state", "pids", "answers")
-        blocks: list = [view.Table(columns=columns, rows=rows)]
+        blocks: list = [view.Table.of(ServerRow, rows, "listen", "state", "supervisor", "answers")]
         if self.address:
             blocks.append(view.Text(text=f"open:  {self.address}"))
-        actions = []
-        for s in self.servers:
-            if s.answers is False:
-                actions += [view.shell(f"kill -USR1 {s.child}")] if s.child else []
-                actions.append(view.command(SERVE_RESTART, **protocol.target(s.name)))
-        if actions:
+        if self.next:
             blocks.append(view.Next(label="up and not answering: dump its child's stacks into the stacks log, "
-                                          "then decide on a restart", actions=actions))
+                                          "then decide on a restart", actions=self.next))
         return view.Report(blocks=blocks)
+
+
+def _not_answering(ctx: Context, servers: list[ServerRow]) -> list[view.Action]:
+    """For each server up and not answering: the line that dumps its child's stacks into the stacks
+    log, and its restart, as its state's table gives it (web.md § 4)."""
+    m, actions = machine(ctx), []
+    for s in servers:
+        if s.answers is False:
+            f = facts(s.name)
+            actions += [view.shell(f"kill -USR1 {s.child}")] if s.child else []
+            restart = m.allowed(m.observe(f)).get(RESTART)
+            actions += [restart.next(f)] if restart is not None else []
+    return actions
 
 
 def _row(ctx: Context, name: str) -> ServerRow:
@@ -583,7 +630,9 @@ def serve_status(req: StatusRequest, ctx: Context) -> StatusResult:
         row = _row(ctx, name)
         token = _read_token(name) if row.answers else None
         p = protocol.read_pidfile(protocol.pidfile(name))
-        return StatusResult(servers=[row], address=address(p.listen, token) if token and p else None)
+        return StatusResult(servers=[row], address=address(p.listen, token) if token and p else None,
+                            next=_not_answering(ctx, [row]))
     runtime = dirs.runtime_dir()
     names = sorted(p.name[len("serve-"):-len(".pid")] for p in runtime.glob("serve-*.pid")) if runtime.is_dir() else []
-    return StatusResult(servers=[_row(ctx, n) for n in names])
+    rows = [_row(ctx, n) for n in names]
+    return StatusResult(servers=rows, next=_not_answering(ctx, rows))

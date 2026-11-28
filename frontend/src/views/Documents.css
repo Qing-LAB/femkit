@@ -1,0 +1,14 @@
+/* Documents: the tree beside the document — arrangement only. */
+.documents { display: grid; grid-template-columns: var(--layout-operations) 1fr; height: 100%; }
+.documents__side { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); overflow: auto; background: var(--color-surface); border-right: var(--size-hairline) solid var(--color-line); }
+.documents__nav { font-size: var(--type-size-sm); }
+.documents__tree { margin: 0; padding-left: var(--space-3); list-style: none; }
+.documents__nav > .documents__tree { padding-left: 0; }
+.documents__folder, .documents__file {
+  display: block; width: 100%; padding: var(--space-1) var(--space-2); border: none; border-radius: var(--size-radius-sm);
+  font: inherit; text-align: left; color: var(--color-text); background: none; text-decoration: none; cursor: pointer;
+}
+.documents__folder { color: var(--color-text-muted); font-weight: var(--type-weight-medium); }
+.documents__folder:hover, .documents__file:hover { background: var(--color-surface-hover); }
+.documents__file--current { color: var(--color-accent-text); background: var(--color-accent-soft); }
+.documents__main { overflow: auto; padding: var(--space-8) var(--space-10); }

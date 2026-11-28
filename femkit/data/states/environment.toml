@@ -1,15 +1,21 @@
-# The states of an engine environment (envs.md § 3), observed from the facts
+# The states of an environment, an engine's or a tool's (envs.md § 3), observed from the facts
 # femkit/envs/state.py gathers and names: `locked`, another process holds its lock alone;
-# `prefix`, its prefix is there; `environment`, the prefix is a manager environment
+# `listed`, the manager lists an environment it names so (envs.md § 1); `orphan`, a folder of its
+# name lies where the manager keeps environments by their names, which it does not list as one;
+# `folder`, the prefix it lists is there; `environment`, that prefix is a manager environment
 # (`conda-meta/`); `manifest`, its manifest reads; `built_as_now`, the manifest's install
 # fingerprint is the current one; `checked`, there are check results for the current check
 # fingerprint, for every check without device = true; `cpu_failed`, one of those did not pass.
-# The first rule that holds gives the state.
+# `orphan`, `ghost` and `broken` are the earlier tool's presence states. The first rule that holds
+# gives the state.
 
 [states]
 busy = "the lock is held"
-absent = "no prefix"
-incomplete = "no readable manifest, or the prefix is not a manager environment"
+orphan = "the manager lists no environment of its name, and a folder of its name lies where the manager keeps environments"
+absent = "the manager lists no environment of its name"
+ghost = "the manager lists it, and the folder it lists is not there"
+broken = "the folder the manager lists is not a manager environment"
+incomplete = "no readable manifest"
 outdated = "the manifest's install fingerprint is not the current one"
 unchecked = "no check results for the current check fingerprint, or none for some check without device = true"
 failing = "a check without device = true did not pass"
@@ -20,12 +26,24 @@ state = "busy"
 when = "locked"
 
 [[rules]]
+state = "orphan"
+when = "not listed and orphan"
+
+[[rules]]
 state = "absent"
-when = "not prefix"
+when = "not listed"
+
+[[rules]]
+state = "ghost"
+when = "not folder"
+
+[[rules]]
+state = "broken"
+when = "not environment"
 
 [[rules]]
 state = "incomplete"
-when = "not manifest or not environment"
+when = "not manifest"
 
 [[rules]]
 state = "outdated"
@@ -43,15 +61,91 @@ when = "cpu_failed"
 state = "ready"
 when = "otherwise"
 
+# What femkit's code does to an environment (envs.md § 3.3), each task with the sentence its plan
+# says and its guard: the facts `env install` observes beside the state — `clean`, it is asked to
+# discard the saved lock (`--clean`); `resumable`, the last install, a validate being none, had the
+# current install fingerprint and did not end done (§ 4.2); `lacking`, the projects under the
+# projects root declare a package for it that its manifest does not record (definitions.md § 4.7).
+# `use` is what a program run in it asks — a stage, a check, `web build`, `serve`, the definitions:
+# a state that lists it allows the environment to be used, and only such a state; it has no guard,
+# so a state another machine's record lists is read alike. The rest are what `install` does:
+# validate it; deliver into it, as it stands, the packages the projects declare that it lacks;
+# resume it; build it,
+# its prefix removed first where there is one — from nothing or an old build (`build`), past an
+# install that cannot resume (`restart`), or anew over a working one (`rebuild`); discard the
+# saved lock first. Each validates it after its manifest (§ 4.1). `remove` is what `clean` does.
+[tasks.use]
+describe = "runs a program in it"
+
+[tasks.validate]
+describe = "validates it: runs its CPU checks and records their verdicts"
+when = "not clean"
+
+[tasks.deliver]
+describe = "delivers into it the packages the projects declare that it lacks — installs them into its prefix, saves its lock again and records them in its manifest — then validates it"
+when = "lacking and not clean"
+
+[tasks.resume]
+describe = "resumes its install, skipping each step the last attempts finished for the current install fingerprint"
+when = "resumable and not clean"
+
+[tasks.build]
+describe = "builds it from its definition, its prefix removed first where there is one, then validates it"
+
+[tasks.restart]
+describe = "removes what the last attempt left, builds it anew from its definition, then validates it"
+when = "clean or not resumable"
+
+[tasks.rebuild]
+describe = "removes it, builds it anew from its definition, then validates it"
+when = "clean"
+
+[tasks.discard]
+describe = "discards its saved lock, so its constraints are solved again"
+when = "clean"
+
+[tasks.remove]
+describe = "removes its prefix, with its manifest and checks; keeps its lock"
+
+# What femkit's code does in each state: only `ready` allows its use. `install` in `busy` is
+# refused by the lock; in `ready` without `--clean` it delivers what the projects add that it lacks,
+# and otherwise does nothing. `clean` removes every installed state's prefix, and an absent one's
+# nothing. femkit never makes an environment over a folder the manager does not list as one, nor
+# removes a folder that is no manager environment: `orphan` and `broken` do nothing, and name the
+# folder for the person to remove; `ghost`, the manager listing a folder that is not there, is made
+# afresh only on `install --clean`, as the earlier tool makes it, nothing removed first.
+[does]
+busy = []
+orphan = []
+absent = ["discard", "build"]
+ghost = ["discard", "build"]
+broken = []
+incomplete = ["discard", "resume", "restart", "remove"]
+outdated = ["discard", "build", "remove"]
+unchecked = ["deliver", "validate", "discard", "rebuild", "remove"]
+failing = ["discard", "rebuild", "remove"]
+ready = ["use", "deliver", "discard", "rebuild", "remove"]
+
 # What each state allows (envs.md § 3.3), by the command a person types; any other is refused,
-# offering these. `install` never discards a working build on its own: in `failing` it is not
-# allowed.
+# offering these — in `busy`, by the lock, naming what holds it. What `install` and `clean` do where
+# a row allows them is the tasks above, never the row. `install` never discards a working build on
+# its own: in `failing` it is not allowed.
 [actions.absent]
 install = { describe = "install", operation = "env.install", request = { names = ["{name}"] } }
-"install --clean" = { describe = "install", operation = "env.install", request = { names = ["{name}"] } }
+"install --clean" = { describe = "install, discarding the saved lock", operation = "env.install", request = { names = ["{name}"], clean = true } }
 clean = { describe = "nothing to do" }
 
 [actions.busy]
+
+[actions.orphan]
+"move aside" = { describe = "remove the folder of its name, which the manager does not list as an environment, or move it aside — femkit never makes an environment over it — then install", shell = "rm -rf {orphan}" }
+
+[actions.ghost]
+"install --clean" = { describe = "install afresh: the manager lists a folder that is not there", operation = "env.install", request = { names = ["{name}"], clean = true } }
+clean = { describe = "nothing to remove: the folder the manager lists is not there" }
+
+[actions.broken]
+"move aside" = { describe = "remove the folder the manager lists, which is no manager environment — femkit never removes it — or move it aside, then install", shell = "rm -rf {prefix}" }
 
 [actions.incomplete]
 install = { describe = "resume the install", operation = "env.install", request = { names = ["{name}"] } }
@@ -64,7 +158,7 @@ install = { describe = "remove, install", operation = "env.install", request = {
 clean = { describe = "remove", operation = "env.clean", request = { name = "{name}" } }
 
 [actions.unchecked]
-install = { describe = "validate", operation = "env.validate", request = { name = "{name}" } }
+install = { describe = "validate, delivering first what the projects add that it lacks", operation = "env.install", request = { names = ["{name}"] } }
 "install --clean" = { describe = "remove, install, discarding the saved lock", operation = "env.install", request = { names = ["{name}"], clean = true } }
 validate = { describe = "validate", operation = "env.validate", request = { name = "{name}" } }
 clean = { describe = "remove", operation = "env.clean", request = { name = "{name}" } }
@@ -72,12 +166,12 @@ clean = { describe = "remove", operation = "env.clean", request = { name = "{nam
 [actions.failing]
 "install --clean" = { describe = "remove, install, discarding the saved lock", operation = "env.install", request = { names = ["{name}"], clean = true } }
 validate = { describe = "validate", operation = "env.validate", request = { name = "{name}" } }
-"validate --gpu" = { describe = "validate the GPU checks", operation = "env.validate", request = { name = "{name}", gpu = true } }
+"validate --gpu" = { describe = "validate the GPU checks, on a GPU node", operation = "env.validate", request = { name = "{name}", gpu = true } }
 clean = { describe = "remove", operation = "env.clean", request = { name = "{name}" } }
 
 [actions.ready]
-install = { describe = "nothing to do" }
+install = { describe = "deliver what the projects add that it lacks; else nothing to do", operation = "env.install", request = { names = ["{name}"] } }
 "install --clean" = { describe = "remove, install, discarding the saved lock", operation = "env.install", request = { names = ["{name}"], clean = true } }
 validate = { describe = "validate", operation = "env.validate", request = { name = "{name}" } }
-"validate --gpu" = { describe = "validate the GPU checks", operation = "env.validate", request = { name = "{name}", gpu = true } }
+"validate --gpu" = { describe = "validate the GPU checks, on a GPU node", operation = "env.validate", request = { name = "{name}", gpu = true } }
 clean = { describe = "remove", operation = "env.clean", request = { name = "{name}" } }

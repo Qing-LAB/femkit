@@ -4,9 +4,10 @@
 // fragment and kept in this tab; it is sent as a Bearer header, never a cookie.
 
 import type {
-  DefectAnswer, Document, Documents, Ended, Image, Lines, OperationInfo, Page, PlanAnswer, RefusalAnswer, RunAnswer,
-  Started,
+  DefectAnswer, Document, Documents, Ended, Image, Lines, LogState, OperationInfo, Page, PlanAnswer, RefusalAnswer,
+  RunAnswer, Started,
 } from "../generated/schemas";
+import { Place, viewer } from "./documents";
 
 export type Outcome<T> =
   | { kind: "ok"; value: T }
@@ -40,6 +41,8 @@ function takeToken(): string | null {
 }
 
 let token: string | null = takeToken();
+const refused = new Set<() => void>();
+const given = new Set<() => void>();
 
 export function hasToken(): boolean {
   return !!token;
@@ -48,7 +51,24 @@ export function hasToken(): boolean {
 export function setToken(value: string): void {
   token = value;
   try { sessionStorage.setItem(KEY, value); } catch { /* the token lives only in this page */ }
+  given.forEach((l) => l());
 }
+
+/** Be told when the server refuses the token (401), wherever the page asked — the shell asks for it
+ *  again; and when a token is given anew — typed, or in the address's fragment. Returns the end of it. */
+export function onToken(lost: () => void, back: () => void): () => void {
+  refused.add(lost);
+  given.add(back);
+  return () => { refused.delete(lost); given.delete(back); };
+}
+
+// A new `#token=` in the address, as a move within the page brings it: taken, as at the start.
+window.addEventListener("hashchange", () => {
+  if (!/token=/.test(window.location.hash)) return;
+  const held = token;
+  token = takeToken();
+  if (token && token !== held) given.forEach((l) => l());
+});
 
 /** What every request carries: the token, as a Bearer header. */
 export function authorization(): string {
@@ -56,20 +76,20 @@ export function authorization(): string {
 }
 
 /** The document viewer's address, in a tab of its own, its token handed over as the page's was. */
-export function viewerAddress(document?: string, section?: string | null): string {
-  const parts = [`token=${token ?? ""}`, document ? `doc=${encodeURIComponent(document)}` : "",
-                 section ? `at=${encodeURIComponent(section)}` : ""];
-  return "/docs#" + parts.filter(Boolean).join("&");
+export function viewerAddress(place: Place = {}): string {
+  return viewer(token ?? "", place);
 }
 
 async function send(path: string, body?: unknown): Promise<Response | Outcome<never>> {
   try {
-    return await fetch(path, {
+    const response = await fetch(path, {
       method: body === undefined ? "GET" : "POST",
       headers: { Authorization: authorization(), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: "omit",
     });
+    if (response.status === 401) refused.forEach((l) => l());     // one place for every route the page asks
+    return response;
   } catch {
     return { kind: "unreachable" };
   }
@@ -114,17 +134,22 @@ async function* jsonLines(response: Response): AsyncGenerator<any> {
   if (buffer.trim()) yield JSON.parse(buffer);
 }
 
-const route = (operation: string) => "/api/" + operation.replace(/\./g, "/");
+/** An operation's route (web.md § 1): its command's words, as the server lists them. */
+const route = (words: string[]) => "/api/" + words.join("/");
+
+/** One line of an event stream: the log's fold as it changes, or the stream lost before the run ended. */
+export type EventLine = { kind: "state"; state: LogState } | { kind: "lost"; why: "unreachable" | "unreadable" };
 
 export const server = {
   page: () => ask<Page>("/api/page"),
   operations: () => ask<OperationInfo[]>("/api/operations"),
-  run: (operation: string, request: unknown) => ask<RunAnswer>(route(operation), request),
-  plan: (operation: string, request: unknown) => ask<PlanAnswer>(route(operation) + "/plan", request),
+  run: (words: string[], request: unknown) => ask<RunAnswer>(route(words), request),
+  plan: (words: string[], request: unknown) => ask<PlanAnswer>(route(words) + "/plan", request),
 
-  /** An apply's answer: each run as it starts, then how it ended — or, before any run, a refusal. */
-  async *apply(operation: string, request: unknown, digest: string): AsyncGenerator<ApplyLine | Outcome<never>> {
-    const response = await send(route(operation) + "/apply", { request, digest });
+  /** An apply's answer: each run as it starts, then how it ended — or, before any run, a refusal; a
+   *  stream that ends before saying how the run ended is lost. */
+  async *apply(words: string[], request: unknown, digest: string): AsyncGenerator<ApplyLine | Outcome<never>> {
+    const response = await send(route(words) + "/apply", { request, digest });
     if (!(response instanceof Response)) { yield response; return; }
     if (!response.ok || !(response.headers.get("Content-Type") ?? "").includes("ndjson")) {
       let data: any = null;
@@ -133,19 +158,33 @@ export const server = {
       yield once.kind === "ok" ? { kind: "ended", ended: once.value } : once;
       return;
     }
-    for await (const line of jsonLines(response)) {
-      if ("operation" in line) yield { kind: "started", started: line };
-      else if ("refused" in line) yield { kind: "refused", refusal: line };
-      else if ("defect" in line) yield { kind: "defect", defect: line };
-      else yield { kind: "ended", ended: line };
-    }
+    let ended = false;
+    try {
+      for await (const line of jsonLines(response)) {
+        if ("operation" in line) yield { kind: "started", started: line };
+        else if ("refused" in line) { ended = true; yield { kind: "refused", refusal: line }; }
+        else if ("defect" in line) { ended = true; yield { kind: "defect", defect: line }; }
+        else { ended = true; yield { kind: "ended", ended: line }; }
+      }
+    } catch { /* the stream broke: said below */ }
+    if (!ended) yield { kind: "unreachable" };
   },
 
-  /** An operation's event log as it grows (core.md § 6). */
-  async *events(address: string): AsyncGenerator<Record<string, unknown>> {
+  /** An operation's event log, folded, as it changes (core.md § 6); a stream refused, or one that ends
+   *  before its run did, said as lost. */
+  async *events(address: string): AsyncGenerator<EventLine> {
     const response = await send(`/api/events/${address}`);
-    if (!(response instanceof Response) || !response.ok) return;
-    yield* jsonLines(response);
+    if (!(response instanceof Response)) { yield { kind: "lost", why: "unreachable" }; return; }
+    if (!response.ok) { yield { kind: "lost", why: "unreadable" }; return; }
+    let last: LogState | null = null;
+    try {
+      for await (const line of jsonLines(response)) {
+        if ("refused" in line) { yield { kind: "lost", why: "unreadable" }; return; }
+        last = line as LogState;
+        yield { kind: "state", state: last };
+      }
+    } catch { /* the stream broke: said below */ }
+    if (!last || !(last.ended || last.interrupted)) yield { kind: "lost", why: "unreachable" };
   },
   tail: (address: string, step: string) => ask<Lines>(`/api/tail/${address}/${encodeURIComponent(step)}`),
   documents: () => ask<Documents>("/api/docs"),

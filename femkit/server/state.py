@@ -38,20 +38,35 @@ def facts(name: str) -> ServerFacts:
                        pidfile_exists=path.exists(), pidfile=protocol.read_pidfile(path))
 
 
+#: The action of a running server's state that replaces its child: what `serve status` offers for
+#: a server up and not answering (web.md § 4).
+RESTART = "restart"
+#: What femkit's code does to a server, by the names its table's `[tasks]` gives them (web.md § 4):
+#: a stale server's files removed, the server started, stopped, its child replaced — each of `serve
+#: start`, `stop` and `restart` doing its own of those its state lists (`CLEAN` the first two's).
+CLEAN, START, STOP, NEW_CHILD = "clean", "start", "stop", "restart"
+
 BINDING = states.Binding("server", {
     "another_host": lambda f: f.pidfile is not None and f.pidfile.host != f.here,
     "locked": lambda f: f.locked,
     "pidfile": lambda f: f.pidfile_exists,
     "supervisor_alive": lambda f: f.supervisor_alive,
-}, values={  # how a request names the server: its port, or its socket — the one the name is
-    "port": lambda name: protocol.target(name).get("port"),
-    "socket": lambda name: protocol.target(name).get("socket"),
-}, reads=frozenset({"elsewhere", "stopped", "stale", "running", "starting"}))
+}, values={  # how a request names the server: its port, or its socket — the one its name is
+    "port": lambda f: protocol.target(f.name).get("port"),
+    "socket": lambda f: protocol.target(f.name).get("socket"),
+}, reads=frozenset({"elsewhere", "starting", "running"}),
+   acts=frozenset({"start", "stop", RESTART}), tasks=frozenset({CLEAN, START, STOP, NEW_CHILD}))
 
 
 def machine(ctx: Context) -> states.Machine:
     """The machine `femkit/data/states/server.toml` declares, bound to these facts (web.md § 4)."""
     return catalogue.machine(ctx, BINDING)
+
+
+def does(ctx: Context, f: ServerFacts, state: Enum) -> tuple[str, ...]:
+    """What femkit's code does to the server of ``f`` in ``state``: the tasks its table gives that
+    state (web.md § 4; core.md § 7), of which each operation does its own."""
+    return machine(ctx).does(state, f)
 
 
 def label(name: str) -> str:
@@ -70,4 +85,4 @@ def require(ctx: Context, f: ServerFacts, state: Enum, action: str) -> None:
         by = f"process {holder}" if holder is not None else "another command"
         raise Busy(f"{label(f.name)} is being started or stopped by {by}; look again in a moment",
                    (view.command(SERVE_STATUS, **protocol.target(f.name)),), code="starting", subject=f.name)
-    m.require(state, action, f.name, label(f.name))
+    m.require(state, action, f, f.name, label(f.name))

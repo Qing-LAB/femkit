@@ -1,7 +1,7 @@
 """`femkit/data/properties.toml`: the property list — every material property femkit knows,
 named once, with its unit, its form, and its name in each engine and each source
 (materials.md § 1). The one place a property is named: a formulation lists the names it reads,
-a material holds datasets under them, a translator writes an engine's name from here.
+a material holds datasets under them, an engine's input writer writes the engine's name from here.
 
 Its model lives here, with the shipped definitions' others, since the catalogue that loads it
 sits below the `materials` package that owns the rule (framework.md § 1)."""
@@ -42,7 +42,7 @@ class Property(Model):
         problems: list[tuple[tuple, str]] = []
         if units is not None:
             try:
-                units.parse(self.unit)
+                units.unit(self.unit)
             except UnitError as exc:
                 problems.append((("unit",), str(exc)))
         problems += [(("depends_on", i), f"{v!r} is none of the variables: {', '.join(sorted(variables))}"

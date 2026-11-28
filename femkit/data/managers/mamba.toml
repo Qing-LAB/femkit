@@ -1,19 +1,43 @@
-# mamba, 1.x and 2.x alike: every form measured on mamba 1.5.9 and 2.9.0 (definitions.md § 6).
+# mamba, 1.x and 2.x alike: every form measured on mamba 1.5.9 and 2.9.0 by prefix; by name, the
+# `environments` and `envs_dirs` queries, its shell hook and the full addresses of its channels, not
+# measured yet (definitions.md § 6).
 version = ["{exe}", "--version"]
 version_pattern = '(\d+\.\d+(?:\.\d+)?)'
 # The root is `root_prefix` in 1.x's answer and `base environment` in 2.x's.
 root = { argv = ["{exe}", "info", "--json"], key = ["root_prefix", "base environment"] }
 platform = { argv = ["{exe}", "info", "--json"], key = "platform" }
-# No --no-capture-output: 2.x writes it into its run script as `exec --`, which bash refuses, and
-# the command never starts. Without it, both run the command with the prefix's activation and pass
-# its exit status.
-run = ["{exe}", "run", "-p", "{prefix}"]
-activate = { hook = "{root}/etc/profile.d/mamba.sh", with_hook = ["mamba", "activate", "{prefix}"], without_hook = ["source", "activate", "{prefix}"] }
-# A create overrides the person's channels with the declared ones. 2.x has no option that leaves out
-# the person's create_default_packages (it refuses --no-default-packages), and needs none: the person's
-# own configuration, where those would be set, is not read (envs.md § 4.4).
-create = ["{exe}", "create", "-y", "-p", "{prefix}", "--override-channels"]
-channel = ["-c", "{channel}"]
-create_from_lock = ["{exe}", "create", "-y", "-p", "{prefix}", "--file", "{file}"]
-export_lock = ["{exe}", "list", "--explicit", "--md5", "-p", "{prefix}"]
-remove = ["{exe}", "env", "remove", "-y", "-p", "{prefix}"]
+# Every environment the manager lists, by prefix, under `envs`; it says no name of its own for each
+# that is measured, so femkit takes as an environment's prefix only a listed one in a folder where the
+# manager keeps environments, under its name there, never forming it (envs.md § 1).
+environments = { argv = ["{exe}", "env", "list", "--json"], key = "envs" }
+# The folders where the manager keeps environments by their names, in its order: `envs_dirs` in 1.x's
+# answer, `envs directories` in 2.x's (libmamba's names, from its documentation; not measured).
+envs_dirs = { argv = ["{exe}", "info", "--json"], key = ["envs_dirs", "envs directories"] }
+# Each command acts on one environment by its name: the manager keeps it where it keeps its
+# environments (envs.md § 1). No --no-capture-output: 2.x writes it into its run script as `exec --`,
+# which bash refuses, and the command never starts. Without it, both run the command with the
+# environment's activation and pass its exit status.
+run = ["{exe}", "run", "-n", "{name}"]
+# How a shell enters an environment: the shell function, once mamba's own hook for bash is evaluated
+# (`mamba shell hook --shell bash`, 2.x's documented form; not measured), or the activate script,
+# found on PATH; `active` is the variable either sets to the prefix it entered, which a run script
+# verifies (jobs.md § 4); `executable`, the one it sets to mamba itself, by which femkit finds it in a
+# shell where mamba is initialised (envs.md § 7.1).
+activate = { hook = ["{exe}", "shell", "hook", "--shell", "bash"], with_hook = ["mamba", "activate", "{name}"], without_hook = ["source", "activate", "{name}"], script = "activate", active = "CONDA_PREFIX", executable = "MAMBA_EXE" }
+# Every environment mamba makes holds conda-meta/, as conda's do (envs.md § 3.1).
+environment = "conda-meta"
+# A create sets the person's channels aside, naming the declared ones by their full addresses. 2.x
+# has no option that leaves out the person's create_default_packages (it refuses
+# --no-default-packages); whether it honours one, whether it has a form that sets their
+# pinned_packages aside, and how it says where it read their settings are not measured: a mamba
+# install records none of them, and the lock and the `forbid` step show what a create brought
+# (envs.md § 4.4).
+create = ["{exe}", "create", "-y", "-n", "{name}", "--override-channels"]
+channel = ["-c", "https://conda.anaconda.org/{channel}"]
+create_from_lock = ["{exe}", "create", "-y", "-n", "{name}", "--file", "{file}"]
+# A package a project adds is delivered into `postprocess` as it stands (envs.md § 4.1): installed
+# from the declared channels alone, the person's set aside as a create sets them aside. Not measured
+# yet on this kind.
+install = ["{exe}", "install", "-y", "-n", "{name}", "--override-channels", "--freeze-installed"]
+export_lock = ["{exe}", "list", "--explicit", "--md5", "-n", "{name}"]
+remove = ["{exe}", "env", "remove", "-y", "-n", "{name}"]

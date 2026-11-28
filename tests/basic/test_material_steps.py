@@ -2,7 +2,7 @@
 takes it at a variable's value, a dataset held under an equivalent form, one that varies with a
 variable the step does not supply, and a value whose range is not `all` under a step that supplies
 none are each an error of `project check` at the assignment, saying what would be right, and
-`study expand` refuses a case resting on one. On copies of the two-material template; the forms
+`study prep` refuses a case resting on one. On copies of the two-material template; the forms
 themselves and their checks are tests/basic/test_material_forms.py's."""
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ ROWS = "wavelength,eps\n0.5,2.25\n0.6,2.2\n"
 
 def value(name: str, held: str = "4", form: str = "relative_permittivity", range_: str = '"all"') -> str:
     """A dataset that is a value, as a material's file writes it."""
-    return f'[properties.{form}.{name}]\nvalue = "{held}"\n{STATED}range = {range_}\n\n'
+    return f'[properties.{form}.{name}]\nvalue = {held}\n{STATED}range = {range_}\n\n'
 
 
 def table(name: str) -> str:
@@ -33,7 +33,8 @@ def table(name: str) -> str:
     `ROWS`, beside it."""
     return (f'[properties.relative_permittivity.{name}]\ntable = "{name}.csv"\n'
             f'sha256 = "{hashlib.sha256(ROWS.encode()).hexdigest()}"\ninterpolation = "linear"\n{STATED}'
-            f'range = ["0.5 um", "0.6 um"]\n\n[properties.relative_permittivity.{name}.variable]\nname = "wavelength"\n'
+            f'range = {{value = [0.5, 0.6], unit = "um"}}\n\n[properties.relative_permittivity.{name}.variable]\n'
+            'name = "wavelength"\n'
             'unit = "um"\n\n')
 
 
@@ -54,20 +55,20 @@ def at_assignment(slab: Path) -> list[tuple]:
             for i in kit.run("project.check", project=slab.name).issues if i.file == COMPONENT]
 
 
-def test_a_dataset_held_under_an_equivalent_form_is_an_error_at_the_assignment_before_expand(slab):
+def test_a_dataset_held_under_an_equivalent_form_is_an_error_at_the_assignment_before_prep(slab):
     """Fails if a dataset held under an equivalent form of the property the physics reads passes
-    `project check`, to be refused only by `study expand` — rather than an error `form-unconverted`
+    `project check`, to be refused only by `study prep` — rather than an error `form-unconverted`
     at the assignment's `datasets.<property>`, whose choices are the datasets held as the property
-    itself, what would be right — or if `study expand` writes a case resting on it, or refuses it
+    itself, what would be right — or if `study prep` writes a case resting on it, or refuses it
     as a statement missing rather than a state that does not allow it (materials.md § 6: "one held
     under an equivalent form is a finding of `project check` at the assignment's
     `datasets.<property>`, `form-unconverted`, saying what would be right — a dataset of the
-    property the formulation reads — and `study expand` refuses a case resting on it"; core.md
+    property the formulation reads — and `study prep` refuses a case resting on it"; core.md
     § 9)."""
     holding(slab, value("johnson", "2", "refractive_index"))
     assert at_assignment(slab) == [("error", "form-unconverted", AT, None, ())]
     with kit.refused(Refused, "has-findings", "component:slab"):
-        kit.apply("study.expand", project=slab.name, study="benchmark")
+        kit.apply("study.prep", project=slab.name, study="benchmark")
     assert not (slab / "cases").exists()
     holding(slab, value("benchmark"), value("johnson", "2", "refractive_index"), named="johnson")
     assert at_assignment(slab) == [("error", "form-unconverted", AT, None, ('"benchmark"',))]
@@ -76,8 +77,8 @@ def test_a_dataset_held_under_an_equivalent_form_is_an_error_at_the_assignment_b
 @pytest.mark.parametrize("datasets, named, choices", [
     ((table("measured"),), None, ()),
     ((value("benchmark"), table("measured")), "measured", ('"benchmark"',)),
-    ((value("benchmark", range_='["400 nm", "800 nm"]'),), None, ()),
-    ((value("benchmark", range_='["400 nm", "800 nm"]'), value("static"), table("measured")), "benchmark",
+    ((value("benchmark", range_='{value = [400, 800], unit = "nm"}'),), None, ()),
+    ((value("benchmark", range_='{value = [400, 800], unit = "nm"}'), value("static"), table("measured")), "benchmark",
      ('"static"',)),
 ], ids=["a table alone", "a table, a value beside it", "a value over a range", "a value over a range, beside others"])
 def test_a_dataset_that_does_not_hold_under_a_stationary_step_is_an_error_naming_those_that_would(slab, datasets,

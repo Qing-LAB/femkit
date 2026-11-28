@@ -1,0 +1,23 @@
+/* Parts: the master list beside the canvas — the project at its head, then each section's parts, each
+   entry its group's swatch, its name, its state or its value, and its findings counted. */
+.parts { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) var(--space-2); }
+.parts__list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.parts__list--head { padding-bottom: var(--space-2); border-bottom: var(--size-hairline) solid var(--color-line); }
+.parts__section { display: flex; flex-direction: column; gap: var(--space-1); }
+.parts__heading {
+  margin: 0; padding: 0 var(--space-2); font-size: var(--type-size-2xs); font-weight: var(--type-weight-strong);
+  letter-spacing: var(--type-tracking-caps); text-transform: uppercase; color: var(--color-text-muted);
+}
+.parts__entry {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: var(--size-control-sm);
+  padding: var(--space-1) var(--space-2); font: inherit; color: var(--color-text); text-align: start;
+  background: none; border: none; border-radius: var(--size-radius-sm); cursor: pointer;
+}
+.parts__entry:hover { background: var(--color-surface-hover); }
+.parts__entry:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-ring) var(--color-ring); }
+.parts__entry[aria-current="true"] { color: var(--color-accent-text); background: var(--color-accent-soft); }
+.parts__name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--type-size-sm); font-weight: var(--type-weight-medium);
+}
+.parts__value { flex: none; font-family: var(--type-mono); font-size: var(--type-size-xs); color: var(--color-text-muted); }

@@ -4,7 +4,7 @@
 **Status:** current; what is not built yet is marked so
 **Authority:** test tiers and their boundaries, isolation of the person's
 machine and its canaries, the admission rule for a test, and the test runner —
-its progress log, its one-run-per-batch lock and the states it reports
+its progress log, its one-run-per-tier-run lock and the states it reports
 
 ## The short version
 
@@ -18,7 +18,7 @@ its progress log, its one-run-per-batch lock and the states it reports
 | Tests assert **results through the API**, never text grepped from source or a rendered file | 3 |
 | Scientific validation tests are **protected**: their design may change, their existence may not | 3 |
 | `tools/testrun.py` streams every result to a **progress log** that outlives the run; a log holding an unfinished run is never wiped | 4.2 |
-| **One run per batch**: a second copy of a batch that is running is refused | 4.3 |
+| **One run per tier run**: a second run of a tier run that is running is refused | 4.3 |
 | `status` prints a count as a result **only** when the log proves one complete run, and says when that run was of other code | 4.4, 4.5 |
 
 ## 1. Tiers
@@ -26,7 +26,7 @@ its progress log, its one-run-per-batch lock and the states it reports
 | tier | answers | needs | directory |
 |---|---|---|---|
 | **basic** | does femkit decide and write what its contracts say? | the control environment only | `tests/basic/` |
-| **web** | does the web surface serve, check and refuse what its contract says? | the `web` environment's Python, which holds flask (`env install web`; [`web.md`](web.md)) | `tests/web/` |
+| **web** | does the web surface serve, check and refuse what its contract says? | the `web` environment's Python — `femkit-web`'s, its prefix the one the manager names so ([`envs.md`](envs.md) § 1) — which holds flask (`env install web`; [`web.md`](web.md)) | `tests/web/` |
 | **field** | does it work with **this** machine — its manager, its scheduler, its records? | this machine's manager (and network for a small package solve); on a cluster, its scheduler | `tests/field/` |
 | **engine** | do the installed solvers give the right numbers, and does a real job run end to end? | installed engine environments; their CPUs and GPUs | `tests/engine/` |
 
@@ -44,9 +44,12 @@ its progress log, its one-run-per-batch lock and the states it reports
   submitting (`job launch --check`, M4).
 - **Engine** runs `env validate` on installed engines and one real calculation
   per engine through `job launch`, checked against analytic or published
-  values. It spends the machine's cores and runs on the person's word. Not
-  built yet: `tests/engine/` comes with jobs (plan § 4, X), and until then the
-  engine readers and check programs are proven by `env validate` alone.
+  values; and femkit's own programs that run inside an environment — the
+  geometry stage's check, Gmsh's meshing, each engine's hand-over
+  ([`geometry.md`](geometry.md) §§ 5, 7, 8) — on the templates' geometries
+  and on shapes whose measures are known exactly. It spends the machine's
+  cores and runs on the person's word. Being built with jobs (plan § 4, X):
+  `tests/engine/`.
 
 A tier passes before the next is worth running.
 
@@ -54,17 +57,21 @@ A tier passes before the next is worth running.
 
 ### 2.1 By construction
 
-Every test, in every tier, runs with each of femkit's five directories set to
+Every test, in every tier, runs with each of femkit's six directories set to
 its own temporary directory, from `core/dirs.py`'s list of their variables
 ([`core.md`](core.md) § 3). A test that needs definitions of its own copies the
 shipped ones into its folder, edits the copy as its files hold it, and points
 femkit at it with `FEMKIT_DEFINITIONS_DIR`; nothing else sets that variable, and
 no test replaces a function of femkit's to change what it reads. No test reads or writes the person's configuration, records or
-projects, and only the engine tier reaches the person's environments: its
-temporary `config.toml` points `paths.environments` at them, on the person's
-word, and `env validate` writes each prefix's check results there exactly as it
+projects, and only the engine tier reaches the person's environments: on the
+person's word, through their own manager, which names each by its name,
+`femkit-<name>` ([`envs.md`](envs.md) § 1) — its `HOME` a folder of the test's
+own — and `env validate` writes each prefix's check results there exactly as it
 does for the person. In that tier the environments canary (§ 2.2) watches
-`conda-meta/` and the manifest, not the check results.
+`conda-meta/` and the manifest, not the check results. The kit's helpers act
+only inside a test: called from a script of one's own, outside this isolation,
+they refuse before anything runs, since femkit's directories would then be the
+person's own.
 
 In the **basic** and **web** tiers, `PATH` starts with a directory of
 tripwires for every outside program femkit can start. With every scheduler
@@ -96,16 +103,17 @@ it ends, and a difference fails the run, naming what changed:
 | canary | fingerprint | catches |
 |---|---|---|
 | config | every file under the person's real config directory: names, sizes, modification times | a test writing past `FEMKIT_CONFIG_DIR` |
-| environments | for each environment femkit manages here (the control prefix under the real `<data>`, and each engine prefix under the person's real `paths.environments`): entry count and modification time of its `conda-meta/` and `.femkit/` | a test that reached the real manager and installed into, or removed, an environment |
+| environments | for each environment femkit manages here — `femkit` and each `femkit-<name>`, its prefix the one the person's own manager names so, asked once before the run's isolation ([`envs.md`](envs.md) § 1): entry count and modification time of its `conda-meta/` and `.femkit/` | a test that reached the real manager and installed into, or removed, an environment |
 | checkout | the code digest of § 4.5 | a test writing into the repository — or a person editing it while a run is going |
-| manager | the person's own package manager: the modification times of its list of environments (`~/.conda/environments.txt`) and of its package caches (`~/.conda/pkgs`, and `pkgs/` beside the manager the invocation names) | a test that ran a manager command outside femkit's own places (`envs.md` § 4.4) — the person's cache filled, a test's prefix registered as theirs |
+| manager | the person's own package manager: the modification times of its list of environments (`~/.conda/environments.txt`) and of the package caches it names (its `pkgs_dirs`), asked of it once before the run's isolation, never formed from where its executable lies | a test that reached the person's manager — their cache filled, a test's prefix registered as theirs (`envs.md` § 4.4) |
 | state, cache, runtime, locks | the person's real `<state>`, `<cache>`, `<runtime>` and `<data>/locks/`: each entry within two levels, with its modification time — anything made deeper changes its folder's | a test writing a run's log, a download, a server's files or a lock past its own directories |
 
 - The real directories are resolved once, before the run's own isolation is
   set; no test can move them.
-- A canary that cannot read its side (no git, an unreadable directory) does
-  not pass: it warns that it is **disarmed**, so "no alarm" and "no canary"
-  never read alike.
+- A canary that cannot read its side (no git, an unreadable directory, no
+  manager named in the shell the run starts from to ask where the person's
+  environments and caches are) does not pass: it warns that it is
+  **disarmed**, so "no alarm" and "no canary" never read alike.
 - A canary fires in the session's teardown. The runner records that as a
   failure (§ 4.4), never as a clean run. The fix is always in the test that
   reached out, never a relaxed canary.
@@ -167,17 +175,19 @@ it ends, and a difference fails the run, naming what changed:
 
 ```bash
 python tools/testrun.py run basic                  # the default tier, over the cores
-<data>/environments/web/bin/python tools/testrun.py run web   # the web environment's own Python
+<prefix of femkit-web>/bin/python tools/testrun.py run web   # femkit-web's own Python: `femkit env list` names its prefix
 python tools/testrun.py run field                  # this machine's manager/scheduler
 python tools/testrun.py run engine                 # installed engines, on the person's word
-python tools/testrun.py run tests/basic/test_x.py  # a targeted set: batch `custom`
+python tools/testrun.py run tests/basic/test_x.py  # a targeted set: the tier run `custom`
 python tools/testrun.py run lf                     # only the last run's failures
-python tools/testrun.py status [BATCH] [--fails]   # what each batch's log supports saying
-python tools/testrun.py failed BATCH               # failed test IDs, to pass back to pytest
+python tools/testrun.py status [TIER_RUN] [--fails]  # what each tier run's log supports saying
+python tools/testrun.py failed TIER_RUN            # failed test IDs, to pass back to pytest
 ```
 
-It runs from the repository root in the control environment and is started in
-the background. A pytest plugin, `tools/progress_plugin.py`, writes the log.
+The runner runs from the repository root in the control environment and is
+started in the background. A pytest plugin, `tools/progress_plugin.py`, writes
+the log. What it keeps one log and one lock for is a **tier run**: a tier,
+`custom` — a targeted set — or `lf`.
 
 The runner and its plugin use the standard library and pytest only, and import
 nothing from `femkit`: the instrument that reports femkit's failures must keep
@@ -187,7 +197,7 @@ closed table, one lock per subject.
 
 ### 4.2 The progress log
 
-Each batch has one log, `.test-progress/<batch>.jsonl`, in the checkout and
+Each tier run has one log, `.test-progress/<tier run>.jsonl`, in the checkout and
 ignored by git — a stable path any shell or session can read, never a temporary
 file. The plugin appends one record per result and flushes it at once, so the
 log is current while the run is going. pytest's own output is no substitute:
@@ -214,33 +224,33 @@ reason.
 - **One writer.** A run spread over workers (§ 4.6) is written by the one
   process the runner started; the workers stay silent and their results are
   relayed to it, so the log reads exactly as a one-process run's.
-- **The full text.** The run holding the batch's lock (§ 4.3) also keeps
-  pytest's own console output of its last run at `.test-progress/<batch>.out`: the full
+- **The full text.** The run holding the tier run's lock (§ 4.3) also keeps
+  pytest's own console output of its last run at `.test-progress/<tier run>.out`: the full
   tracebacks, and whatever never becomes a record (§ 4.4, `unexplained`).
 
-### 4.3 One run per batch
+### 4.3 One run per tier run
 
-Two runs of one batch writing one log make its counts meaningless: more tests
+Two runs of one tier run writing one log make its counts meaningless: more tests
 "ran" than were collected, two runs' failures mixed, the first run's `done`
 reported while the second still runs. So `run` takes an exclusive `flock` on
-`.test-progress/<batch>.lock` and holds it for the run's life. The kernel
+`.test-progress/<tier run>.lock` and holds it for the run's life. The kernel
 releases it however the process ends — normally, on Ctrl-C, when killed — so
 there is no stale lock to detect or clean up. The lock file holds the holder's
 pid only so a refusal can name it; nothing is decided from it.
 
-- A second `run` of a batch that is running is **refused** (exit 2), naming
-  the holder and `status <batch>` to watch it.
+- A second `run` of a tier run that is running is **refused** (exit 2), naming
+  the holder and `status <tier run>` to watch it.
 - `--force` runs anyway and says so: both runs append to one generation, which
-  `status` reports as `interleaved`; once both have ended, the batch's next run
+  `status` reports as `interleaved`; once both have ended, the tier run's next run
   starts a clean log.
-- Different batches run side by side, each with its own log and lock.
-- A part of a batch — files named after a tier, or any targeted set — is the
-  batch `custom`, never logged under the tier's name: twelve tests are not the
+- Different tier runs run side by side, each with its own log and lock.
+- A part of a tier — files named after a tier, or any targeted set — is the
+  tier run `custom`, never logged under the tier's name: twelve tests are not the
   basic tier. `status` shows what was asked.
 
 ### 4.4 What `status` may say
 
-A batch's state is observed from its log's last generation each time `status`
+A tier run's state is observed from its log's last generation each time `status`
 runs, by one closed table. The rows are checked in order; the first that
 matches is the state.
 
@@ -251,7 +261,7 @@ matches is the state.
 | `unusable` | no `start` (the file was cut under a writer), or no `collected` (collection never finished) | no |
 | `interleaved` | records from more than one `run` | no |
 | `partial` | `done`, but fewer tests ran than were collected | no |
-| `unexplained` | `done` with a non-zero exit and no failure recorded — a canary, an internal or a plugin error; read `<batch>.out` | no |
+| `unexplained` | `done` with a non-zero exit and no failure recorded — a canary, an internal or a plugin error; read `<tier run>.out` | no |
 | `done` | `done`, every collected test accounted for | yes |
 | `running` | no `done`; the writer's pid exists and the log changed within the silence limit | progress only |
 | `abandoned` | no `done`; the writer's pid is gone, or the log has been silent past the limit | no — a fragment |
@@ -271,7 +281,7 @@ matches is the state.
   past the limit (30 minutes, far above the slowest single test) belongs to a
   run that is not writing any more. Calling a live run dead is the worse error,
   so the limit is generous.
-- `status` exits non-zero when any batch it shows cannot be trusted:
+- `status` exits non-zero when any tier run it shows cannot be trusted:
   `unusable`, `interleaved`, `partial`, `unexplained`, `abandoned`, or a
   `done` of other or unknown code (§ 4.5).
 

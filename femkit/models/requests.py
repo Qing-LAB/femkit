@@ -8,20 +8,15 @@ from pydantic import Field
 from femkit.core.commandline import ARGUMENT
 from femkit.core.schema import Model
 from femkit.core.view import Verb
-
-
-class ProjectRequest(Model):
-    """Which project (projects.md § 1): by its path from the projects root, or the one the
-    command runs in."""
-
-    project: str | None = Field(default=None, description="the project, by its path from the projects root; unset, "
-                                                          "the project the command runs in",
-                                json_schema_extra={"context": "project"})
+from femkit.projects.requests import ProjectRequest
 
 
 class GraphRequest(ProjectRequest):
     """A project as a graph (models.md § 11.2)."""
 
+    study: str | None = Field(default=None, description="a study in view, by its name: each group the parts it pairs "
+                                                        "name is wired from its component through its pairing; unset, "
+                                                        "no group is wired", json_schema_extra={"context": "study"})
     mermaid: bool = Field(default=False, description="print the graph as Mermaid text instead of the tables, to "
                                                     "paste into a document that draws Mermaid diagrams")
 
@@ -33,9 +28,11 @@ class StudyRequest(ProjectRequest):
 
 
 # ------------------------------------------------------------------ the operations these requests are for
+#
+# `project check` and `project graph` run the one check (models.md § 11.1) and read no stage, so
+# both are implemented in this domain (`femkit/models/operations.py`); `project check`'s verb stands
+# beside its request, the projects domain's one request of a project (`femkit/projects/requests.py`),
+# so `project new` and `material import`, below this domain, name it as their next step.
 
-PROJECT_CHECK = Verb("project.check", ProjectRequest)
-PROJECT_GRAPH = Verb("project.graph", GraphRequest)
-STUDY_LIST = Verb("study.list", ProjectRequest)
-STUDY_EXPAND = Verb("study.expand", StudyRequest)
-CASE_LIST = Verb("case.list", ProjectRequest)
+PROJECT_GRAPH = Verb("project.graph", GraphRequest, on_machine=False, effect="reads")
+STUDY_LIST = Verb("study.list", ProjectRequest, on_machine=False, effect="reads")

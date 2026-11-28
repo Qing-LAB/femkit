@@ -1,0 +1,18 @@
+/* Document: a repository document as GitHub renders it, on the theme's surfaces. */
+.document { max-width: var(--layout-content); font-size: var(--type-size-md); line-height: var(--type-leading-normal); overflow-wrap: anywhere; }
+.document h1, .document h2, .document h3, .document h4 { line-height: var(--type-leading-tight); margin: var(--space-8) 0 var(--space-3); scroll-margin-top: var(--space-4); }
+.document h1 { font-size: var(--type-size-2xl); margin-top: 0; padding-bottom: var(--space-2); border-bottom: var(--size-hairline) solid var(--color-line); }
+.document h2 { font-size: var(--type-size-xl); padding-bottom: var(--space-2); border-bottom: var(--size-hairline) solid var(--color-line); }
+.document h3 { font-size: var(--type-size-lg); }
+.document a { color: var(--color-accent-text); }
+.document code { font-family: var(--type-mono); font-size: var(--type-size-sm); padding: 0 var(--space-1); background: var(--color-code); border-radius: var(--size-radius-sm); }
+.document pre { padding: var(--space-3) var(--space-4); overflow: auto; background: var(--color-code); border-radius: var(--size-radius-sm); }
+.document pre code { padding: 0; background: none; font-size: var(--type-size-xs); line-height: var(--type-leading-code); }
+.document table { border-collapse: collapse; display: block; overflow: auto; font-size: var(--type-size-sm); }
+.document th, .document td { padding: var(--space-2) var(--space-3); border: var(--size-hairline) solid var(--color-line); vertical-align: top; }
+.document th { background: var(--color-surface-sunken); text-align: left; }
+.document blockquote { margin: 0; padding: 0 var(--space-4); color: var(--color-text-muted); border-left: var(--size-stripe) solid var(--color-line-strong); }
+.document .repo-path { font-family: var(--type-mono); font-size: var(--type-size-sm); color: var(--color-text-muted); }
+.document .mermaid-block { margin: var(--space-4) 0; overflow: auto; }
+.document__broken { color: var(--color-error); font-size: var(--type-size-sm); }
+.document__image { max-width: 100%; }

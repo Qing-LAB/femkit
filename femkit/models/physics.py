@@ -1,7 +1,7 @@
 """A physics, `physics/<p>.toml` (models.md § 3): a formulation family, what each dimension
 means for it, and the conditions and sources on named groups — the `models.physics` part schema
 and its check. A condition's and a source's parameters are the keys its kind lists in the
-formulation (models.md § 4.3), so their help is the formulation's: `declared` gives it.
+formulation (models.md § 4.3), so their help is the formulation's: `keys` states them.
 
 Its findings, each at the physics' key (what a study's pairing with a component finds at its keys
 is the study's check, `study.py`):
@@ -12,8 +12,9 @@ is the study's check, `study.py`):
 - `no-such-kind` (error), at `<conditions|sources>.<name>.kind`: choices, the formulation's kinds;
 - `unknown-parameter` (error), at the parameter: one its kind does not list;
 - `missing-parameter` (error), at the parameter: one its kind lists that is not stated;
-- `bad-quantity`, `wrong-dimension` (error), at the parameter: its value does not read, or is not
-  in its unit's dimension;
+- `bad-quantity`, `wrong-dimension` (error), at the parameter: its value does not read — a text
+  that names no definition, the table to write where it reads as one — or is not in its unit's
+  dimension (core.md § 11);
 - and each name it cites that names no part (`parts.cited`).
 """
 
@@ -23,12 +24,11 @@ from typing import Any, Iterator, Mapping
 
 from pydantic import Field
 
-from femkit.core import persist
 from femkit.core.issues import Issue
-from femkit.core.schema import Declared, as_reference, field_extras, help_text
+from femkit.core.schema import DeclaredKey, as_reference, field_extras, help_text, written_keys
 from femkit.definitions.formulations import FormulationDefinition, KindSpec
 from femkit.models.parts import Parameterized, cited
-from femkit.projects.checking import Checking
+from femkit.projects.checking import Checking, Registration
 from femkit.projects.door import Part
 from femkit.projects.schemas import PartFile
 
@@ -75,35 +75,43 @@ def kinds(f: FormulationDefinition, table: str) -> dict[str, KindSpec]:
     return getattr(f, table)
 
 
-def declared(formulations: Mapping[str, FormulationDefinition], text: str, manual: str | None = None) -> Declared:
-    """The help of each key of a physics' text that a declaration states, not its schema
-    (core.md § 2): `formulation`, one of the declared families, ending with ``manual``, the
-    chapter of the manual its kind declares; a condition's or source's `kind`, one of its
-    formulation's kinds; and each parameter its kind lists, as the formulation states it. A kind
-    is read from the text as it writes it — set, or shown commented out — so an entry shown as an
-    example has its help too; a parameter of an entry whose kind the text does not write has the
-    help every kind listing it agrees on, if they do."""
-    written = {e.path: e.value for e in persist.key_comments(text) if not e.header}
-    f = formulations.get(written.get(("formulation",)))
-
-    def help_of(path: tuple[str, ...]) -> str | None:
-        if path == ("formulation",):
-            field = Physics.model_fields["formulation"]
-            return help_text(field.description, list(formulations), manual if field_extras(field).get("doc") else None)
-        if f is None or len(path) != 3 or path[0] not in TABLES:
-            return None
-        table, entry, key = path
+def keys(formulations: Mapping[str, FormulationDefinition], text: str, manual: str | None = None) -> list[DeclaredKey]:
+    """The keys a physics' text holds that a declaration states, not its schema (core.md § 2; web.md
+    § 8.3): `formulation`, one of the declared families, its help ending with ``manual``, the
+    chapter of the manual its kind declares; and, for the formulation the text names, each condition's
+    and source's `kind`, one of its formulation's kinds, and each parameter its kind lists, as the
+    formulation states it. A kind is read from the text as it writes it — set, or shown commented
+    out — so an entry shown as an example has its keys too; an entry whose kind the text does not
+    write, or writes as none of the formulation's, holds each parameter every kind listing it agrees
+    on, if they do."""
+    written = written_keys(text)
+    field = Physics.model_fields["formulation"]
+    out = [DeclaredKey(("formulation",), field.description, values=tuple(formulations), required=field.is_required(),
+                       manual=manual if field_extras(field).get("doc") else None)]
+    named = written.get(("formulation",))
+    f = formulations.get(named) if isinstance(named, str) else None
+    if f is None:
+        return out
+    for table, entry in sorted({p[:2] for p in written if len(p) > 1 and p[0] in TABLES}):
         allowed, model = kinds(f, table), TABLES[table][1]
-        if key == "kind":
-            return help_text(model.model_fields["kind"].description, list(allowed))
-        if key in model.model_fields:
-            return None
-        kind = written.get((table, entry, "kind"))
-        specs = [allowed[kind].parameters.get(key)] if kind in allowed else [k.parameters.get(key) for k in allowed.values()]
-        helps = {help_text(s.description, unit=s.unit) for s in specs if s is not None}
-        return helps.pop() if len(helps) == 1 else None
+        kind = model.model_fields["kind"]
+        out.append(DeclaredKey((table, entry, "kind"), kind.description, values=tuple(allowed),
+                               required=kind.is_required()))
+        written_kind = written.get((table, entry, "kind"))
+        specs = [allowed[written_kind]] if isinstance(written_kind, str) and written_kind in allowed \
+            else list(allowed.values())
+        listed: dict[str, set[tuple[str, str]]] = {}
+        for spec in specs:
+            for name, parameter in spec.parameters.items():
+                listed.setdefault(name, set()).add((parameter.description, parameter.unit))
+        out += [DeclaredKey((table, entry, name), sentence, units=(unit,), required=True)
+                for name, agreed in listed.items() if len(agreed) == 1 for sentence, unit in agreed]
+    return out
 
-    return help_of
+
+def _stated(c: Checking, text: str, manual: str | None) -> list[DeclaredKey]:
+    """The keys the formulations state beside a physics' schema (`keys`), as the frame hands them."""
+    return keys(c.formulations, text, manual)
 
 
 def check(c: Checking, part: Part) -> Iterator[Issue]:
@@ -148,9 +156,9 @@ def _entry(c: Checking, part: Part, at: tuple[str, str], noun: str, entry: Param
                           message=f"the {entry.kind} {noun} {at[1]} states no {key}: "
                                   f"{help_text(parameter.description, unit=parameter.unit)}")
             continue
-        yield from c.measure(part, (*at, key), given, c.units.parse(parameter.unit).dimension,
-                             f"in the dimension of {parameter.unit}")[1]
+        yield from c.measure(part, (*at, key), given, c.units.unit(parameter.unit).dimension,
+                             f"in the dimension of {parameter.unit}", unit=parameter.unit)[1]
 
 
-PART_SCHEMAS = {"models.physics": Physics}
-PART_CHECKS = {"models.physics": check}
+REGISTERS = Registration(schemas={"models.physics": Physics}, checks={"models.physics": check},
+                         keys={"models.physics": _stated})

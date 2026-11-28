@@ -34,21 +34,26 @@ $ femkit project new layers --from two_material --yes
 [project new] plan: 3 steps
   1. make the projects root ~/femkit-projects
   2. make the global library ~/femkit-projects/materials, holding a copy of femkit's shipped materials: vacuum
-  3. copy 9 files of two_material to ~/femkit-projects/layers
-[project new] 3 steps; logs in ~/.local/state/femkit/operations/project-layers/20261125T165303.870568Z
+  3. copy 11 files of two_material to ~/femkit-projects/layers
+[project new] 3 steps; logs in ~/.local/state/femkit/operations/project-layers/20261128T040331.705766Z
 [1/3] make the projects root ~/femkit-projects
 [2/3] make the global library ~/femkit-projects/materials, holding a copy of femkit's shipped materials: vacuum
-[3/3] copy 9 files of two_material to ~/femkit-projects/layers
-[project new] made ~/femkit-projects/layers from two_material: 9 files
+[3/3] copy 11 files of two_material to ~/femkit-projects/layers
+[project new] made ~/femkit-projects/layers from two_material: 11 files
+  copied
   components/slab/component.toml
   components/slab/geometry.py
+  definitions.py
   materials/dielectric_1/material.toml
   materials/dielectric_2/material.toml
   mesh/uniform.toml
-  observables/benchmark.toml
+  observables/benchmark/observables.toml
+  observables/benchmark/observe.py
   physics/electrostatics.toml
   project.toml
   studies/benchmark.toml
+next -- check the new project, as any other:
+    femkit project check --project layers
 ```
 
 ## Your library
@@ -86,13 +91,13 @@ aliases = ["free space"]
 
 # the dataset named `definition`
 [properties.relative_permittivity.definition]
-# a real constant, with its unit where it has one
-value = "1"
+# a real constant: `{value, unit}`, a plain number where it has no unit
+value = 1
 # the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)`
 convention = "real"
 # where the data comes from: a citation a reader can check, with its DOI where there is one
 source = "the definition of vacuum: its permittivity is the vacuum electric permittivity ε0 itself, so its relative permittivity is exactly 1"
-# where the data holds: `all`, or `[from, to]` in its variable
+# where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable
 range = "all"
 
 # anything kept beside the material; read by no step
@@ -118,7 +123,7 @@ Every dataset states:
   convention of the source's time dependence, `exp(-iwt)` or `exp(+iwt)`:
   the same material has complex-conjugate values in the two, so the numbers
   mean nothing without it;
-- `range`: where the data holds — `all`, or `[from, to]`.
+- `range`: where the data holds — `all`, or `{value = [from, to], unit = "…"}`.
 
 What each convention means, and how femkit converts, is
 [the science of material data](../science/material-data.md).
@@ -153,13 +158,13 @@ display = "Dielectric 2"
 
 # the dataset named `benchmark`
 [properties.relative_permittivity.benchmark]
-# a real constant, with its unit where it has one
-value = "4"
+# a real constant: `{value, unit}`, a plain number where it has no unit
+value = 4
 # the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)`
 convention = "real"
 # where the data comes from: a citation a reader can check, with its DOI where there is one
 source = "the two-material benchmark's choice (docs/science/electrostatics.md § 9.1)"
-# where the data holds: `all`, or `[from, to]` in its variable
+# where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable
 range = "all"
 
 # anything kept beside the material; read by no step
@@ -194,27 +199,27 @@ variable = { name = "wavelength", unit = "nm" }
 interpolation = "linear"
 convention = "exp(-iwt)"
 source = "our ellipsometry of sample F-12, 2026"
-range = ["400 nm", "700 nm"]
+range = {value = [400, 700], unit = "nm"}
 ```
 
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  material:film           materials/film/material.toml          findings
-  component:slab          components/slab/component.toml        complete
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Definitions  material:film           materials/film/material.toml            errors
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
   x the table ellipsometry.csv states no SHA-256; no case can rest on it until it does
-      materials/film/material.toml: properties.refractive_index.ellipsometry.sha256
+      materials/film/material.toml, line 4: properties.refractive_index.ellipsometry.sha256
       right: "9b09b863f2e1d753a0b5fa08629e5e3ea283e2cb384bb51e4256b63f5df83628"
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 A table must state its file's **SHA-256** — the 64-character fingerprint
@@ -254,38 +259,40 @@ formula = "Au"
 model = "drude_lorentz"
 convention = "exp(-iwt)"
 source = "A. D. Rakić, A. B. Djurišić, J. M. Elazar and M. L. Majewski, Optical properties of metallic films for vertical-cavity optoelectronic devices, Appl. Opt. 37, 5271-5283 (1998), doi:10.1364/AO.37.005271"
-range = ["0.1 eV", "6 eV"]
+range = {value = [0.1, 6], unit = "eV"}
 
 [properties.relative_permittivity.rakic.parameters]
-eps_inf = "1"
-plasma = "9.03 eV"
-f0 = "0.760"
-gamma0 = "0.053 eV"
+eps_inf = 1
+plasma = {value = 9.03, unit = "eV"}
+f0 = 0.760
+gamma0 = {value = 0.053, unit = "eV"}
 oscillators = [
-    { f = "0.024", energy = "0.415 eV", gamma = "0.241 eV" },
-    { f = "0.010", energy = "0.830 eV", gamma = "0.345 eV" },
-    { f = "0.071", energy = "2.969 eV", gamma = "0.870 eV" },
-    { f = "0.601", energy = "4.304 eV", gamma = "2.494 eV" },
-    { f = "4.384", energy = "13.32 eV", gamma = "2.214 eV" },
+    { f = 0.024, energy = {value = 0.415, unit = "eV"}, gamma = {value = 0.241, unit = "eV"} },
+    { f = 0.010, energy = {value = 0.830, unit = "eV"}, gamma = {value = 0.345, unit = "eV"} },
+    { f = 0.071, energy = {value = 2.969, unit = "eV"}, gamma = {value = 0.870, unit = "eV"} },
+    { f = 0.601, energy = {value = 4.304, unit = "eV"}, gamma = {value = 2.494, unit = "eV"} },
+    { f = 4.384, energy = {value = 13.32, unit = "eV"}, gamma = {value = 2.214, unit = "eV"} },
 ]
 ```
 
 ```console
 $ femkit project check --project layers
 [project check] layers: every part loads and checks; 1 note
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  material:film           materials/film/material.toml          complete
-  material:gold_drude     materials/gold_drude/material.toml    complete
-  component:slab          components/slab/component.toml        complete
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Definitions  material:film           materials/film/material.toml            complete
+  Definitions  material:gold_drude     materials/gold_drude/material.toml      complete
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
+next -- what the parts' states allow:
+    femkit study prep --project layers benchmark --engine ENGINE   # make its cases, geometries and meshes, and the jobs that make them
 ```
 
 Every parameter of `drude_lorentz` is positive — a source written in the
@@ -295,34 +302,34 @@ give out energy instead of absorbing it:
 
 <!-- edit ~/femkit-projects/layers/materials/gold_drude/material.toml -->
 ```diff
--gamma0 = "0.053 eV"
-+gamma0 = "-0.053 eV"
+-gamma0 = {value = 0.053, unit = "eV"}
++gamma0 = {value = -0.053, unit = "eV"}
 ```
 
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  material:film           materials/film/material.toml          complete
-  material:gold_drude     materials/gold_drude/material.toml    findings
-  component:slab          components/slab/component.toml        complete
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
-  x `gamma0` is "-0.053 eV", below zero; its model needs it not negative, so that no term gives energy rather than absorb it (material-data.md § 6.2)
-      materials/gold_drude/material.toml: properties.relative_permittivity.rakic.parameters.gamma0
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Definitions  material:film           materials/film/material.toml            complete
+  Definitions  material:gold_drude     materials/gold_drude/material.toml      errors
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
+  x `gamma0` is {value = -0.053, unit = "eV"}, below zero; its model needs it not negative, so that no term gives energy rather than absorb it (material-data.md § 6.2)
+      materials/gold_drude/material.toml, line 15: properties.relative_permittivity.rakic.parameters.gamma0
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 <!-- edit ~/femkit-projects/layers/materials/gold_drude/material.toml -->
 ```diff
--gamma0 = "-0.053 eV"
-+gamma0 = "0.053 eV"
+-gamma0 = {value = -0.053, unit = "eV"}
++gamma0 = {value = 0.053, unit = "eV"}
 ```
 
 Each formula, with every symbol, is in
@@ -363,23 +370,23 @@ second layer with the film:
 ```console
 $ femkit project check --project layers
 [project check] layers: 2 errors, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  material:film           materials/film/material.toml          complete
-  material:gold_drude     materials/gold_drude/material.toml    complete
-  component:slab          components/slab/component.toml        findings
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Definitions  material:film           materials/film/material.toml            complete
+  Definitions  material:gold_drude     materials/gold_drude/material.toml      complete
+  Component    component:slab          components/slab/component.toml          errors
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
   x the dataset `ellipsometry` of `film` is held as the refractive index, a form of the relative permittivity the study `benchmark` reads, and no case converts one yet: a dataset held as the relative permittivity itself would do
-      components/slab/component.toml: assign.high.datasets.relative_permittivity
-  x the study `benchmark` solves its step `solve` as a stationary calculation, which supplies no variable, and the dataset `ellipsometry` of `film` varies with the wavelength: a `value` of the relative permittivity at zero frequency, its range `all`, would hold there; no step femkit has yet supplies the wavelength
-      components/slab/component.toml: assign.high.datasets.relative_permittivity
+      components/slab/component.toml, line 65: assign.high.datasets.relative_permittivity
+  x the study `benchmark` solves its step `potential` as a stationary calculation, which supplies no variable, and the dataset `ellipsometry` of `film` varies with the wavelength: a `value` of the relative permittivity at zero frequency, its range `all`, would hold there; no step femkit has yet supplies the wavelength
+      components/slab/component.toml, line 65: assign.high.datasets.relative_permittivity
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 Two errors, at the same key. The film's data is a refractive index, which no
@@ -392,7 +399,7 @@ the same way.
 A single refractive index does not vary, but it is still a refractive index,
 which a case converts only once a step supplies a wavelength or a frequency
 — not built yet ([plan](../plans/plan.md) § 4, M9) — so `project check`
-finds it, and `study expand` refuses the study until it is fixed:
+finds it, and `study prep` refuses the study until it is fixed:
 
 <!-- write ~/femkit-projects/layers/materials/glass/material.toml -->
 ```toml
@@ -400,7 +407,7 @@ schema = 1
 display = "Glass, by its refractive index"
 
 [properties.refractive_index.handbook]
-value = "1.5"
+value = 1.5
 convention = "real"
 source = "a handbook's refractive index for visible light"
 range = "all"
@@ -415,24 +422,26 @@ range = "all"
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  material:film           materials/film/material.toml          complete
-  material:glass          materials/glass/material.toml         complete
-  material:gold_drude     materials/gold_drude/material.toml    complete
-  component:slab          components/slab/component.toml        findings
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Definitions  material:film           materials/film/material.toml            complete
+  Definitions  material:glass          materials/glass/material.toml           complete
+  Definitions  material:gold_drude     materials/gold_drude/material.toml      complete
+  Component    component:slab          components/slab/component.toml          errors
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
   x the dataset `handbook` of `glass` is held as the refractive index, a form of the relative permittivity the study `benchmark` reads, and no case converts one yet: a dataset held as the relative permittivity itself would do
-      components/slab/component.toml: assign.high.datasets.relative_permittivity
+      components/slab/component.toml, line 65: assign.high.datasets.relative_permittivity
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
-$ femkit study expand benchmark --project layers --yes
-[study expand] refused: `component:slab` has a finding to resolve: the dataset `handbook` of `glass` is held as the refractive index, a form of the relative permittivity the study `benchmark` reads, and no case converts one yet: a dataset held as the relative permittivity itself would do
+      studies/benchmark.toml, line 13: component
+$ femkit study prep benchmark --project layers --yes
+  x the dataset `handbook` of `glass` is held as the refractive index, a form of the relative permittivity the study `benchmark` reads, and no case converts one yet: a dataset held as the relative permittivity itself would do
+      components/slab/component.toml, line 65: assign.high.datasets.relative_permittivity
+[study prep] refused: the parts `study:benchmark` uses have findings to resolve
 next -- instead:
     femkit project check --project layers
 ```
@@ -455,11 +464,11 @@ layer:
 
 <!-- edit ~/femkit-projects/layers/materials/dielectric_2/material.toml -->
 ```diff
- # where the data holds: `all`, or `[from, to]` in its variable
+ # where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable
  range = "all"
 +
 +[properties.relative_permittivity.measured]
-+value = "4.12"
++value = 4.12
 +convention = "real"
 +source = "our capacitance measurement of sample D-3, 2026"
 +range = "all"
@@ -468,23 +477,23 @@ layer:
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  material:film           materials/film/material.toml          complete
-  material:glass          materials/glass/material.toml         complete
-  material:gold_drude     materials/gold_drude/material.toml    complete
-  component:slab          components/slab/component.toml        findings
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Definitions  material:film           materials/film/material.toml            complete
+  Definitions  material:glass          materials/glass/material.toml           complete
+  Definitions  material:gold_drude     materials/gold_drude/material.toml      complete
+  Component    component:slab          components/slab/component.toml          errors
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
   x the relative_permittivity of `dielectric_2` holds several datasets; name the one used, as there is no default
-      components/slab/component.toml: assign.high.datasets.relative_permittivity
+      components/slab/component.toml, line 65: assign.high.datasets.relative_permittivity
       one of: "benchmark", "measured"
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 <!-- edit ~/femkit-projects/layers/components/slab/component.toml -->
@@ -498,20 +507,22 @@ $ femkit project check --project layers
 ```console
 $ femkit project check --project layers
 [project check] layers: every part loads and checks; 1 note
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  material:film           materials/film/material.toml          complete
-  material:glass          materials/glass/material.toml         complete
-  material:gold_drude     materials/gold_drude/material.toml    complete
-  component:slab          components/slab/component.toml        complete
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Definitions  material:film           materials/film/material.toml            complete
+  Definitions  material:glass          materials/glass/material.toml           complete
+  Definitions  material:gold_drude     materials/gold_drude/material.toml      complete
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
+next -- what the parts' states allow:
+    femkit study prep --project layers benchmark --engine ENGINE   # make its cases, geometries and meshes, and the jobs that make them
 ```
 
 ## Your library's materials — `GLOBAL/`
@@ -532,23 +543,23 @@ with the library's vacuum, the prefix mistyped:
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  material:film           materials/film/material.toml          complete
-  material:glass          materials/glass/material.toml         complete
-  material:gold_drude     materials/gold_drude/material.toml    complete
-  component:slab          components/slab/component.toml        findings
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Definitions  material:film           materials/film/material.toml            complete
+  Definitions  material:glass          materials/glass/material.toml           complete
+  Definitions  material:gold_drude     materials/gold_drude/material.toml      complete
+  Component    component:slab          components/slab/component.toml          errors
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
   x `Global/vacuum` is no material's name: `Global` is not `GLOBAL`: a name is in lowercase, and `GLOBAL/`, which names the global library's, alone is in capitals; it most likely means `GLOBAL/vacuum`
-      components/slab/component.toml: assign.low.material
+      components/slab/component.toml, line 61: assign.low.material
       right: "GLOBAL/vacuum"
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 <!-- edit ~/femkit-projects/layers/components/slab/component.toml -->
@@ -560,21 +571,23 @@ $ femkit project check --project layers
 ```console
 $ femkit project check --project layers
 [project check] layers: every part loads and checks; 1 note
-  part                    file                                              state
-  project                 project.toml                                      complete
-  material:GLOBAL/vacuum  ~/femkit-projects/materials/vacuum/material.toml  complete
-  material:dielectric_1   materials/dielectric_1/material.toml              complete
-  material:dielectric_2   materials/dielectric_2/material.toml              complete
-  material:film           materials/film/material.toml                      complete
-  material:glass          materials/glass/material.toml                     complete
-  material:gold_drude     materials/gold_drude/material.toml                complete
-  component:slab          components/slab/component.toml                    complete
-  mesh:uniform            mesh/uniform.toml                                 complete
-  observables:benchmark   observables/benchmark.toml                        complete
-  physics:electrostatics  physics/electrostatics.toml                       complete
-  study:benchmark         studies/benchmark.toml                            unchecked
+  section      part                    file                                              state      engines that can solve it
+  Definitions  project                 project.toml                                      complete
+  Definitions  material:GLOBAL/vacuum  ~/femkit-projects/materials/vacuum/material.toml  complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml              complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml              complete
+  Definitions  material:film           materials/film/material.toml                      complete
+  Definitions  material:glass          materials/glass/material.toml                     complete
+  Definitions  material:gold_drude     materials/gold_drude/material.toml                complete
+  Component    component:slab          components/slab/component.toml                    complete
+  Physics      physics:electrostatics  physics/electrostatics.toml                       complete
+  Mesh         mesh:uniform            mesh/uniform.toml                                 complete
+  Study        study:benchmark         studies/benchmark.toml                            unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml            complete
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
+next -- what the parts' states allow:
+    femkit study prep --project layers benchmark --engine ENGINE   # make its cases, geometries and meshes, and the jobs that make them
 ```
 
 The library's material is listed with its file's whole path, since it lies
@@ -582,22 +595,30 @@ outside the project. Every case says where each material was found, and the
 dataset and source it used:
 
 ```console
-$ femkit study expand benchmark --project layers --yes
-[study expand] plan: 1 step
-  1. write cases/benchmark/8d1b0f05f1ca…/case.json: the one case
-[study expand] 1 step; logs in ~/.local/state/femkit/operations/project-layers/20261125T182022.568408Z
-[1/1] write cases/benchmark/8d1b0f05f1ca…/case.json: the one case
-[study expand] benchmark: 1 case written, 0 kept
-  case                                                              written
-  8d1b0f05f1cae2161f7e5a245e75e414a54bdf11730e7774dd60076044b22f87  now
+$ femkit study prep benchmark --project layers --yes
+[study prep] plan: 1 step
+  1. write cases/benchmark/bfbb6c275bd4…/case.json: the one case
+[study prep] 1 step; logs in ~/.local/state/femkit/operations/project-layers/20261128T070206.899402Z
+[1/1] write cases/benchmark/bfbb6c275bd4…/case.json: the one case
+[study prep] benchmark: 1 case written, 0 kept
+  case                                                              point         written
+  bfbb6c275bd4fd0613482b32cec60395f762f5ce37d0b9f68cbf94522afc5304  the one case  now
+  - no engine is chosen for the study benchmark: its cases, geometries and meshes serve every engine, and the engine is chosen when the study is solved
+      studies/benchmark.toml
+      femkit study prep --project layers benchmark --engine ENGINE
+  ! its stages wait: there is no record of this machine in ~/.config/femkit/machines
+      femkit config init   # asks for activation.preamble and activation.command
+      femkit job probe --write   # measure this machine, and write its record
 $ femkit case list --project layers
 [case list] layers: 1 case written
 benchmark: 1 case written; makes 1 case
   case          point          made now
-  8d1b0f05f1ca  the one point  yes
+  bfbb6c275bd4  the one point  yes
   case          body  material      found now      property               dataset     source                                                                                                                               changed since
-  8d1b0f05f1ca  high  dielectric_2  dielectric_2   relative_permittivity  measured    our capacitance measurement of sample D-3, 2026
-  8d1b0f05f1ca  low   vacuum        GLOBAL/vacuum  relative_permittivity  definition  the definition of vacuum: its permittivity is the vacuum electric permittivity ε0 itself, so its relative permittivity is exactly 1
+  bfbb6c275bd4  high  dielectric_2  dielectric_2   relative_permittivity  measured    our capacitance measurement of sample D-3, 2026
+  bfbb6c275bd4  low   vacuum        GLOBAL/vacuum  relative_permittivity  definition  the definition of vacuum: its permittivity is the vacuum electric permittivity ε0 itself, so its relative permittivity is exactly 1
+next -- what the parts' states allow:
+    femkit study prep --project layers benchmark --engine ENGINE   # make its cases, geometries and meshes, and the jobs that make them
 ```
 
 This study has no axis, so it makes one case, at `the one point`. The
@@ -614,10 +635,16 @@ the same case:
 ```
 
 ```console
-$ femkit study expand benchmark --project layers --yes
-[study expand] benchmark: 0 cases written, 1 kept
-  case                                                              written
-  8d1b0f05f1cae2161f7e5a245e75e414a54bdf11730e7774dd60076044b22f87  before
+$ femkit study prep benchmark --project layers --yes
+[study prep] benchmark: 0 cases written, 1 kept
+  case                                                              point         written
+  bfbb6c275bd4fd0613482b32cec60395f762f5ce37d0b9f68cbf94522afc5304  the one case  before
+  - no engine is chosen for the study benchmark: its cases, geometries and meshes serve every engine, and the engine is chosen when the study is solved
+      studies/benchmark.toml
+      femkit study prep --project layers benchmark --engine ENGINE
+  ! its stages wait: there is no record of this machine in ~/.config/femkit/machines
+      femkit config init   # asks for activation.preamble and activation.command
+      femkit job probe --write   # measure this machine, and write its record
 ```
 
 A project moved under another projects root finds its `GLOBAL/` materials in
@@ -640,8 +667,8 @@ the study makes a new case; the old one is kept and marked:
 
 <!-- edit ~/femkit-projects/layers/materials/dielectric_2/material.toml -->
 ```diff
--value = "4.12"
-+value = "4.15"
+-value = 4.12
++value = 4.15
 ```
 
 ```console
@@ -649,24 +676,32 @@ $ femkit case list --project layers
 [case list] layers: 1 case written
 benchmark: 1 case written; makes 1 case
   case          point          made now
-  8d1b0f05f1ca  the one point  no
-1 case of benchmark no longer made holds material data that has changed since; expanding the study again writes new ones, and keeps these
+  bfbb6c275bd4  the one point  no
+1 case of benchmark no longer made holds material data that has changed since; `study prep` writes new ones, and keeps these
   case          body  material      found now      property               dataset     source                                                                                                                               changed since
-  8d1b0f05f1ca  high  dielectric_2  dielectric_2   relative_permittivity  measured    our capacitance measurement of sample D-3, 2026                                                                                      value 4.12 → 4.15
-  8d1b0f05f1ca  low   vacuum        GLOBAL/vacuum  relative_permittivity  definition  the definition of vacuum: its permittivity is the vacuum electric permittivity ε0 itself, so its relative permittivity is exactly 1
-$ femkit study expand benchmark --project layers --yes
-[study expand] plan: 1 step
-  1. write cases/benchmark/e04099699b63…/case.json: the one case — in place of 8d1b0f05f1ca…, its materials' data changed: high's dielectric_2, dataset measured: value 4.12 → 4.15
-[study expand] 1 step; logs in ~/.local/state/femkit/operations/project-layers/20261125T182024.762973Z
-[1/1] write cases/benchmark/e04099699b63…/case.json: the one case — in place of 8d1b0f05f1ca…, its materials' data changed: high's dielectric_2, dataset measured: value 4.12 → 4.15
-[study expand] benchmark: 1 case written, 0 kept
-  case                                                              written
-  e04099699b6349fa0727baf01c1d29ac1acfdd9cca9efcfec52f176d7bc5ed2c  now
+  bfbb6c275bd4  high  dielectric_2  dielectric_2   relative_permittivity  measured    our capacitance measurement of sample D-3, 2026                                                                                      value 4.12 → 4.15
+  bfbb6c275bd4  low   vacuum        GLOBAL/vacuum  relative_permittivity  definition  the definition of vacuum: its permittivity is the vacuum electric permittivity ε0 itself, so its relative permittivity is exactly 1
+next -- what the parts' states allow:
+    femkit study prep --project layers benchmark --engine ENGINE   # make its cases, geometries and meshes, and the jobs that make them
+$ femkit study prep benchmark --project layers --yes
+[study prep] plan: 1 step
+  1. write cases/benchmark/fa19e16bdb46…/case.json: the one case — in place of bfbb6c275bd4…, its materials' data changed: high's dielectric_2, dataset measured: value 4.12 → 4.15
+[study prep] 1 step; logs in ~/.local/state/femkit/operations/project-layers/20261128T070211.721291Z
+[1/1] write cases/benchmark/fa19e16bdb46…/case.json: the one case — in place of bfbb6c275bd4…, its materials' data changed: high's dielectric_2, dataset measured: value 4.12 → 4.15
+[study prep] benchmark: 1 case written, 0 kept
+  case                                                              point         written
+  fa19e16bdb46f2a71f21e39aca5ec179b9eaf9cc6714f3e9e3e46a67ff39f75e  the one case  now
+  - no engine is chosen for the study benchmark: its cases, geometries and meshes serve every engine, and the engine is chosen when the study is solved
+      studies/benchmark.toml
+      femkit study prep --project layers benchmark --engine ENGINE
+  ! its stages wait: there is no record of this machine in ~/.config/femkit/machines
+      femkit config init   # asks for activation.preamble and activation.command
+      femkit job probe --write   # measure this machine, and write its record
 ```
 
 `case list` says which cases hold data that has changed since, and under
-`changed since` what changed: here `value 4.12 → 4.15`. The expansion's plan
-names the case each new one takes the place of, and why. The old case stays.
+`changed since` what changed: here `value 4.12 → 4.15`. Prep's plan names
+the case each new one takes the place of, and why. The old case stays.
 
 ## Importing from refractiveindex.info — `material import`
 
@@ -740,9 +775,10 @@ Into your library, for every project:
 $ femkit material import refractiveindex_info ~/Downloads/Malitson.yml --as fused_silica --into library --yes
 [material import] plan: 1 step
   1. write the new material GLOBAL/fused_silica in ~/femkit-projects/materials/fused_silica: material.toml
-[material import] 1 step; logs in ~/.local/state/femkit/operations/library-materials/20261125T165313.010315Z
+[material import] 1 step; logs in ~/.local/state/femkit/operations/library-materials/20261127T000334.018317Z
 [1/1] write the new material GLOBAL/fused_silica in ~/femkit-projects/materials/fused_silica: material.toml
 [material import] made the material GLOBAL/fused_silica in ~/femkit-projects/materials/fused_silica: its relative_permittivity, the dataset malitson
+  files
   material.toml
 $ cat ~/femkit-projects/materials/fused_silica/material.toml
 # Written by `material import` from refractiveindex_info's file Malitson.yml; yours from now on, as a file you wrote is (manual: 6 · Materials).
@@ -773,38 +809,38 @@ model = "sellmeier"
 convention = "real"
 # where the data comes from: a citation a reader can check, with its DOI where there is one
 source = "1) I. H. Malitson. Interspecimen comparison of the refractive index of fused silica. J. Opt. Soc. Am. 55, 1205-1208 (1965), doi:10.1364/JOSA.55.001205 2) C. Z. Tan. Determination of refractive index of silica glass for infrared wavelengths by IR spectroscopy. J. Non-Cryst. Solids 223, 158-163 (1998), doi:10.1016/S0022-3093(97)00438-9 Sellmeier formula is reported in Ref. 1 for the 0.21–3.71 μm wavelength range. Ref. 2 verifies the validity of the formula up to 6.7 μm."
-# where the data holds: `all`, or `[from, to]` in its variable
-range = ["0.21 um", "6.7 um"]
+# where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable
+range = {value = [0.21, 6.7], unit = "um"}
 # the temperature its data holds at, where it matters
-temperature = "293 K"
+temperature = {value = 293, unit = "K"}
 # the uncertainty its source gives, as the source gives it
 # uncertainty = "…"
 
 # its parameters, each by its name in its model's declaration: a quantity in a dimension it declares, or, for a list of terms the model sums, a list of tables of them
 [properties.relative_permittivity.malitson.parameters]
 # A, the permittivity beyond 1 that the terms leave, in 1
-A = "0"
+A = 0
 
 # a pole: the term B lambda^2 / (lambda^2 - C)
 [[properties.relative_permittivity.malitson.parameters.terms]]
 # B, the term's strength, in 1
-B = "0.6961663"
+B = 0.6961663
 # C, the pole: a length squared, or the resonance wavelength whose square it is, in um^2 or um
-C = "0.0684043 um"
+C = {value = 0.0684043, unit = "um"}
 
 # a pole: the term B lambda^2 / (lambda^2 - C)
 [[properties.relative_permittivity.malitson.parameters.terms]]
 # B, the term's strength, in 1
-B = "0.4079426"
+B = 0.4079426
 # C, the pole: a length squared, or the resonance wavelength whose square it is, in um^2 or um
-C = "0.1162414 um"
+C = {value = 0.1162414, unit = "um"}
 
 # a pole: the term B lambda^2 / (lambda^2 - C)
 [[properties.relative_permittivity.malitson.parameters.terms]]
 # B, the term's strength, in 1
-B = "0.8974794"
+B = 0.8974794
 # C, the pole: a length squared, or the resonance wavelength whose square it is, in um^2 or um
-C = "9.896161 um"
+C = {value = 9.896161, unit = "um"}
 
 # anything kept beside the material; read by no step
 [notes]
@@ -900,11 +936,14 @@ Into the project's own materials this time:
 $ femkit material import refractiveindex_info ~/Downloads/Johnson.yml --as gold --into project --project layers --yes
 [material import] plan: 1 step
   1. write the new material gold in ~/femkit-projects/layers/materials/gold: material.toml, johnson.csv
-[material import] 1 step; logs in ~/.local/state/femkit/operations/project-layers/20261125T165313.701323Z
+[material import] 1 step; logs in ~/.local/state/femkit/operations/project-layers/20261127T012416.096076Z
 [1/1] write the new material gold in ~/femkit-projects/layers/materials/gold: material.toml, johnson.csv
 [material import] made the material gold in ~/femkit-projects/layers/materials/gold: its refractive_index, the dataset johnson
+  files
   material.toml
   johnson.csv
+next -- check the project it is in:
+    femkit project check --project layers
 $ ls ~/femkit-projects/layers/materials/gold
 johnson.csv
 material.toml
@@ -946,10 +985,11 @@ interpolation = "linear"
 convention = "exp(-iwt)"
 # where the data comes from: a citation a reader can check, with its DOI where there is one
 source = "P. B. Johnson and R. W. Christy. Optical constants of the noble metals. Phys. Rev. B 6, 4370-4379 (1972), doi:10.1103/PhysRevB.6.4370"
-# where the data holds: `all`, or `[from, to]` in its variable
-range = ["0.1879 um", "1.9370 um"]
+# where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable
+range = {value = [0.1879, 1.9370], unit = "um"}
+
 # the temperature its data holds at, where it matters
-# temperature = "… K"
+# temperature = {value = "…", unit = "K"}
 # the uncertainty its source gives, as the source gives it
 # uncertainty = "…"
 
@@ -973,7 +1013,7 @@ the material you have instead:
 $ femkit material import refractiveindex_info ~/Downloads/Johnson.yml --as gold --into project --project layers --yes
 [material import] refused: ~/femkit-projects/layers/materials/gold is there already: a new material is never made over it. Import it under another name, as gold_2; to add its dataset to a material you have, copy the dataset's lines and its table from the new material into yours, and project check checks them
 next -- instead:
-    femkit material import refractiveindex_info /home/you/Downloads/Johnson.yml --as gold_2 --into project --project layers   # the import under another name
+    femkit material import refractiveindex_info /home/you/Downloads/Johnson.yml --as NAME --into project --project layers   # the import under another name; NAME e.g. gold_2
 ```
 
 That is: import it under a new name, then copy its dataset's lines — and its
@@ -995,24 +1035,24 @@ refuses them, as above:
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                          file                                                    state
-  project                       project.toml                                            complete
-  material:GLOBAL/fused_silica  ~/femkit-projects/materials/fused_silica/material.toml  complete
-  material:dielectric_1         materials/dielectric_1/material.toml                    complete
-  material:dielectric_2         materials/dielectric_2/material.toml                    complete
-  material:film                 materials/film/material.toml                            complete
-  material:glass                materials/glass/material.toml                           complete
-  material:gold                 materials/gold/material.toml                            complete
-  material:gold_drude           materials/gold_drude/material.toml                      complete
-  component:slab                components/slab/component.toml                          findings
-  mesh:uniform                  mesh/uniform.toml                                       complete
-  observables:benchmark         observables/benchmark.toml                              complete
-  physics:electrostatics        physics/electrostatics.toml                             complete
-  study:benchmark               studies/benchmark.toml                                  unchecked
-  x the study `benchmark` solves its step `solve` as a stationary calculation, which supplies no variable, and the dataset `malitson` of `GLOBAL/fused_silica` varies with the wavelength: a `value` of the relative permittivity at zero frequency, its range `all`, would hold there; no step femkit has yet supplies the wavelength
-      components/slab/component.toml: assign.low.datasets.relative_permittivity
+  section      part                          file                                                    state      engines that can solve it
+  Definitions  project                       project.toml                                            complete
+  Definitions  material:GLOBAL/fused_silica  ~/femkit-projects/materials/fused_silica/material.toml  complete
+  Definitions  material:dielectric_1         materials/dielectric_1/material.toml                    complete
+  Definitions  material:dielectric_2         materials/dielectric_2/material.toml                    complete
+  Definitions  material:film                 materials/film/material.toml                            complete
+  Definitions  material:glass                materials/glass/material.toml                           complete
+  Definitions  material:gold                 materials/gold/material.toml                            complete
+  Definitions  material:gold_drude           materials/gold_drude/material.toml                      complete
+  Component    component:slab                components/slab/component.toml                          errors
+  Physics      physics:electrostatics        physics/electrostatics.toml                             complete
+  Mesh         mesh:uniform                  mesh/uniform.toml                                       complete
+  Study        study:benchmark               studies/benchmark.toml                                  unchecked  elmer, ngsolve
+  Results      observables:benchmark         observables/benchmark/observables.toml                  complete
+  x the study `benchmark` solves its step `potential` as a stationary calculation, which supplies no variable, and the dataset `malitson` of `GLOBAL/fused_silica` varies with the wavelength: a `value` of the relative permittivity at zero frequency, its range `all`, would hold there; no step femkit has yet supplies the wavelength
+      components/slab/component.toml, line 59: assign.low.datasets.relative_permittivity
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 Taking optical data at a wavelength — a frequency-domain study — is not

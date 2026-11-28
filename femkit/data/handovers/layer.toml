@@ -1,0 +1,15 @@
+# NGSolve's hand-over at geometry order 1 (geometry.md § 8): femkit's own layer builds NGSolve's mesh
+# from Gmsh's MSH 2.2 inside NGSolve's own job before the solve, so NGSolve never handles a file
+# format. Its program checks that every group it hands reached NGSolve by its name.
+reads = "mesh/msh-2.2"
+engine = "ngsolve"
+orders = [1]
+names = ["body", "outer_boundary", "interface", "embedded", "edge", "point"]
+conversion = "femkit's layer: NGSolve's mesh built element by element, every group by its name; two groups sharing a piece refused, since NGSolve gives each element one name"
+program = "handover.py"
+arguments = ["{mesh}", "{handover}", "report.json"]
+outputs = ["report.json"]
+basis = """measured 2026-11-25 on NGSolve 6.2.2606: every group's name kept, in 2-D and 3-D, and every region's \
+measure the mesh's to 1e-14. Second order not kept: from Gmsh's second-order nodes the mesh it builds is not \
+curved — the unit disk's area off by 2.0e-3, against 3.1e-6 in Gmsh — and Mesh.Curve on it ends the process, \
+so the layer builds first-order elements alone"""

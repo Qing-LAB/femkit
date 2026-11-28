@@ -1,0 +1,33 @@
+/* Issue: a finding, edged and marked in its severity's colour. */
+.issue__list { display: flex; flex-direction: column; gap: var(--space-2); }
+.issue {
+  display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3);
+  background: var(--color-surface); border: var(--size-hairline) solid var(--color-line);
+  border-left: var(--size-stripe) solid var(--severity); border-radius: var(--size-radius-sm);
+}
+.issue__mark { display: inline-flex; padding-top: var(--size-rule); color: var(--severity); }
+.issue__body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1; }
+.issue__message { margin: 0; font-size: var(--type-size-sm); line-height: var(--type-leading-snug); overflow-wrap: anywhere; }
+.issue__where { margin: 0; font-family: var(--type-mono); font-size: var(--type-size-xs); color: var(--color-text-muted); overflow-wrap: anywhere; }
+.issue__open {
+  padding: 0; border: none; background: none; font: inherit; color: var(--color-accent-text); cursor: pointer; text-align: left;
+  text-decoration: underline; text-decoration-color: var(--color-line-strong); text-underline-offset: var(--size-rule);
+}
+.issue__open:hover { text-decoration-color: currentColor; }
+.issue__open:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-ring) var(--color-ring); border-radius: var(--size-radius-sm); }
+.issue__right { margin: 0; display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.issue__right code {
+  font-family: var(--type-mono); font-size: var(--type-size-xs); padding: 0 var(--space-2);
+  color: var(--color-ok); background: var(--color-code); border-radius: var(--size-radius-sm);
+}
+.issue__count {
+  display: inline-grid; place-items: center; min-width: var(--size-badge); height: var(--size-badge); margin-left: var(--space-2);
+  padding: 0 var(--space-1); vertical-align: middle; font-size: var(--type-size-2xs); font-weight: var(--type-weight-bold);
+  color: var(--color-surface); background: var(--severity); border-radius: var(--size-radius-pill);
+}
+.issue__each summary { cursor: pointer; font-size: var(--type-size-xs); color: var(--color-text-muted); }
+.issue__each ul { margin: var(--space-1) 0 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
+.issue--compact { padding: var(--space-1) var(--space-3); align-items: center; min-width: 0; }
+.issue--compact .issue__body { flex-direction: row; align-items: baseline; gap: var(--space-3); }
+.issue--compact .issue__message { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue--compact .issue__open { color: inherit; text-decoration: none; }

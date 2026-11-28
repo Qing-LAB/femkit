@@ -1,6 +1,7 @@
 # The states of a machine's record against this machine's config.toml (jobs.md § 9.3),
 # observed from the facts femkit/jobs/record.py gathers and names: `there`, its file is there;
-# `loads`, the file loads; `drifted`, its settings differ from this machine's config.toml. The
+# `loads`, the file loads; `drifted`, its settings differ from this machine's config.toml; and, as
+# `env bootstrap` observes it, `installs`, it installs an environment. The
 # first rule that holds gives the state. A record of another machine is never compared, so
 # never observed by these rules.
 
@@ -26,8 +27,29 @@ when = "drifted"
 state = "current"
 when = "otherwise"
 
-# What each state allows (jobs.md § 9.2): measuring this machine again, written under the
-# record's name — `local`, this machine's own, is the probe's default and is not named.
+# What `env bootstrap` does to this machine's record (envs.md § 6.2), each task with the sentence its
+# plan says, and its guard: `installs`, bootstrap installs an environment, which a record measured
+# before would list as it was. One that is missing, does not load or is stale is measured and
+# written; a current one only where environments are installed, and kept otherwise.
+[tasks.write]
+describe = "measures this machine, and writes its record"
+
+[tasks.renew]
+describe = "measures this machine again, and writes its record: environments are installed"
+when = "installs"
+
+[does]
+absent = ["write"]
+unloadable = ["write"]
+stale = ["write"]
+current = ["renew"]
+
+# What each state allows (jobs.md §§ 9.2, 9.3): measuring this machine again, written under the
+# record's name — `local`, this machine's own, is the probe's default and is not named. A current
+# record is measured again by its own probe where it lacks an environment's install fingerprint a
+# stage's identity needs, its environments changed since (workflow.md §§ 4, 7), and beside one
+# `env bootstrap` keeps (envs.md § 6.2); `doctor` and `job machines` name no step for a record that
+# is current.
 [actions.absent]
 probe = { describe = "measure this machine, and write its record", operation = "job.probe", request = { write = true, name = "{name}" } }
 
@@ -38,3 +60,4 @@ probe = { describe = "measure this machine again, and write its record over the 
 probe = { describe = "measure this machine again, and write its record", operation = "job.probe", request = { write = true, name = "{name}" } }
 
 [actions.current]
+probe = { describe = "measure this machine again, and write its record", operation = "job.probe", request = { write = true, name = "{name}" } }

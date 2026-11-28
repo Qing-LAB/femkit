@@ -1,0 +1,44 @@
+# How every process femkit starts for an environment begins (envs.md § 4.4): a clean start, read
+# by its one owner, femkit/envs/start.py — for a manager command, a command inside an environment,
+# femkit's own programs on an environment's Python, and the shell of a run script (jobs.md § 4,
+# block 8) — and by scripts/install-env.sh, which reads each list here as one line, for its own
+# manager commands and for the `femkit` command it writes. Of the invocation's variables, only those
+# `passes` names are kept, with what each scheduler kind adds — the variables a job of it sees
+# (`passes`) and the shell functions it needs (`functions`), passed as `function` spells one — and
+# of them none `removes` names; `PATH` is `path`, the system's own; then `sets`. After that the
+# manager's own `run`, or the activation, enters the environment by its name, and nothing is
+# filtered: the environment's activation and its declared variables set the run time. A name is a
+# pattern: `*` stands for any text. This file is the one home of these lists (envs.md § 4.4).
+
+# The system's own folders, where the manager's wrapper finds its shell; the activation puts the
+# environment's `bin` first.
+path = "/usr/bin:/bin"
+
+# Kept: the person's identity, the host's name, home, locale, terminal and time zone; the temporary
+# folder; the network's proxies and certificate files; the GPUs chosen; OpenMPI's two run-as-root variables,
+# without which it refuses to run in a root container; the person's conda configuration, which the
+# manager reads as theirs; femkit's own directories and job variables; the shell's module system's
+# settings — not what is loaded, which a preamble loads again, and none of its functions but those
+# a scheduler kind declares.
+passes = ["HOME", "USER", "LOGNAME", "HOSTNAME", "LANG", "LC_*", "TERM", "TZ", "TMPDIR", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CUDA_VISIBLE_DEVICES", "OMPI_ALLOW_RUN_AS_ROOT", "OMPI_ALLOW_RUN_AS_ROOT_CONFIRM", "CONDARC", "MAMBARC", "CONDA_*", "MAMBA_*", "XDG_*", "FEMKIT_*", "MODULE*", "LMOD_*"]
+
+# Removed, even where a pattern above passes it — each entry one a pattern above would keep: another
+# active environment; a platform forced on the manager, and its virtual packages overridden (the
+# recipe decides what goes in, envs.md § 4.4); a package root an outside toolchain names — so a
+# build or a run sees only its own environment's compilers and libraries. Every other outside
+# setting — Python's, library injection, an outside compiler and its flags — no pattern passes.
+removes = ["CONDA_PREFIX", "CONDA_PREFIX_*", "CONDA_DEFAULT_ENV", "CONDA_SHLVL", "CONDA_PROMPT_MODIFIER", "CONDA_SUBDIR", "CONDA_OVERRIDE_*", "*_ROOT"]
+
+# Set: no user site-packages load, in the manager's own Python or in an environment's.
+sets = { PYTHONNOUSERSITE = "1" }
+
+# femkit's own process — the `femkit` command, femkit/data/launcher.sh, which the install script
+# writes: it keeps the shell it is typed in, so femkit sees the machine it reads and probes as the
+# person does — `PATH`, the loaded modules, the scheduler's commands, the GPUs' tools — and every
+# process it starts for an environment begins clean as above. Of the shell it sheds only what would
+# change its own Python: Python's settings and user site-packages (`-I`), and these, each a name.
+femkit_sheds = ["LD_PRELOAD"]
+
+# How bash passes an exported shell function among a process's variables, `{name}` its name: how a
+# function a scheduler kind declares (`functions`) is passed by a process femkit starts.
+function = "BASH_FUNC_{name}%%"

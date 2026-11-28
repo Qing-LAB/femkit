@@ -26,7 +26,8 @@ on, for every assignment naming it (materials.md §§ 4, 7).
 
 from __future__ import annotations
 
-import hashlib
+import builtins
+
 from pathlib import Path
 from typing import Callable
 
@@ -46,7 +47,7 @@ from femkit.projects.addresses import Address
 from femkit.projects.door import Home
 from femkit.projects.layout import Layout
 from femkit.projects.project import Library
-from femkit.projects.requests import PROJECT_NEW
+from femkit.projects.requests import PROJECT_CHECK, PROJECT_NEW
 
 
 class ImportOutcome(Outcome):
@@ -57,14 +58,19 @@ class ImportOutcome(Outcome):
     dataset: str = Field(description="its dataset, by its name")
     files: list[str] = Field(default_factory=list, description="each file written, by its path from the material's "
                                                                "folder")
+    next: list[view.Action] = Field(default_factory=list, description="its next step: imported into a project, the "
+                                    "project checked; into the library, none — a project naming it is checked as any "
+                                    "other", json_schema_extra={"doc": "projects.md § 8"})
 
+    @builtins.property      # `property`, above, is the field naming the material's property
     def report(self) -> view.Report:
         if self.status != "done":
             return view.Report(blocks=[view.Text(text=f"{text.path(self.path)} is not made")])
         return view.Report(blocks=[
             view.Text(text=f"made the material {self.name} in {text.path(self.path)}: its {self.property}, the "
                            f"dataset {self.dataset}"),
-            view.Table(columns=view.columns("file"), rows=[{"file": f} for f in self.files])])
+            view.Table.of(ImportOutcome, [{"files": f} for f in self.files], "files"),
+            *([view.Next(label="check the project it is in", actions=self.next)] if self.next else [])])
 
 
 def _library(req: ImportRequest, ctx: Context, layout: Layout, kind: str) -> Home:
@@ -93,7 +99,7 @@ INTO: dict[str, Callable[[ImportRequest, Context, Layout, str], Home]] = {"libra
 
 def _target(req: ImportRequest, ctx: Context) -> tuple[Home, Layout, str]:
     """What the new material goes into, the layout, and the material's part kind in it."""
-    layout = layouts.read()
+    layout = layouts.read_once(ctx)
     kind = layout.kind_of(material.KEY)
     return INTO[req.into](req, ctx, layout, kind), layout, kind
 
@@ -179,7 +185,7 @@ def _planned(req: ImportRequest, ctx: Context) -> tuple[Home, Layout, str, Path,
     return home, layout, kind, folder, made
 
 
-@operation(MATERIAL_IMPORT, result=ImportOutcome, changes=True, subject="plan")
+@operation(MATERIAL_IMPORT, result=ImportOutcome, subject="plan")
 class MaterialImport:
     """Make a new material from another source's file, in your global library or a project's
     materials: its one dataset, with its source, convention, range and conditions, and a table's
@@ -189,7 +195,7 @@ class MaterialImport:
     def observe(self, req: ImportRequest, ctx: Context) -> dict:
         """The file's digest, which the plan rests on."""
         data = _read(req)
-        return {"file": hashlib.sha256(data).hexdigest() if data is not None else None}
+        return {"file": persist.digest(data) if data is not None else None}
 
     def plan(self, req: ImportRequest, ctx: Context) -> Plan:
         """One step, writing the new material's folder whole, under the lock of what it goes into."""
@@ -213,4 +219,6 @@ class MaterialImport:
         status, log = run_steps(plan, ctx, observer, do)
         return ImportOutcome(plan=plan, status=status, log=str(log), name=held["name"], path=held["path"],
                              property=held["property"], dataset=held["dataset"],
-                             files=list(held["files"]) if status == "done" else [])
+                             files=list(held["files"]) if status == "done" else [],
+                             next=[view.command(PROJECT_CHECK, **({"project": req.project} if req.project else {}))]
+                             if status == "done" and req.into == "project" else [])

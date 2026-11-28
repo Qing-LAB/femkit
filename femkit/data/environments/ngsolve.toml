@@ -2,6 +2,7 @@
 # Constraint rationale: docs/decisions/0003-ngsolve-stability-first-baseline.md
 engine = "ngsolve"
 version = "6.2.2606"
+version_command = ["python", "-c", "import ngsolve; print(ngsolve.__version__)"]   # its last line
 description = "Netgen/NGSolve with MPI and threads"
 default = true
 thread_variables = ["NGS_NUM_THREADS"]
@@ -13,13 +14,16 @@ conda = [
   "openmpi", "mpi4py", "numpy", "scipy", "meshio", "pytest", "pybind11",
   "libblas=*=*openblas", "liblapack=*=*openblas",
   "suitesparse", "metis", "parmetis", "mumps-mpi", "hypre",
+  # OpenCASCADE, so Netgen reads the geometry step's shapes and curves NGSolve's meshes from them
+  # (ADR 0017). The 7.9 series: Netgen 6.2.2606 tests the version's minor alone in places
+  # (`OCC_VERSION_MAJOR>=7 && OCC_VERSION_MINOR>=6`), so OpenCASCADE 8.0 would take its oldest paths.
+  "occt=7.9",
 ]
-pip = []
 forbid = ["rocm", "metal", "elmer", "amgx"]
 
-[provides]
-executables = ["python", "cmake", "make", "git", "bash", "mpirun"]
-modules = ["ngsolve", "ngsolve.ngslib", "netgen", "netgen.libngpy", "pyngcore.pyngcore", "pytest"]
+[provides]                            # beyond its toolchain's tools, which the toolchain step proves
+executables = ["python", "mpirun"]
+modules = ["ngsolve", "ngsolve.ngslib", "netgen", "netgen.libngpy", "netgen.occ", "pyngcore.pyngcore", "pytest"]
 
 [toolchain]                           # its own compilers and build tools, proven before any source is fetched (definitions.md § 4.6)
 packages = [
@@ -76,7 +80,7 @@ USE_SUPERBUILD = false
 USE_PYTHON = true
 USE_MPI = true
 USE_MPI_WRAPPER = false
-USE_OCC = false
+USE_OCC = true                        # Netgen's CAD interface: NGSolve's curved geometry (ADR 0017)
 USE_GUI = false
 USE_NATIVE_ARCH = false
 BUILD_FOR_CONDA = false
@@ -131,52 +135,54 @@ USE_CUDA = true
 # ---- checks (envs.md § 5).
 # Serial, threaded and MPI runs of one H(curl) solve must agree; MUMPS and Hypre
 # each solve over two ranks; NGSolve's own tests run; a CUDA solve matches the CPU.
+# Each program is given its threads ({threads}); the runner holds the ranks and threads
+# each reports to the check's own (definitions.md § 5.2).
 
 [[checks]]
 id = "hcurl-serial"
 kind = "command"
-run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}"]
+run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}", "{threads}"]
 read = "summary"
-expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 1 }, threads = { equals = 1 } }
+expect = { relative_residual = { max = 1e-9 } }
 agree = "hcurl-field"
 timeout = 300
 
 [[checks]]
 id = "hcurl-threaded"
 kind = "command"
-run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}"]
+run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}", "{threads}"]
 threads = 2
 read = "summary"
-expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 1 }, threads = { equals = 2 } }
+expect = { relative_residual = { max = 1e-9 } }
 agree = "hcurl-field"
 timeout = 300
 
 [[checks]]
 id = "hcurl-mpi"
 kind = "command"
-run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}"]
+run = ["python", "-m", "femkit.engines.ngsolve.checks.hcurl", "{work}", "{threads}"]
 ranks = 2
 read = "summary"
-expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 2 }, threads = { equals = 1 } }
+expect = { relative_residual = { max = 1e-9 } }
 agree = "hcurl-field"
 timeout = 300
 
 [[checks]]
 id = "mumps-mpi"
 kind = "command"
-run = ["python", "-m", "femkit.engines.ngsolve.checks.linear_backend", "{work}", "mumps"]
+run = ["python", "-m", "femkit.engines.ngsolve.checks.linear_backend", "{work}", "mumps", "{threads}"]
 ranks = 2
 read = "summary"
-expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 2 } }
+expect = { relative_residual = { max = 1e-9 } }
 timeout = 300
 
 [[checks]]
 id = "hypre-mpi"
 kind = "command"
-run = ["python", "-m", "femkit.engines.ngsolve.checks.linear_backend", "{work}", "hypre"]
+run = ["python", "-m", "femkit.engines.ngsolve.checks.linear_backend", "{work}", "hypre", "{threads}"]
 ranks = 2
 read = "summary"
-expect = { relative_residual = { max = 1e-9 }, ranks = { equals = 2 } }
+expect = { relative_residual = { max = 1e-9 } }
 timeout = 300
 
 [[checks]]
@@ -195,7 +201,7 @@ timeout = 300
 [[checks]]
 id = "cuda-solve"
 kind = "command"
-run = ["python", "-m", "femkit.engines.ngsolve.checks.cuda", "{work}"]
+run = ["python", "-m", "femkit.engines.ngsolve.checks.cuda", "{work}", "{threads}"]
 read = "summary"
 expect = { relative_difference = { max = 1e-9 }, cpu_relative_residual = { max = 1e-9 }, gpu_relative_residual = { max = 1e-9 } }
 device = true

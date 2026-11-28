@@ -1,6 +1,11 @@
-.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3);
-  padding: var(--space-10) var(--space-6); text-align: center; color: var(--text-muted); height: 100%; }
-.empty__mark { display: grid; place-items: center; width: 56px; height: 56px; border-radius: var(--radius-lg);
-  background: var(--accent-soft); color: var(--accent); }
-.empty__title { margin: 0; max-width: 46ch; font-size: var(--text-lg); color: var(--text); font-weight: var(--weight-medium); }
-.empty__more { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: center; }
+/* Empty: a quiet mark, what to do first, and the way to do it. */
+.empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3);
+  padding: var(--space-10) var(--space-6); text-align: center; color: var(--color-text-muted);
+}
+.empty__mark {
+  display: grid; place-items: center; width: var(--space-16); height: var(--space-16);
+  color: var(--color-accent); background: var(--color-accent-soft); border-radius: var(--size-radius-lg);
+}
+.empty__title { margin: 0; max-width: var(--layout-hero); font-size: var(--type-size-md); }
+.empty__more { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-2); }

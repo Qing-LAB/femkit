@@ -166,14 +166,19 @@ Moving or merging a document is a review, not a file move:
   material, a component, the physics, a mesh recipe, observables, a study.
 - [`manual/4-check-it.md`](manual/4-check-it.md) — reading `project check`:
   states, errors, warnings and notes, `right:` and the choices; the project
-  as a graph.
+  as a graph; a file edited on the page, what the change does shown before
+  it is saved.
 - [`manual/5-studies-and-cases.md`](manual/5-studies-and-cases.md) — studies,
-  cases, `study expand` and `case list`, new cases from a changed file, axes
-  and their crossing.
+  cases, `study prep` and `case list`, new cases from a changed file, axes
+  and their crossing, and the engine chosen to solve them, `--engine`.
 - [`manual/6-materials.md`](manual/6-materials.md) — a material's datasets — a
   value, a table, a formula — refractive index or permittivity, data that
   varies under a static study, the library and `GLOBAL/`, and importing from
   refractiveindex.info.
+- [`manual/7-geometries-and-meshes.md`](manual/7-geometries-and-meshes.md) —
+  the stages each case needs before it is solved, `study prep` and `study
+  flow`, each study's own copies, shared by every engine, and the job that
+  makes them.
 
 ### Contracts
 
@@ -197,18 +202,32 @@ Moving or merging a document is a review, not a file move:
   passes through, and the check frame.
 - [`contracts/materials.md`](contracts/materials.md) — the property list, the
   material format, the global and local libraries, importers; built but a
-  case taking a dataset at a variable's value (plan § 4, M9) and translation
-  (M6).
+  case taking a dataset at a variable's value (plan § 4, M9) and a
+  property's name in an engine's input (M6).
 - [`contracts/geometry.md`](contracts/geometry.md) — the geometry script, its
-  contract, the pipeline's steps, mesh recipes, the mesh step and the
-  hand-over to each engine; the contract and the recipes built, the rest not
-  yet (plan § 4, X).
+  contract, mesh recipes and the mesher each names, the six places, the
+  mesh's check and the hand-over to each engine; built but a built geometry
+  read by `project check`, Netgen's mesher and importing (plan § 4, X).
 - [`contracts/models.md`](contracts/models.md) — how a calculation is described
-  once, matched against an environment's declared and proven abilities,
-  decided on, customized, prepared and reduced; the parts, their checks, the
-  cases and the graph built, the rest not yet (plan § 4, M5–M9).
+  once, a study naming no engine, solved by the engine chosen when it is
+  solved, matched against that engine's declared and proven abilities,
+  decided on, customized and prepared, and its observables computed after
+  each case's solve by the person's script, kept in the one store; the
+  parts, their checks — a study's `[solve]`, the engines that can solve it,
+  the observables part among them — the cases, the graph and the one store
+  built, the rest not yet (M5–M9).
+- [`contracts/workflow.md`](contracts/workflow.md) — a case's stages,
+  declared as data, each step in an environment of its own; a study's
+  workflow graph; a stage's identity, state, folder writing and jobs; one
+  prep step from a project to what its jobs run;
+  built for the geometry and mesh stages — `study prep`, `study flow`, `case
+  list`, the definitions, a change's impact and `project save`; `project
+  check` reading a built geometry being built (plan § 4, X), the solve and
+  observe stages with M6.
 - [`contracts/jobs.md`](contracts/jobs.md) — machine records and the probe;
-  how a job will be prepared and run.
+  calculation folders, run scripts, runs, the jobs launched from a machine
+  and the monitor; built for a machine without a scheduler, a scheduler's
+  submission not yet (plan § 4, M4).
 - [`contracts/testing.md`](contracts/testing.md) — test tiers, isolation, what
   earns a test, and the runner.
 
@@ -220,10 +239,13 @@ Moving or merging a document is a review, not a file move:
 - [`reference/machines.md`](reference/machines.md) — every field of a machine
   record.
 - [`reference/parts.md`](reference/parts.md) — every field of a project's parts:
-  the project file, physics, observable sets, studies, and each part another
-  package registers.
+  the project file, physics, studies, observables parts, and each part
+  another package registers.
 - [`reference/cases.md`](reference/cases.md) — every field of a case's
   `case.json`.
+- [`reference/jobs.md`](reference/jobs.md) — every field of a job request
+  and a run's records, and every file of a calculation folder, a launch
+  folder and a run, with its writer and readers.
 
 ### Science
 
@@ -243,7 +265,9 @@ Moving or merging a document is a review, not a file move:
 - [`decisions/0001-project-name-femkit.md`](decisions/0001-project-name-femkit.md)
   — the name femkit, everywhere.
 - [`decisions/0002-paraview-visualization-boundary.md`](decisions/0002-paraview-visualization-boundary.md)
-  — interactive field rendering is ParaView's; femkit exports and reduces.
+  — interactive field rendering is ParaView's; femkit exports and analyses;
+  amended by 0025: each case's solution is reduced by the person's
+  observables functions, which femkit runs, and femkit reads no field.
 - [`decisions/0003-ngsolve-stability-first-baseline.md`](decisions/0003-ngsolve-stability-first-baseline.md)
   — the NGSolve release and toolchain pinned, and why.
 - [`decisions/0004-elmer-stability-first-baseline.md`](decisions/0004-elmer-stability-first-baseline.md)
@@ -267,7 +291,8 @@ Moving or merging a document is a review, not a file move:
 - [`decisions/0011-project-structure.md`](decisions/0011-project-structure.md)
   — a project is parts in a fixed tree, reached through one door.
 - [`decisions/0012-one-mesh-path.md`](decisions/0012-one-mesh-path.md)
-  — Gmsh makes every mesh, in an environment of its own.
+  — Gmsh makes every mesh, in an environment of its own; amended by 0016
+  and 0017.
 - [`decisions/0013-geometry-scripts.md`](decisions/0013-geometry-scripts.md)
   — geometry is the person's Gmsh script, wrapped by a contract.
 - [`decisions/0014-materials.md`](decisions/0014-materials.md)
@@ -276,6 +301,54 @@ Moving or merging a document is a review, not a file move:
 - [`decisions/0015-the-persons-files.md`](decisions/0015-the-persons-files.md)
   — femkit changes no file the person wrote; one set of templates starts
   them.
+- [`decisions/0016-every-step-runs-from-a-run-folder.md`](decisions/0016-every-step-runs-from-a-run-folder.md)
+  — every step runs from a run folder by one machinery, the earlier tool's:
+  judged by its check, made once per content, a case's geometry and mesh a sequence,
+  every run watched by a monitor; amended by 0026: a run starts clean.
+- [`decisions/0017-netgen-curves-ngsolve-geometry.md`](decisions/0017-netgen-curves-ngsolve-geometry.md)
+  — curved geometry in NGSolve: Netgen meshes it, in a step of its own in
+  `ngsolve`.
+- [`decisions/0018-one-graph-from-description-to-execution.md`](decisions/0018-one-graph-from-description-to-execution.md)
+  — one graph from description to execution: a workflow layer of declared
+  stages between the project and its jobs; a plain text editor on the page.
+- [`decisions/0019-section-order-block-states-axes-together.md`](decisions/0019-section-order-block-states-axes-together.md)
+  — a project's parts read in sections, one plain state per
+  block of the diagrams, axes that step together; a step's own mesh and the
+  coupling loop's settings decided with the first coupling.
+- [`decisions/0020-each-engine-its-own-stages.md`](decisions/0020-each-engine-its-own-stages.md)
+  — each engine its own geometry and mesh stages, never shared between
+  engines; each engine's meshing job holds its own; amended by 0025: a
+  study's geometries and meshes serve every engine that solves it.
+- [`decisions/0021-definitions.md`](decisions/0021-definitions.md) —
+  definitions in place of parameters: each a typed number with its unit, or
+  computed by a function in `definitions.py` reading `defs.<name>`, femkit
+  converting units; no value written as text.
+- [`decisions/0022-one-prep-step.md`](decisions/0022-one-prep-step.md) —
+  one prep step, `study prep`, from a written study to what its jobs run, as
+  the earlier tool's `jobset prep`; one entry for the command line and the
+  page.
+- [`decisions/0023-react-flow-draws-elk-places.md`](decisions/0023-react-flow-draws-elk-places.md)
+  — the page's diagrams: React Flow draws, ELK places them from the graph's
+  declared order, in a worker.
+- [`decisions/0024-codemirror-text-editor.md`](decisions/0024-codemirror-text-editor.md)
+  — the page's text editor on CodeMirror 6: findings at their keys, each
+  key's help on hover, its allowed values suggested as the person types.
+- [`decisions/0025-one-engine-per-study-observables-after.md`](decisions/0025-one-engine-per-study-observables-after.md)
+  — a study names no engine: the engine is chosen when it is solved,
+  `study prep --engine`, one engine solves a run and each engine's solves
+  are kept apart — the solve the one step bound to an engine, every other
+  step in an environment of its own, the mesh recipe naming its mesher; no
+  study is built on another; coupling across engines is to be studies
+  feeding each other, after M9; observables come after the study — the person's script on each case's
+  solve run, in femkit's `postprocess` environment with its project's packages,
+  output translators between them where the script needs a standard form;
+  every declared output kept as netCDF with its metadata; input writers,
+  folder writing and translators each named once.
+- [`decisions/0026-environments-under-condas-management.md`](decisions/0026-environments-under-condas-management.md)
+  — environments under conda's management, named `femkit` and
+  `femkit-<name>`, their prefix the one conda names so; the recipe decides
+  what goes in, the person's settings set aside or refused; one clean-start
+  door for every call, run scripts and femkit itself included; amends 0016.
 
 ### Plan
 

@@ -7,19 +7,21 @@ application or a domain must leave the supervisor running.
 
 from __future__ import annotations
 
+import functools
 import gzip
-from dataclasses import dataclass
+import typing
+from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Literal
 
 from femkit.core import clock, dirs
-from femkit.core.persist import open_private, read_bytes, read_json, remove, write_json
+from femkit.core.persist import move, open_private, read_bytes, read_record, remove, write_json
 from femkit.core.process import Identity
 
 SOCKET_NAME = "sock"          # <name> of a server on a Unix socket; a TCP server's is its port
 LOOPBACK = "127.0.0.1"        # printed and bound as this, never `localhost` (web.md § 5)
 SOCKET_PATH_MAX = 107         # bytes a Unix socket's path may hold, its terminating NUL aside
 FLAP_WINDOW = 30.0            # two deaths by a signal within this many seconds: the supervisor gives up
-CHILD_MODULE = "femkit.web"   # what the supervisor runs
 HEALTH_ROUTE = "/api/health"  # what `start` and `status` ask; it needs no token, and an answer is never logged
 
 
@@ -93,9 +95,14 @@ class Listen:
         return cls(socket=data["socket"]) if data.get("socket") else cls(port=int(data["port"]))
 
 
+#: The pidfile's shape, which it states as `schema`, raised when it changes (core.md § 4).
+SHAPE = 1
+
+
 @dataclass(frozen=True)
 class Pidfile:
-    """`serve-<name>.pid`: written by the supervisor at its start and at each child it starts."""
+    """`serve-<name>.pid`: written by the supervisor at its start and at each child it starts,
+    stating its shape — a dataclass, since the supervisor loads no pydantic (web.md § 4)."""
 
     supervisor: Identity
     child: Identity | None
@@ -104,26 +111,31 @@ class Pidfile:
     foreground: bool
 
     def as_json(self) -> dict:
-        return {"supervisor": self.supervisor.as_json(),
+        return {"schema": SHAPE, "supervisor": self.supervisor.as_json(),
                 "child": self.child.as_json() if self.child else None,
                 "host": self.host, "listen": self.listen.as_json(), "foreground": self.foreground}
-
-    @classmethod
-    def from_json(cls, data: dict) -> "Pidfile":
-        return cls(Identity.from_json(data["supervisor"]),
-                   Identity.from_json(data["child"]) if data.get("child") else None,
-                   str(data["host"]), Listen.from_json(data["listen"]), bool(data["foreground"]))
 
     def write(self) -> Path:
         return write_json(pidfile(self.listen.name), self.as_json(), private=True)
 
 
+@functools.cache
+def _shape() -> type:
+    """The pidfile's model, made from `Pidfile`'s own fields and its shape when it is read — in the
+    control process: the supervisor, which writes it, loads no pydantic (web.md § 4)."""
+    from pydantic import Field, create_model
+    from femkit.core.schema import Model
+    hints = typing.get_type_hints(Pidfile)
+    return create_model("PidfileShape", __base__=Model, schema_=(Literal[SHAPE], Field(alias="schema")),
+                        **{f.name: (hints[f.name], ...) for f in fields(Pidfile)})
+
+
 def read_pidfile(path: Path) -> Pidfile | None:
-    """The pidfile at ``path``; None when it is absent or cannot be read as one."""
-    try:
-        return Pidfile.from_json(read_json(path))
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
+    """The pidfile at ``path``, by the one reader of a file femkit writes (`persist.read_record`,
+    core.md § 4); None when it is absent or does not read as one — one stating another shape, or
+    none, among them."""
+    held = read_record(path, _shape()).value
+    return None if held is None else Pidfile(**{f.name: getattr(held, f.name) for f in fields(Pidfile)})
 
 
 # ------------------------------------------------------------- respawn policy
@@ -152,7 +164,8 @@ def event_line(source: str, message: str) -> str:
 
 class LogRoll:
     """The server's log: appended by one writer, 0600; over ``max_bytes`` it is compressed
-    to `<log>.1.gz`, older archives shift up, and only ``keep`` archives are kept."""
+    to `<log>.1.gz`, older archives each renamed one place up, and only ``keep`` archives
+    are kept."""
 
     def __init__(self, path: Path, *, max_bytes: int, keep: int) -> None:
         self.path, self.max_bytes, self.keep = Path(path), int(max_bytes), int(keep)
@@ -170,15 +183,16 @@ class LogRoll:
         return self.path.with_name(f"{self.path.name}.{i}.gz")
 
     def _rotate(self) -> None:
-        """The oldest archive gone, each other one place up, the log compressed into the first,
-        and the log begun again — each file through the core (core.md § 4)."""
+        """The oldest archive gone, each other renamed one place up — never read and written
+        again, so a rotation copies no archive, and one interrupted leaves each whole — the log
+        compressed into the first, and the log begun again; each file through the core
+        (core.md § 4)."""
         self._fh.close()
         if self.keep > 0:
             remove(self._archive(self.keep))
             for i in range(self.keep - 1, 0, -1):
-                held = read_bytes(self._archive(i))
-                if held is not None:
-                    _put(self._archive(i + 1), held)
+                if self._archive(i).is_file():
+                    move(self._archive(i), self._archive(i + 1))
             _put(self._archive(1), gzip.compress(read_bytes(self.path) or b""))
         self._fh = open_private(self.path, "wb")
 

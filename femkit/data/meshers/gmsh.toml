@@ -1,15 +1,19 @@
-# Gmsh, in the elmer environment: the one mesher (models.md § 6.5); ElmerGrid converts its meshes
-# for Elmer. It writes MSH 2.2 ASCII (Gmsh's own default is MSH 4.1, so the translator asks for 2.2);
-# which form the pipeline hands over is settled by measurement with the execution design (plan § 4, X).
+# Gmsh's mesher (workflow.md § 2.3; geometry.md §§ 5, 6): it fills the mesh stage's slots — run
+# in the gmsh environment that provides it, its program meshes the geometry stage's shapes as the
+# recipe says, in Gmsh's terms, and writes the mesh as MSH 2.2 text, every promised group a named
+# group of it, and the region map. A mesh recipe states it, `mesher = "gmsh"`; Elmer takes its mesh
+# at geometry orders 1 and 2 and NGSolve at 1, by their hand-overs (geometry.md § 8).
 description = "Gmsh with its OpenCASCADE kernel"
-provided_by = "elmer"
+provided_by = "gmsh"
 dimensions = [2, 3]
-builds = ["rectangle", "disk", "polygon", "box", "sphere", "cylinder", "extrusion",
-          "union", "difference", "intersection", "import"]
-imports = ["step", "iges", "brep"]
-controls = ["size", "regions"]
 tolerance = { kind = "absolute", value = "1e-8" }   # in the length unit geometry is handed over in
-writes = { format = "msh", version = "2.2", encoding = "ascii" }
 orders = [1, 2]
-keeps_region_names = true
-basis = "measured 2026-11-23 on gmsh 4.15.2 (conda-forge, OpenCASCADE 8.0.1): its build options, Geometry.Tolerance; orders 1 and 2, what ElmerGrid keeps of each not yet measured (plan § 4, X)"
+order = "recipe"
+program = "mesh.py"
+arguments = ["{recipe}", "{geometry}", "{mesh}", "{regions}"]
+reads = { geometry = "geometry/xao" }
+writes = { mesh = "mesh/msh-2.2", regions = "mesh/regions" }
+honours = ["size", "order", "tolerance", "sizes", "growth", "quality"]
+basis = """measured 2026-11-23 on Gmsh 4.15.2 (conda-forge, OpenCASCADE 8.0.1): its build options, \
+Geometry.Tolerance; measured 2026-11-25: orders 1 and 2 written as MSH 2.2, every group a named \
+group of it"""

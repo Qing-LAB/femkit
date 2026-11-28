@@ -2,8 +2,8 @@
 frame's origin, with the groups its contract (component.toml) promises — the body `domain`,
 and its sides `left` (x = 0), `right` (x = side) and `sides` (the top and the bottom).
 
-femkit runs it as `python geometry.py INPUTS OUTPUT` (geometry.md § 2). INPUTS is a JSON
-file, {"schema": 1, "parameters": {"side": 1.0}}: each parameter the contract declares, a
+femkit runs it as `python geometry.py INPUTS OUTPUT` (manual: 3 · Write each part). INPUTS is
+a JSON file, {"schema": 2, "definitions": {"side": 1.0}}: each definition the contract declares, a
 length in the frame's unit — metres here. OUTPUT is the file to write the geometry to; its
 format is femkit's choice, by its extension. The script builds the shapes and names the
 groups; it does not mesh, since meshing is femkit's next step. Run it by hand the same way,
@@ -18,7 +18,7 @@ import gmsh
 
 def main(inputs: str, output: str) -> None:
     with open(inputs) as f:
-        side = json.load(f)["parameters"]["side"]
+        side = json.load(f)["definitions"]["side"]
     if not side > 0:
         sys.exit(f"the square's side must be positive, not {side}")
 

@@ -7,7 +7,6 @@ command line serves it (api.md § 4).
 from __future__ import annotations
 
 import base64
-import json
 import queue
 import threading
 import traceback
@@ -18,7 +17,8 @@ from flask import Flask, Response, abort, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 
 from femkit import registry
-from femkit.core import eventlog, view
+from femkit.core import commandline, eventlog, view
+from femkit.core.schema import choices
 from femkit.core.markdown import headings
 from femkit.core.errors import Busy, PlanStale, Refusal
 from femkit.core.operations import Context, Operation, OperationAddress, Plan, PlanAnswer, SilentObserver, operations_root
@@ -89,8 +89,9 @@ def _operation_dir(subject: str, at: str) -> Path:
 def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] | None = None) -> Flask:
     app = Flask(__name__, static_folder=None)
     app.url_map.merge_slashes = False  # a path is taken as written, never rewritten into another
+    app.json.sort_keys = False         # an answer keeps its model's order: the declaration's groups in the person's (web.md § 8.1)
     access.install(app, token, listen)
-    ops = operations if operations is not None else registry.operations()
+    ops = registry.offered(operations if operations is not None else registry.operations(), "page")
     declared = page_declaration.load(ops)
     streams = threading.BoundedSemaphore(STREAMS)
     stopping = threading.Event()  # set when the server stops: every event stream ends
@@ -130,9 +131,14 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
 
     @app.get("/api/operations")
     def list_operations():
-        return jsonify([view.OperationInfo(name=op.name, description=op.doc, changes=op.changes,
+        return jsonify([view.OperationInfo(name=op.name, description=op.doc, effect=op.verb.effect,
+                                           group=registry.group_name(op.name),
+                                           words=commandline.words(op.name, op.request, {}),
+                                           fills=[view.Fill.of(op.request, n) for n in op.request.model_fields],
                                            request=op.request.model_json_schema(),
-                                           result=op.result.model_json_schema(mode="serialization")
+                                           result=op.result.model_json_schema(mode="serialization"),
+                                           choices={name: held[1] for name, field in op.request.model_fields.items()
+                                                    if (held := choices(field)) is not None}
                                            ).model_dump(mode="json") for op in ops.values()])
 
     @app.get("/api/page")
@@ -146,7 +152,7 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
             abort(404)
         req = op.request_from(_body())  # a refusal of the body is the client's, never a defect
         plan = op.plan(req, Context.from_process())
-        return _json(PlanAnswer(plan=plan, digest=plan.digest(), text=plan.text()))
+        return _json(PlanAnswer.of(plan))
 
     @app.post("/api/<path:name>/apply")
     def apply_route(name: str):
@@ -228,14 +234,12 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
                                                        code="streams", subject=path)))
                 return
             try:
-                sent, quiet = 0, 0.0
+                sent, quiet = None, 0.0
                 while not stopping.is_set():
-                    records = eventlog.EventLog.of(where).events()
-                    for record in records[sent:]:
-                        yield json.dumps(record) + "\n"
-                        quiet = 0.0
-                    sent = len(records)
-                    folded = eventlog.fold(records)
+                    folded = eventlog.fold(eventlog.EventLog.of(where).events())
+                    if folded != sent:          # the log's fold, each time it changes (core.md § 6)
+                        yield _line(folded)
+                        sent, quiet = folded, 0.0
                     if folded.ended or folded.interrupted:
                         return
                     if quiet >= KEEPALIVE:
@@ -281,10 +285,6 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
 
     # ------------------------------------------------------------ the page
 
-    @app.get("/docs")
-    def docs_page():
-        return page()
-
     @app.get("/")
     def page():
         if not (STATIC / "index.html").is_file():
@@ -292,8 +292,11 @@ def create_app(token: str, listen: Listen, *, operations: dict[str, Operation] |
                             "The /api routes serve meanwhile.\n", mimetype="text/plain")
         return send_from_directory(STATIC, "index.html")
 
-    @app.get("/static/<path:name>")
     def static_file(name: str):
         return send_from_directory(STATIC, name)
+
+    # The document viewer and the bundle's files, at the addresses the declaration gives (web.md §§ 1, 8.1).
+    app.add_url_rule(declared.addresses.documents, "docs_page", page, methods=["GET"])
+    app.add_url_rule(declared.addresses.bundle + "<path:name>", "static_file", static_file, methods=["GET"])
 
     return app

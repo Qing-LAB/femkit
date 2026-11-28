@@ -10,7 +10,9 @@ part's text or write a geometry script, and the request carrying a script's
 text in [ADR 0013](0013-geometry-scripts.md)'s consequences; decision 2
 widened by the person (2026-11-25) to the new files they ask for besides a
 template — an imported material, and the library's first copy of femkit's
-shipped materials (consequences)
+shipped materials (consequences); decision 1 amended by
+[ADR 0018](0018-one-graph-from-description-to-execution.md) (2026-11-25) for
+the page's plain text editor alone, which saves exactly what the person typed
 
 **Authority:** the reasons and the alternatives only;
 [`projects.md`](../contracts/projects.md) § 7 owns the rules

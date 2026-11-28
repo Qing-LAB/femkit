@@ -1,22 +1,30 @@
 """Machine records: their file, the probe's refusals, and `job machines` (jobs.md § 9).
 
 The probe's measurement starts outside programs, so it is tested where they answer: the
-field tier (tests/field/test_job_probe.py). Records here are built from femkit's own model,
-never from typed-in scheduler output (testing.md § 2.1).
+field tier (tests/field/test_job_probe.py); here only on a machine whose programs are
+stand-ins that print nothing of a real one's — a manager that answers nothing, an
+`nvidia-smi` that finds no GPU, no scheduler command on PATH. Records here are built from
+femkit's own model, never from typed-in scheduler output (testing.md § 2.1).
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import tomllib
+from pathlib import Path
 
 import pytest
 
-from tests.kit import a_record, apply, planned, refused, run
+from tests.kit import (NO_GPU, a_record, ahead, apply, made, planned, refused, run, tripwire_names,
+                       workstation)  # noqa: F401 -- workstation: a fixture
 from femkit.config import settings
+from femkit.config.probe import GPU_QUERY
+from femkit.core import dirs, eventlog
 from femkit.core.errors import Unstated, UsageError
 from femkit.core.operations import Context
 from femkit.core.persist import write_toml
-from femkit.core.schema import DefinitionError, validate
+from femkit.core.schema import DefinitionError, load_text, validate
 from femkit.definitions.catalogue import CatalogueError, load_schedulers
 from femkit.definitions.models import SchedulerKind
 from femkit.jobs import record
@@ -91,7 +99,7 @@ def test_a_stale_record_of_this_machine_offers_the_probe_that_writes_it_again_un
 
 
 @pytest.mark.parametrize("fields, refusal", [
-    ({"write": True, "name": "local"}, (UsageError, "reserved-name", "local")),     # local is this machine's own record
+    ({"write": True, "name": "local"}, (UsageError, "invalid-request", "job.probe")),  # local: this machine's own record
     ({"write": True}, (Unstated, "setting-unset", "activation.preamble, activation.command")),  # the activation unset
     ({"set": ["partitions.p1.max_time=1:00:00"]}, (UsageError, "invalid-request", "job.probe")),  # only command paths
     ({"set": ["scheduler.commands.submit"]}, (UsageError, "invalid-request", "job.probe")),        # not KEY=VALUE
@@ -162,24 +170,25 @@ def test_the_mamba_kind_reads_its_root_from_either_versions_answer(answer, tmp_p
     assert m.query(m.kind.root) == ("/r", None)
 
 
-@pytest.mark.parametrize("command, hook_on_disk, expected", [
+@pytest.mark.parametrize("command, manager_there, expected", [
     ("source activate", True, ["source activate {p}"]),                      # the script: never the hook
-    ("conda activate", True, ["source {root}/etc/profile.d/conda.sh", "conda activate {p}"]),
-    ("conda activate", False, ["conda activate {p}   # no hook file at {root}/etc/profile.d/conda.sh: "
-                               "`conda activate` needs the manager's hook sourced first"]),
+    ("conda activate", True, ['eval "$({exe} shell.bash hook)"', "conda activate {p}"]),
+    ("conda activate", False, ["conda activate {p}   # no manager at {exe}: `conda activate` needs its hook "
+                               "evaluated first"]),
     ("mamba activate", True, ["mamba activate {p}   # not one of the conda kind's forms"]),
-], ids=["source activate", "conda activate", "no hook file", "another kind's"])
-def test_the_entry_is_the_activation_the_person_stated(command, hook_on_disk, expected, tmp_path, monkeypatch):
+], ids=["source activate", "conda activate", "no manager there", "another kind's"])
+def test_the_entry_is_the_activation_the_person_stated(command, manager_there, expected, tmp_path, monkeypatch):
     """Fails if the entry line follows what is on disk instead of the activation stated for this
     machine: a cluster's module may ship a hook file while its batch shells enter with
-    `source activate` (config.md § 3.1; envs.md § 6.2)."""
-    root, prefix = tmp_path / "root", tmp_path / "env"
-    if hook_on_disk:
-        (root / "etc" / "profile.d").mkdir(parents=True)
-        (root / "etc" / "profile.d" / "conda.sh").write_text("")
-    # conda 26.7.1's `info --json` answer, measured, cut to the one key the kind file reads
-    m = answering(root / "bin" / "conda", {"root_prefix": str(root)}, monkeypatch)
-    assert m.activation(prefix, command) == [e.format(p=prefix, root=root) for e in expected]
+    `source activate` (config.md § 3.1; envs.md § 6.2); if the shell function's form loads its hook
+    otherwise than from the manager it knows, by the manager's own way — never a file guessed from
+    where the manager lies (definitions.md § 6); or if it enters the environment other than by its
+    name with the manager (envs.md § 1)."""
+    prefix = "femkit-gmsh"
+    m = answering(tmp_path / "root" / "bin" / "conda", {"root_prefix": str(tmp_path / "root")}, monkeypatch)
+    if not manager_there:
+        m = replace(m, path=tmp_path / "gone" / "conda")
+    assert m.activation(prefix, [], command) == [e.format(p=prefix, exe=m.path) for e in expected]
 
 
 def test_a_changed_record_names_each_value_that_changed_as_a_person_reads_it():
@@ -191,3 +200,97 @@ def test_a_changed_record_names_each_value_that_changed_as_a_person_reads_it():
     assert record.differences(old, new) == [
         "host.gpus: unknown (nvidia-smi not found on PATH) -> unknown (nvidia-smi printed nothing)",
         "queues[0].max_time: 1-00:00:00 -> 2-00:00:00"]
+
+
+def test_a_record_that_is_not_toml_is_said_as_every_declared_file_is():
+    """Fails if a machine record that is not TOML is read by another reader than the one every
+    declared file is read by, so tomllib's own words reach the person instead of why, in plain
+    words, at its line (core.md § 2: "One TOML reader")."""
+    text = 'identity = "cluster-a\n'
+    file = record.path("cluster-a")
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text(text)
+    with pytest.raises(DefinitionError) as caught:
+        record.read(file)
+    with pytest.raises(DefinitionError) as expected:
+        load_text(text, record.Record, file)
+    assert caught.value.problems == expected.value.problems
+
+
+def test_job_machines_names_the_probe_that_rewrites_a_record_that_does_not_load():
+    """Fails if `job machines` lists a record that does not load without the one next step the
+    record's state allows — `job probe --write`, with `--name` for a record named other than
+    `local` — observed by `femkit/data/states/record.toml`, not decided apart (jobs.md § 9.3)."""
+    for name in ("local", "cluster-b"):
+        record.path(name).parent.mkdir(parents=True, exist_ok=True)
+        record.path(name).write_text("schema = 1\nidentity = \n")
+    result = run("job.machines")
+    assert {r.name: r.status for r in result.rows} == {"local": "does not load", "cluster-b": "does not load"}
+    offered = {i.subject: [n.command for n in i.next] for i in result.issues if i.code == "unloadable"}
+    assert offered == {"local": ["femkit job probe --write"], "cluster-b": ["femkit job probe --write --name cluster-b"]}
+
+
+def test_job_machines_says_beside_an_environment_that_it_is_otherwise_here_now():
+    """Fails if `job machines NAME`, for a record of this machine, does not say beside an
+    environment that `env list` reports it otherwise now, naming `job probe --write`, or calls the
+    record stale for it (jobs.md § 9.3: "When only its environments differ … it is not stale;
+    preparation and `job machines NAME` say so beside the environment")."""
+    apply("config.init", no_preamble=True, command="source activate", cuda_architectures=["80"],
+          mpi=["mpirun", "-np", "{ranks}"])
+    here = record.settings_now(settings.load(Context.from_process(), fresh=True).config)
+    record.write(record.path("local"), a_record(settings=here.model_dump(exclude_none=True)))   # ngsolve ready there
+    result = run("job.machines", name="local")
+    assert result.rows[0].status == "ok" and result.now == {"ngsolve": ("ready", "absent")}
+    (said,) = [i for i in result.issues if i.code == "environments-changed"]
+    assert [n.command for n in said.next] == ["femkit job probe --write"]
+    m = record.machine(Context.from_process())     # the step is the record table's own row for its state
+    assert [n.label for n in said.next] == [a.describe for a in m.allowed(m.states.current).values()]
+
+
+def test_job_machines_shows_every_part_of_a_record():
+    """Fails if `job machines NAME` leaves out a part of the record it shows — a setting it
+    copied, a queue's memory cap or `MaxSubmitJobsPerUser`, a partition's policy (jobs.md § 9.1:
+    each part; § 9.3: "`job machines NAME` prints one record with the source of each fact")."""
+    copied = {"activation": {"preamble": [], "command": "source activate"}}
+    record.write(record.path("cluster-a"), a_record(settings=copied))
+    report = run("job.machines", name="cluster-a").report.model_dump(mode="json")
+    rows = [row for b in report["blocks"] if b["kind"] == "table" for row in b["rows"]]
+    shown = {row["key"]: row["value"] for row in rows if "key" in row}
+    assert shown["activation.command"] == "source activate" and set(record.COPIED) <= set(shown)
+    (queue,) = [row for row in rows if "qos" in row]
+    assert queue["max_memory_mib"] == "unlimited" and queue["max_submit_jobs_per_user"] == "unlimited"
+    (partition,) = [row for row in rows if "policy" in row]
+    assert "MaxCPUsPerNode unlimited" in partition["policy"] and "DefMemPerCPU 2048 MiB" in partition["policy"]
+
+
+def test_whether_the_manager_runs_inside_a_prefix_is_unknown_when_running_it_failed(manager_doing, workstation):
+    """Fails if `run_enters` reads `false` when `<manager> run` failed — a failure says nothing of
+    where it would run — instead of unknown with the reason (jobs.md § 9.1: "Every other fact is
+    a value or `unknown` with its reason")."""
+    manager_doing('  "run --no-capture-output") echo "the prefix is locked" >&2; exit 3 ;;')
+    made(dirs.CONTROL)
+    enters = apply("job.probe").record.manager.run_enters
+    assert isinstance(enters, Unknown) and "exit 3" in enters.unknown and "the prefix is locked" in enters.unknown
+
+
+def test_a_probe_that_writes_nothing_names_the_log_it_wrote(manager, workstation):
+    """Fails if `job probe` without `--write` — a plan of no steps, still applied — answers with no
+    log, though it wrote its operation's event log (api.md § 3: "it changes nothing, writes an
+    event log of no steps, and returns the operation's outcome")."""
+    outcome = apply("job.probe")
+    assert outcome.log and (Path(outcome.log) / eventlog.FILE).is_file()
+
+
+def test_a_declared_submit_command_detects_its_scheduler_kind(manager, tmp_path, monkeypatch, tripwire_dir):
+    """Fails if `job probe --set scheduler.commands.submit=PATH` without `--scheduler` is refused,
+    on a login node whose submit command is a site's own wrapper, not on PATH: a kind with
+    commands is detected when its submit command is found or declared (jobs.md § 9.2)."""
+    scheduler = {name for kind in load_schedulers().values() for name in (*kind.commands.values(), *kind.probe.values())}
+    own = tmp_path / "login-node"
+    own.mkdir()
+    for name in tripwire_names() - scheduler - {GPU_QUERY[0]}:   # every other program still a tripwire
+        (own / name).symlink_to(tripwire_dir / name)
+    ahead(own, monkeypatch, {GPU_QUERY[0]: NO_GPU}, path="/usr/bin:/bin")
+    wrapper = "/opt/site/bin/submit"
+    r = apply("job.probe", set=[f"scheduler.commands.submit={wrapper}"]).record
+    assert (r.scheduler.kind, r.scheduler.commands["submit"]) == ("slurm", wrapper)

@@ -1,0 +1,10 @@
+/* Key: one key's help — its path, its sentence, its values, where it is defined. */
+.key { display: flex; flex-direction: column; gap: var(--space-1); max-width: var(--size-tip); font-size: var(--type-size-xs); line-height: var(--type-leading-snug); }
+.key p { margin: 0; }
+.key__head { display: flex; align-items: baseline; gap: var(--space-2); }
+.key__name { font-family: var(--type-mono); font-weight: var(--type-weight-strong); color: var(--color-accent-text); }
+.key__optional { color: var(--color-text-faint); }
+.key__sentence { color: var(--color-text); }
+.key__values { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.key__values code { padding: 0 var(--space-1); font-family: var(--type-mono); background: var(--color-surface-sunken); border-radius: var(--size-radius-sm); }
+.key__where { color: var(--color-text-faint); }

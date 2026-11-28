@@ -1,0 +1,63 @@
+# Every femkit program that runs inside an environment (envs.md § 4.4), each by the name femkit's
+# code reads it by: the environment it runs in — none where it is the one the operation acts on —
+# its entry, femkit's own `module` or a tool's `command`, its time limit in seconds — none for a
+# build, which takes as long as the machine needs — and the variables it is set beyond the clean
+# start every command inside an environment begins from (process.toml, envs.md § 4.4), `{work}` the
+# folder the operation that runs it works in; a file a set variable names that the program reads is
+# made empty where there is none (`files`). Each starts through the one door into an environment
+# (`femkit/envs/inside.py`), by the manager's own `run`, but the server's child, which runs on its
+# environment's own `python` (web.md § 4).
+
+[definitions]
+describe = "computes a project's definitions with the person's definitions.py (models.md § 3)"
+environment = "model_prep"
+module = "femkit.engines.person.definitions"
+# A definition is arithmetic on a few numbers, and a run imports numpy, scipy and netCDF4 once —
+# measured on a workstation (2026-11-26, tests/engine/test_definitions.py), a whole `project check`
+# computing four definitions here, the manager's `run` included, took 4.3 s; a minute holds that
+# more than ten times over, and a function past it is a finding at its definition's key.
+timeout = 60
+
+[toolchain]
+describe = "proves the toolchain inside the prefix before any source is fetched (envs.md § 4.5)"
+module = "femkit.engines.toolchain"
+# One trivial program compiled, linked and run per language, and an MPI one on two ranks: the limit
+# femkit has kept for it, not measured.
+timeout = 1800
+
+[audit]
+describe = "finds each provided module and compiler inside the prefix (envs.md § 4.1)"
+module = "femkit.engines.audit"
+# One import per provided module: the limit femkit has kept for it, not measured.
+timeout = 300
+
+[enters]
+describe = "says which prefix the manager's `run` enters: the probe's `manager.run_enters` (jobs.md § 9.1)"
+command = ["python", "-c", "import sys; print(sys.prefix)"]
+# One interpreter started by the manager: the limit femkit has kept for it, not measured.
+timeout = 120
+
+[npm]
+describe = "installs the page's locked packages and builds its bundle: `web build` (web.md § 3)"
+environment = "web"
+command = ["npm"]
+# A proxy the person set reaches npm, as the clean start passes it; npm's cache and configuration are
+# femkit's, in the folder `web build` works in under femkit's cache, so nothing is read from or
+# written to the person's ~/.npm or ~/.npmrc, and no `npm_config_*` of theirs passes a clean start.
+# What it installs is the recipe's — the committed lock file — from npm's own registry, named here,
+# so no setting of the person's sends it to another (envs.md § 4.4).
+files = ["npm_config_userconfig", "npm_config_globalconfig"]
+
+[npm.sets]
+npm_config_cache = "{work}/npm-cache"
+npm_config_userconfig = "{work}/npmrc"
+npm_config_globalconfig = "{work}/npmrc-global"
+npm_config_registry = "https://registry.npmjs.org/"
+npm_config_update_notifier = "false"
+npm_config_fund = "false"
+npm_config_audit = "false"
+
+[server]
+describe = "serves the page: the web server's child, run by its supervisor (web.md § 4)"
+environment = "web"
+module = "femkit.web"

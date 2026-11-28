@@ -1,4 +1,19 @@
-.plan { display: grid; gap: var(--space-2); }
-.plan__none { margin: 0; color: var(--text-muted); }
-.plan__steps { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-1); font-size: var(--text-sm); }
-.plan__steps li::marker { color: var(--text-faint); }
+/* Plan: numbered steps with their commands; the preview on a dashed, unwritten surface. */
+.plan { display: flex; flex-direction: column; gap: var(--space-3); }
+.plan__heading {
+  margin: 0; font-size: var(--type-size-2xs); font-weight: var(--type-weight-strong);
+  letter-spacing: var(--type-tracking-caps); text-transform: uppercase; color: var(--color-text-muted);
+}
+.plan__none { margin: 0; color: var(--color-text-muted); }
+.plan__steps { margin: 0; padding-left: var(--space-6); display: flex; flex-direction: column; gap: var(--space-2); }
+.plan__step { font-size: var(--type-size-sm); }
+.plan__step::marker { color: var(--color-accent); font-weight: var(--type-weight-strong); }
+.plan__argv {
+  display: block; margin-top: var(--space-1); padding: var(--space-1) var(--space-2);
+  font-family: var(--type-mono); font-size: var(--type-size-xs); color: var(--color-text-muted);
+  background: var(--color-code); border-radius: var(--size-radius-sm); overflow-wrap: anywhere;
+}
+.plan__preview {
+  display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4);
+  border: var(--size-hairline) dashed var(--color-accent); border-radius: var(--size-radius); background: var(--color-surface-sunken);
+}

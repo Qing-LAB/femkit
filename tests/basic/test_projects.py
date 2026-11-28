@@ -15,12 +15,13 @@ import pytest
 from pydantic import Field, ValidationInfo, field_validator
 
 from tests import kit
-from femkit.core.errors import UsageError
+from tests.kit import laplace  # noqa: F401 -- a fixture
+from femkit.core.errors import Refused, UsageError
 from femkit.core.persist import write_toml
-from femkit.core.schema import LENGTH, DefinitionError, Model, as_quantity
+from femkit.core.schema import LENGTH, DefinitionError, Measured, Model, as_quantity
 from femkit import registry
 from femkit.definitions import catalogue
-from femkit.projects import door, layout, location, schemas
+from femkit.projects import addresses, door, layout, location, schemas
 from femkit.projects.addresses import Address
 from femkit.projects.door import Opened
 from femkit.projects.layout import Layout
@@ -59,13 +60,13 @@ class ToyPhysics(Model):
     groups: list[str] = Field(default_factory=list)
     order: int = 1
     scale: int | Decimal = 1
-    size: str | None = as_quantity("its size", "length", default=None)
+    size: Measured | None = as_quantity("its size", "length", default=None)
 
     @field_validator("size")
     @classmethod
-    def _a_length(cls, value: str | None, info: ValidationInfo) -> str | None:
+    def _a_length(cls, value: Measured | None, info: ValidationInfo) -> Measured | None:
         """Read by the unit table its loader hands it (core.md § 2: outside facts in `context`)."""
-        if value is not None and info.context["units"].parse(value).dimension != LENGTH:
+        if value is not None and info.context["units"].measure(value).dimension != LENGTH:
             raise ValueError(f"{value!r} is no length")
         return value
 
@@ -86,22 +87,26 @@ SCHEMAS = {"tests.project": ToyProject, "tests.component": ToyComponent, "tests.
 # a file by a fixed name, one of a kind with a library — two `file` kinds; folders that hold no
 # part — a run's, femkit's, and the person's own; and an object type.
 LAYOUT = {
+    "sections": ["Definitions", "Component", "Physics", "Study"],
     "kinds": {
-        "project": {"shape": "single", "schema": "tests.project", "rank": 0},
+        "project": {"shape": "single", "schema": "tests.project", "rank": 0, "section": "Definitions"},
         "material": {"folder": "materials", "shape": "folder", "file": "material.toml", "schema": "tests.material",
-                     "rank": 1, "library": True},
+                     "rank": 1, "section": "Definitions", "library": True},
         "component": {"folder": "components", "shape": "folder", "file": "component.toml", "files": ["geometry.py"],
-                      "schema": "tests.component", "rank": 1},
-        "physics": {"folder": "physics", "shape": "file", "schema": "tests.physics", "rank": 2},
-        "study": {"folder": "studies", "shape": "file", "schema": "tests.study", "rank": 3},
+                      "schema": "tests.component", "rank": 1, "section": "Component"},
+        "physics": {"folder": "physics", "shape": "file", "schema": "tests.physics", "rank": 2, "section": "Physics"},
+        "study": {"folder": "studies", "shape": "file", "schema": "tests.study", "rank": 3, "section": "Study"},
     },
     "folders": {
-        "runs": {"writer": "run", "moves": "yes"},
+        "runs": {"writer": "run", "moves": "yes",
+                 "holds": {"stage": "{study}/{kind}/{id}", "launch": "{study}/launch/{name}"}},
+        "cases": {"writer": "femkit", "moves": "yes", "holds": {"case": "{study}/{id}/case.json"}},
+        "computed": {"writer": "femkit", "moves": "yes", "holds": {"definitions": "{study}/definitions.nc"}},
         ".femkit": {"writer": "femkit", "moves": "local"},
         "custom": {"writer": "person", "moves": "yes"},
     },
     "objects": {
-        "parameter": {"part": "project", "table": "parameters", "named": True, "rank": 0},
+        "parameter": {"part": "project", "table": "parameters", "named": True},
     },
     "editor_files": ["*~", ".*.swp", "#*#", ".#*"],
 }
@@ -297,7 +302,7 @@ def spoiled(where: tuple[str, ...], value) -> dict:
     (("kinds", "study", "folder"), "physics"),
     (("kinds", "study", "folder"), "runs"),
     (("kinds", "project"), None),
-    (("kinds", "second"), {"shape": "single", "schema": "tests.project", "rank": 0}),
+    (("kinds", "second"), {"shape": "single", "schema": "tests.project", "rank": 0, "section": "Definitions"}),
     (("kinds", "project", "file"), "project.toml"),
     (("kinds", "study", "folder"), "work/studies"),
     (("folders", "runs/old"), {"writer": "run", "moves": "yes"}),
@@ -306,28 +311,80 @@ def spoiled(where: tuple[str, ...], value) -> dict:
     (("kinds", "component", "files"), ["../geometry.py"]),
     (("kinds", "project", "library"), True),
     (("objects", "parameter", "part"), "nothing"),
-    (("objects", "study"), {"part": "study", "table": "steps", "named": True, "rank": 3}),
+    (("objects", "study"), {"part": "study", "table": "steps", "named": True}),
     (("objects", "parameter", "table"), "parameters..x"),
+    (("kinds", "stage"), {"folder": "stages", "shape": "file", "schema": "tests.study", "rank": 3,
+                       "section": "Study"}),
+    (("kinds", "launch"), {"folder": "launches", "shape": "file", "schema": "tests.study", "rank": 3,
+                       "section": "Study"}),
+    (("kinds", "job"), {"folder": "jobs", "shape": "file", "schema": "tests.study", "rank": 3,
+                       "section": "Study"}),
+    (("folders", "runs", "holds", "stage"), "{study}/{id}"),
+    (("folders", "runs", "holds", "stage"), "{study}/{kind}/{id}/{id}"),
+    (("folders", "runs", "holds", "stage"), "{study}/../{kind}/{id}"),
+    (("folders", "runs", "holds", "stage"), "{study}/{kind}-{id}"),
+    (("folders", "runs", "holds", "stage"), "{study}/{kind}/{id?}"),
+    (("folders", "runs", "holds", "solve"), "{study}/{id}"),
+    (("folders", "cases", "holds", "stage"), "{study}/{kind}/{id}"),
+    (("folders", "runs", "holds"), {"stage": "{study}/{kind}/{id}"}),
+    (("kinds", "physics", "section"), "Physical"),
+    (("sections",), ["Definitions", "Component", "Physics", "Study", "Physics"]),
+    (("objects", "parameter", "rank"), 0),
 ], ids=["a schema no package registered", "two kinds on one folder", "a kind on a folder femkit writes",
         "no project file kind", "two project file kinds", "the project file named again",
         "a kind's folder deeper than the top", "a folder holding no part deeper than the top",
         "a writer that is none of the three", "a fixed file of a part that is one file",
         "a fixed file out of its part's folder", "a library of the project file", "an object in no part kind",
-        "an object named like a part kind", "an object's table that is no table"])
+        "an object named like a part kind", "an object's table that is no table", "a part kind named stage",
+        "a part kind named launch", "a part kind named job", "a stage's folder without its kind",
+        "a stage's folder naming its ID twice", "a stage's folder out of its folder", "a step half a placeholder",
+        "an optional step", "a folder the door forms none of", "a stage's folder declared twice",
+        "no launch folder declared", "a kind in no section", "a section declared twice",
+        "an object type's own rank"])
 def test_a_layout_breaking_its_rules_is_refused(definitions, toy_layout, spoil):
     """Fails if the layout loads while it names a schema no package registered — the keys
     registered reach it in its validation context — declares two kinds of thing on one folder, a
     folder that is not one step at the project's top, names the project file, which is fixed, or
     has not exactly one `single` kind, the project file; a writer but the person, femkit or a run;
     a fixed file of a part that is no folder, or out of its folder; a library of the project file;
-    or an object type in no part kind, named like one, or in no table (projects.md § 4: "Whether a
-    folder is a part or a group is read from that declaration"; "Every folder is one step"; "The
-    project file is fixed"; the writer; `files`; `library`; the object types; § 6: "Schemas are
-    registered, never imported"). The tests' layout loads (the fixture), so each refusal is the
-    one change's."""
+    or an object type in no part kind, named like one, or in no table; or a part kind named
+    `stage`, `launch` or `job`, the forms that name what femkit makes; or what the door forms in a
+    folder holding no part — a stage's folder, a launch folder, a case's file — declared with a
+    path that does not name each step it is formed from once, each a step of its own, inside its
+    folder, declared none or twice, or something the door forms none of; or a kind in a section the
+    layout does not declare, a section declared twice, or an object type with a rank of its own
+    (projects.md § 4: "Whether a folder is a part or a group is read from that declaration"; "Every
+    folder is one step"; "The project file is fixed"; the writer; `files`; `library`; each kind's
+    section and the sections' order; the object types, each in its part's place; § 5: "the layout
+    refuses a part kind named `stage`, `launch` or `job`"; § 6: "Schemas are registered, never
+    imported"; the stage's and launch folders "as the layout declares `runs/`"). The tests' layout
+    loads (the fixture), so each refusal is the one change's."""
     write_layout(definitions, spoiled(*spoil))
     with kit.refused(DefinitionError, "definition-invalid", str(layout.file())):
         layout.load()
+
+
+def test_the_two_orders_are_by_rank_then_the_kinds_place_then_name_and_by_section_first():
+    """Fails if the chain's order is not by rank, then the kind's place in the layout, then name —
+    two kinds of one rank and one section ordered by their place, whatever their parts' names; a
+    lower rank first, wherever its kind is placed — or the reading order is not by section first,
+    then the same; or an object does not take its part kind's place (projects.md § 4: "Two
+    orders, each declared here alone")."""
+    shipped = layout.read().model_dump(mode="json", by_alias=True)
+    toy = {**shipped, "sections": ["Near", "Far"], "objects": {"thing": {"part": "second", "table": "things",
+                                                                         "named": True}},
+           "kinds": {"project": {**shipped["kinds"]["project"], "rank": 0, "section": "Near"},
+                     "first": {"folder": "first", "shape": "file", "schema": "s", "rank": 2, "section": "Near"},
+                     "second": {"folder": "second", "shape": "file", "schema": "s", "rank": 2, "section": "Near"},
+                     "low": {"folder": "low", "shape": "file", "schema": "s", "rank": 1, "section": "Near"},
+                     "other": {"folder": "other", "shape": "file", "schema": "s", "rank": 0, "section": "Far"}}}
+    toy.pop("listed", None)
+    toy_layout = Layout.model_validate(toy)
+    parts = [("second", "a"), ("thing", "a"), ("other", "b"), ("first", "z"), ("low", "y"), ("project", None)]
+    assert sorted(parts, key=lambda p: toy_layout.chain(*p)) == [
+        ("project", None), ("other", "b"), ("low", "y"), ("first", "z"), ("second", "a"), ("thing", "a")]
+    assert sorted(parts, key=lambda p: toy_layout.reading(*p)) == [
+        ("project", None), ("low", "y"), ("first", "z"), ("second", "a"), ("thing", "a"), ("other", "b")]
 
 
 # ------------------------------------------------------------------ the shipped layout and the templates
@@ -335,9 +392,9 @@ def test_a_layout_breaking_its_rules_is_refused(definitions, toy_layout, spoil):
 def test_the_shipped_layout_reads_before_any_part_schema_and_binds_once_each_is_registered():
     """Fails if the shipped layout, with no part schema registered, breaks its own rules or binds
     — each schema refused at its kind's key — or, each one registered, does not open every
-    template whole: every part loaded, its component's script read with its digest, and nothing
-    else found (projects.md § 4: the shipped layout; § 6: "a key no package registered is refused";
-    § 7: the templates)."""
+    template whole: every part loaded, each file its kind fixes — a component's script, an
+    observables part's `observe.py` — and its `definitions.py` read with their digests, and nothing else found (projects.md § 4: the shipped layout; § 2: `definitions.py`;
+    § 6: "a key no package registered is refused"; § 7: the templates)."""
     registry.part_schemas()
     held = schemas.registered()
     for key in held:
@@ -355,8 +412,30 @@ def test_the_shipped_layout_reads_before_any_part_schema_and_binds_once_each_is_
         opened = door.open_project(Project(folder.parent, name), kit.ctx())
         assert opened.issues == [] and all(p.data is not None for p in opened.parts.values()), name
         scripts = {h.file: h.sha256 for h in opened.held.values()}
-        assert scripts == {f"{p.folder}/geometry.py": hashlib.sha256((folder / p.folder / "geometry.py").read_bytes())
-                           .hexdigest() for p in opened.parts.values() if p.address.kind == "component"}, name
+        fixed = {p.folder: f for p in opened.parts.values() for f in opened.layout.kinds[p.address.kind].files}
+        assert scripts == {f"{where}/{f}": hashlib.sha256((folder / where / f).read_bytes()).hexdigest()
+                           for where, f in fixed.items()} | {
+            "definitions.py": hashlib.sha256((folder / "definitions.py").read_bytes()).hexdigest()}, name
+
+
+@pytest.mark.parametrize("verb, request_", [("project.list", {}), ("project.check", {"project": "laplace_square"}),
+                                             ("case.list", {"project": "laplace_square"})])
+def test_one_invocation_reads_the_layout_once_each_way(laplace, monkeypatch, verb, request_):
+    """Fails if one invocation reads the layout's file more than once by its own rules, or more
+    than once bound to the registered schemas — finding the projects, opening one and listing it
+    each read it through the invocation's context (api.md § 2.4: "a file is read once per
+    invocation"; projects.md § 4: "read two ways")."""
+    reads: list[bool] = []
+    real = layout.load_toml
+
+    def counted(path, model, context=None, **more):
+        if path == layout.file():
+            reads.append(bool(context))
+        return real(path, model, context, **more)
+
+    monkeypatch.setattr(layout, "load_toml", counted)
+    kit.run(verb, **request_)
+    assert reads.count(False) <= 1 and reads.count(True) <= 1, reads
 
 
 # ------------------------------------------------------------------ what the review of C found
@@ -376,17 +455,29 @@ def test_the_text_of_a_part_that_does_not_load_is_refused_naming_the_address(dem
         door.text(opened, toy_layout.address(asked))
 
 
+def test_the_text_of_a_folder_parts_file_is_that_files_as_the_project_read_it(demo, toy_layout):
+    """Fails if the text of an address naming a folder part's file — `component:bowtie@geometry.py`
+    — is the part's own file's, or read again from disk, rather than that file's as the project
+    read it, with one in its place in memory (projects.md § 5: "a file of a folder part, by its path
+    from the part's folder"; § 6: "A part's text is the file as it holds it"; web.md § 7.6: a node's
+    files, "read once by the door")."""
+    address = Address("component", "bowtie", file="geometry.py")
+    assert door.text(door.open_project(demo, kit.ctx(), toy_layout), address) == "import gmsh\n"
+    assert door.text(door.open_project(demo, kit.ctx(), toy_layout, texts={address: "import os\n"}),
+                     address) == "import os\n"
+
+
 def test_a_parts_numbers_are_exact_and_its_quantities_read_by_the_unit_table(demo, toy_layout):
     """Fails if a part's number is read through a binary float — its digits past a float's lost —
     or its validators are not handed the unit table, so a quantity of the wrong dimension loads or
     the project does not open (projects.md § 6: "A part loads as every declared file does";
     core.md §§ 2, 11)."""
     digits = "0.12345678901234567890123"
-    (demo.folder / "physics/heat.toml").write_text(HEAT + f'scale = {digits}\nsize = "0.5 um"\n')
-    (demo.folder / "physics/optics.toml").write_text(OPTICS + 'size = "5 s"\n')
+    (demo.folder / "physics/heat.toml").write_text(HEAT + f'scale = {digits}\nsize = {{value = 0.5, unit = "um"}}\n')
+    (demo.folder / "physics/optics.toml").write_text(OPTICS + 'size = {value = 5, unit = "s"}\n')
     opened = door.open_project(demo, kit.ctx(), toy_layout)
     heat = opened.parts["physics:heat"].data
-    assert heat.scale == Decimal(digits) and heat.size == "0.5 um"
+    assert heat.scale == Decimal(digits) and (heat.size.value, heat.size.unit) == (Decimal("0.5"), "um")
     assert findings(opened) == [("unloadable", "physics:optics", "error")]
 
 
@@ -470,23 +561,194 @@ def test_a_value_is_read_at_its_address_as_its_file_writes_it(demo, toy_layout):
 
 @pytest.mark.parametrize("written, address", [
     ("study:sweeps/gap_sweep", Address("study", "sweeps/gap_sweep")),
-    ('study:sweeps/gap_sweep:axes."project:parameters.gap"',
-     Address("study", "sweeps/gap_sweep", ("axes", "project:parameters.gap"))),
+    ('study:sweeps/gap_sweep:axes."project:definitions.gap"',
+     Address("study", "sweeps/gap_sweep", ("axes", "project:definitions.gap"))),
     ("project:description", Address("project", None, ("description",))),
     ("material:GLOBAL/metals/gold", Address("material", "GLOBAL/metals/gold")),
+    ("component:bowtie@geometry.py", Address("component", "bowtie", file="geometry.py")),
+    ("material:GLOBAL/metals/gold@data/n-k.csv", Address("material", "GLOBAL/metals/gold", file="data/n-k.csv")),
 ])
 def test_an_address_reads_and_writes_back_the_same(toy_layout, written, address):
     """Fails if an address — a grouped name, a quoted key holding `:` and `.`, the project file's
-    unnamed part, a `GLOBAL/` name of a kind with a library — is read otherwise, or written back
-    otherwise (projects.md § 5)."""
+    unnamed part, a `GLOBAL/` name of a kind with a library, a folder part's file by its path from
+    the part's folder — is read otherwise, or written back otherwise (projects.md § 5)."""
     assert toy_layout.address(written) == address and str(address) == written
 
 
-@pytest.mark.parametrize("written", ["nokind:x", "study", "study:Bad", "study:a:x.", 'study:a:"open', "study:a:x..y",
-                                     "component:GLOBAL/bowtie"])
+def test_a_quoted_key_of_an_address_is_read_as_toml_reads_it(toy_layout):
+    """Fails if a quoted key of an address is read otherwise than TOML reads that key in the file —
+    an escape TOML has and JSON lacks, `\\U` and eight digits, read as its character — or a quoted
+    key TOML refuses is anything but the address's refusal (projects.md § 5: "quoted as TOML quotes
+    them")."""
+    held = toy_layout.address('study:sweeps/gap_sweep:axes."x\\U0001F600y"')
+    assert held.path == ("axes", "x\U0001F600y")
+    with kit.refused(UsageError, "bad-address"):
+        toy_layout.address('study:sweeps/gap_sweep:axes."x\\qy"')
+
+
+STAGE_ID = "91c0" + "0" * 60   # a stage's ID: a SHA-256, in hexadecimal (workflow.md § 4)
+
+
+@pytest.mark.parametrize("written, made", [
+    (f"stage:sweeps/gap/mesh/{STAGE_ID}", addresses.Stage("sweeps/gap", "mesh", STAGE_ID)),
+    (f"stage:check/geometry/{STAGE_ID}", addresses.Stage("check", "geometry", STAGE_ID)),
+    ("launch:check/mesh-check-001", addresses.Launch("check", "mesh-check-001")),
+    ("launch:sweeps/gap/geometries-ngsolve-cuda-002", addresses.Launch("sweeps/gap", "geometries-ngsolve-cuda-002")),
+    ("job:workstation-41822", addresses.Job("workstation-41822")),
+])
+def test_what_femkit_makes_is_named_by_a_form_no_part_kind_takes(toy_layout, written, made):
+    """Fails if a stage — its last two steps its kind and ID, the rest its study's grouped name —
+    a launch folder or a job is read otherwise, written back otherwise, or read where an address of
+    a part or a value is asked for — an axis keyed by a stage (projects.md § 5)."""
+    assert toy_layout.address(written, made=True) == made and str(made) == written
+    with kit.refused(UsageError, "bad-address", written):
+        toy_layout.address(written)
+
+
+@pytest.mark.parametrize("written", [
+    "nokind:x", "study", "study:Bad", "study:a:x.", 'study:a:"open', "study:a:x..y", "component:GLOBAL/bowtie",
+    "physics:heat@notes.txt", "project@notes.txt", "component:bowtie@../geometry.py", "component:bowtie@.hidden",
+    "component:bowtie@", "component:bowtie@geometry.py:x", "component:bowtie:groups@geometry.py",
+    "component:bowtie@component.toml",
+    "stage:check/mesh", f"stage:check/mesh/{STAGE_ID[:12]}", f"stage:Check/mesh/{STAGE_ID}",
+    f"stage:check/Mesh/{STAGE_ID}", f"stage:check/mesh/{STAGE_ID}:x",
+    "launch:check", "launch:check/.hidden", "launch:Check/mesh-elmer-001", "launch:check/a:b",
+    "job:", "job:a/b", "job:.hidden",
+])
 def test_an_address_breaking_the_grammar_is_refused(toy_layout, written):
     """Fails if an address naming no kind, a named kind without its name, a name breaking the rule,
     a dotted path that does not close, or `GLOBAL/` opening the name of a kind the layout declares
-    with no library is read at all (projects.md § 5)."""
+    with no library is read at all; or a file of a part that is no folder, a file's path that
+    leaves the part's folder or is hidden or empty, a file holding a value, or the part's own file
+    named as a file of it, which its address alone names; or a stage without its kind and ID, its
+    ID no SHA-256, its study's name or its kind breaking the name rule; a launch folder without
+    its study or with a name that is no folder's; or a job without its ID or with one that is no
+    one step (projects.md § 5)."""
     with kit.refused(UsageError, "bad-address", written):
-        toy_layout.address(written)
+        toy_layout.address(written, made=True)
+
+
+# ------------------------------------------------------------------ what the door forms, and a text in place
+
+def test_the_door_forms_each_stages_and_launch_folder_and_each_cases_file_as_the_layout_declares(demo, toy_layout,
+                                                                                                definitions):
+    """Fails if a stage's calculation folder, a launch folder or a case's file is formed otherwise
+    than the layout declares the folder that holds it — formed by a literal of the door's own, so a
+    layout declaring another place is not followed — or a written case is not found where it is
+    formed, or a study, a stage kind, an ID or a launch folder's name that breaks its grammar forms
+    a path at all (projects.md §§ 2, 4, 6: "formed by the door alone … as the layout declares
+    `runs/`")."""
+    opened = door.open_project(demo, kit.ctx(), toy_layout)
+    assert door.stage_folder(opened, "sweeps/gap_sweep", "mesh", STAGE_ID) == \
+        demo.folder / "runs" / "sweeps" / "gap_sweep" / "mesh" / STAGE_ID
+    assert door.launch_folder(opened, "baseline", "mesh-elmer-001") == \
+        demo.folder / "runs" / "baseline" / "launch" / "mesh-elmer-001"
+    assert door.case_file(opened, "sweeps/gap_sweep", STAGE_ID) == f"cases/sweeps/gap_sweep/{STAGE_ID}/case.json"
+    for study, kind, id_ in (("Bad", "mesh", STAGE_ID), ("baseline", "Mesh", STAGE_ID), ("baseline", "mesh", "x")):
+        with pytest.raises(UsageError):
+            door.stage_folder(opened, study, kind, id_)
+    with pytest.raises(UsageError):
+        door.launch_folder(opened, "baseline", "../elsewhere")
+
+    elsewhere = copy.deepcopy(LAYOUT)
+    elsewhere["folders"]["runs"]["holds"] = {"stage": "{study}/stages/{kind}/{id}", "launch": "{study}/jobs/{name}"}
+    elsewhere["folders"]["cases"]["holds"] = {"case": "{study}/written/{id}/the-case.json"}
+    write_layout(definitions, elsewhere)
+    opened = door.open_project(demo, kit.ctx(), layout.load())
+    assert door.stage_folder(opened, "baseline", "geometry", STAGE_ID) == \
+        demo.folder / "runs" / "baseline" / "stages" / "geometry" / STAGE_ID
+    assert door.launch_folder(opened, "baseline", "mesh-elmer-001") == \
+        demo.folder / "runs" / "baseline" / "jobs" / "mesh-elmer-001"
+    written = door.case_file(opened, "sweeps/gap_sweep", STAGE_ID)
+    assert written == f"cases/sweeps/gap_sweep/written/{STAGE_ID}/the-case.json"
+    door.write_output(opened, written, {"schema": 1})
+    door.write_output(opened, f"cases/sweeps/gap_sweep/{STAGE_ID}/case.json", {})
+    assert door.cases(door.open_project(demo, kit.ctx(), layout.load())) == {"sweeps/gap_sweep": {STAGE_ID: written}}
+
+
+NEW_HEAT = 'groups = ["arms"]\norder = 3\n'
+
+
+@pytest.mark.parametrize("address, relative, text", [
+    (Address("physics", "heat"), "physics/heat.toml", NEW_HEAT),
+    (Address("project", None), "project.toml", PROJECT.replace("a bowtie, swept", "a bowtie, rounded")),
+    (Address("component", "bowtie", file="geometry.py"), "components/bowtie/geometry.py", "import gmsh  # new\n"),
+])
+def test_a_project_opens_with_one_files_text_in_place_of_the_files_in_memory(demo, toy_layout, address, relative,
+                                                                             text):
+    """Fails if a project opened with one file's text in place — a part's own file, the project
+    file, a folder part's file — reads the file on disk instead, keeps its old text or digest, or
+    writes anything (projects.md §§ 6, 7: "the door opens the project with that one file's text in
+    place of the file's, in memory")."""
+    before = kit.tree(demo.folder)
+    opened = door.open_project(demo, kit.ctx(), toy_layout, texts={address: text})
+    assert kit.tree(demo.folder) == before
+    if address.file is None:
+        assert opened.texts[relative] == text and door.text(opened, address) == text
+    else:
+        held = opened.held[relative]
+        assert held.data == text.encode() and held.sha256 == hashlib.sha256(text.encode()).hexdigest()
+    if address == Address("physics", "heat"):
+        assert opened.part(address).data.order == 3
+    assert opened.issues == door.open_project(demo, kit.ctx(), toy_layout).issues
+
+
+def test_a_text_in_place_is_read_as_its_file_would_be_and_one_naming_no_file_is_refused(demo, toy_layout):
+    """Fails if a text in place that does not load is not that part's finding, as its file's would
+    be, or a text for a file the project does not hold — a part it lacks, a stray, a value — is
+    dropped silently instead of refused (projects.md § 6)."""
+    opened = door.open_project(demo, kit.ctx(), toy_layout, texts={Address("physics", "heat"): 'order = "high"\n'})
+    assert findings(opened) == [("unloadable", "physics:heat", "error")]
+    (demo.folder / "physics" / "notes.txt").write_text("")
+    for address in (Address("physics", "cold"), Address("component", "bowtie", file="notes.txt"),
+                    Address("physics", "heat", ("order",))):
+        with kit.refused(UsageError, "no-such-file", str(address)):
+            door.open_project(demo, kit.ctx(), toy_layout, texts={address: NEW_HEAT})
+
+
+def test_a_save_reads_the_layout_once_through_its_invocation(demo, toy_layout, monkeypatch):
+    """Fails if a save reads the layout's file again in an invocation that has read it, rather than
+    through the invocation's context (api.md § 2.4: "a file is read once per invocation"; projects.md
+    § 4: "read two ways")."""
+    c = kit.ctx()
+    layout.read_once(c)
+    reads: list[Path] = []
+    real = layout.load_toml
+
+    def counted(path, model, context=None, **more):
+        if path == layout.file():
+            reads.append(path)
+        return real(path, model, context, **more)
+
+    monkeypatch.setattr(layout, "load_toml", counted)
+    path = demo.folder / "physics/heat.toml"
+    door.save_text(c, demo, Address("physics", "heat"), HEAT, hashlib.sha256(path.read_bytes()).hexdigest())
+    assert reads == [] and path.read_text() == HEAT
+
+
+@pytest.mark.parametrize("address, relative", [
+    (Address("physics", "heat"), "physics/heat.toml"),
+    (Address("component", "bowtie", file="geometry.py"), "components/bowtie/geometry.py"),
+])
+def test_a_save_writes_the_text_exactly_and_refuses_a_file_changed_since_it_was_opened(demo, toy_layout, address,
+                                                                                       relative):
+    """Fails if a save writes other bytes than the text given — its line ends, its last line
+    without an end, its comments — or writes over a file whose SHA-256 is not the one given, the
+    file changed since the page opened it, or one gone, instead of refusing, `Refused` ·
+    `file-changed`, naming it, and writing nothing (projects.md § 7)."""
+    path = demo.folder / relative
+    opened_at = hashlib.sha256(path.read_bytes()).hexdigest()
+    path.write_text(path.read_text() + "# changed meanwhile\n")
+    meanwhile = path.read_bytes()
+    with kit.refused(Refused, "file-changed", str(address)):
+        door.save_text(kit.ctx(), demo, address, "anything\n", opened_at)
+    assert path.read_bytes() == meanwhile
+    text = "# my own\r\norder = 2  # kept\r\n\r\nlast = 1"
+    door.save_text(kit.ctx(), demo, address, text, hashlib.sha256(meanwhile).hexdigest())
+    assert path.read_bytes() == text.encode("utf-8")
+    path.unlink()
+    with kit.refused(Refused, "file-changed", str(address)):
+        door.save_text(kit.ctx(), demo, address, text, hashlib.sha256(text.encode()).hexdigest())
+    assert not path.exists()
+    with kit.refused(UsageError, "bad-address", "physics:heat:order"):
+        door.save_text(kit.ctx(), demo, Address("physics", "heat", ("order",)), text, opened_at)

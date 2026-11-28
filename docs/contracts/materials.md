@@ -8,12 +8,13 @@ models (§ 2), materials with their values, tables and models and their checks
 (§ 3), the global library (§ 4), the assignment and its check (§ 5), a case's
 data under a step that supplies no variable, and the conversions of § 6 as
 functions, and the first importer (§ 7). Not built: a case taking a dataset at
-a variable's value (§ 6; plan § 4, M9); translation (§ 8; plan § 4, M6)
+a variable's value (§ 6; plan § 4, M9); a property's name in an engine's
+input (§ 8; plan § 4, M6)
 **Authority:** the property list and its names in each engine and source;
 the variables a dataset may vary with; dispersion models; the material format;
 the global library and a project's own, and how a material is found; the
 material assignment of a component; working out a property's data for a case;
-importers; how a translator names a property. Where a material folder sits in
+importers; how an engine's input writer names a property. Where a material folder sits in
 a project is [`projects.md`](projects.md) § 2; the physics a property enters
 is the formulation's ([`models.md`](models.md) § 4); what the data means — the
 conventions, the conversions, each model's formula — is
@@ -31,7 +32,7 @@ conventions, the conversions, each model's formula — is
 | A component **assigns** a material, and a dataset per property, to each body group its contract promises | 5 |
 | A case holds the **data it used**, never where it was found; a changed material makes new cases, and the old ones keep their runs | 6 |
 | **Importers**, one per source, declared as data, each writing a **new** material; a value without a source is refused | 7 |
-| A translator writes a property under **the list's name for its engine** | 8 |
+| An engine's input writer writes a property under **the list's name for its engine** | 8 |
 
 ## 1. The property list — `femkit/data/properties.toml`
 
@@ -59,7 +60,7 @@ names = { refractiveindex_info = "nk" }
 - **A name** is the property's plain name with underscores; a symbol is never
   a name.
 - **`names`** is read in both directions: an importer reads a source's name
-  to find the property (§ 7), a translator writes the engine's name (§ 8). A
+  to find the property (§ 7), an engine's input writer writes the engine's name (§ 8). A
   new engine or source is a key here, not code. A name may be a table of
   keywords where an engine writes one value as several — a complex value's real
   and imaginary parts, a tensor's components; which engines do so is not
@@ -71,8 +72,8 @@ names = { refractiveindex_info = "nk" }
   gives: `refractive_index`, listed under `relative_permittivity`'s
   `equivalents`. A material may hold a dataset under either; a formulation
   reading `relative_permittivity` takes a dataset held under an equivalent, and
-  femkit converts it when a case is expanded (§ 6) by
-  [`material-data.md`](../science/material-data.md) § 3 — never a translator.
+  femkit converts it when prep makes a case (§ 6) by
+  [`material-data.md`](../science/material-data.md) § 3 — never an input writer.
   An assignment names the dataset by the property the formulation reads
   (§ 5); one name held under both the property and an equivalent is a finding
   on the material, naming both.
@@ -112,6 +113,12 @@ fails it.
 
 ## 3. A material — `<name>/material.toml` and its tables
 
+A material's single values are written in the one quantity form ([`core.md`](core.md)
+§ 11): a plain number where it has no unit (`value = 4`), `{value, unit}`
+where it has one, its range `{value = [from, to], unit}`, naming no
+definition — a material cites nothing ([ADR 0021](../decisions/0021-definitions.md)); its tables and formulas keep
+their shape.
+
 ```toml
 schema = 1
 display = "Gold"
@@ -124,7 +131,7 @@ sha256 = "…"
 interpolation = "linear"
 convention = "exp(-iwt)"
 source = "P. B. Johnson and R. W. Christy. Optical constants of the noble metals. Phys. Rev. B 6, 4370-4379 (1972), doi:10.1103/PhysRevB.6.4370"
-range = ["0.1879 um", "1.9370 um"]
+range = {value = [0.1879, 1.9370], unit = "um"}
 
 [properties.refractive_index.johnson.variable]
 name = "wavelength"
@@ -172,13 +179,14 @@ johnson = "Room temperature"
   naming its line.
 - **Every dataset states** its `source` — a citation a reader can check, with
   its DOI where there is one — its `convention` for complex data (`real`,
-  `exp(-iwt)`, `exp(+iwt)`), its `range` (`all`, or `[from, to]` in any of its
-  variable's forms), and its conditions where they matter — `temperature`,
+  `exp(-iwt)`, `exp(+iwt)`), its `range` (`all`, or `{value = [from, to],
+  unit}` in any of its variable's forms), and its conditions where they matter — `temperature`,
   for one; `uncertainty` where the source gives one. These are `stated` fields
   ([`core.md`](core.md) § 2): a dataset being written may lack them, a finding
-  of `project check`; `study expand` refuses a case resting on one that does.
+  of `project check`; `study prep` refuses a case resting on one that does.
   A model's dataset states the convention its model is written in, and
-  another is a finding naming the model's. A table's range is `[from, to]`,
+  another is a finding naming the model's. A table's range is `{value =
+  [from, to], unit}`,
   from below to, within its first and last rows — `all`, or a range beyond
   them, is a finding at `range` naming the rows' extent.
 - **Findings come in the order a person fixes them**: a table's shape before
@@ -192,7 +200,7 @@ johnson = "Room temperature"
   display = "Dielectric 2"
 
   [properties.relative_permittivity.benchmark]
-  value = "4"
+  value = 4
   convention = "real"
   source = "the two-material benchmark's choice (docs/science/electrostatics.md § 9.1)"
   range = "all"
@@ -265,8 +273,9 @@ datasets = { relative_permittivity = "johnson" }
 ```
 
 - **The table and its check are this package's**: the check is declared
-  beside the table for the component's schema key, as `PART_CHECKS =
-  {"geometry.component": check}` in `femkit/materials/assign.py`, and
+  beside the table for the component's schema key, as `REGISTERS =
+  Registration(checks={"geometry.component": check})` in
+  `femkit/materials/assign.py`, and
   registered at femkit's start after the component's own check
   ([`projects.md`](projects.md) § 6; [`api.md`](api.md) § 6); it reads the
   component's frame and groups through the layout's object types.
@@ -281,7 +290,7 @@ datasets = { relative_permittivity = "johnson" }
 
 ## 6. A property's data for a case
 
-When a study is expanded ([`models.md`](models.md) § 5.3), for every property
+When `study prep` makes a study's cases ([`models.md`](models.md) § 5.3), for every property
 the physics reads, in every assigned body:
 
 - the dataset is read and checked against its SHA-256;
@@ -292,7 +301,7 @@ the physics reads, in every assigned body:
   variable and the step, and saying what would be right — a dataset that
   holds there: for a static step, a `value` of the property at zero
   frequency, its range `all` — and that no step femkit has yet supplies a
-  wavelength (plan § 4, M9); `study expand` refuses a case resting on it. A
+  wavelength (plan § 4, M9); `study prep` refuses a case resting on it. A
   `value` whose range is not `all` holds only where its range says, never at
   zero frequency, and is refused under a static step the same way
   ([`material-data.md`](../science/material-data.md) § 7);
@@ -314,7 +323,7 @@ exact, with the checks of [`material-data.md`](../science/material-data.md)
 the property the formulation reads; one held under an equivalent form is a
 finding of `project check` at the assignment's `datasets.<property>`,
 `form-unconverted`, saying what would be right — a dataset of the property
-the formulation reads — and `study expand` refuses a case resting on it.
+the formulation reads — and `study prep` refuses a case resting on it.
 
 The case holds the data it used — each material by its name in its library,
 never `GLOBAL/`, so one material written either way is one case, and each
@@ -323,12 +332,12 @@ and never where the material was found or what else its file holds: copying a
 library material into the project, or editing its `[notes]`, changes no
 case. Where each material was found, and its file's hash,
 are recorded in each preparation's manifest ([`models.md`](models.md) § 9.4).
-A dataset edited after the case was written is new content: expanding the
+A dataset edited after the case was written is new content: prepping the
 study again makes new cases, and the old ones become `orphaned` and keep their
 runs ([`models.md`](models.md) § 9.5); until then `case list` flags each case
 whose data differs from what its materials now hold, naming the body, the
 material and dataset, and what differs — shown, never applied silently — and
-each step of the plan of `study expand` that writes a case because its
+each step of the plan of `study prep` that writes a case because its
 materials' data changed names the case it renews.
 
 ## 7. Importers — `femkit/data/importers/<source>.toml`
@@ -389,11 +398,12 @@ material's `[notes]`, under the dataset's name. An import into the library of
 a root that has none is refused, saying that the next `project new` makes it
 (§ 4).
 
-## 8. Translation
+## 8. A property in an engine's input
 
-A translator ([`models.md`](models.md) § 9.1) writes each property of a case
-under the property list's name for its engine, which reaches it with the
-environment's bindings — the documents that cross into the environment carry
-the names for that engine — never from a material file or a library. An engine
+An engine's input writer ([`models.md`](models.md) § 9.1) writes each
+property of a case under the property list's name for its engine, which
+reaches it with the engine chosen to solve, `study prep --engine` — the documents that cross into the
+environment carry the names for that engine — never from a material file or
+a library. An engine
 with no name of its own for a property — NGSolve, whose script femkit writes —
 uses femkit's name.

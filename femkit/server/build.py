@@ -1,8 +1,10 @@
 """`web build`: the web page's bundle, built with the Node.js of the `web` environment (web.md § 3).
 
-npm runs inside that environment through the manager, in a work folder under femkit's
-cache, with its cache and configuration there too: nothing reaches the person's home or
-the checkout but the bundle it ships.
+npm, as `programs.toml` declares it — its environment, and the variables it is set beyond the
+clean start — runs inside that environment through the one door into it (envs.md § 4.4), where
+its state allows its use (§ 3.3), in a work folder under femkit's cache, with its cache and
+configuration there too: nothing reaches the person's home or the checkout but the bundle it
+ships.
 """
 
 from __future__ import annotations
@@ -12,31 +14,18 @@ from pathlib import Path
 from pydantic import Field
 
 from femkit.core import dirs, text, view
-from femkit.core.errors import Refused
 from femkit.core.operations import Context, Outcome, Plan, Step, operation, run_steps
 from femkit.core import persist
 from femkit.core.persist import atomic_write_text, write_json
-from femkit.core.process import run
-from femkit.envs import layout
-from femkit.envs.manager import confined, resolve
-from femkit.envs.state import machine, observe
+from femkit.definitions import catalogue
+from femkit.envs import inside, layout
+from femkit.envs.install import VERSION_TIMEOUT
+from femkit.envs.state import observe, usable
 from femkit.definitions.requests import DOCS_SUBJECT
 from femkit.server.requests import BuildRequest
-from femkit.envs.requests import ENV_INSTALL
 from femkit.server.requests import WEB_BUILD
 
-TOOL = "web"                       # the environment that builds and serves the page (definitions.md § 4.7)
-PROXIES = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy")
-
-
-def ready(ctx: Context) -> Path:
-    """The web environment's prefix; refused, offering its install, until it is `ready`: `web
-    build` builds the page with it, and `serve` runs the server on it (web.md §§ 3–4)."""
-    state = observe(ctx, TOOL)[1]
-    if state is not machine(ctx).states.ready:
-        raise Refused(f"the {TOOL} environment, which builds the page and runs the server, is {state.value}",
-                      (view.command(ENV_INSTALL, names=[TOOL]),), code="environment-not-ready", subject=TOOL)
-    return layout.prefix(ctx, TOOL)
+NPM = "npm"     # the program that builds the page, by its name in programs.toml (envs.md § 4.4)
 
 
 def source_dir() -> Path:
@@ -76,17 +65,6 @@ def bundle_hashes(static: Path) -> dict[str, str]:
             for p in sorted(static.rglob("*")) if p.is_file() and p.name != "build.json"}
 
 
-def npm_environment(base: dict[str, str]) -> dict[str, str]:
-    """npm's cache and configuration in femkit's cache; a proxy the person set still passes."""
-    root = work_root()
-    for name in ("npmrc", "npmrc-global"):
-        persist.touch(root / name)
-    return {**confined(base), **{k: base[k] for k in PROXIES if k in base},
-            "npm_config_cache": str(root / "npm-cache"), "npm_config_userconfig": str(root / "npmrc"),
-            "npm_config_globalconfig": str(root / "npmrc-global"), "npm_config_update_notifier": "false",
-            "npm_config_fund": "false", "npm_config_audit": "false"}
-
-
 def licenses(work: Path) -> str:
     """Each package the lock file installs for the page (not for building it), with its license text."""
     lock = persist.read_json(work / "package-lock.json")
@@ -105,6 +83,7 @@ class BuildOutcome(Outcome):
     written: list[str] = Field(default_factory=list, description="what was written into the checkout")
     static: str = Field(default="", description="the folder the bundle is written into")
 
+    @property
     def report(self) -> view.Report:
         if self.status != "done":
             return view.Report(blocks=[view.Text(text=line) for line in self.plan.text(brief=True).splitlines()]
@@ -113,36 +92,37 @@ class BuildOutcome(Outcome):
                                                   f"{text.path(self.static)}")])
 
 
-@operation(WEB_BUILD, result=BuildOutcome, changes=True, subject=lambda req: ["web-build"])
+@operation(WEB_BUILD, result=BuildOutcome, subject=lambda req: ["web-build"])
 class WebBuild:
     """Build the web page's bundle from frontend/ with the web environment's Node.js, into
     femkit/web/static/ with its build.json and third-party licenses."""
 
     def plan(self, req: BuildRequest, ctx: Context) -> Plan:
-        prefix = ready(ctx)
-        m, work = resolve(ctx), work_root() / "work"
+        npm = inside.program(ctx, NPM)
+        usable(ctx, npm.environment, "web build")
+        builds, work = inside.entered(ctx, npm.environment), work_root() / "work"
         steps = [Step(id="copy", describe=f"copy the declared sources of frontend/ to {text.path(work)}")]
         if req.relock:
             steps.append(Step(id="relock", describe="solve package-lock.json again from package.json",
-                              argv=tuple(m.in_prefix(prefix, ["npm", "install", "--package-lock-only",
-                                                              "--ignore-scripts"]))))
+                              argv=tuple(builds.program(npm, "install", "--package-lock-only", "--ignore-scripts"))))
         steps += [Step(id="install", describe="install the locked packages (npm ci --ignore-scripts)",
-                       argv=tuple(m.in_prefix(prefix, ["npm", "ci", "--ignore-scripts"]))),
+                       argv=tuple(builds.program(npm, "ci", "--ignore-scripts"))),
                   Step(id="build", describe="build the bundle (npm run build)",
-                       argv=tuple(m.in_prefix(prefix, ["npm", "run", "build"]))),
+                       argv=tuple(builds.program(npm, "run", "build"))),
                   Step(id="ship", describe=f"write the bundle, build.json and its licenses into "
                                            f"{text.path(static_dir())}")]
-        return Plan(shared=(layout.subject(TOOL), DOCS_SUBJECT),   # the environment it builds with, and the files
-                    steps=tuple(steps))                               # `schema docs` generates for it, in use
+        return Plan(shared=(layout.subject(npm.environment), DOCS_SUBJECT),   # the environment it builds with,
+                    steps=tuple(steps))                         # and the files `schema docs` generates for it, in use
 
     def observe(self, req: BuildRequest, ctx: Context) -> dict:
         """The declared sources of frontend/ as they are now — what the bundle is built from —
         and the state of the environment it is built with."""
-        return {"sources": sources_hash(source_dir())["sha256"], TOOL: observe(ctx, TOOL)[1].value}
+        environment = inside.program(ctx, NPM).environment
+        return {"sources": sources_hash(source_dir())["sha256"], environment: observe(ctx, environment)[1].value}
 
     def apply(self, plan: Plan, ctx: Context, observer) -> BuildOutcome:
-        m, work = resolve(ctx), work_root() / "work"
-        env = npm_environment(m.environment)
+        npm, work = inside.program(ctx, NPM), work_root() / "work"
+        builds = inside.entered(ctx, npm.environment)
         written: list[str] = []
         built_from: dict = {}
 
@@ -155,9 +135,9 @@ class WebBuild:
                 built_from.update(sources_hash(work))          # what the bundle is built from, before npm touches it
                 return "done", None
             if step.id == "ship":
-                return _ship(work, m, ctx, written, built_from), None
+                return _ship(work, builds, ctx, written, built_from), None
             observer.step_log(log)
-            result = run(list(step.argv), env=env, cwd=work, log=log)
+            result = builds.run(step.argv, declared=npm, work=work_root(), cwd=work, log=log)
             if step.id == "relock" and result.ok:
                 persist.copy_file(work / "package-lock.json", source_dir() / "package-lock.json")
                 written.append(str(source_dir() / "package-lock.json"))
@@ -176,11 +156,13 @@ def _version(result) -> str:
     return f"not measured: {result.argv[-2]} --version " + ("printed nothing" if result.ok else f"exited {result.returncode}")
 
 
-def _ship(work: Path, m, ctx: Context, written: list[str], built_from: dict) -> str:
-    """The bundle replaces femkit/web/static/ whole; build.json is written last."""
-    prefix = layout.prefix(ctx, TOOL)
-    versions = {tool: _version(run(m.in_prefix(prefix, [tool, "--version"]), env=confined(m.environment), timeout=60))
-                for tool in ("node", "npm")}
+def _ship(work: Path, builds: inside.Inside, ctx: Context, written: list[str], built_from: dict) -> str:
+    """The bundle replaces femkit/web/static/ whole; build.json is written last: Node.js's version
+    as the web environment's own version command states it, and npm's."""
+    npm = inside.program(ctx, NPM)
+    command = catalogue.environments(ctx)[npm.environment].version_command
+    versions = {"node": _version(builds.run(builds.argv(command), timeout=VERSION_TIMEOUT)),
+                "npm": _version(builds.run(builds.program(npm, "--version"), declared=npm, work=work_root()))}
     static, fresh = static_dir(), static_dir().with_name("static.new")
     persist.remove(fresh)
     persist.copy_tree(work / "dist", fresh)

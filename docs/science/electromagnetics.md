@@ -32,9 +32,9 @@ that sign. Selection and loss-sign conversion for material and excitation data a
 model's: it states the phasor sign and the amplitude convention, and each
 material's source convention is converted to it with a passivity check
 ([`../contracts/materials.md`](../contracts/materials.md) § 6); each engine's
-matching translation is proven by the formulation's benchmarks
+input writer is proven to match it by the formulation's benchmarks
 ([`../contracts/models.md`](../contracts/models.md) § 6.3). Installation smoke
-calculations do not establish that portable scientific translation.
+calculations do not establish that an input writer is right.
 
 Metal permittivity is complex and wavelength-dependent. A material record must
 therefore identify the source data, interpolation rule, unit convention, and

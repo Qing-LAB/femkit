@@ -3,7 +3,19 @@
 **Role:** ADR
 
 **Status:** accepted (2026-11-23); it
-supersedes decision 9 of [ADR 0008](0008-one-model-declared-abilities.md)
+supersedes decision 9 of [ADR 0008](0008-one-model-declared-abilities.md);
+decision 1 amended by [ADR 0017](0017-netgen-curves-ngsolve-geometry.md) for a
+geometry order above 1 in NGSolve, and its environment decided as `gmsh` by
+[ADR 0016](0016-every-step-runs-from-a-run-folder.md); decision 3's place for a
+mesh decided by ADR 0016 decision 3, made once per content within a study,
+and a mesh depending on its mesher too since ADR 0017; of the consequences,
+the orders the Gmsh route keeps measured in ADR 0017, and the study's
+per-environment mesher binding restored by ADR 0016 decision 11; the one
+mesh both engines solve amended by
+[ADR 0020](0020-each-engine-its-own-stages.md): each engine meshes its own
+copy, by the same path; the study's mesher binding withdrawn by
+[ADR 0025](0025-one-engine-per-study-observables-after.md) (decision 1): the
+mesh recipe names its mesher, never the study
 
 **Authority:** the reasons and the alternatives only;
 [`geometry.md`](../contracts/geometry.md) owns the rules

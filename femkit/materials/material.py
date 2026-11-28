@@ -9,9 +9,10 @@ with its parameters. Every dataset states its `convention`, `source` and `range`
 fields (core.md § 2): a file being written may lack them, and `project check` asks for each —
 and, where they matter, the `temperature` its data holds at and the `uncertainty` its source
 gives. Its value, its range's bounds, its temperature and its model's parameters are quantities
-naming no parameter, since a material cites nothing (projects.md § 3): the `quantity` kind
-`constant` (core.md § 2), read exactly by `quantity`. A table's file is read by `rows`, the one
-reader of its shape.
+in the one form (core.md § 11) — `{value, unit}`, a plain number where it has no unit, a range's
+two bounds `{value = [from, to], unit}` — naming no definition, since a material cites nothing
+(projects.md § 3): the `quantity` kind `constant` (core.md § 2), read exactly by `quantity`. A
+table's file is read by `rows`, the one reader of its shape.
 
 A dataset held under an equivalent form answers the property it is a form of (§ 1): `answering`
 is the one reading of which dataset answers which property, and `varies_with` of the variable a
@@ -21,8 +22,9 @@ The rules a dataset keeps are written once, here, as `faults`: what `project che
 material, and what a case taking the dataset refuses (materials.md § 6; femkit/materials/data.py)
 — the same rules, the same codes, never one trusting the other. Each fault is at its key from the
 dataset's own (core.md § 10):
-- `bad-quantity`: a value, a bound of a range, a temperature, a unit or a model's parameter that
-  does not read as a quantity naming no parameter (core.md § 11);
+- `bad-quantity`: a value, a range, a temperature, a unit or a model's parameter that does not
+  read as a quantity in the one form — a text saying the table to write — or a range of other than
+  two bounds (core.md § 11);
 - `wrong-dimension`: a value outside its property's dimension; a table's unit, a range, a
   temperature or a model's parameter outside the dimensions it may have — for a unit, the units
   of its variable's dimension its choices;
@@ -57,29 +59,29 @@ form, naming both.
 from __future__ import annotations
 
 import csv
-import hashlib
 import io
 from dataclasses import dataclass
-from decimal import Decimal
 from fractions import Fraction
 from typing import Annotated, Any, Iterator, Literal, Mapping, NamedTuple, Sequence, Union
 
-from pydantic import Discriminator, Field, Tag, create_model
+from pydantic import BaseModel, Discriminator, Field, Tag, create_model
 
 from femkit.core import persist
 from femkit.core.issues import Issue
-from femkit.core.schema import SHA256, Declared, Model, as_quantity, as_reference, field_extras, help_text, matching
+from femkit.core.schema import (SHA256, DeclaredKey, Measure, Measured, Model, NumberOrName, as_quantity,
+                                as_reference, field_extras, matching, written_keys)
 from femkit.core.units import Dimension, Quantity, UnitError, Units, decimal, number
 from femkit.definitions.dispersion import (CONDITIONS, REAL, SIGNS, Convention, Dispersion, DispersionModel, Parameter,
                                            Sign, active)
 from femkit.definitions.properties import Property
-from femkit.projects.checking import Checking
+from femkit.projects.checking import Checking, Registration
 from femkit.projects.door import Held, Part
 from femkit.projects.layout import held as holding
 from femkit.projects.schemas import PartFile
 
 KEY = "materials.material"   # the key the layout names this schema by (projects.md § 4)
 PROPERTIES = "properties"    # the table holding each property, by its name in the property list
+PARAMETERS = "parameters"    # a model's dataset's table of its parameters, by name (materials.md § 3)
 
 
 #: What every dataset states, whatever its form (materials.md § 3), in this order: its convention,
@@ -94,11 +96,11 @@ Stated = create_model(
     source=(str | None, Field(default=None, description="where the data comes from: a citation a reader can check, "
                                                         "with its DOI where there is one",
                               json_schema_extra={"stated": True})),
-    range=(Literal["all"] | Annotated[list[str], Field(min_length=2, max_length=2)] | None, as_quantity(
-        "where the data holds: `all`, or `[from, to]` in its variable", "constant", default=None,
-        extra={"stated": True})),
-    **{name: (Union[int, Decimal, str] | None, as_quantity(f"the {name} its data holds at, where it matters",
-                                                           "constant", default=None))
+    range=(Literal["all"] | Measure[list[NumberOrName]] | None, as_quantity(
+        "where the data holds: `all`, or `{value = [from, to], unit = \"…\"}` in its variable", "constant",
+        default=None, extra={"stated": True})),
+    **{name: (Measured | None, as_quantity(f"the {name} its data holds at, where it matters", "constant",
+                                           default=None))
        for name in CONDITIONS},
     uncertainty=(str | None, Field(default=None, description="the uncertainty its source gives, as the source "
                                                              "gives it")),
@@ -108,7 +110,7 @@ Stated = create_model(
 class Value(Stated):
     """A dataset that is a real constant (materials.md § 3)."""
 
-    value: Union[int, Decimal, str] = as_quantity("a real constant, with its unit where it has one", "constant")
+    value: Measured = as_quantity("a real constant: `{value, unit}`, a plain number where it has no unit", "constant")
 
 
 class Column(Model):
@@ -130,9 +132,9 @@ class Table(Stated):
                                              json_schema_extra={"doc": "material-data.md § 5"})
 
 
-#: A dispersion model's parameter as a file writes it: a quantity, or, for a list of terms the
-#: model sums, a list of tables of them.
-ParameterValue = Union[int, Decimal, str, list[dict[str, Union[int, Decimal, str]]]]
+#: A dispersion model's parameter as a file writes it: a quantity in the one form, or, for a list of
+#: terms the model sums, a list of tables of them.
+ParameterValue = Union[Measured, list[dict[str, Measured]]]
 
 
 class Modelled(Stated):
@@ -302,12 +304,13 @@ def varies_with(dataset: Any, dispersion: Dispersion) -> str | None:
 class Fault(NamedTuple):
     """What is wrong at one key of a dataset (module docstring): its keys from the dataset's own,
     the code a finding of `project check` — or a case's refusal — carries, one sentence saying
-    what is written and what would be right, and the one value, or the values, that would be."""
+    what is written and what would be right, and the one value, or the values, that would be —
+    each a plain value, as the file would hold it."""
 
     keys: tuple[str, ...]
     code: str
     message: str
-    right: str | None = None
+    right: Any = None
     choices: tuple[str, ...] = ()
 
 
@@ -325,20 +328,20 @@ def spoken(name: str) -> str:
 
 
 def written(value: Any) -> str:
-    """A value as its file writes it: a number as itself, a text in quotes, a list as TOML."""
-    return str(value) if isinstance(value, (int, Decimal, float)) else persist.inline_text(value)
+    """A value as its file writes it: a number as itself, a text in quotes, a quantity's
+    `{value, unit}` and a list as TOML."""
+    try:
+        return persist.inline_text(value.model_dump() if isinstance(value, BaseModel) else value)
+    except (TypeError, ValueError):
+        return repr(value)
 
 
 def quantity(value: Any, units: Units) -> Quantity:
-    """A value as a material's file writes it, read exactly (core.md § 11): a whole or decimal
-    number as itself, a text by the one grammar. A `UnitError` naming it for anything else — a
-    binary float, which is never exact and never read; a truth value, a list, a table."""
-    if isinstance(value, float):
-        raise UnitError(f"{value!r} is a binary float, which is never read: a number is read from its decimal text")
-    if isinstance(value, bool) or not isinstance(value, (int, Decimal, str)) or \
-            (isinstance(value, Decimal) and not value.is_finite()):
-        raise UnitError(f"{written(value)} is no quantity: write a number, or a value with its unit in quotes")
-    return units.parse(value) if isinstance(value, str) else Quantity(Fraction(value))
+    """A value as a material's file writes it, read exactly by the units' one reader (core.md
+    § 11): `{value, unit}`, or a plain number where it has no unit — naming no definition, since a
+    material cites nothing. A `UnitError` saying what would be right for anything else — a text,
+    the table to write; a binary float, TOML's `inf` or `nan`; a truth value, a list."""
+    return units.measure(value)
 
 
 def _a(words: str) -> str:
@@ -354,7 +357,7 @@ def kind(dimension: Dimension, units: Units, dispersion: Dispersion) -> str:
     if len(dimension) == 1 and dimension[0][1] in (1, 2, 3):
         base, power = dimension[0]
         return _a(spoken(base) + ("", "", " squared", " cubed")[power])
-    named = next((v for v, held in dispersion.variables.items() if units.parse(held.unit).dimension == dimension), None)
+    named = next((v for v, held in dispersion.variables.items() if units.unit(held.unit).dimension == dimension), None)
     if named is not None:
         return _a(spoken(named))
     return "a quantity of " + " ".join(n if p == 1 else f"{n}^{p}" for n, p in dimension)
@@ -375,13 +378,14 @@ def measured(value: Any, what: str, allowed: Sequence[str], units: Units, disper
     try:
         found = quantity(value, units)
     except UnitError as exc:
-        return Fault((), "bad-quantity", f"{what} is {written(value)}, which does not read: {exc}")
-    dimensions = [units.parse(u).dimension for u in allowed]
+        return Fault((), "bad-quantity", f"{what}: {exc}", right=exc.right)
+    dimensions = [units.unit(u).dimension for u in allowed]
     if found.dimension not in dimensions:
         needs = _either([kind(d, units, dispersion) for d in dimensions])
-        if not found.dimension:
-            text = value if isinstance(value, str) else str(value)
-            said = f'a number with no unit; it needs {needs}, as "{text} {allowed[0]}"'
+        if not found.dimension and not isinstance(value, BaseModel):
+            right = {"value": value, "unit": allowed[0]}
+            said = f"a number with no unit; it needs {needs}, as {written(right)}"
+            return Fault((), "wrong-dimension", f"{what} is {written(value)}, {said}", right=right)
         elif dimensions == [()]:
             said = f"{kind(found.dimension, units, dispersion)}; it needs a number with no unit"
         else:
@@ -471,52 +475,53 @@ def column(held: Table, prop: str, listed: Property, units: Units, dispersion: D
                                                                 f"variable called `{variable.name}`",
                       choices=tuple(listed.depends_on))]
     try:
-        unit = units.parse(variable.unit)
+        unit = units.unit(variable.unit)
     except UnitError as exc:
         return [Fault(("variable", "unit"), "bad-quantity", f"the unit {written(variable.unit)} does not read: {exc}")]
-    wanted = units.parse(dispersion.variables[variable.name].unit).dimension
+    wanted = units.unit(dispersion.variables[variable.name].unit).dimension
     if unit.dimension == wanted:
         return []
     other = next((v for v in listed.depends_on if v in dispersion.variables
-                  and units.parse(dispersion.variables[v].unit).dimension == unit.dimension), None)
+                  and units.unit(dispersion.variables[v].unit).dimension == unit.dimension), None)
     said = f"`{variable.unit}` is a unit of {kind(unit.dimension, units, dispersion)}, "
     said += f"not of the {spoken(variable.name)}"
     said += (f'; a column written in it is of the {spoken(other)}: name = "{other}"' if other is not None
              else f"; the {spoken(variable.name)} is {kind(wanted, units, dispersion)}")
     return [Fault(("variable", "unit"), "wrong-dimension", said,
-                  choices=tuple(sorted(units.of(wanted), key=lambda u: (units.parse(u).value, u))))]
+                  choices=tuple(sorted(units.of(wanted), key=lambda u: (units.unit(u).value, u))))]
 
 
 def bounds(held: Stated, variables: Sequence[str], unit: str | None, units: Units,
            dispersion: Dispersion) -> Span | Fault | None:
-    """A range read (materials.md § 3): each bound a quantity, both in the forms of one of
-    ``variables`` — the dataset's own, or, for a value, those its property depends on — ``unit``
-    the one a fault's example writes them in. The span — its variable None where ``variables``
-    is empty; None for a range of `all`, or none; else the fault at `range`."""
-    if not isinstance(held.range, list):
+    """A range read (materials.md § 3): its two bounds under its one unit, `{value = [from, to],
+    unit}`, in the forms of one of ``variables`` — the dataset's own, or, for a value, those its
+    property depends on — ``unit`` the one a fault's example writes them in. The span — its
+    variable None where ``variables`` is empty; None for a range of `all`, or none; else the
+    fault at `range`."""
+    if not isinstance(held.range, Measure):
         return None
-    read: list[Quantity] = []
-    for bound in held.range:
-        try:
-            read.append(quantity(bound, units))
-        except UnitError as exc:
-            return Fault(("range",), "bad-quantity", f"the range's bound {written(bound)} does not read: {exc}")
-    span = (read[0], read[1])
+    if len(held.range.value) != 2:
+        return Fault(("range",), "bad-quantity", f"the range is {written(held.range)}: it is two bounds, "
+                                                 "`{value = [from, to], unit = \"…\"}`")
+    try:
+        low, high = quantity(held.range, units)
+    except UnitError as exc:
+        return Fault(("range",), "bad-quantity", f"the range is {written(held.range)}, which does not read: {exc}")
+    span = (low, high)
     if not variables:
         return Span(None, span)
     variable = next((v for v in variables if all(dispersion.form(b, v, units) for b in span)), None)
     if variable is not None:
         return Span(variable, span)
     names = _either([spoken(v) for v in variables])
-    bare = [text for text, q in zip(held.range, span) if not q.dimension]
-    if bare:
-        example = [f"{text} {unit}" if text in bare else text for text in held.range]
-        said = "with no unit" if len(bare) == 2 else f"and {written(bare[0])} has no unit"
-        return Fault(("range",), "wrong-dimension", f"the range is {written(held.range)}, {said}; it needs a unit of "
-                                                    f"the {names}" + (f", as {written(example)}" if unit else ""))
+    if not low.dimension:
+        example = {"value": held.range.value, "unit": unit} if unit else None
+        return Fault(("range",), "wrong-dimension",
+                     f"the range is {written(held.range)}, with no unit; it needs a unit of the {names}"
+                     + (f", as {written(example)}" if example else ""), right=example)
     forms = [f for v in variables for f in dispersion.forms(v)]
-    needs = _either([kind(units.parse(dispersion.variables[f].unit).dimension, units, dispersion) for f in forms])
-    given = _either([kind(b.dimension, units, dispersion) for b in span])
+    needs = _either([kind(units.unit(dispersion.variables[f].unit).dimension, units, dispersion) for f in forms])
+    given = kind(low.dimension, units, dispersion)
     return Fault(("range",), "wrong-dimension", f"the range is {written(held.range)}, {given}; its bounds are of the "
                                                 f"{names}: each {needs}")
 
@@ -545,7 +550,7 @@ def extent(held: Table, table: Rows, span: Span | None, units: Units, dispersion
         forms = _either([spoken(f) for f in dispersion.forms(span.variable)])
         return Fault(("range",), "bad-quantity", f"the range is {written(held.range)}, and a spectral position of "
                                                  f"zero is no {forms}")
-    scale = units.parse(unit).value
+    scale = units.unit(unit).value
     if stated[0] < first * scale or stated[1] > last * scale:
         return Fault(("range",), "outside-table", f"the range is {written(held.range)}, beyond the table's first and "
                                                   f"last rows, and a table is never extrapolated: {rows_said}")
@@ -603,7 +608,7 @@ def faults(held: Value | Table | Modelled, prop: str, listed: Property, file: by
             if passive is not None:
                 yield passive._replace(message=f"{held.table}, {passive.message}")
             if table is not None and passive is None:
-                digest = hashlib.sha256(file).hexdigest()
+                digest = persist.digest(file)
                 if held.sha256 is None:
                     yield Fault(("sha256",), "not-stated", f"the table {held.table} states no SHA-256; no case can "
                                                            "rest on it until it does", right=digest)
@@ -620,7 +625,7 @@ def faults(held: Value | Table | Modelled, prop: str, listed: Property, file: by
             yield model
             span = bounds(held, [], None, units, dispersion)
         else:
-            yield from (f._replace(keys=("parameters", *f.keys)) for f in parameters(held, model, units, dispersion)[1])
+            yield from (f._replace(keys=(PARAMETERS, *f.keys)) for f in parameters(held, model, units, dispersion)[1])
             if held.convention is not None and held.convention != model.convention:
                 yield Fault(("convention",), "wrong-convention",
                             f"the convention is {written(held.convention)}, and `{held.model}` is written in "
@@ -675,45 +680,39 @@ def _twice(c: Checking, part: Part, material: Material) -> Iterator[Issue]:
                                       f"form; an assignment naming the {name}'s `{dataset}` could mean either")
 
 
-def declared(properties: Mapping[str, Property], dispersion: Dispersion, text: str) -> Declared:
-    """The help of each key of a material's file ``text`` that the property list or the dispersion
-    list declares, not its schema (core.md § 2; projects.md § 7): a property's own key,
-    `properties.<name>`, as the list states it — its sentence, then `, in` and its unit
-    (`help_text`); and a model's parameters, `….parameters.<p>`, as its model states them — a
-    parameter's sentence, then `, in` and its units, a list of terms' sentence alone, and each
-    term's parameters as a parameter's, at `….parameters.<list>.<p>`. A dataset's model is read
-    from the text as it writes it, set or shown commented out; a parameter of a dataset whose model
-    the text does not write has the help every model declaring it agrees on, if they do. None for
-    every other key."""
-    from femkit.core.persist import key_comments      # what the text writes, read as help_findings reads it
-
-    written = {e.path: e.value for e in key_comments(text) if not e.header}
-
-    def parameter(spec: Parameter | None) -> str | None:
-        return None if spec is None else help_text(spec.description, unit=" or ".join(spec.units))
-
-    def of(model: Any, key: str, term: str | None) -> str | None:
-        if term is not None:
-            listed = model.sums.get(key)
-            return parameter(listed.parameters.get(term)) if listed is not None else None
-        if key in model.sums:
-            return help_text(model.sums[key].description)
-        return parameter(model.parameters.get(key))
-
-    def help_of(path: tuple[str, ...]) -> str | None:
-        if len(path) == 2 and path[0] == PROPERTIES and path[1] in properties:
-            listed = properties[path[1]]
-            return help_text(listed.description, unit=listed.unit)
-        if len(path) not in (5, 6) or path[0] != PROPERTIES or path[3] != "parameters":
-            return None
-        model = written.get((*path[:3], "model"))
+def keys(properties: Mapping[str, Property], dispersion: Dispersion, text: str) -> list[DeclaredKey]:
+    """The keys of a material's file ``text`` that the property list or the dispersion list declares,
+    not its schema (core.md § 2; projects.md § 7; web.md § 8.3): each property's own key,
+    `properties.<name>`, as the list states it — its sentence and its unit — a key like any other,
+    written or not; and, for each dataset the text writes, its model's parameters,
+    `….parameters.<p>`, as its model states them — a parameter's sentence and its units, a list of
+    terms' sentence alone, and each term's parameters as a parameter's, at
+    `….parameters.<list>.<p>`. A dataset's model is read from the text as it writes it, set or shown
+    commented out; a dataset whose model the text does not write holds each parameter every model
+    declaring it agrees on, if they do."""
+    written = written_keys(text)
+    out = [DeclaredKey((PROPERTIES, name), listed.description, units=(listed.unit,))
+           for name, listed in properties.items()]
+    for at in sorted({p[:3] for p in written if len(p) > 2 and p[0] == PROPERTIES}):
+        model = written.get((*at, "model"))
         named = dispersion.models.get(model) if isinstance(model, str) else None
-        models = [named] if named is not None else list(dispersion.models.values())
-        helps = {h for m in models if (h := of(m, path[4], path[5] if len(path) == 6 else None)) is not None}
-        return helps.pop() if len(helps) == 1 else None
+        found: dict[tuple[str, ...], set[tuple[str, tuple[str, ...], bool]]] = {}
+        for m in [named] if named is not None else list(dispersion.models.values()):
+            for name, spec in m.parameters.items():
+                found.setdefault((name,), set()).add((spec.description, tuple(spec.units), True))
+            for name, listed in m.sums.items():
+                found.setdefault((name,), set()).add((listed.description, (), False))
+                for term, spec in listed.parameters.items():
+                    found.setdefault((name, term), set()).add((spec.description, tuple(spec.units), True))
+        out += [DeclaredKey((*at, PARAMETERS, *tail), sentence, units=units, required=required)
+                for tail, agreed in found.items() if len(agreed) == 1 for sentence, units, required in agreed]
+    return out
 
-    return help_of
+
+def _stated(c: Checking, text: str, manual: str | None) -> list[DeclaredKey]:
+    """The keys the property list and the dispersion list state beside a material's schema
+    (`keys`), as the frame hands them."""
+    return keys(c.properties, c.dispersion, text)
 
 
-PART_SCHEMAS = {KEY: Material}
-PART_CHECKS = {KEY: check}
+REGISTERS = Registration(schemas={KEY: Material}, checks={KEY: check}, keys={KEY: _stated})

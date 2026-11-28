@@ -15,16 +15,17 @@
 
 ## EnvironmentDefinition
 
-`femkit/data/environments/<name>.toml` — one environment: an engine's (definitions.md § 4), or a tool's, which states its `version_command` instead of an `engine` (§ 4.7).
+`femkit/data/environments/<name>.toml` — one environment: an engine's (definitions.md § 4), or a tool's, which states no `engine` (§ 4.7).
 
 | key | type | default | meaning |
 |---|---|---|---|
 | `engine` | text, optional | — | the registered engine adapter ID; absent for a tool environment |
-| `version_command` | list of text, optional | — | a tool environment's: the command, run in the prefix, whose last line of output is its version |
-| `version` | text | required | what the version probe must report |
+| `version_command` | list of text | required | the command, run in the prefix, that states its version: the last line it prints, or what its engine's version reader reads where that output is irregular (definitions.md § 4) |
+| `version` | text | required | what the version command must state |
 | `control_packages` | boolean | `false` | a tool environment's: the control environment's packages (control.txt), solved with its own (definitions.md § 4.7) |
 | `description` | text | required | one line for `env list` |
-| `default` | boolean | `false` | part of `env install --all` |
+| `default` | boolean | `false` | one of the default environments, which `env install` with `all`, and `env bootstrap`, install |
+| `projects` | boolean | `false` | a tool environment's: it takes, beside its own packages, the conda packages every project under the projects root declares for the scripts that run in it — solved with its own when it is built, delivered into it as it stands when a project adds one — never in its install fingerprint (definitions.md § 4.7) |
 | `thread_variables` | list of text | empty | variables set to a run's threads per rank |
 | `fixed_variables` | table of text → text | empty | variables set to these values in every check and run |
 | `toolchain` | [Toolchain](#toolchain), optional | — | the compilers and build tools its builds use; required with builds |
@@ -52,14 +53,14 @@
 | key | type | default | meaning |
 |---|---|---|---|
 | `conda` | list of text | empty | conda constraints the manager solves |
-| `pip` | list of text | empty | Python packages conda-forge does not have; not built yet, so an environment that lists one does not load (definitions.md § 4.1) |
+| `pip` | list of text | empty | Python packages from pip: none — an environment that lists one does not load, since what pip installs sits outside the solve (definitions.md § 4.1) |
 | `forbid` | list of text | empty | package families that must be absent from the solved lock |
 
 ## Provides
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `executables` | list of text | empty | executables the install's audit step finds in the prefix |
+| `executables` | list of text | empty | executables the install's audit step finds in the prefix, beyond its toolchain's tools, which the toolchain step proves |
 | `modules` | list of text | empty | Python modules the install's audit step imports |
 
 ## CudaPart
@@ -150,14 +151,20 @@ Checks that must give the same quantity (definitions.md § 5.2).
 | `version_pattern` | text | required | regular expression whose first group is the version in that output |
 | `root` | [JsonQuery](#jsonquery) | required | where the manager's root (base) prefix is |
 | `platform` | [JsonQuery](#jsonquery), optional | — | the platform an environment built by this manager is for, e.g. linux-64 (see jobs.md § 9.1) |
-| `run` | list of text | required | runs the command that follows inside {prefix}. Placeholders: `{exe}`, `{prefix}` |
+| `run` | list of text | required | runs the command that follows inside the environment {name}. Placeholders: `{exe}`, `{name}` |
 | `activate` | [Activation](#activation) | required | how a shell enters a prefix: the day-to-day entry line, the run script |
-| `create` | list of text | required | creates {prefix} from constraints, overriding the person's own channels and default packages; `channel` follows once per channel, then the constraints — for the control environment, `--file` and its package list. Placeholders: `{exe}`, `{prefix}` |
+| `environments` | [JsonQuery](#jsonquery) | required | every environment the manager lists, by prefix: where femkit asks the prefix of one by its name (see envs.md § 1) |
+| `names` | [NamesQuery](#namesquery), optional | — | the manager's own name for each environment it lists; where it says none, an environment is known by its name only in `envs_dirs` (see envs.md § 1) |
+| `envs_dirs` | [JsonQuery](#jsonquery) | required | the folders where the manager keeps environments by their names, in its order: where it would make one, and where a listed one is named (see envs.md § 1) |
+| `settings` | [Settings](#settings), optional | — | the person's own settings that change what a create installs, where the manager read each, and how each is set aside or refused; none where no way to read them is measured (see envs.md § 4.4) |
+| `create` | list of text | required | creates the environment {name}, where the manager keeps environments, from constraints, overriding the person's own channels and default packages; `channel` follows once per channel, then the constraints — for the control environment, `--file` and its package list. Placeholders: `{exe}`, `{name}` |
 | `channel` | list of text | required | the arguments that add one channel, e.g. ["-c", "{channel}"]. Placeholders: `{channel}` |
-| `create_from_lock` | list of text | required | creates {prefix} from the exact package list in {file}. Placeholders: `{exe}`, `{file}`, `{prefix}` |
-| `export_lock` | list of text | required | prints the exact package list of {prefix}, one URL a line. Placeholders: `{exe}`, `{prefix}` |
-| `remove` | list of text | required | removes {prefix}. Placeholders: `{exe}`, `{prefix}` |
+| `create_from_lock` | list of text | required | creates the environment {name} from the exact package list in {file}. Placeholders: `{exe}`, `{file}`, `{name}` |
+| `install` | list of text | required | installs the constraints that follow into the environment {name} as it stands, overriding the person's own channels; `channel` follows once per channel, then the constraints: what delivers a package a project adds into `postprocess` (see envs.md § 4.1). Placeholders: `{exe}`, `{name}` |
+| `export_lock` | list of text | required | prints the exact package list of the environment {name}, one URL a line. Placeholders: `{exe}`, `{name}` |
+| `remove` | list of text | required | removes the environment {name}. Placeholders: `{exe}`, `{name}` |
 | `channels_named` | list of `create_from_lock` \| `remove` | empty | the commands beside `create` that name the declared channels, `channel` once per channel after the command: conda 26 otherwise checks the terms of its base configuration's defaults and stops; mamba 2.9.0 refuses channels on a removal (both measured, envs.md § 4.4) |
+| `environment` | text | required | the folder every environment this manager makes holds, by which a prefix it lists is known for a manager environment (see envs.md § 3.1) |
 
 ## JsonQuery
 
@@ -172,9 +179,77 @@ The two ways a shell enters a prefix with this manager; this machine's activatio
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `hook` | text | required | the file whose sourcing defines the activation in a fresh shell, under {root} (the manager's root query); checked on disk, never derived from the executable's path, which on a cluster may be a module's wrapper. Placeholders: `{root}` |
-| `with_hook` | list of text | required | the shell function, e.g. `conda activate {prefix}`: it exists once the hook is sourced, which femkit does first. Placeholders: `{prefix}` |
-| `without_hook` | list of text | required | the activate script on PATH, `source activate {prefix}`, which needs no hook — what a cluster's module provides. Placeholders: `{prefix}` |
+| `hook` | list of text | required | the manager's own command that prints its shell hook for bash, which a fresh shell evaluates before `with_hook`: the manager's way, never a file guessed from where its executable lies, which on a cluster may be a module's wrapper. Placeholders: `{exe}` |
+| `with_hook` | list of text | required | the shell function, e.g. `conda activate {name}`: it exists once the hook is evaluated, which femkit does first. Placeholders: `{name}` |
+| `without_hook` | list of text | required | the activate script on PATH, `source activate {name}`, which needs no hook — what a cluster's module provides where the preamble puts it on PATH. Placeholders: `{name}` |
+| `script` | text | required | the script `without_hook` sources, found on PATH: a run script stops, saying so, where nothing put it there after its clean start (see jobs.md § 4) |
+| `active` | text | required | the variable either form sets to the prefix it entered, which a run script reads to verify it entered the prefix it was prepared for (see jobs.md § 4) |
+| `executable` | text | required | the variable either form sets to the manager's own executable, by which femkit finds the manager in a shell where it is initialised (see envs.md § 7.1) |
+
+## NamesQuery
+
+Where the manager says its own name for each environment it lists (envs.md § 1).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `argv` | list of text | required | the command; it prints one JSON object. Placeholders: `{exe}` |
+| `key` | text or list of text | required | the key of the object that holds the answer; a list: the first of them the object has, where versions of a manager differ |
+| `name` | text | required | the key, in each listed prefix's entry of the answer, of the manager's own name for it — empty for one outside the folders where it keeps environments |
+
+## Settings
+
+The person's own settings of a manager that change what a create, a delivery or a create from a lock puts into an environment, and where the manager says it read each (envs.md § 4.4).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `argv` | list of text | required | prints one JSON object: each place the manager reads settings from — a file, its variables — with the settings it read there, by their keys. Placeholders: `{exe}` |
+| `neutralised` | table of text → text | empty | each setting femkit's commands set aside, by its key, with how: the flag or the form of channel each such command carries |
+| `refused` | table of text → [Refusal](#refusal) | empty | each setting nothing sets aside, by its key: an install is refused before any create while it is set so |
+
+## Refusal
+
+A setting of the person's that nothing femkit's commands carry sets aside (envs.md § 4.4).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `when` | boolean or text, optional | — | the value refused; none: any value |
+| `change` | text | required | why it is refused, and what the person changes in the file that holds it |
+
+## ProcessStart
+
+`femkit/data/process.toml` — how every process femkit starts for an environment begins (envs.md § 4.4): the invocation's variables `passes` names, none `removes` names, `PATH` the system's, then `sets`. Read by `femkit/envs/start.py` alone, and by the install script.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `path` | text | required | `PATH` at the start: the system's own folders, where the manager's wrapper finds its shell |
+| `passes` | list of text | required | the invocation's variables kept, each a name or a pattern of names |
+| `removes` | list of text | required | variables never kept, even where a pattern of `passes` takes them: the outside Python, another active environment, library injection, the outside toolchain |
+| `sets` | table of text → text | empty | variables set at the start, each with its value |
+| `femkit_sheds` | list of text | empty | what femkit's own process — the `femkit` command — sheds of the shell it is typed in, each a name: it keeps the rest, so it sees the machine it probes as the person does, and every process it starts begins clean |
+| `function` | text | required | how a shell function a scheduler kind declares is passed among the variables, `{name}` its name: bash's own spelling of an exported function. Placeholders: `{name}` |
+
+## Naming
+
+`femkit/data/naming.toml` — every environment's name with the package manager (envs.md § 1).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `control` | text | required | the control environment's name |
+| `other` | text | required | every other environment's name, `{name}` its name in femkit. Placeholders: `{name}` |
+
+## Program
+
+One femkit program that runs inside an environment (envs.md § 4.4).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `describe` | text | required | what it does, as a person reads it |
+| `environment` | text, optional | — | the environment it runs in, by name; none: the one the operation that runs it acts on — an install's, a validate's, the probe's control environment |
+| `module` | text, optional | — | femkit's own Python program: a module of the checkout, run on the environment's `python` with `-P` and the checkout alone as its import path (envs.md § 7) |
+| `command` | list of text, optional | — | a tool's command, its arguments after it given where it runs |
+| `timeout` | integer, optional | — | its time limit, in seconds; none: none — a build takes as long as the machine needs (envs.md § 4.1) |
+| `sets` | table of text → text | empty | variables it is given, each with its value; `{work}` is the folder the operation that runs it works in. Placeholders: `{work}` |
+| `files` | list of text | empty | of `sets`, each variable whose value is a file the program reads: made empty where there is none, so it reads no file of the person's in its place |
 
 ## SchedulerKind
 
@@ -186,6 +261,8 @@ The two ways a shell enters a prefix with this manager; this machine's activatio
 | `probe` | table of text → text | empty | role -&gt; a command that measures a machine of this kind; the roles are its reader's, in femkit/schedulers/, and checked against it when the kind loads |
 | `mpi_launch` | list of text | required | the launcher `config init` proposes for `launch.mpi` on a machine of this kind. Placeholders: `{ranks}` |
 | `job_variables` | table of text → text | empty | role (id, ranks, cores_per_rank, cores_on_node, gpus, nodes) -&gt; the variable a job sees; `id` set means the process runs inside a job |
+| `passes` | list of text | empty | the variables a job of this kind sees that a clean start passes, each a name or a pattern of names — `SLURM_*` (see envs.md § 4.4) |
+| `functions` | list of text | empty | the shell functions a job of this kind needs passed, by name — the module system's `module`, which a preamble's `module load` calls; a clean start passes these and no other (see envs.md § 4.4) |
 | `interactive` | text, optional | — | the command that opens an interactive allocation, named by bootstrap's login-node warning and when an install step on a login node of this kind is killed (envs.md § 6.2); never with a partition |
 
 ## UnitTable
@@ -225,7 +302,7 @@ One physical problem, stated without reference to any engine (models.md § 4).
 | `properties` | table of text → [PropertySpec](#propertyspec) | required | the material properties it reads, each by its name in femkit's list of material properties (see materials.md § 1) |
 | `conditions` | table of text → [KindSpec](#kindspec) | required | the condition kinds it allows |
 | `sources` | table of text → [KindSpec](#kindspec) | empty | the source kinds it allows |
-| `derived` | table of text → [DerivedSpec](#derivedspec) | required | each quantity an observable may name |
+| `derived` | table of text → [DerivedSpec](#derivedspec) | required | each quantity it derives, which a later step of a study may take from the step that solves it |
 | `benchmarks` | table of text → [Benchmark](#benchmark) | empty | its benchmark set: problems with known answers (models.md § 6.3) |
 
 ## Unknown
@@ -246,7 +323,14 @@ A physical constant the formulation's equation uses, as every engine must be giv
 |---|---|---|---|
 | `description` | text | required | one plain sentence: what it is or states |
 | `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
-| `value` | text | required | its value, with its unit |
+| `value` | [Measure](#measure) | required | its value, with its unit. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
+
+## Measure
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `value` | integer or number | required | its number; for a point, a line or a range, its numbers, all in its unit |
+| `unit` | text | required | the unit its number is in: a unit femkit reads, or a product of them. A unit |
 
 ## PropertySpec
 
@@ -280,7 +364,7 @@ One parameter of a condition or source.
 
 ## DerivedSpec
 
-A quantity an observable may name.
+A quantity the formulation derives from its unknown, which a later step may take.
 
 | key | type | default | meaning |
 |---|---|---|---|
@@ -298,25 +382,90 @@ A problem with a known answer (models.md § 4, § 6.3): a project of its own, an
 | `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
 | `project` | text | required | its project: one of femkit's project templates, by its bare name, a folder of `femkit/data/templates/` (projects.md § 7) |
 | `exercises` | list of text | required | the formulation's condition, source and property kinds it exercises |
-| `tolerance` | text | required | the relative difference a run may show from each reference value, a plain number; its basis is in the science document's section |
-| `reference` | table of text → text | required | each observable of its study, and its exact value |
+| `tolerance` | integer or number | required | the relative difference a run may show from each reference value, a plain number; its basis is in the science document's section |
+| `reference` | table of text → [Measure](#measure) | required | each observable of the observables part reading its studies, by its name, and its exact value, with its unit. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
+
+## Artifact
+
+One artifact type (workflow.md § 2.2): what flows between stages.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `file` | text | required | its file's name in the run of the stage that writes it |
+| `format` | text | required | its format, in words |
+| `opened` | [Opened](#opened), optional | — | how femkit opens it; none for a document femkit reads, or one whose opening is not measured yet |
+
+## Opened
+
+How an artifact is opened: the environment its command runs in, and the command.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `environment` | text | required | the environment the command runs in, by name |
+| `command` | list of text | required | the command, `{file}` the artifact's file. Placeholders: `{file}` |
+
+## Stages
+
+`stages.toml`: each stage kind by its name — the name its folders are formed by (projects.md § 2) — the name of the sequence a study's meshing job is, beside the batches each kind names (workflow.md § 7), and the file a stage's folder keeps what it is made from in (§ 4). Its validation context may hold `environments`, `artifacts` (the artifact types' names), `programs` (femkit's stage programs, by their files' names), `documents` (the kinds of document a stage may be handed) and `parts` (each part kind of the project layout with the files every part of it holds by a fixed name): given, what each kind names is one of them.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `sequence` | text | required | the name of the sequence `study prep` writes for a study — of the batches each kind's `batch` names — before `-&lt;study&gt;-NNN` (see workflow.md § 7) |
+| `made_from` | text | required | the file a stage's folder keeps what the stage is made from in, whose SHA-256 as canonical JSON is its ID, and by which every reader finds a case's stages (see workflow.md § 4) |
+| `kinds` | table of text → [StageKind](#stagekind) | required | each stage kind by its name, the name its folders are formed by (see workflow.md § 2.1) |
+
+## StageKind
+
+One kind of stage (workflow.md § 2.1): what it reads and writes, where and how it runs, and the check that judges what it wrote.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `description` | text | required | what the stage does, in one sentence |
+| `filled_by` | `mesher`, optional | — | what fills the slots it leaves unset — its environment, the artifacts it reads and writes, its program: `mesher`, the mesher its mesh recipe states; none: it states each itself: one of `mesher` (see workflow.md § 2.3) |
+| `environment` | text, optional | — | where the environment it runs in comes from: a fixed one, by its name, or `engine`, the environment the engine chosen to solve resolves to (see workflow.md § 2.1) |
+| `documents` | table of text → text | empty | the documents femkit writes for it, each by its kind, with its file's name in the stage's folder: what its program and its check are handed |
+| `brings` | text, optional | — | the part kind whose fixed files a stage of it gets in its folder, as the project layout declares them — `component`, its script and the files its contract declares; none: it runs femkit's program on what stages before it made (see workflow.md § 2.1) |
+| `batch` | text, optional | — | the name of the batch of its stages a meshing job holds; none for a kind whose stages ride no meshing job (see workflow.md § 7) |
+| `inputs` | table of text → text, optional | — | the artifacts it reads from the stages before it, each by the name its program calls it |
+| `outputs` | table of text → text, optional | — | the artifacts it always writes, each by the name its program and its check call it |
+| `asked` | table of text → text | empty | the artifacts it writes only when asked — a stage after it reads them, or the component's contract declares them under `[outputs]` by this name |
+| `program` | list of text, optional | — | its program: `{python}`, the file it runs, and its arguments — each placeholder a document it is handed, `{checked}` or `{outputs}`, or one of its files by its name here, `{mesh?}` one written only when asked |
+| `check` | list of text, optional | — | its contract's check: `{python}`, one of femkit's stage programs, and its arguments, named as its program's are; it writes the run's verdict, `{checked}`, and, when passed, each output's SHA-256, `{outputs}`; none for a kind declared before its stages are made |
+| `one_process` | boolean | `false` | whether it runs as one process, `ranks = 1`, whatever its job holds (see jobs.md § 1.1) |
+
+## HandOver
+
+How one engine receives a mesh of the type it reads, at the geometry orders it lists, inside the engine's own job, before the solve (geometry.md § 8). Its validation context may hold `artifacts`, `places` and `engine_packages` — each registered engine with its package's folder: given, what it names is one of them.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `reads` | text | required | the mesh it hands over, by its artifact type |
+| `engine` | text | required | the engine, by its registered adapter's ID |
+| `orders` | list of `1` \| `2` | required | the geometry orders it hands over as written; an engine's hand-overs of one type share none, so the order a case asks for chooses one |
+| `names` | list of text | required | the places whose groups it hands the engine, each by its name (geometry.md § 7) |
+| `conversion` | text | required | how the mesh reaches the engine, in words |
+| `program` | text | required | the hand-over program, a file of the engine's package run inside its environment: it converts or builds the engine's mesh and finds every handed group's name in it |
+| `arguments` | list of text | required | the program's arguments, as the run's files are named. Placeholders: `{handover}`, `{mesh}` |
+| `outputs` | list of text | required | what the program leaves for the solve, a file or a folder, by its name in the run |
+| `basis` | text | required | what was measured, on which versions |
 
 ## MesherDefinition
 
-One mesher (models.md § 6.5).
+One mesher, a program of the mesh stage (workflow.md § 2.3). Its validation context may hold `environments`, `artifacts`, `programs` — femkit's stage programs — and `documents`, those the stage it fills is handed: given, what it names is one of them.
 
 | key | type | default | meaning |
 |---|---|---|---|
 | `description` | text | required | one line |
-| `provided_by` | text | required | the engine environment it runs in |
+| `provided_by` | text | required | the environment it runs in, which provides it |
 | `dimensions` | list of `2` \| `3` | required | the dimensions it meshes |
-| `builds` | list of text | required | the model's shape kinds it can build |
-| `imports` | list of `step` \| `iges` \| `brep` \| `stl` | empty | the CAD formats an `import` may be in |
-| `controls` | list of `size` \| `regions` | required | the mesh policy's keys it honors |
 | `tolerance` | [Tolerance](#tolerance), optional | — | its geometric tolerance; absent: not known, and no feature can be checked against it |
-| `writes` | [Writes](#writes) | required | the mesh it writes |
-| `orders` | list of integer | required | the geometry orders it writes |
-| `keeps_region_names` | boolean | required | whether the mesh's parts keep the model's region names |
+| `orders` | list of `1` \| `2` | required | the geometry orders its mesh may have |
+| `order` | `recipe` \| `contract` | required | where its mesh's geometry order comes from: the recipe's `order`, or, for a mesh the script wrote, the order the component's contract declares: one of `recipe`, `contract` |
+| `program` | text | required | its program, one of femkit's stage programs, run on its environment's own python |
+| `arguments` | list of text | required | its program's arguments: each placeholder a document its stage is handed, `{recipe}`, or one of its files by its name in `reads` or `writes` |
+| `reads` | table of text → text | required | the artifacts it reads from the stages before it, each by the name its program calls it |
+| `writes` | table of text → text | required | the artifacts it writes — its mesh and its region map — each by the name its program and the mesh's check call it |
+| `honours` | list of text | required | the keys of a mesh recipe it honours; another the recipe states is not honoured (see models.md § 6.2) |
 | `basis` | text | required | where these facts come from: what was measured, on which version, or a citation |
 
 ## Tolerance
@@ -327,16 +476,6 @@ How close two points must be for the mesher to merge them.
 |---|---|---|---|
 | `kind` | `absolute` \| `relative` | required | in the length unit geometry is handed over in, or relative to the model's size: one of `absolute`, `relative` |
 | `value` | text | required | a plain number |
-
-## Writes
-
-The mesh file it writes.
-
-| key | type | default | meaning |
-|---|---|---|---|
-| `format` | text | required | the format (`msh`, `vol`) |
-| `version` | text, optional | — | the format's version, where it has several |
-| `encoding` | `ascii` \| `binary`, optional | — | text or binary: one of `ascii`, `binary` |
 
 ## PlaceKind
 
@@ -382,7 +521,7 @@ A physical constant the spectral variables are converted by (material-data.md §
 |---|---|---|---|
 | `description` | text | required | one plain sentence: what it is or states |
 | `section` | text | required | the science document's section that defines it, as its link anchor (`3-conditions-on-an-outer-boundary`) |
-| `value` | text | required | its exact value, with its unit. A quantity with its unit where it has one, naming no parameter |
+| `value` | [Measure](#measure) | required | its exact value, with its unit. A quantity, `{value, unit}` — a plain number where it has no unit — naming no definition |
 
 ## Variable
 
@@ -517,13 +656,18 @@ A record type that becomes a dispersion model's dataset (materials.md §§ 2, 3)
 
 ## StateTable
 
-`femkit/data/states/<machine>.toml`: one state machine, a closed table (core.md § 7). Its validation context may hold `predicates`, the fact names its domain gives, `values`, the names a request may take from the subject, `reads`, the states its domain's code reads by name, and `operations`, each registered operation's request model by its name: each, when given, is checked.
+`femkit/data/states/<machine>.toml`: one state machine, a closed table (core.md § 7). Its validation context may hold `predicates`, the fact names its domain gives, `values`, the names a request may take from the subject, `reads`, the states its domain's code reads by name — of its own, or of the machine it is past — `acts`, the actions its code reads by name, `tasks`, the tasks its code does by name, `drawn`, whether the page draws its subject as a block, `subjects`, the other subjects its binding hands by name, and `operations`, each registered operation's request model by its name: each, when given, is checked.
 
 | key | type | default | meaning |
 |---|---|---|---|
+| `past` | text, optional | — | another machine, by its file's stem: where none of the rules holds, the subject is in that machine's state, observed over the facts its domain's code hands it, with that machine's actions and words; none: the last rule is the otherwise |
 | `states` | table of text → text | required | each state, in order, with the sentence saying when it is observed |
-| `rules` | list of [RuleRow](#rulerow) | required | the observation rules, in order: the first that holds gives the state; the last is the otherwise |
+| `rules` | list of [RuleRow](#rulerow) | required | the observation rules, in order: the first that holds gives the state; the last is the otherwise, unless the machine is past another |
+| `shows` | table of text → `up to date` \| `needs update` \| `needs attention` \| `waiting` \| `running` \| `failed`, optional | — | for a machine whose subject the page draws as a block, each state's block word; none for any other: one of `up to date`, `needs update`, `needs attention`, `waiting`, `running`, `failed` (see web.md § 7.6) |
 | `actions` | table of text → table of text → [ActionRow](#actionrow) | required | for each state, each action it allows by its name; an empty table: none |
+| `tasks` | table of text → [TaskRow](#taskrow), optional | — | its own tasks, each with its sentence — what its code does to the subject, said in a plan and an outcome; no state's action, never a next step — and its guard |
+| `does` | table of text → list of text, optional | — | for a machine with tasks: each of its states and of the tables down its `past` chain, every one named, with its own tasks its code does there — an empty list where it does none, and its code refuses, naming the state |
+| `next_from` | table of text → [NextFrom](#nextfrom), optional | — | each state whose next steps are another subject's, by the name the binding hands it, in place of its own actions |
 
 ## RuleRow
 
@@ -536,14 +680,33 @@ One observation rule: the state it gives, and when.
 
 ## ActionRow
 
-One action a state allows: an operation with its request, a shell line, or nothing to do.
+One action a state allows: an operation with its request, a shell line, or neither — nothing asked of a person, or, where it says so, its subject's own operation.
 
 | key | type | default | meaning |
 |---|---|---|---|
 | `describe` | text | required | what a person reads on it |
 | `operation` | text, optional | — | the registered operation it runs, by its name, `env.install` |
 | `request` | table of text → Any | empty | the operation's request values; a text that is one placeholder alone, `{name}`, is the value the subject gives it, and a key whose value the subject leaves unset is left out |
-| `shell` | text, optional | — | a line a person types, for what is no operation |
+| `shell` | text, optional | — | a line a person types, for what is no operation; each placeholder in it, `{name}`, is the value the subject gives |
+| `subject` | boolean | `false` | with neither an operation nor a shell line: its operation is its subject's own, which that subject's code offers — a launch folder's maker's, read from `maker.json`; otherwise the request is allowed, asks nothing of a person and is never a next step |
+| `fills` | list of text | empty | with an operation: the fields of its request it asks of the person before it runs, each its field's whole fill — one the request does not require left unset at will |
+
+## TaskRow
+
+One of a machine's own tasks: what its code does to the subject, and where.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `describe` | text | required | its sentence, said in a plan and an outcome |
+| `when` | text, optional | — | its guard, the condition on the machine's named facts where it is done — names of facts joined by `and`, `or`, `not` and parentheses; none: wherever its state lists it |
+
+## NextFrom
+
+A state whose next steps are another subject's (core.md § 7, `[next_from.<state>]`).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `subject` | text | required | the subject whose next steps they are, by the name the machine's binding hands it — a waiting stage's: the stage it waits on |
 
 ## Layout
 
@@ -551,6 +714,7 @@ One action a state allows: an operation with its request, a shell line, or nothi
 
 | key | type | default | meaning |
 |---|---|---|---|
+| `sections` | list of text | required | the sections a person finds the parts in, in their order, from what is shared to what is computed: Definitions, Component, Physics, Mesh, Study, Results (see projects.md § 4) |
 | `kinds` | table of text → [PartKind](#partkind) | required | each part kind by the name addresses give it |
 | `folders` | table of text → [Folder](#folder) | empty | each folder that holds no part, by its name at the project's top |
 | `objects` | table of text → [ObjectType](#objecttype) | empty | each type of object inside a part, by the name a graph's node gives it |
@@ -567,11 +731,14 @@ One part kind: where its parts live, how each is held, what it loads with, who w
 | `shape` | `file` \| `folder` \| `single` | required | `file`: each part is `&lt;folder&gt;/&lt;name&gt;.toml`; `folder`: each part is a folder `&lt;folder&gt;/&lt;name&gt;/` holding its own file; `single`: the one unnamed part, the project file, `project.toml`: one of `file`, `folder`, `single` |
 | `file` | text, optional | — | a `folder` part's own file: `component.toml` |
 | `files` | list of text | empty | the other files every part of a `folder` kind holds by a fixed name, from its folder: `geometry.py` |
+| `optional` | list of text | empty | the other files a part of its kind may hold by a fixed name, read where they are there: from a `folder` part's folder, or, for the project file, from the project's top — `definitions.py` |
 | `schema` | text | required | the schema it loads with, by the key its owning package registers it with |
 | `rank` | integer | required | its place in the chain's order: what a part is made from comes before it |
+| `section` | text | required | where a person finds it: one of the layout's `sections`, which gives their order |
 | `library` | boolean | `false` | whether the projects root holds a global library of its kind, in a folder of its folder's name; only its names may open with `GLOBAL/` |
 | `writer` | `person` \| `femkit` \| `run` | `"person"` | who writes its files: one of `person`, `femkit`, `run` |
 | `moves` | `yes` \| `regenerated` \| `local` | `"yes"` | whether it moves with the project, is regenerated, or stays local: one of `yes`, `regenerated`, `local` |
+| `was` | `file`, optional | — | for a `folder` kind whose parts were once each one file, `&lt;folder&gt;/&lt;name&gt;.toml`: `file` — a file of that form is told that the kind is now a folder, never left a stray: one of `file` (see projects.md § 4) |
 | `manual` | text, optional | — | for a kind the person writes, the chapter of the user manual that explains it, by its file's name in `docs/manual/`, `6-materials.md`: the help of its keys ends with it (core.md § 2); none: its keys' help names none |
 
 ## Folder
@@ -582,18 +749,18 @@ A folder that holds no part (projects.md § 4): what femkit or a run writes — 
 |---|---|---|---|
 | `writer` | `person` \| `femkit` \| `run` | required | who writes it: femkit, a run, or the person: one of `person`, `femkit`, `run` |
 | `moves` | `yes` \| `regenerated` \| `local` | required | whether it moves with the project, is regenerated, or stays local: one of `yes`, `regenerated`, `local` |
+| `holds` | table of text → text | empty | what the door forms inside it, each by what it is — a stage's calculation folder, `stage`; a launch folder, `launch`; a case's file, `case`; a study's kept definitions, `definitions` — with its path from this folder, each step it is formed from a placeholder of its own: `{study}/{kind}/{id}`. Placeholders: `{id}`, `{kind}`, `{name}`, `{study}` |
 
 ## ObjectType
 
-A type of object inside a part (projects.md § 4): a condition of a physics, a promised group of a component, an axis of a study — where it lives, whether it is named, what holds its type, and its place in the chain's order.
+A type of object inside a part (projects.md § 4): a condition of a physics, a promised group of a component, an axis of a study — where it lives, whether it is named and what holds its type; its place in both orders is its part kind's.
 
 | key | type | default | meaning |
 |---|---|---|---|
 | `part` | text | required | the part kind whose file holds it |
-| `table` | text | required | the table it lives in, as the part's file writes its keys: `conditions`, `inputs.parameters` |
+| `table` | text | required | the table it lives in, as the part's file writes its keys: `conditions`, `inputs.definitions` |
 | `named` | boolean | required | whether it is a table of entries, each by its name; else the one object at `table` |
 | `typed` | text, optional | — | the key of an entry holding its type: a condition's `kind` |
-| `rank` | integer | required | its place in the chain's order: what it is made from comes before it |
 
 ## Page
 
@@ -601,11 +768,30 @@ A type of object inside a part (projects.md § 4): a condition of a physics, a p
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `schema` | `1` | required | this file's shape; raised when it changes: one of `1` |
+| `schema` | `5` | required | this file's shape; raised when it changes: one of `5` |
 | `app` | [App](#app) | required |  |
 | `workspaces` | list of [Workspace](#workspace) | required |  |
 | `context` | list of [ContextPart](#contextpart) | required |  |
-| `kinds` | table of text → text | required | each part kind's and object type's icon, as the project layout names them (web.md § 8.2) |
+| `groups` | table of text → [OperationGroup](#operationgroup) | required | each of the registry's groups of operations by its name — `""` femkit's own — with its title, icon and accent, in the order listed, the person's order of work (web.md § 8.1) |
+| `kinds` | table of `part` \| `object` \| `stage` → table of text → text | required | each kind's icon, keyed by a node's family and its kind: each part kind and object type as the project layout names them, each stage kind as `stages.toml` names it (web.md §§ 7.6, 8.2) |
+| `shows` | table of `up to date` \| `needs update` \| `needs attention` \| `waiting` \| `running` \| `failed` → text | required | each block word of the vocabulary's closed list, with the design token a block showing it is colored by: a colour of the theme (web.md §§ 7.6, 10.2) |
+| `severities` | table of `error` \| `warning` \| `info` → [SeverityLook](#severitylook) | required | each severity a finding may have, with its word, its icon and its colour (web.md § 7.4) |
+| `outcomes` | table of `done` \| `failed` \| `killed` or `running` → text | required | each word a step of a run may show — how it ended, or running — with the design token it is marked with: a colour of the theme (web.md § 9.2, `Progress`) |
+| `sections` | table of text → [Category](#category) | required | each section of the project layout, by its name, with the colour, shape and icon a card of a part in it takes (web.md §§ 7.6, 10.2) |
+| `stages` | table of text → [Category](#category) | required | each stage kind, as `stages.toml` names it, with the colour, shape and icon a card of a stage of it takes (web.md §§ 7.6, 10.2) |
+| `canvas` | [Canvas](#canvas) | required | the part kind the canvas lists and does not draw, and the object types it draws as cards of their own (web.md §§ 2.2, 8.1) |
+| `wires` | table of text → text | required | what a wire carries — a part kind or an object type as the project layout names it, or an artifact type — with the colour the wire and the slots it plugs into are drawn in: a wire takes the longest of these its type begins with, so every place of a group takes `group`'s (web.md § 7.6) |
+| `tags` | list of text | required | the colours a box's tag takes on the blocks it holds — a case, the stages several cases share, a grouping folder — one for each box in the graph's order, in turn: colours of the theme (web.md § 7.6) |
+| `themes` | list of [ThemeChoice](#themechoice) | required | the theme switch's choices, in the order offered: the system's first, the default, then each theme of theme.toml (web.md § 10.2) |
+| `gate` | [Gate](#gate) | required |  |
+| `addresses` | [Addresses](#addresses) | required |  |
+| `documents` | [Viewer](#viewer) | required |  |
+| `action` | [ActionMachine](#actionmachine) | required |  |
+| `editor` | [Editor](#editor) | required |  |
+| `notices` | integer | required | how many notices the stack shows at once: the newest (web.md § 9.2) |
+| `controls` | table of `documents` \| `theme` \| `close` \| `cancel` \| `continue` \| `run` \| `plan` \| `apply` \| `discard` \| `find` \| `fit` \| `zoom-in` \| `zoom-out` \| `reset-layout` \| `open` \| `fold` \| `details` \| `panels` \| `copy` \| `select` \| `add` \| `remove` \| `edit` \| `reload` \| `duplicate` \| `remove-copy` \| `legend` \| `redraw` → [Words](#words) | required | each of the page's own controls, with its words, icon and help (web.md § 11) |
+| `says` | table of `loading` \| `nothing-to-do` \| `refused` \| `defect` \| `applied` \| `no-request` \| `running` \| `none-yet` \| `files` \| `facts` \| `issues` \| `ports` \| `made-from` \| `actions` \| `optional` \| `preview` \| `steps` \| `outcome` \| `each` \| `line` \| `section` \| `none` \| `edited` \| `wire-checked` \| `wire-unchecked` \| `copies` \| `cannot-draw` → text | required | each of the page's own sentences: what it says of what is no document's, a template's placeholders in the core's grammar (web.md §§ 9.1, 11) |
+| `sentences` | [Sentences](#sentences) | required | what the canvas says of a wire and of a port: each a list of templates, the first a wire or port fills used (web.md §§ 7.6, 9.2) |
 | `shortcuts` | list of [Shortcut](#shortcut) | empty |  |
 
 ## App
@@ -626,21 +812,182 @@ A type of object inside a part (projects.md § 4): a condition of a physics, a p
 | `tagline` | text | required | what it is, in one sentence |
 | `help` | text | required | how it is used |
 | `document` | text, optional | — | the read-only operation whose answer it shows; none: the registry itself |
-| `context` | list of `project` \| `study` \| `environment` | empty | the context it needs |
+| `context` | list of `project` \| `study` \| `target` | empty | the context it needs |
+| `panels` | list of [Panel](#panel) | empty | what it shows beside its document, in order |
 | `empty` | text | required | what it says before there is anything to show |
+| `first` | text, optional | — | the operation it offers as the first step to take before there is anything to show, beside its context's choices; none: its choices alone (see web.md § 10.2) |
+| `landing` | ForwardRef('Landing | None') | — | what it shows under the hero before its context is chosen; none: what it says first alone |
+| `families` | list of `part` \| `object` \| `stage` | empty | the families of node its document's graph draws — where an address of each is opened; none for a workspace of no graph (see web.md § 2.4) |
+
+## Panel
+
+What a workspace shows beside its document (web.md § 8.1).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `key` | text | required | how the page names it |
+| `title` | text | required | what a person reads on it |
+| `help` | text | required | what it shows, in one sentence |
+| `document` | text, optional | — | the read-only operation whose answer it shows; none: the progress of the running operation, the page's own |
+| `context` | list of `project` \| `study` \| `target` | empty | the context its operation needs |
+| `shows` | `report` \| `issues` \| `parts` | `"report"` | what of its document it shows: its report, or its findings alone — where what else it holds the workspace's document already shows, as the graph each part's state; or, with no document, the parts its workspace's own graph holds, listed: the master list (web.md § 2.2): one of `report`, `issues`, `parts` |
 
 ## ContextPart
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `key` | `project` \| `study` \| `environment` | required | one of `project`, `study`, `environment` |
+| `key` | `project` \| `study` \| `target` | required | one of `project`, `study`, `target` |
 | `label` | text | required | what a person reads beside it |
 | `help` | text | required | what it is |
+| `unset` | text, optional | — | what it is while none is chosen, where the request that takes it has its own default — the machine a study's stages are for, this one; none: it is chosen before what needs it is shown |
 | `choices` | text | required | the read-only operation that lists its choices |
 | `rows` | text | required | the field of that operation's result holding the choices |
 | `value_key` | text, optional | — | each row's key holding the choice; none: the row is it |
 | `label_key` | text, optional | — | each row's key a person reads; none: the value |
-| `depends` | list of `project` \| `study` \| `environment` | empty | what must be chosen first |
+| `depends` | list of `project` \| `study` \| `target` | empty | what must be chosen first |
+
+## OperationGroup
+
+One of the registry's groups of operations, as the page bands it apart (web.md §§ 8.1, 10.2).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `title` | text | required | what a person reads on it |
+| `icon` | text | required | its icon, by the icon set's name |
+| `accent` | text | required | the design token of its accent, which sets it apart wherever it is listed: a colour of the theme (see web.md § 10.1) |
+
+## SeverityLook
+
+How a finding of one severity is marked (core.md § 10; web.md § 7.4).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `label` | text | required | what a person reads for it |
+| `icon` | text | required | its icon, by the icon set's name: a severity is told by its icon and its word, never by a colour alone |
+| `color` | text | required | the design token it is marked with: a colour of the theme (see web.md § 10.1) |
+
+## Category
+
+How the cards of one group are told apart at a glance (web.md § 7.6): a part's section, a stage's kind — its colour, its shape and its icon, the legend showing each.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `colour` | text | required | the colour its cards wear on their titles and edges: a colour of the theme (see web.md § 10.1) |
+| `shape` | `rounded` \| `square` \| `round` \| `double` \| `tab` \| `notch` | required | the shape its cards take: one of `rounded`, `square`, `round`, `double`, `tab`, `notch` |
+| `icon` | text | required | the icon its cards show, by the icon set's name |
+
+## Canvas
+
+What the canvas reads of the project layout (web.md §§ 2.2, 8.1): the part kind that is the project's master list — listed beside the canvas, never drawn, nor any wire to or from it — and the object types drawn each as a card of its own, beside what uses it.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `listed` | text | required | the part kind listed and not drawn: the project's, whose file lists the parts |
+| `cards` | list of text | empty | the object types each drawn as a small card of its own, its wires leaving its one output slot |
+
+## ThemeChoice
+
+One choice of the theme switch (web.md § 10.2): a theme of `theme.toml`, or the system's.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `theme` | text, optional | — | the theme it chooses, by its name in theme.toml; none: the system's, the default |
+| `title` | text | required | what a person reads on it |
+| `icon` | text | required | its icon, by the icon set's name |
+
+## Gate
+
+What the page shows before any token (web.md § 5): what it asks for and how, and what it says when the server does not answer or answers what it cannot read — carried by the bundle itself, generated beside the declaration (`bundle`), since no route answers before the token.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `label` | text | required | what a person reads beside the token's field |
+| `icon` | text | required | the icon of its press, by the icon set's name |
+| `help` | text | required | what the press does, in one sentence |
+| `says` | table of `token` \| `unreachable` \| `unreadable` → text | required | what it says of the token, a server not answering, an answer it cannot read |
+
+## Addresses
+
+Where the server serves the page (web.md § 1): its bundle's files, and the document viewer.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `bundle` | text | required | the path the bundle's files are served under, ending in `/`: the mark among them |
+| `documents` | text | required | the path the document viewer opens at |
+
+## Viewer
+
+The document viewer (web.md § 2.3).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `first` | text | required | the document it opens on, by its path from the repository's root |
+
+## ActionMachine
+
+The action machine (web.md § 9.1; framework.md § 3): one closed table every action runs by, in every view — its states, the one it starts in, and each move — run generically by the page.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `start` | text | required | the state an action starts in, before it is pressed |
+| `states` | list of [ActionState](#actionstate) | required |  |
+| `transitions` | list of [Transition](#transition) | required |  |
+
+## ActionState
+
+One state of the action machine (web.md § 9.1): what it shows, and the controls it offers.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `key` | text | required | how the machine names it |
+| `shows` | `nothing` \| `fills` \| `busy` \| `plan` \| `progress` \| `outcome` \| `refusal` \| `defect` \| `lost` | required | what the place of the action shows in it: one of `nothing`, `fills`, `busy`, `plan`, `progress`, `outcome`, `refusal`, `defect`, `lost` |
+| `offers` | list of `documents` \| `theme` \| `close` \| `cancel` \| `continue` \| `run` \| `plan` \| `apply` \| `discard` \| `find` \| `fit` \| `zoom-in` \| `zoom-out` \| `reset-layout` \| `open` \| `fold` \| `details` \| `panels` \| `copy` \| `select` \| `add` \| `remove` \| `edit` \| `reload` \| `duplicate` \| `remove-copy` \| `legend` \| `redraw` | empty | the page's own controls it offers, in order |
+
+## Transition
+
+One move of the action machine: from a state, told an event, to a state.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `from` | text | required | the state it leaves |
+| `on` | `fills` \| `reads` \| `changes` \| `planned` \| `asks` \| `empty` \| `apply` \| `started` \| `done` \| `failed` \| `refused` \| `defect` \| `lost` \| `discard` | required | what it is told: one of `fills`, `reads`, `changes`, `planned`, `asks`, `empty`, `apply`, `started`, `done`, `failed`, `refused`, `defect`, `lost`, `discard` |
+| `to` | text | required | the state it reaches |
+
+## Editor
+
+The page's text editor (web.md § 9.2; ADR 0024): the languages it reads a file in.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `languages` | list of [EditorLanguage](#editorlanguage) | required | each language, once; a file named by none is plain text |
+
+## EditorLanguage
+
+One language of the text editor's, with the files it reads in it (web.md § 9.2).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `language` | `toml` \| `python` | required | the language: its highlighting, its comments, its folding: one of `toml`, `python` |
+| `files` | list of text | required | the names of the files read in it, each a pattern — `*` any run of characters, `?` one — matched against a file's name: a file is read by its declared language, never by code naming its extension |
+
+## Words
+
+What a person reads on one of the page's own controls, and its icon.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `label` | text | required | what a person reads on it |
+| `icon` | text, optional | — | its icon, by the icon set's name; none: its words alone |
+| `help` | text | required | what it does, in one sentence |
+
+## Sentences
+
+What the canvas says of what it draws (web.md § 9.2): for each wire and each port of an opened block, the first template of its list whose every placeholder the wire or the port holds a value for, filled — so a sentence is always the declaration's, and the last template of each list names only what every one holds.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `wire` | list of text | required | the sentences a wire is said in, the first it fills used: each placeholder a field of the wire (`Wire`), its ends said by what a person calls them — `{source}` the node named or giving, `{target}` the part that names, or the node that takes (see web.md § 7.6) |
+| `port` | list of text | required | the words a port of an opened block is said in, the first it fills used: each placeholder a field of the port (`GraphPort`), the nodes it names said by what a person calls them (see web.md § 7.6) |
 
 ## Shortcut
 
@@ -649,3 +996,85 @@ A type of object inside a part (projects.md § 4): a condition of a physics, a p
 | `key` | text | required | the key, `Mod` the platform's command key |
 | `command` | `cancel` | required | the page's command it runs: one of `cancel` |
 | `help` | text | required | what it does |
+
+## Theme
+
+`femkit/data/web/theme.toml`: every design value of the page, under its namespace (web.md § 10.1).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `schema` | `2` | required | this file's shape; raised when it changes: one of `2` |
+| `themes` | table of text → [ThemeKind](#themekind) | required | the themes, by name, the first the default: each colour is given for each |
+| `color` | [Colors](#colors) | required |  |
+| `space` | table of text → integer | required | each space, in px, on the 4px grid |
+| `size` | table of text → integer | required | each size — a line's width, a radius, an icon, a control — in px |
+| `type` | [Type](#type) | required |  |
+| `motion` | [Motion](#motion) | required |  |
+| `layer` | table of text → [Layer](#layer) | required | each plane of the page, by name |
+| `layout` | table of text → integer | required | each measure of the page's arrangement — a panel's width, the least room a part of it needs, the diagram's spacing — in px |
+
+## ThemeKind
+
+One theme of the page (web.md § 10.2).
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `scheme` | `light` \| `dark` | required | what the browser's own controls and the system's preference call it (CSS `color-scheme`): the system asking for it draws it, while no theme is chosen: one of `light`, `dark` |
+
+## Colors
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `scale` | table of text → text | required | the palette's colours, by name — a neutral scale and the hues — each `#rrggbb`: what the theme's colours are chosen from |
+| `theme` | table of text → table of text → text | required | each colour the page names, by its token's name, as each theme gives it: a colour of the scale by its name, or `#rrggbb[aa]` |
+| `opacity` | table of text → number | empty | each opacity, from 0 to 1: how much of what lies under a drawing shows through it |
+| `contrast` | [Contrast](#contrast) | required | each colour a person reads or sees, with its surfaces, held to WCAG AA |
+
+## Contrast
+
+Each colour a person must read or see, with the surfaces it is drawn on: every pair meets WCAG 2.2 AA in both themes (web.md § 10.2), refused where it does not.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `text` | table of text → list of text | empty | each text colour with the surfaces it is read on: 4.5:1 (WCAG 2.2, 1.4.3) |
+| `graphic` | table of text → list of text | empty | each colour of a graphic — a block's word, a group's accent — with the surfaces it is seen on: 3:1 (WCAG 2.2, 1.4.11) |
+
+## Type
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `family` | text | required | the page's one font family, as a CSS font stack the system holds: the page loads no font from the network |
+| `mono` | text | required | the font stack of text a person copies as it is: code, a file's lines |
+| `size` | table of text → integer | required | each type size, in px |
+| `weight` | table of text → integer | required | each weight, as CSS writes it |
+| `leading` | table of text → number | required | each line height, a multiple of the size |
+| `tracking` | table of text → number | required | each letter spacing, in em |
+
+## Motion
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `duration` | table of text → integer | required | each transition's length, in ms: none under reduced motion |
+| `easing` | table of text → text | required | each easing, as CSS writes it |
+| `timing` | table of text → integer | required | each time the page waits that is no motion, in ms — how long a notice stays, how often a running step's lines are read — kept under reduced motion |
+
+## Layer
+
+One plane of the page — the ground, a raised surface, an overlay, a dialog — its order and its elevation.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `z` | integer | required | its z-order: a plane above another is drawn over it |
+| `shadow` | list of [ShadowPart](#shadowpart) | empty | its soft elevation, layer by layer; none: flat |
+
+## ShadowPart
+
+One layer of a shadow: its offset, blur and spread in px, and its colour.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `x` | integer | `0` |  |
+| `y` | integer | required |  |
+| `blur` | integer | required |  |
+| `spread` | integer | `0` |  |
+| `color` | text | required | a colour of the theme, by its token's name |

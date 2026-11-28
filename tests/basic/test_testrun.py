@@ -60,7 +60,7 @@ def done(status=0, run="r1"):
     ([start(), COLLECTED, rec("a")], "abandoned"),                     # the writer is gone
 ], ids=["no-data", "no-start", "no-collected", "interleaved", "partial", "unexplained", "done", "abandoned"])
 def test_each_state_is_observed_from_the_log(tmp_path, records, state):
-    """Fails if any row of the batch state table reads wrong — above all, a count printed
+    """Fails if any row of the tier run's state table reads wrong — above all, a count printed
     as a result from a log that is not one complete run (testing.md § 4.4)."""
     path = tmp_path / "b.jsonl"
     if records:
@@ -103,13 +103,13 @@ def test_a_done_of_other_or_unknown_code_is_not_todays_result(tmp_path):
     assert testrun.code_verdict(s, "old") is None
 
 
-def test_a_second_run_of_a_batch_is_refused(tmp_path):
-    """Fails if two runs of one batch can hold its lock together (testing.md § 4.3)."""
-    held = testrun.acquire_batch_lock("basic", str(tmp_path))
+def test_a_second_run_of_a_tier_run_is_refused(tmp_path):
+    """Fails if two runs of one tier run can hold its lock together (testing.md § 4.3)."""
+    held = testrun.acquire_lock("basic", str(tmp_path))
     assert held is not None
-    assert testrun.acquire_batch_lock("basic", str(tmp_path)) is None
+    assert testrun.acquire_lock("basic", str(tmp_path)) is None
     held.close()
-    assert testrun.acquire_batch_lock("basic", str(tmp_path)) is not None
+    assert testrun.acquire_lock("basic", str(tmp_path)) is not None
 
 
 # --- live runs through the plugin -------------------------------------------------
@@ -215,3 +215,14 @@ def test_a_canary_sees_a_write_at_the_depth_femkit_writes(tmp_path):
         before = measured_at_the_start(fingerprint)
         log.unlink()
         assert fingerprint(tmp_path) != before, "a file removed"
+
+
+def test_the_kit_refuses_outside_a_test(monkeypatch):
+    """Fails if the test kit runs an operation from a script of one's own, outside a test's
+    isolation, where femkit's directories are the person's own (testing.md § 2.1)."""
+    from tests import kit
+    monkeypatch.delenv("PYTEST_CURRENT_TEST")
+    with pytest.raises(RuntimeError, match="only inside a test"):
+        kit.ctx()
+    with pytest.raises(RuntimeError, match="only inside a test"):
+        kit.apply("config.set", key="paths.projects", value='"/nowhere"')

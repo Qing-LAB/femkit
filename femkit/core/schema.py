@@ -18,9 +18,9 @@ import typing
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, NamedTuple, TypeVar
+from typing import TYPE_CHECKING, Annotated, Any, Callable, ClassVar, Generic, Iterable, Iterator, Literal, NamedTuple, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, RootModel, Strict, ValidationError
 from pydantic.fields import FieldInfo
 from pydantic_core import InitErrorDetails, PydanticCustomError
 
@@ -38,23 +38,34 @@ SHA256 = re.compile(r"[0-9a-f]{64}")   # a SHA-256 digest, as its hex text
 
 class Model(BaseModel):
     """Unknown keys are refused; a loaded value never changes. What it writes holds every field,
-    so its serialization schema marks every field present, defaults too."""
+    so its serialization schema marks every field present, defaults too. A key a model no longer
+    takes may be declared in `WITHDRAWN`, with what a file writing it is told (core.md § 2)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, json_schema_serialization_defaults_required=True)
+
+    #: Each key the model no longer takes, by its name, with what a file writing it is told — said
+    #: in place of the keys the table may still take (`problems`).
+    WITHDRAWN: ClassVar[dict[str, str]] = {}
 
 
 class Problem(tuple):
     """One problem of a file that does not load (core.md § 2): the pair every reader unpacks — its
     key path, as the file writes it ("" for the file as a whole), and its reason, one plain
     sentence — and what would be right there: ``right``, the one value, or ``choices``, the values
-    or keys that would do, closest first, each as the file would write it."""
+    or keys that would do, closest first, each as the file would write it; and ``line``, for a text
+    that is not TOML, where it stops reading — the line tomllib names, a key set twice's second —
+    none where none is said, a problem at a key's line then read from the text by its key (core.md
+    § 10); a reason names no line `line` holds, which a finding and a message each say once
+    (`where`)."""
 
     right: str | None
     choices: tuple[str, ...]
+    line: int | None
 
-    def __new__(cls, path: str, reason: str, *, right: str | None = None, choices: Iterable[str] = ()) -> "Problem":
+    def __new__(cls, path: str, reason: str, *, right: str | None = None, choices: Iterable[str] = (),
+                line: int | None = None) -> "Problem":
         made = super().__new__(cls, (path, reason))
-        made.right, made.choices = right, tuple(choices)
+        made.right, made.choices, made.line = right, tuple(choices), line
         return made
 
     @property
@@ -64,6 +75,13 @@ class Problem(tuple):
     @property
     def reason(self) -> str:
         return self[1]
+
+    @property
+    def where(self) -> str:
+        """Where a message places it: its key path; for a problem at no key, its line, `line 23`,
+        where it has one — said there once, never in its reason too; else nothing, the file as a
+        whole."""
+        return self.path or (f"line {self.line}" if self.line is not None else "")
 
 
 class DefinitionError(Refusal):
@@ -75,12 +93,12 @@ class DefinitionError(Refusal):
         super().__init__("\n".join(self.lines()), next, code="definition-invalid", subject=self.file)
 
     def lines(self) -> list[str]:
-        """Each problem on its own line, with its file and key path."""
-        return [f"{self.file}: {path or '<file>'}: {reason}" for path, reason in self.problems]
+        """Each problem on its own line, with its file and where it lies (`Problem.where`)."""
+        return [f"{self.file}: {p.where or '<file>'}: {p.reason}" for p in self.problems]
 
     def summary(self) -> str:
-        """Every problem on one line, each at its key path: for a row or a listing that names the file apart."""
-        return "; ".join(f"{path or '<file>'}: {reason}" for path, reason in self.problems)
+        """Every problem on one line, each where it lies: for a row or a listing that names the file apart."""
+        return "; ".join(f"{p.where or '<file>'}: {p.reason}" for p in self.problems)
 
 
 def refuse(model: str, problems: list[tuple[tuple, str]]) -> None:
@@ -197,7 +215,32 @@ WANTED = {
     "set_type": "a list, in `[ ]`", "dict_type": "a table", "model_type": "a table",
     "model_attributes_type": "a table", "string_pattern_mismatch": "written in the form its help gives",
 }
+#: What a value of a type pydantic checks by `isinstance` should have been: an exact number's.
+INSTANCES = {"Decimal": "a number"}
 NEAR = 0.6   # how alike a misspelling and what it meant are, at least: difflib's own default
+
+
+def nearest(name: str, among: Iterable[str], forms: Callable[[str], Iterable[str]] = lambda c: (c,)) -> str | None:
+    """The one of ``among`` closest to ``name`` — what a misspelling most likely meant — or None
+    where none is close: each compared by each of its ``forms`` (itself, unless given), by the
+    standard library's measure and at least as alike as `NEAR` asks; the first of equals, so
+    ``among`` in the order a person looks wins a tie. The one reading of "did you mean" (core.md
+    § 2): a schema's unknown key, a unit, a name a part cites."""
+    best, score = None, NEAR
+    for candidate in among:
+        alike = max((_alike(name, form) for form in forms(candidate)), default=0.0)
+        if alike > score or (best is None and alike >= score):
+            best, score = candidate, alike
+    return best
+
+
+def meant(name: str, among: Iterable[str], forms: Callable[[str], Iterable[str]] = lambda c: (c,),
+          shown: Callable[[str], str] = lambda n: n) -> str:
+    """`; did you mean `x`?` for the one of ``among`` closest to ``name`` (`nearest`), as ``shown``
+    writes it — `defs.x` for a definition a function reads — the end of a sentence a finding says;
+    nothing where none is close."""
+    near = nearest(name, among, forms)
+    return f"; did you mean `{shown(near)}`?" if near is not None else ""
 
 
 @dataclass(frozen=True)
@@ -217,8 +260,9 @@ class _Said:
 def problems(model: type[BaseModel], data: Any, errors: Iterable[dict]) -> list[Problem]:
     """pydantic's errors in validating ``data`` by ``model`` as the problems a person reads (core.md
     § 2; models.md § 13), each at the key path its file writes: an unknown key, at it, with the
-    keys its table may still take, closest first — `szie` is no key here; did you mean `size`?; a
-    value outside a closed list, with those values, or the one that is right; a value of the wrong
+    keys its table may still take, closest first — `szie` is no key here; did you mean `size`? — or,
+    for a key its model no longer takes, what its `WITHDRAWN` tells a file writing it; a value
+    outside a closed list, with those values, or the one that is right; a value of the wrong
     kind, with what it should be; a missing key, at its table — said once, at the unknown key, when
     one beside it most nearly spells it. The problems at one key are joined into one, as the
     members of a union each give theirs."""
@@ -236,12 +280,16 @@ def _said(model: type[BaseModel], data: Any, err: dict) -> _Said:
     kind, name = err["type"], keys[-1] if keys else None
     if kind == "extra_forbidden" and name is not None:
         table = keys[:-1]
+        withdrawn = [getattr(cls, "WITHDRAWN", {}) for m in _walk(model, err["loc"][:-1])[1] or () for cls in classes(m)]
+        gone = next((w[str(name)] for w in withdrawn if str(name) in w), None)
+        if gone is not None:                              # a key the model no longer takes, said in its words
+            return _Said(keys, f"`{name}` is no key here: {gone}")
         written = _at(data, table)
         free = [k for k in _keys_of(_walk(model, err["loc"][:-1])[1])
                 if not isinstance(written, dict) or k not in written]
         ranked = _closest(str(name), free)
-        near = ranked[0] if ranked and _alike(str(name), ranked[0]) >= NEAR else None
-        return _Said(keys, f"`{name}` is no key here" + (f"; did you mean `{near}`?" if near else ""),
+        near = nearest(str(name), ranked)
+        return _Said(keys, f"`{name}` is no key here" + meant(str(name), ranked),
                      values=tuple(key_path((k,)) for k in ranked), meant=(*table, near) if near else None)
     if kind == "missing" and name is not None:
         return _Said(keys[:-1], missing=keys)
@@ -253,6 +301,8 @@ def _said(model: type[BaseModel], data: Any, err: dict) -> _Said:
                      given=err["input"], values=tuple(values))         # each value as its help names it
     if kind in WANTED:
         return _Said(keys, wanted=WANTED[kind], given=err["input"])
+    if kind == "is_instance_of" and (err.get("ctx") or {}).get("class") in INSTANCES:
+        return _Said(keys, wanted=INSTANCES[err["ctx"]["class"]], given=err["input"])
     return _Said(keys, err["msg"].removeprefix("Value error, "))
 
 
@@ -271,8 +321,7 @@ def _joined(path: tuple, said: list[_Said]) -> Problem:
         values = [v for s in wanted for v in s.values]
         kinds = list(dict.fromkeys(s.wanted for s in wanted))
         ranked = _closest(given, values) if isinstance(given, str) else values
-        near = next((v for v in ranked if isinstance(v, str) and _alike(given, v) >= NEAR), None) \
-            if isinstance(given, str) else None
+        near = nearest(given, [v for v in ranked if isinstance(v, str)]) if isinstance(given, str) else None
         reasons.insert(0, f"{_named(path)} is {_shown(given)}; " + (f"did you mean {_shown(near)}?" if near is not None
                                                                     else f"it should be {_either(kinds)}"))
         if len(values) == 1 and len(kinds) == 1:
@@ -323,24 +372,28 @@ def _closest(written: str, candidates: Iterable[Any]) -> list[Any]:
 def _shown(value: Any) -> str:
     """A value as the file writes it, on one line, cut short when long."""
     try:
-        shown = str(value) if isinstance(value, Decimal) else persist.inline_text(value)
+        shown = persist.inline_text(value)
     except (TypeError, ValueError):
         shown = repr(value)
     return shown if len(shown) <= 60 else shown[:57] + "…"
 
 
-def load_text(text: str, model: type[M], file: Path | str, context: dict | None = None, *,
-              exact: bool = False) -> M:
-    """The one TOML reader (core.md § 2): ``text``, as the file ``file`` holds it, validated by
-    ``model`` with ``context`` — the outside facts its validators read. ``exact``: every TOML
-    float is read from its decimal text as a ``Decimal``, never a binary float — a model's
-    numbers enter a case ID exactly (core.md § 11). A text that is not TOML says why in plain
-    words, at its line (`not_toml`)."""
+def load_text(text: str, model: type[M], file: Path | str, context: dict | None = None) -> M:
+    """The one TOML reader (core.md § 2): ``text``, as the file ``file`` holds it, read
+    (`parse_text`) and validated by ``model`` with ``context`` — the outside facts its validators
+    read."""
+    return validate(model, parse_text(text, file), file, context)
+
+
+def parse_text(text: str, file: Path | str) -> dict[str, Any]:
+    """``text``, as the file ``file`` holds it, read as TOML before any model validates it — a
+    project file's table read alone (models.md § 2). Every TOML number is read from
+    the text written, exactly (`persist.exact_number`; core.md § 11): a model's numbers enter a case
+    ID exactly. A text that is not TOML says why in plain words, at its line (`not_toml`)."""
     try:
-        data = tomllib.loads(text, parse_float=Decimal) if exact else tomllib.loads(text)
+        return tomllib.loads(text, parse_float=persist.exact_number)
     except tomllib.TOMLDecodeError as exc:
         raise DefinitionError(file, [not_toml(text, exc)]) from None
-    return validate(model, data, file, context)
 
 
 #: Where tomllib says its error is: `<what> (at line L, column C)`, or at the end of the text.
@@ -377,29 +430,31 @@ def not_toml(text: str, exc: tomllib.TOMLDecodeError) -> Problem:
     """Why ``text`` is not TOML, in plain words and at its line (core.md § 2): a key or table set
     twice, at that key, with both its lines — "`side` is set twice (lines 23 and 27)"; each other
     error tomllib names as a sentence a person reads; tomllib's own words kept only where none
-    fits."""
+    fits. The line it stops at is the problem's `line`, said once: its reason names no line of its
+    own, but where tomllib stops at the end of the text, which no line holds."""
     found = _AT.fullmatch(str(exc))
     if found is None:
         return Problem("", f"this is not TOML ({exc})")
     what, line = found["what"], int(found["line"]) if found["line"] else None
-    where = f"line {line}" if line else "at the end of the file"
+    end = "" if line else "at the end of the file: "
     if twice := _TWICE.match(what):
         if twice["inline"] is not None:
-            return Problem("", f"{where}: `{twice['inline']}` is set twice in one table")
+            return Problem("", f"{end}`{twice['inline']}` is set twice in one table", line=line)
         written = [e for e in persist.key_comments(text) if not e.shown and (line is None or e.line <= line)]
         if written:
             last = written[-1]
             first = next((e for e in written if e.path == last.path and e.line < last.line), None)
-            lines = f"lines {first.line} and {last.line}" if first else where
+            lines = f" (lines {first.line} and {last.line})" if first else ""
             if last.header and (first is None or first.header):
-                return Problem(key_path(last.path), f"the table `[{key_path(last.path)}]` is written twice ({lines})")
-            return Problem(key_path(last.path), f"`{key_path(last.path[-1:])}` is set twice ({lines})")
-        return Problem("", f"{where}: a key or a table is set twice")
+                return Problem(key_path(last.path), f"the table `[{key_path(last.path)}]` is written twice{lines}",
+                               line=last.line)
+            return Problem(key_path(last.path), f"`{key_path(last.path[-1:])}` is set twice{lines}", line=last.line)
+        return Problem("", f"{end}a key or a table is set twice", line=line)
     plain = next((said for pattern, said in _PLAIN_TOML if pattern.match(what)), None)
-    return Problem("", f"{where}: {plain}" if plain else f"{where}: this is not TOML ({what})")
+    return Problem("", f"{end}{plain}" if plain else f"{end}this is not TOML ({what})", line=line)
 
 
-def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact: bool = False) -> M:
+def load_toml(path: Path, model: type[M], context: dict | None = None) -> M:
     """The file at ``path``, read by persist and then by ``load_text``; a file that is not
     there, or not UTF-8 text, does not load either (core.md § 2)."""
     try:
@@ -408,38 +463,91 @@ def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact:
         raise DefinitionError(path, [("", f"this is not text written in UTF-8: byte {exc.start + 1} is not")]) from None
     if text is None:
         raise DefinitionError(path, [("", "there is no such file")])
-    return load_text(text, model, path, context, exact=exact)
+    return load_text(text, model, path, context)
 
 
 # ---------------------------------------------------------------- placeholders
 #
-# One grammar everywhere (definitions.md § 4.3): `{name}` or `{name:argument}`.
-# Which names a field accepts is declared by that field, never guessed.
+# One grammar everywhere (core.md § 2.1): `{name}`, `{name:argument}`, and, alone in an argument
+# of an argument list, `{name?}`. Which names a field accepts is declared by that field, never
+# guessed.
 
-PLACEHOLDER = re.compile(r"\{([^{}:]*)(?::([^{}]*))?\}")
+_PLACEHOLDER = re.compile(r"\{([^{}:?]*)(\?)?(?::([^{}]*))?\}")
+
+
+@dataclass(frozen=True)
+class Placeholder:
+    """One placeholder as written: its name, whether it is optional, its argument; ``key`` is
+    what its value is found by."""
+
+    name: str
+    optional: bool
+    argument: str | None
+    span: tuple[int, int]
+
+    @property
+    def key(self) -> str:
+        return self.name if self.argument is None else f"{self.name}:{self.argument}"
+
+
+def parsed(text: str) -> list[Placeholder]:
+    """Every placeholder in ``text``, in order: the grammar's one reader."""
+    return [Placeholder(m.group(1), m.group(2) is not None, m.group(3), m.span()) for m in _PLACEHOLDER.finditer(text)]
 
 
 def placeholders(text: str) -> list[tuple[str, str | None]]:
-    return [(m.group(1), m.group(2)) for m in PLACEHOLDER.finditer(text)]
+    return [(p.name, p.argument) for p in parsed(text)]
+
+
+def _check(text: str, allowed: frozenset[str], optional_alone: bool) -> str:
+    found = parsed(text)
+    for p in found:
+        if p.name not in allowed:
+            names = ", ".join("{%s}" % n for n in sorted(allowed)) or "none"
+            raise ValueError(f"placeholder {{{p.name}}} is not allowed here (allowed: {names})")
+        if p.optional and not (optional_alone and p.argument is None and p.span == (0, len(text))):
+            raise ValueError(f"{text}: an optional placeholder, {{{p.name}?}}, stands alone in an argument of an "
+                             "argument list, or nowhere")
+    return text
 
 
 def check_placeholders(text: str, allowed: frozenset[str]) -> str:
-    """Return ``text`` when every placeholder in it is one ``allowed`` names."""
-    for name, _arg in placeholders(text):
-        if name not in allowed:
-            names = ", ".join("{%s}" % n for n in sorted(allowed)) or "none"
-            raise ValueError(f"placeholder {{{name}}} is not allowed here (allowed: {names})")
-    return text
+    """Return ``text`` when every placeholder in it is one ``allowed`` names, none optional."""
+    return _check(text, allowed, optional_alone=False)
+
+
+def check_arguments(arguments: list[str], allowed: frozenset[str]) -> list[str]:
+    """Return an argument list when every placeholder in it is one ``allowed`` names, an optional
+    one only alone in its argument (core.md § 2.1)."""
+    for argument in arguments:
+        _check(argument, allowed, optional_alone=True)
+    return arguments
 
 
 def render(text: str, values: dict[str, str]) -> str:
     """Substitute placeholders; ``values`` keys are `name` or `name:argument`."""
+    out, at = [], 0
+    for p in parsed(text):
+        out += [text[at:p.span[0]], values[p.key]]
+        at = p.span[1]
+    return "".join(out) + text[at:]
 
-    def one(m: re.Match) -> str:
-        key = m.group(1) if m.group(2) is None else f"{m.group(1)}:{m.group(2)}"
-        return values[key]
 
-    return PLACEHOLDER.sub(one, text)
+def render_arguments(arguments: list[str], values: dict[str, str | None]) -> list[str]:
+    """An argument list with its placeholders substituted (core.md § 2.1): an argument that is
+    one optional placeholder alone, `{name?}`, is left out when its value is None; any other
+    placeholder whose value is None is a defect where the values were made."""
+    out = []
+    for argument in arguments:
+        found = parsed(argument)
+        if len(found) == 1 and found[0].optional and values.get(found[0].key) is None:
+            continue
+        absent = [p.key for p in found if values.get(p.key, "") is None]
+        if absent:
+            raise ValueError(f"{argument}: no value for {', '.join('{%s}' % a for a in absent)}, which only "
+                             "an optional placeholder alone in its argument may lack")
+        out.append(render(argument, {k: v for k, v in values.items() if v is not None}))
+    return out
 
 
 # ---------------------------------------------------------------- annotations
@@ -517,14 +625,68 @@ def matching(pattern: re.Pattern[str] | str, **field: Any) -> Any:
 
 LENGTH = (("length", 1),)   # a length's dimension (core.md § 11)
 
+#: A number as a file writes it (core.md § 11): a whole number, or a decimal one read exactly from
+#: the text written (`persist.exact_number`) — never a binary float, a truth value or a text.
+Number = Annotated[int, Strict()] | Annotated[Decimal, Strict()]
+
+V = TypeVar("V")
+
+
+class Measure(Model, Generic[V]):
+    """A quantity in the one form a file writes it in (core.md § 11): its number — or, for a
+    point, a line or a range, its numbers — and the one unit they are in."""
+
+    value: V = Field(description="its number; for a point, a line or a range, its numbers, all in its unit")
+    unit: str = Field(description="the unit its number is in: a unit femkit reads, or a product of them",
+                      json_schema_extra={"quantity": "unit"})
+
+    @classmethod
+    def model_parametrized_name(cls, params: tuple[Any, ...]) -> str:
+        """`Measure` for one number; `MeasureList` for a point or a range, `MeasureListList` for a
+        line: a name a reference page heads it with."""
+        depth, held = 0, params[0]
+        while typing.get_origin(held) is list:
+            depth, held = depth + 1, typing.get_args(held)[0]
+        return cls.__name__ + "List" * depth
+
+
+#: What a field written as one quantity holds (core.md § 11): its `{value, unit}`; a plain number,
+#: where it has no unit; or a text — the name of a definition, where its kind may cite one, and a
+#: finding saying the table to write anywhere else.
+Measured = Measure[Number] | Number | str
+
+#: Each number of a range's `{value, unit}` as a file writes it (core.md
+#: § 11): a number in its unit, or a text — the name of a definition, its own value, where the
+#: field's kind may cite one, and a finding anywhere else.
+NumberOrName = Number | str
+
+
+def names_in(written: Any) -> list[str]:
+    """Each name a value written in the one quantity form gives in place of a number (core.md
+    § 11): itself, where it is a text; each text among a `{value, unit}`'s numbers. Whether a name
+    may stand there is the field's kind's (`QUANTITIES`)."""
+    if isinstance(written, str):
+        return [written]
+    if not isinstance(written, Measure):
+        return []
+    out: list[str] = []
+    walking = [written.value]
+    while walking:
+        now = walking.pop(0)
+        if isinstance(now, list):
+            walking[:0] = now
+        elif isinstance(now, str) and now not in out:
+            out.append(now)
+    return out
+
 
 class QuantityKind(NamedTuple):
-    """A `quantity` kind (core.md § 2): what its value is read as — `expression`, a quantity or
-    an expression of the project's parameters; `quantity`, a quantity alone, naming no
-    parameter; `unit`, a unit's text — its dimension, when fixed, and what a reader is told it
-    takes."""
+    """A `quantity` kind (core.md §§ 2, 11): what its value is read as — `quantity`, the one
+    quantity form; `unit`, a unit's text — whether a definition's name may stand for its value,
+    its dimension, when fixed, and what a reader is told it takes."""
 
-    reads: Literal["expression", "quantity", "unit"]
+    reads: Literal["quantity", "unit"]
+    cites: bool
     dimension: tuple[tuple[str, int], ...] | None
     sentence: str
 
@@ -532,10 +694,12 @@ class QuantityKind(NamedTuple):
 #: Each `quantity` kind — the one table the loaders, the cases, the forms' units and the
 #: reference pages read.
 QUANTITIES: dict[str, QuantityKind] = {
-    "any": QuantityKind("expression", None, "a quantity with its unit, or an expression of parameters"),
-    "length": QuantityKind("expression", LENGTH, "a length"),
-    "constant": QuantityKind("quantity", None, "a quantity with its unit where it has one, naming no parameter"),
-    "unit": QuantityKind("unit", None, "a unit"),
+    "any": QuantityKind("quantity", True, None, "a quantity, `{value, unit}` — a plain number where it has no unit — "
+                                                "or a definition's name"),
+    "length": QuantityKind("quantity", True, LENGTH, "a length, `{value, unit}`, or a definition's name"),
+    "constant": QuantityKind("quantity", False, None, "a quantity, `{value, unit}` — a plain number where it has no "
+                                                      "unit — naming no definition"),
+    "unit": QuantityKind("unit", False, None, "a unit"),
 }
 DIMENSIONS = {kind: k.dimension for kind, k in QUANTITIES.items() if k.dimension}
 
@@ -550,6 +714,23 @@ def as_reference(description: str, target: str | dict, *, extra: dict | None = N
     """A field naming objects of ``target``'s type — on a table, ``{"key": type, "value": type}`` —
     with any other annotation in ``extra`` and pydantic's other ``Field`` arguments."""
     return Field(description=description, json_schema_extra={"ref": target, **(extra or {})}, **field)
+
+
+#: The annotation of a field that names a folder or a file by its path, with what it names: a step
+#: for another machine gives it by its path from the project's folder (`path_fields`; workflow.md § 7).
+PATH = "path"
+
+
+def as_path(description: str, names: Literal["folder", "file"], *, extra: dict | None = None, **field: Any) -> Any:
+    """A field naming a folder or a file, ``names``, by its path — the `path` annotation — with any
+    other annotation in ``extra`` and pydantic's other ``Field`` arguments."""
+    return Field(description=description, json_schema_extra={PATH: names, **(extra or {})}, **field)
+
+
+def path_fields(model: type[BaseModel]) -> list[str]:
+    """The fields of ``model`` that name a folder or a file, as their `path` annotation declares —
+    never told from a value (workflow.md § 7)."""
+    return [name for name, f in model.model_fields.items() if field_extras(f).get(PATH)]
 
 
 def field_named(cls: type[BaseModel], key: str) -> tuple[str, FieldInfo] | None:
@@ -817,12 +998,183 @@ def _place(model: type[BaseModel], path: tuple[str, ...]) -> tuple[str, FieldInf
 
 def _models_within(annotation: Any, tables: bool = True) -> list[type[BaseModel]]:
     """The models a value of ``annotation`` is written as tables of: itself, a list's items and,
-    with ``tables``, a table's values."""
+    with ``tables``, a table's values — never a quantity's `{value, unit}`, which is one value,
+    written on its key's line (core.md § 11)."""
     if annotation is None:
         return []
-    return classes(annotation) or classes(items_of(annotation)) or (classes(values_of(annotation)) if tables else [])
+    found = classes(annotation) or classes(items_of(annotation)) or (classes(values_of(annotation)) if tables else [])
+    return [m for m in found if not issubclass(m, Measure)]
 
 
 def _tables_within(value: Any) -> bool:
     """Whether a value, as TOML reads it, holds a table: an inline one, or a list of them."""
     return isinstance(value, dict) and bool(value) or isinstance(value, list) and any(isinstance(v, dict) for v in value)
+
+
+# ---------------------------------------------------------------- the keys a file may hold
+#
+# A part's keys (web.md §§ 7.3, 8.3): every key its file may hold, at its path — each key its schema
+# fixes, in the tables it fixes and in each entry the text names in a table whose keys the person
+# chooses (`may_hold`), and each key a declaration beside the schema states (`DeclaredKey`) — each
+# with the fragment of the loader's own schema at that path (`fragment`). One builder of the
+# fragments, `view.Field.keys`, reads these; the help of a declared key is `help_text`'s, the one
+# builder of a help, so the help beside a key and a template's comment above it are one text.
+
+@dataclass(frozen=True)
+class DeclaredKey:
+    """A key a declaration beside a file's schema states (core.md § 2; web.md § 8.3) — a physics'
+    formulation and each condition's kind, among the families and the kinds the formulations declare,
+    and each parameter its kind lists; a step's kind; a material's property, as the property list
+    states it, and its model's parameters — at its path in the text: its sentence, the units it is
+    written in, the values it may take, whether it must be stated, and the manual's chapter its
+    help ends with. Its help is `help_text`'s: what a template's comment above it reads, and what
+    is shown beside it."""
+
+    path: tuple[str, ...]
+    sentence: str | None
+    units: tuple[str, ...] = ()
+    values: tuple[Any, ...] = ()
+    required: bool = False
+    manual: str | None = None
+
+    @property
+    def unit(self) -> str | None:
+        """Its unit as its help says it: its units joined by ` or `; none for a key of no unit."""
+        return " or ".join(self.units) or None
+
+    def help(self, manual: bool = True) -> str:
+        """Its help, by the one builder (`help_text`): its sentence, `, in` and its unit, `: one of`
+        its values — and, with ``manual``, the manual's chapter it ends with."""
+        return help_text(self.sentence, self.values, self.manual if manual else None, unit=self.unit)
+
+
+def declared_by(keys: Iterable[DeclaredKey]) -> Declared:
+    """The help of each key ``keys`` states, by its path, and None for every other: the `declared`
+    `help_findings` reads, and a file femkit writes for the person comments with (core.md § 2)."""
+    helps = {k.path: k.help() for k in keys}
+    return helps.get
+
+
+def written_keys(text: str | None) -> dict[tuple[str, ...], Any]:
+    """Every key path ``text`` writes or shows commented out — a table's header, a key, a key inside
+    an inline table — with the value it holds there as TOML reads it: a set key's, a shown one's as
+    shown, none for a header. What a declaration reads its entries from — a condition's kind, a
+    dataset's model, set or shown — and the entries a table of chosen keys holds (`may_hold`). None
+    for no text; a text that is not TOML gives what its lines show."""
+    found: dict[tuple[str, ...], Any] = {}
+    if text is None:
+        return found
+    for e in persist.key_comments(text):
+        found.setdefault(e.path, None if e.header else e.value)
+    try:
+        data = tomllib.loads(text, parse_float=persist.exact_number)
+    except tomllib.TOMLDecodeError:
+        return found
+
+    def walk(value: Any, at: tuple[str, ...]) -> None:
+        for key, inner in value.items():
+            found[(*at, key)] = inner
+            if isinstance(inner, dict):
+                walk(inner, (*at, key))
+
+    walk(data, ())
+    return found
+
+
+@dataclass(frozen=True)
+class SchemaKey:
+    """A key a file of a schema may hold (`may_hold`): its path, the model whose field it is, and
+    that field."""
+
+    path: tuple[str, ...]
+    model: type[BaseModel]
+    field: FieldInfo
+
+    @property
+    def leaf(self) -> bool:
+        """Whether it holds one value — a quantity's `{value, unit}` among them — not a table of keys."""
+        return not _models_within(self.field.annotation) and keys_of(self.field.annotation) is None
+
+
+def may_hold(model: type[BaseModel], written: Iterable[tuple[str, ...]]) -> list[SchemaKey]:
+    """Every key a file of ``model`` may hold that its schema names (web.md § 8.3), in the schema's
+    order: each key it fixes, in each table it fixes, and, in a table whose keys the person chooses
+    — a group's condition, a step, a material's dataset — those of each entry ``written``, the key
+    paths the text writes, names there. A quantity's `{value, unit}` is one value, never a table; a
+    value of several models — a dataset, a value, a table or a model — takes the keys of those its
+    written keys all belong to, each key once, from the first that names it, as a key's help is read
+    (`_place`); of every one, where none fits."""
+    written = set(written)
+    out: list[SchemaKey] = []
+
+    def under(at: tuple[str, ...]) -> list[str]:
+        return sorted({p[len(at)] for p in written if len(p) > len(at) and p[:len(at)] == at})
+
+    def walk(annotation: Any, at: tuple[str, ...]) -> None:
+        held = _models_within(annotation, tables=False)
+        if held:
+            keys = under(at)
+            fits = [m for m in held if all(field_named(m, k) for k in keys)] or held
+            seen: set[str] = set()
+            for m in fits:
+                for name, f in m.model_fields.items():
+                    key = f.alias or name
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    out.append(SchemaKey((*at, key), m, f))
+                    walk(f.annotation, (*at, key))
+        elif keys_of(annotation) is not None:
+            for chosen in under(at):
+                walk(values_of(annotation), (*at, chosen))
+
+    walk(model, ())
+    return out
+
+
+@functools.lru_cache(maxsize=None)
+def _json_schema(model: type[BaseModel]) -> dict:
+    """A model's JSON schema, as its loader states it: made once."""
+    return model.model_json_schema()
+
+
+def fragment(model: type[BaseModel], path: tuple[str, ...]) -> dict[str, Any]:
+    """The JSON schema fragment of what a file of ``model`` holds at ``path`` — a request's field, a
+    part's key — as the loader's own schema states it (web.md §§ 7.2, 7.3), whole: each definition
+    it names carried with it. A key under a table whose keys the person chooses is that table's
+    values'; one the schema leaves open — a parameter a declaration lists — what the open table
+    holds; the empty fragment where the schema says nothing there. The one builder of a fragment."""
+    schema = _json_schema(model)
+    defs = schema.get("$defs", {})
+    at: dict | None = schema
+    for key in path:
+        at = _step(at, key, defs)
+        if at is None:
+            return {}
+    return {**at, "$defs": defs} if defs and "$ref" in json.dumps(at) else dict(at)
+
+
+def narrowed(fragment: dict[str, Any], names: Iterable[str]) -> dict[str, Any]:
+    """``fragment`` holding ``names`` alone — its closed list, `enum`, on each alternative that is no
+    `null`, where it may be left out: what a field may take for one subject, narrower than its
+    declaration (the engines that can solve a study; web.md § 7.2). The one narrowing of a fragment."""
+    held = list(names)
+    alternatives = fragment.get("anyOf")
+    if alternatives and any(a.get("type") == "null" for a in alternatives):
+        return {**fragment, "anyOf": [a if a.get("type") == "null" else {**a, "enum": held} for a in alternatives]}
+    return {**fragment, "enum": held}
+
+
+def _step(at: dict, key: str, defs: dict) -> dict | None:
+    """What ``at``, a JSON schema, holds under ``key``: a property, else what one of its
+    alternatives holds there, else what an open table holds; None where it says nothing."""
+    while "$ref" in at:
+        at = defs[at["$ref"].rsplit("/", 1)[-1]]
+    if key in at.get("properties", {}):
+        return at["properties"][key]
+    for alternative in (*at.get("anyOf", ()), *at.get("oneOf", ()), *at.get("allOf", ())):
+        found = _step(alternative, key, defs)
+        if found is not None:
+            return found
+    extra = at.get("additionalProperties")
+    return extra if isinstance(extra, dict) else None

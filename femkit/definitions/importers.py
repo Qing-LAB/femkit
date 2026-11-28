@@ -178,10 +178,10 @@ def _written(at: tuple, w: Written, units: Units | None, dispersion: Dispersion 
     if units is None:
         return []
     try:
-        given = units.parse(w.unit)
+        given = units.unit(w.unit)
     except UnitError as exc:
         return [((*at, "unit"), str(exc))]
-    if dispersion is not None and given.dimension != units.parse(dispersion.variables[w.name].unit).dimension:
+    if dispersion is not None and given.dimension != units.unit(dispersion.variables[w.name].unit).dimension:
         return [((*at, "unit"), f"{w.unit!r} is no unit of the {w.name}")]
     return []
 
@@ -204,11 +204,11 @@ def _model(at: tuple, record: ModelRecord, units: Units | None, dispersion: Disp
             if units is None:
                 continue
             try:
-                dimension = units.parse(unit).dimension
+                dimension = units.unit(unit).dimension
             except UnitError as exc:
                 problems.append(((*at, key, name), str(exc)))
                 continue
-            if dimension not in [units.parse(u).dimension for u in declared[name].units]:
+            if dimension not in [units.unit(u).dimension for u in declared[name].units]:
                 problems.append(((*at, key, name), f"{unit!r} is in none of the dimensions of "
                                                     f"{', '.join(declared[name].units)}"))
     return problems

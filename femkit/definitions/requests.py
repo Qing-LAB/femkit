@@ -19,6 +19,6 @@ class DocsRequest(Model):
 
 # ------------------------------------------------------------------ the operations these requests are for
 
-SCHEMA_CHECK = Verb("schema.check", CheckRequest)
-SCHEMA_DOCS = Verb("schema.docs", DocsRequest)
+SCHEMA_CHECK = Verb("schema.check", CheckRequest, on_machine=False, effect="reads")
+SCHEMA_DOCS = Verb("schema.docs", DocsRequest, on_machine=False, effect="changes")
 DOCS_SUBJECT = "reference-docs"   # held by `schema docs` while it writes; shared by `web build`, which builds from its files

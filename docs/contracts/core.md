@@ -16,7 +16,7 @@ types in `core/operations.py` are governed by [`api.md`](api.md).
 | A mutating operation holds a **non-blocking lock** on its subject; a second is refused, never queued | 5 |
 | A multi-step operation is an **append-only event log** folded for progress and resume; one atomic write, made last, commits it | 6 |
 | A **state machine** is one closed table: ordered observation rules ending in `otherwise`, and the actions each state allows | 7 |
-| Every external command runs through **`process.run`** | 8 |
+| Every external command starts through **`process`**: `run` for a command waited for, the one `Child` block for one femkit reads, stops or leaves running | 8 |
 | A refusal is one of seven **`Refusal`** types (exit 2); any other exception is a defect or an unavailable system (exit 1) | 9 |
 | A dimensional value is an **exact rational** in its dimension's canonical unit, read by one grammar from a unit table that is data | 11 |
 
@@ -28,19 +28,19 @@ module reads no file, probes nothing and starts nothing.
 
 | module | offers | § |
 |---|---|---|
-| `dirs` | the user's directories and the variables that name them, the control prefix, and the checkout femkit runs from | 3 |
+| `dirs` | the user's directories and the variables that name them, the checkout femkit runs from and its install script, and how femkit starts its own Python programs | 3 |
 | `clock` | how femkit writes a moment: UTC, ISO 8601, to the second — in every record, event log and server log line | 6 |
 | `paths` | `inside(path, root)`: the one test that a path resolves within a prefix or tree; `nearest_existing(path)`: where a place not made yet would be made | 3 |
-| `schema` | `Model`, the loader, `DefinitionError` and each `Problem` in plain words with what would be right, the placeholder grammar; a field's help, and a template held to it | 2 |
+| `schema` | `Model`, the loader, `DefinitionError` and each `Problem` in plain words with what would be right, the placeholder grammar; a field's help, and a template held to it; the one reading of what a name most likely meant, `nearest` and `meant` — "did you mean `x`?" | 2 |
 | `persist` | every write: atomic files and streams, appends, copies, removal, a new folder written whole, a folder emptied or replaced whole, an archive unpacked; TOML and JSON reads and writes; a TOML text's keys with the comments above them | 4 |
 | `locks` | `subject_lock`, and the grammar of a subject's name | 5 |
 | `eventlog` | `EventLog`, its file's name, the record kinds, the step outcomes, and its fold | 6 |
-| `states` | `StateTable`, a machine's table as data; `Binding`, what code gives it; `load`; `Machine`, `Rule`, `Action` | 7 |
-| `process` | `run`, `ProcessResult`, `tail` (a log's last lines), a process's `Identity`, the one stop grace | 8 |
+| `states` | `StateTable`, a machine's table as data; `Binding`, what code gives it; `load`; `Machine`, `Rule`, `Allowed` | 7 |
+| `process` | `run`, `ProcessResult`, `tail` (a log's last lines), the `Child` block, `start_detached`, `end`, `signal`, a process's `Identity` and `identify`, the one stop grace | 8 |
 | `errors` | `Refusal` and its seven kinds | 9 |
 | `issues` | `Issue` | 10 |
 | `units` | the unit table's schema, `Quantity`, `Units`: one grammar for a quantity, a unit and an expression of named quantities; conversion | 11 |
-| `text` | how a value, a path (from `~`), a count (`1 step`, `16 steps`), a table, a finding and a "next" block are shown | [`api.md`](api.md) § 4.4 |
+| `text` | how a value, a path (from `~`), a count (`1 step`, `16 steps`), a length of time (`3 min 05 s`), a table, a finding and a "next" block are shown | [`api.md`](api.md) § 4.4 |
 | `markdown` | `headings(text)`: a Markdown document's headings and their link anchors, by GitHub's rule — read by a formulation's section check and the document viewer, so a section named in data and its anchor agree; `plain(text, link)`: a Markdown text as one line of plain text, each link as `link` writes it — an importer's citation ([`materials.md`](materials.md) § 7) | [`web.md`](web.md) § 2.3 |
 | `view` | the one vocabulary of what a person may read and do: `Help`, `Action`, `Field`, `Table` — every next step an `Action`; and `Verb`, an operation's name with its request model, one per name ([`api.md`](api.md) § 2) | [`web.md`](web.md) § 7 |
 | `commandline` | the one mapping between a request's fields and a command's arguments, both ways: the command line parses by it, and an `Action` is written as a command by it | [`api.md`](api.md) § 4.1 |
@@ -52,15 +52,17 @@ module reads no file, probes nothing and starts nothing.
 class Model(pydantic.BaseModel):          # extra="forbid", frozen=True
     ...
 
-def load_text(text: str, model: type[M], file: Path | str, context: dict | None = None, *, exact: bool = False) -> M
-                                                        # TOML text, as a file named `file` holds it: the one reader
-def load_toml(path: Path, model: type[M], context: dict | None = None, *, exact: bool = False) -> M
+def load_text(text: str, model: type[M], file: Path | str, context: dict | None = None) -> M
+                                                        # TOML text, as a file named `file` holds it: the one reader,
+                                                        # every number read exactly (§ 11)
+def load_toml(path: Path, model: type[M], context: dict | None = None) -> M
                                                         # persist.read_text, then load_text; no file is a problem too
 def validate(model: type[M], data: Any, file: Path | str, context: dict | None = None) -> M
 def problems(model, data, errors) -> list[Problem]       # pydantic's errors as a person reads them, at their keys
 def not_toml(text, exc) -> Problem                      # why a text is not TOML, plainly, at its line
 class Problem(tuple):                                   # (path, reason), what every reader unpacks; and what would
-    path: str; reason: str; right: str | None; choices: tuple[str, ...]   # be right there, as the file writes it
+    path: str; reason: str; right: str | None; choices: tuple[str, ...]   # be right there, as the file writes it;
+    line: int | None                                    # the line, where the reader knows it: a text not TOML
 def refuse(model: str, problems: list[tuple[location, reason]]) -> None
                                                         # in a model validator: every cross-reference problem at once
 def field_extras(field: FieldInfo) -> dict              # a field's annotations, its Annotated type's included
@@ -90,7 +92,10 @@ def problem_path(model, loc) -> str                     # a validation error's p
 def matching(pattern, **field), whole(pattern) -> str   # a text field its pattern holds whole; the pattern tied to both ends
 def references(instance) -> Iterator[tuple[location, type, name, held]]   # every name its `ref` fields hold;
                                                         # held: `key`, `value` or `item` — how the location holds it
-QUANTITIES: dict[kind, QuantityKind]                    # each `quantity` kind: QuantityKind(reads, dimension, sentence)
+Number = int | Decimal                                  # a number of a person's file, strict, exact as written
+Measure[V]                                              # `{value, unit}`: V a Number or a list of them
+Measured = Measure[Number] | Number | str               # a quantity field: the table, a plain number, a definition's name
+QUANTITIES: dict[kind, QuantityKind]                    # each `quantity` kind: QuantityKind(reads, cites, dimension, sentence)
 DIMENSIONS: dict[kind, dimension]                         # the kinds with a fixed one; LENGTH, a length's
 def as_quantity(description, kind="any", *, extra=None, **field) -> Field   # a field written as a quantity of `kind`
 def as_reference(description, target, *, extra=None, **field) -> Field   # a field naming `target`'s objects (`ref`)
@@ -137,31 +142,34 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[Problem]
 - **Extra facts on a field** go in `json_schema_extra` under these names only:
   `unset` (what an unset optional key means, [`config.md`](config.md) § 3),
   `ask` (the question `config init` asks for a setting while it is unset,
-  [`config.md`](config.md) § 3.2),
+  [`config.md`](config.md) § 3.2), `beside` (what is measured here and shown
+  beside that question) and `propose` (what `config init` proposes a setting
+  from) — each the name of one measurement, [`config.md`](config.md) § 3.1,
   `cli` (how the command line spells it, [`api.md`](api.md) § 4.1: `argument`, or an
-  option's own spelling where the field's name cannot be it, `--from`),
+  option's own spelling where the field's name cannot be it, `--from` — and a
+  setting's, which its `config init` option takes, `--activation`),
+  `roles` (what a job's resource is to the jobs domain — shared with a job's
+  members, read only with a scheduler, the queue — [`jobs.md`](jobs.md)
+  § 2), `empty` (a list setting's flag that states it empty, and what it says
+  — `no_preamble` — read by `config init`'s request and its report,
+  [`config.md`](config.md) § 3.2), `path` (a field that names a folder or a file, which a step for another
+  machine gives by its path from the project's folder, [`workflow.md`](workflow.md) § 7),
   `placeholders` (the names a templated field accepts, § 2.1), `ref` (the type of
   object a field refers to by name, read by both the cross-reference check and
   the project graph, [`models.md`](models.md) § 11.2; made with
-  `as_reference`), `quantity` (a value written as a quantity, § 11: `any`, a
-  quantity or an expression of a project's parameters; `length`, one in a
-  length's dimension — a coordinate is one, since only a geometry script
-  writes a bare number ([`geometry.md`](geometry.md) § 3); `constant`, a
-  quantity naming no parameter — a material's value, since a material cites
-  nothing ([`projects.md`](projects.md) § 3); or `unit`, a unit text alone;
-  made with `as_quantity`, and `QUANTITIES` the one table of the kinds — what
-  each value reads as, its fixed dimension and its sentence — the loaders,
-  the cases, the forms' units and the reference pages read),
-  `toml` (a
+  `as_reference`), `quantity` (a value written as a quantity, § 11, made with
+  `as_quantity`, `QUANTITIES` the one table of the kinds — what each reads,
+  its fixed dimension and its sentence — that the loaders, the cases, the
+  forms' units and the reference pages read), `toml` (a
   field that takes a value as its TOML text, `whole` — `config set`'s
   `value`, `whole`; a surface writes the text from the value a
   person gives), `doc` (where the field is defined: a document and its
   section, so a description holds its sentence and nothing else), `context`
   (the page's context a request field takes — `project`, `study` or
-  `environment`, [`web.md`](web.md) § 8.1), `for` (the one type of its object
+  `target`, [`web.md`](web.md) § 8.1), `for` (the one type of its object
   a field belongs to, when the others never hold it) and `stated` (a field a
   file may leave out while it is being written, which `project check` asks for
-  and `study expand` requires — what a material's dataset rests on,
+  and `study prep` requires — what a material's dataset rests on,
   [`materials.md`](materials.md) § 3).
 - **A pattern holds the whole value.** A text field with a pattern — a name,
   a digest, an ID — is made with `matching`, and a form's pattern with
@@ -185,14 +193,15 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[Problem]
   `persist.read_text` then `load_text`: a text that is not TOML, a file that is
   not UTF-8 and a file that is not there are each a `DefinitionError` at the
   file, like a field's problem. Why a text is not TOML is said in plain words
-  at its line (`not_toml`): tomllib's errors each read as a sentence — "line
-  23: a quoted text is not closed before the line ends" — a key or table set
+  at its line (`not_toml`, the line the problem's own, `Problem.line`, said
+  once): tomllib's errors each read as a sentence — "a quoted text is not
+  closed before the line ends" — a key or table set
   twice at that key, with both its lines — "`side` is set twice (lines 23 and
   27)" — and tomllib's own words kept, after the line, only where no sentence
   fits.
-- **`exact=True`** reads every TOML float from its decimal text as a
-  `Decimal`, never a binary float: a model's numbers enter a case ID exactly
-  (§ 11).
+- **Every load is exact**: each TOML float is read from its decimal text as a
+  `Decimal` (`persist.exact_number`), never a binary float, so a model's
+  numbers enter a case ID exactly (§ 11).
 - **Loading fails whole.** Every field problem in a file is reported at once,
   each as `(key path, reason)`; the key path is the one the file writes
   (`problem_path`): dots and `[index]`, e.g. `builds[1].options.NETGEN_DIR`,
@@ -206,7 +215,11 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[Problem]
   at its key as a finding does (§ 10): an unknown key is one problem at it —
   "`szie` is no key here; did you mean `size`?" — its choices the keys its
   table may still take, the closest first, and a required key it most nearly
-  spells is not said missing besides; a value outside a closed list says so,
+  spells is not said missing besides; a key a model no longer takes, which
+  it declares in `WITHDRAWN` with what a file writing it is told, is said so
+  in those words — a study's `engine`: "the engine is chosen when the study
+  is solved, `femkit study prep STUDY --engine ENGINE`"
+  ([`models.md`](models.md) § 5.1); a value outside a closed list says so,
   its choices those values, the closest first, or its `right` the one value
   when there is one; a value of the wrong kind says what it should be — a
   whole number, a text in quotes, a table — each member of a union what it
@@ -221,15 +234,25 @@ class DefinitionError(Refusal):           # .file: str, .problems: list[Problem]
 ### 2.1 Placeholders
 
 ```python
-PLACEHOLDER                                          # `{name}` or `{name:argument}`
-def check_placeholders(text: str, allowed: frozenset[str]) -> str
+@dataclass(frozen=True)
+class Placeholder: name: str; optional: bool; argument: str | None; span: tuple[int, int]; key: str
+def parsed(text: str) -> list[Placeholder]           # the grammar's one reader
 def placeholders(text: str) -> list[tuple[str, str | None]]
+def check_placeholders(text: str, allowed: frozenset[str]) -> str            # none optional
+def check_arguments(arguments: list[str], allowed: frozenset[str]) -> list[str]  # `{name?}` alone in one
 def render(text: str, values: dict[str, str]) -> str  # keys: "name" or "name:argument"
+def render_arguments(arguments: list[str], values: dict[str, str | None]) -> list[str]
 ```
 
-One grammar everywhere. Each templated field declares which names it accepts
-and validates with `check_placeholders`; `docs/reference/` lists them per
-field. A name the field does not accept fails at load.
+One grammar everywhere, here alone: `{name}`, `{name:argument}`, and, in an
+argument list, `{name?}`. Each templated field declares which names it accepts
+and validates with `check_placeholders`, or `check_arguments` for an argument
+list; `docs/reference/` lists them per field. A name the field does not accept
+fails at load, and so does `{name?}` anywhere but alone in an argument of an
+argument list. Rendered, such an argument is left out when its value is
+absent — a geometry script's `MESH`, given only when its contract declares a
+mesh ([`workflow.md`](workflow.md) § 2.1); any other placeholder without a
+value is a defect where the values were made.
 
 ## 3. Directories — `core/dirs.py`
 
@@ -239,13 +262,26 @@ def data_dir() -> Path      # FEMKIT_DATA_DIR,   else $XDG_DATA_HOME/femkit,   e
 def cache_dir() -> Path     # FEMKIT_CACHE_DIR,  else $XDG_CACHE_HOME/femkit,  else ~/.cache/femkit
 def state_dir() -> Path     # FEMKIT_STATE_DIR,  else $XDG_STATE_HOME/femkit,  else ~/.local/state/femkit
 def runtime_dir() -> Path   # FEMKIT_RUNTIME_DIR, else as config.md § 2 says; made private by persist.private_dir
-VARIABLES: dict[str, str]   # each of the five directories -> the variable that names it outright; a test
+def bin_dir() -> Path       # FEMKIT_BIN_DIR, else ~/.local/bin: where the install script links `femkit` (envs.md § 7)
+VARIABLES: dict[str, str]   # each of the six directories -> the variable that names it outright; a test
                             # isolates every one of them from this list (testing.md § 2.1)
-def host() -> str           # this machine's name, which keys the runtime directory
-def control_prefix() -> Path            # <data>/environments/control (envs.md § 1)
+def folder_from(variable, value, what) -> Path   # a folder a variable names: `~` expanded, a relative one
+                                                 # refused (config.md § 2) — the install script's rule too
+def host() -> str           # this machine's name: it keys the runtime directory, and is the identity of a
+                            # machine without a scheduler (jobs.md § 9.1) — the one host name femkit reads
+CONTROL = "control"                     # the control environment's name, and its lock's subject (§ 5)
+COMMAND = "femkit"                      # the command a person types, as the install script writes and links it
 def checkout() -> Path                  # the checkout femkit runs from; it is never installed (envs.md § 7)
+def install_script() -> Path            # the install script by its absolute path in the checkout: what every
+                                        # step naming it prints, so it pastes from any folder (envs.md § 7)
+def femkit_argv(python, module, *arguments) -> list[str]   # femkit's own Python program: the module run with -P
+def femkit_env(start) -> dict[str, str]  # its environment: the clean start `start` (envs.md § 4.4) with the
+                                         # checkout alone as PYTHONPATH — the door's one addition (§ 8)
 def directory_sources() -> dict[str, tuple[Path, str]]   # each directory and the rule that chose it
 ```
+
+Where an environment lies is the package manager's, asked by its name
+([`envs.md`](envs.md) § 1): no folder of `dirs` holds one.
 
 `core/paths.py` holds the one test that a path lies within another — a compiler
 within a prefix, a test's directory within a build tree — and the one walk to the
@@ -261,12 +297,41 @@ variables or builds these paths.
 
 ## 4. Persistence — `core/persist.py`
 
+**Every file femkit writes is read back by one reader**, `read_record(file,
+model)` — absent, read, or why it does not read — never a second, and states
+its shape (`schema`): a file written before it stated one reads as its first
+shape, so nothing already made needs making again. The environments'
+records (`manifest.json`, `checks.json`, `summary.json`, `spec.json`) and the
+jobs domain's gain theirs with the environments' unification and the parked
+jobs fixes (plan § 4, X).
+
+**A netCDF file of the one store** — a study's kept definitions, a case's
+observables, what an output translator gives ([`models.md`](models.md) § 3)
+— is read back by the same `read_record`, the one door for netCDF in the
+control process: a file named `.nc` (`persist.NETCDF`) is read through
+netCDF4, without xarray, as one model describes it — its global attributes,
+and each variable's dimensions, attributes and values, each value a plain
+number of its stored type, a complex one by netCDF4's complex convention —
+its `schema` attribute held to its model as a record's `schema` is; one that
+is no netCDF, or states another shape, is there and does not read. Every
+call into the netCDF-C library in the control process holds one
+process-wide lock, `persist.NETCDF_LOCK`, so two threads of one process —
+the web server's, which read there — are never inside it at once: the
+person's earlier tool measured two threads there crashing the process. Its
+one writer is the store's, `engines/person/values.py`, inside the
+environment that computed the values, through xarray, in a process of its
+own with one thread, so it holds no lock ([`framework.md`](framework.md)
+§ 5).
+
 ```python
 def atomic_write_text(path: Path, text: str) -> Path   # temp file in the same directory, fsync, rename
 def write_json(path: Path, data: Any) -> Path          # atomic; sorted keys, two-space indent, final newline
 def json_text(data) -> str                             # the text write_json writes, for a file among others
 def canonical_sha256(data) -> str                      # the one digest of a value: its canonical JSON — keys sorted,
                                                        # no whitespace, UTF-8 — a case's ID, a fingerprint, a plan's
+def digest(data: bytes | str) -> str                    # the one SHA-256 of bytes or text in memory (text as UTF-8);
+                                                       # canonical_sha256 and sha256 rest on it
+def toml_text(data: dict) -> str                       # the text write_toml writes, for a file of a folder written whole
 def write_toml(path: Path, data: dict) -> Path         # atomic
 def write_stream(path, source, accept=None) -> bool     # a stream written whole, or not at all: in place only
                                                         # when accept takes the written file (a download's digest)
@@ -286,16 +351,26 @@ def copy_tree(source, path, only=None) -> Path         # a folder copied to a pl
                                                         # `only`: just these files, by their POSIX paths from source
 def write_folder(path, files) -> Path                  # a new folder holding files, {POSIX path: bytes}, at a place
                                                         # not there yet: written beside it and renamed in, whole
+def move(source, path) -> Path                         # a file renamed to path, replacing what is there: one
+                                                        # rename on one file system, never a copy
 def replace_folder(fresh, path) -> None                # fresh takes path's place whole: old moved aside, fresh
                                                         # renamed in, old removed — never a half of either
 def unpack_single(archive, path) -> bool               # a gzipped tar's one top folder becomes path, whole
 BARE                                                   # a key TOML writes bare; any other it quotes — what a key path
                                                        # (§ 2), an address and a template's keys read
 def plain_value(text) -> Any                           # a TOML inline value as a person types it, as plain Python
-def json_value(text) -> Any                            # a JSON text, as plain Python: a file read through the door
+def json_value(text) -> Any                            # a JSON text, as plain Python: a file read through the door,
+                                                       # a server's answer, a program's arguments
 def read_toml(path: Path) -> dict
 def read_json(path: Path) -> Any
+def read_record(file, model) -> Read                   # a file femkit wrote: absent, read by its model, or why
+                                                       # not — JSON, or a file of the one store, `.nc` (NETCDF)
+NETCDF_LOCK                                            # held around every call into the netCDF-C library
 def read_document(path, empty="") -> TOMLDocument     # a TOML file to edit, its comments and order kept
+def exact_number(text) -> Decimal | float              # a TOML float's text as the exact decimal it states
+def number_text(value: Fraction) -> str | None         # an exact number's decimal text, which exact_number reads back
+def toml_document(text) -> TOMLDocument                # a TOML text as read_document reads a file — the door's
+                                                       # text a person typed, never parsed elsewhere
 def write_document(path, doc) -> Path                  # atomic
 def document_has(doc, key) -> bool; document_set(doc, key, value)
                                                        # a key not there yet: directly under the line showing it
@@ -380,17 +455,27 @@ def holders() -> dict[str, int]         # subject -> pid, from the kernel's lock
 - `Busy` means **another** process holds it. The process that holds it reads
   its own subject as not busy: `is_held` and `require_free` leave its own hold
   out, so what it observes under its own lock reads as it would under none.
-  — only so `Busy` can name the live ones and offer those commands as its next
-  steps; nothing is decided from its content. A holder alone rewrites the file;
-  a shared holder adds its line.
-- A subject is a stable name — `env-ngsolve`, `machine-Sol`, `server-<host>-8000` —
+- A subject is a stable name — `env-ngsolve`, `machine-Sol`, `server-<host>-8000`,
+  `project-<name>` with each `/` of the project's name a `.`,
+  `job-<the first 16 hexadecimal digits of the SHA-256 of a folder's resolved
+  path>` for a calculation folder, wherever it lies ([`jobs.md`](jobs.md) § 5), and
+  `control` (the control environment, which the install script takes alone to
+  create or remove it and shared while femkit runs from it, in bash with
+  `flock`, [`envs.md`](envs.md) § 7.3) —
   of letters, digits, `.`, `_` and `-`, starting with a letter or a digit
   (`locks.SUBJECT`): its lock file and its operations' folder are called by it,
   and a name outside the grammar is a defect where it is made. The operation
   declares it ([`api.md`](api.md) § 2); the operation runner, not the
-  operation, takes the lock.
+  operation, takes the lock — and releases it when the operation's apply asks
+  ([`api.md`](api.md) § 3). One exception: the run door writes a job's word
+  into a run once, whichever operation reads the run, and takes its
+  calculation folder's lock for that write alone, saying a lock held rather
+  than waiting ([`jobs.md`](jobs.md) § 5.1).
 - The file holds one line per holder — the holder's process, by its identity
-  (§ 8), what it is, and the commands that end its hold
+  (§ 8), what it is, and the commands that end its hold — only so `Busy` can
+  name the live ones and offer those commands as its next steps; nothing is
+  decided from its content. A holder alone rewrites the file; a shared holder
+  adds its line.
 
 ## 6. Event logs — `core/eventlog.py`
 
@@ -412,6 +497,8 @@ class LogState(Model):
     ended: bool                    # an operation-end record exists
     outcome: str | None            # its outcome: done | failed
     steps: tuple[StepState, ...]   # each step: its ID, its outcome or `running`, its log — what a surface shows
+    running: str | None            # the step running while the run goes on; none once it ended or its
+                                   # writer is gone — what the page's progress says, streamed as it changes
     finished_steps: tuple[str, ...]   # step IDs with step-end outcome done, in order
     failed_step: str | None
     interrupted: bool              # started, not ended, and the process that started it no longer runs —
@@ -451,22 +538,58 @@ its table in `femkit/data/states/` and its facts and predicates in its domain
 |---|---|---|---|
 | `part.toml` | a part of a project | `projects/state.py` | [`projects.md`](projects.md) § 8 |
 | `environment.toml` | an engine or tool environment | `envs/state.py` | [`envs.md`](envs.md) § 3 |
-| `control.toml` | the control environment | `jobs/setup.py`; the install script holds the same rules in bash, held equal by a test | [`envs.md`](envs.md) § 7.2 |
+| `control.toml` | the control environment | `envs/control.py`; the install script holds the same rules in bash, held equal by a test | [`envs.md`](envs.md) § 7.2 |
 | `server.toml` | a web server | `server/state.py` | [`web.md`](web.md) § 4 |
 | `record.toml` | a record of this machine | `jobs/record.py` | [`jobs.md`](jobs.md) § 9.3 |
+| `run.toml` | a run of a calculation folder, a stage's among them | `jobs/runs.py` | [`jobs.md`](jobs.md) § 5.2 |
+| `calculation.toml` | a calculation folder, past its own states its newest run's — today declaring a run's states again, `past` with the parked fixes (plan § 4, X) | `jobs/folders.py` | [`jobs.md`](jobs.md) § 5.5 |
+| `stage.toml` | a stage of a case's pipeline, past its own states its calculation folder's | `workflow/state.py` | [`workflow.md`](workflow.md) § 6 |
 
 ```text
 femkit/data/states/<machine>.toml      one machine, declared:
-  [states]          its states, in order, each with the sentence saying when it is observed
+  [states]          its states, in order, each with the sentence saying when it is observed; a
+                    state's name is `[a-z][a-z0-9_]*`, as every name a condition uses (`states.NAME`)
   [[rules]]         in order: `state`, and `when`, the condition on the machine's named facts that
                     gives it — names joined by `and`, `or`, `not` and parentheses; the last rule's
-                    `when` is `otherwise`, and only its
+                    `when` is `otherwise`, and only its — or, in its place:
+  past              another machine, by its file's stem: where none of the rules holds, the
+                    subject is in that machine's state, observed over the facts the binding hands
+                    it, with that machine's actions and words; nothing of it declared here again
+                    (a stage, past its own states, is its calculation folder's)
+  [tasks]           a machine's own tasks, each with its sentence — what its code does to the
+                    subject, said in a plan and an outcome, no state's action, never a next
+                    step — and, optionally, `when`, its guard over the binding's facts: the task
+                    is done only where it holds (a stage's, workflow.md § 6)
+  [does]            for a machine with `[tasks]`: each of its states and, for a machine `past`
+                    another, each state of the tables down the `past` chain — every one named,
+                    a name two tables of the chain share refused — with the tasks its code does
+                    there, an empty list where it does none, and code refuses, naming the state
+                    (`Machine.does(state, facts)`, each task's guard applied; `Machine.idle(state)`
+                    where the table lists none, and code refuses); each key and task checked at
+                    load
+  [shows]           for a machine whose subject the page draws as a block — a part, a stage, a
+                    calculation folder and its run — each state's block word, one of the
+                    vocabulary's closed list (web.md § 7.6)
   [actions.<state>] each action the state allows, by its name; an empty table: none. An action has
                     `describe`, and `operation`, a registered operation by its name, with `request`,
                     its values — a text that is one placeholder alone, `{name}`, is the value the
-                    subject gives it, and a key the subject leaves unset is left out; or `shell`, a
-                    line that is no operation (the control environment's install script); or
-                    neither: allowed, with nothing to do
+                    subject gives it, and a key the subject leaves unset is left out — and `fills`,
+                    the fields of its request it asks of the person before it runs, each its
+                    field's whole fill, one the request does not require left unset at will —
+                    its choices the field's declaration's, or, where the binding narrows them
+                    for the subject (`Binding.choices`), the names its facts give (`study
+                    prep`'s `engine`: the engines that can solve the study); or `shell`, a
+                    line that is no operation (the control environment's install script), each
+                    `{name}` in it the value the subject gives under that name (`Binding.values`:
+                    an orphan environment's folder); or
+                    neither: the request is allowed and asks nothing of a person, never offered
+                    as a next step — what is done there is the machine's `[does]` — save where the
+                    row says its operation is its subject's (`subject = true`: a launch folder's
+                    maker's, read from `maker.json`). What code does in a state is never an action:
+                    it is a task
+  [next_from.<state>] `subject = "<name>"`: a state whose next steps are another subject's, which
+                    the binding hands by that name (`Binding.subjects`; a waiting stage's: the
+                    stage it waits on, `source`), in place of its actions — never beside them
 ```
 
 ```python
@@ -475,14 +598,25 @@ class StateTable(Model)                    # the schema of a machine's file
 class Binding(Generic[F]):                 # what code gives a machine:
     machine: str                           #   its name, its file's stem
     predicates: Mapping[str, Callable[[F], bool]]   # each fact a condition may name, over the facts
-    values: Mapping[str, Callable[[str], Any]]      # each value a request takes from the subject's name;
-                                                    # by default `name`, the name itself
+    values: Mapping[str, Callable[[F], Any]]        # each value a request takes from the subject, read
+                                                    # from its facts
+    choices: Mapping[str, Callable[[F], Sequence[str] | None]]   # for a field a row fills, the names
+                                                    # it may take for the subject, read from its facts,
+                                                    # narrower than its declaration's; None: not narrowed
     reads: frozenset[str]                           # each state code reads by name, `m.states.ready`, anywhere
+    acts: frozenset[str]                            # each action code reads by name; checked at load
+    tasks: frozenset[str]                           # each of the machine's own `[tasks]` code does by name;
+                                                    # checked at load
+    subjects: Mapping[str, Callable[[F], Any]]      # each other subject `[next_from]` names, from the facts
+    drawn: bool                                     # its subject is drawn as a block: `[shows]` required
+    hands: Callable[[F], Any] | None                # for a machine `past` another: the facts it hands that one
 def bindings() -> list[Binding]            # every binding made so far: what `schema check` loads each table to
 def load(path: Path, binding: Binding[F]) -> Machine[F, Enum]   # the one loader: the table bound;
                                            # its states an enumeration of texts, named after the machine
-class Machine:                             # observe(facts) -> state; allowed(state); next(state, name)
-                                           # -> each next step; require(state, action, name) -> or Refused
+class Machine:                             # observe(facts) -> state — its own, or past it the other
+                                           # machine's; own(state) -> whether it is its own; allowed(state);
+                                           # next(state, facts) -> each next step; word(state) -> its block
+                                           # word; require(state, action, facts, name, label) -> or Refused
 ```
 
 - **Facts** are gathered by one function per machine, in its domain module,
@@ -495,7 +629,12 @@ class Machine:                             # observe(facts) -> state; allowed(st
   empty); a condition stays inside its grammar and names only the facts the
   binding names; a request names only values the subject gives; every action
   names a registered operation whose request has each field the row fills;
-  every state the binding's code reads is declared. The catalogue loads each
+  every state and every action the binding's code reads is declared; a
+  machine `past` another names one
+  that loads, and is not itself named `past` by it; a binding whose subject is
+  drawn as a block says so (`Binding.drawn`), and its table's `[shows]` gives
+  every state one word of the vocabulary's list — a table of a subject not
+  drawn has none. The catalogue loads each
   table by its own rules (`definitions.md` § 2); `schema check` checks every
   table's operations against the registry, and loads every table femkit ships
   bound to its binding, so a table lacking a fact or a state the code reads is
@@ -511,8 +650,8 @@ class Machine:                             # observe(facts) -> state; allowed(st
 - **One source of "next".** Refusals, findings, `doctor` and every next step
   read the machine's allowed actions; no message writes a remedy by hand.
 - **One machine per subject**: the subject is the thing whose state it is — an
-  environment, the server, a part of a project, a step's run, a study's
-  expansion, a case's preparation for one environment, a run, a run's results.
+  environment, the server, a part of a project, a calculation folder, a run,
+  a stage — a solve's and an observe's among them, M6.
   A count over subjects — a project's parts, a study's cases — is a summary,
   never a machine.
 - `schema docs` renders each machine into `docs/reference/`, so its contract and
@@ -554,9 +693,27 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
   the whole group (`SIGTERM`, then `SIGKILL` after `GRACE`, 5 s — the one grace for
   every process femkit stops).
 - A non-zero exit is a result, not an exception; the caller decides.
-- A detached, supervised process — the web server's supervisor and its child
-  ([`web.md`](web.md) § 4), and a job a person launches — is started through
-  one building block beside `run`:
+- **One block owns a child.** Every process femkit starts and then waits for,
+  reads or stops — a command `run` waits for, the web server's child under its
+  supervisor ([`web.md`](web.md) § 4), a run started on this machine
+  ([`jobs.md`](jobs.md) § 5) — is a `Child`, started in a session of its own
+  — but a run waited on, which stays in its launch's process group so Ctrl-C
+  and a sequence's stop reach it (`own_group=False`), and is stopped alone, by
+  the same escalation — with `stdin` closed, its output to a file, to the caller as it comes, or
+  discarded — a file opened by the block itself, with the standard library,
+  readable by its owner alone, never through a link, and begun empty, since a
+  reader parses it. `run` is a `Child` waited for with its timeout, capturing
+  standard output and error apart when it has no log; `start_detached`
+  is a `Child` not waited for, reaped later. Stopping a process femkit stops
+  itself is one escalation with one grace everywhere: `SIGTERM` to the whole
+  process group, then `SIGKILL` after `GRACE`. A run launched earlier is never
+  escalated: it gets one signal, which its run script's handler answers
+  ([`jobs.md`](jobs.md) § 5.4) — `signal`. How femkit starts one of its own
+  Python programs is `dirs.femkit_argv` and `dirs.femkit_env`: the clean start
+  every process for an environment begins from, which the envs domain's one
+  door gives (`envs/start.py`, [`envs.md`](envs.md) § 4.4), with femkit's
+  checkout alone as its `PYTHONPATH` — the door's one addition for femkit's
+  own code, never a filter of its own ([`envs.md`](envs.md) § 7).
 
   ```python
   @dataclass(frozen=True)
@@ -566,17 +723,37 @@ def tail(path: Path, lines: int) -> list[str]   # a log's last lines, read from 
       boot: str                    # the kernel's boot ID
       def alive(self) -> bool      # a process with this pid and start time runs now, on this boot, as this account
 
+  class Child:
+      identity: Identity
+      @classmethod
+      def start(cls, argv, *, env=None, cwd=None, keep_fds=(), output: Path | Literal["pipe"] | None = None,
+                own_group: bool = True) -> Child
+      def chunks(self) -> Iterator[bytes]          # its output as it comes, when started with output="pipe"
+      def poll(self) -> int | None
+      def wait(self, timeout: float | None = None) -> int | None   # its exit status; None: still running
+      def stop(self, grace: float = GRACE) -> int  # SIGTERM to its group, SIGKILL after grace; its exit status
+                                                   # (a status is the signal's number negated when a signal
+                                                   # ended it, -9 for SIGKILL, as ProcessResult's)
+
   def identify(pid: int) -> Identity | None        # None: no such process of this account
   def start_detached(argv, *, env=None, cwd=None, keep_fds=(), log=None) -> Identity
-                                                   # a new session, stdin closed; its output to `log` or discarded
-  def end(identity: Identity, *, grace: float = 5.0) -> bool   # SIGTERM, then SIGKILL; only if alive()
+  def end(identity: Identity, *, grace: float = GRACE, group: bool = False) -> bool
+                                                   # a process this command did not start that femkit stops
+                                                   # itself — a web server started earlier: the same
+                                                   # escalation, to its group with group=True; only if alive();
+                                                   # False when it was not running
+  def signal(identity: Identity, sig: int, *, group: bool = False) -> bool
+                                                   # one signal, never escalated — a run launched earlier,
+                                                   # ended by its own handler; only if alive(); False when it
+                                                   # was not running
   ```
 
   A process is identified by its ID and start time on this boot, never by its
-  ID alone: a signal goes only to an `Identity` that is `alive()`. A child that
-  must not outlive its parent sets `PR_SET_PDEATHSIG` and checks `getppid`
-  after, which `start_detached` does not do — the child that needs it sets it
-  itself (`web.md` § 4). Jobs will use the same block (plan § 4, X).
+  ID alone: a signal goes only to an `Identity` that is `alive()`, and a group
+  is signalled only through its leader's `Identity`, which a run's session
+  leader is. A child that must not outlive its parent sets `PR_SET_PDEATHSIG`
+  and checks `getppid` after, which `Child` does not do — the child that needs
+  it sets it itself (`web.md` § 4).
 
 ## 9. Errors — `core/errors.py`
 
@@ -585,6 +762,8 @@ class Refusal(Exception):        # refused before acting: exit 2
     code: str                    # which refusal of its kind; without one of its own, its kind's: `plan-stale`
     subject: str | None          # what it is about: a setting, an environment, a file, an address
     next: tuple[Action, ...]     # what a person may do instead (core/view.py)
+    issues: tuple[Issue, ...]    # the findings it rests on, each surface showing them before its sentence,
+                                 # as the earlier tool's refusal carries what it found
 
 class DefinitionError(Refusal)   # a declared file does not load (§ 2); defined in core/schema.py
 class Refused(Refusal)           # a state does not allow the action (§ 7)
@@ -622,10 +801,17 @@ class Issue(Model):
     label: str | None = None     # what a person calls the subject, where its address is not that
     message: str                 # one whole sentence for a person
     file: str | None = None      # the file it is about, as the person opens it: a project's, from the project's folder
+    line: int | None = None      # the line of that file where its key stands — every finding at a key, a
+                                 # TOML file's as a Python file's, the door reading it from the file's text
     key: str | None = None       # the key in that file, its dotted path: `conditions.left.kind`
     right: str | None = None     # the one value that would be right, as the file would write it (TOML text)
     choices: tuple[str, ...] = ()  # the values that would be right, when more than one would do
     next: tuple[Action, ...] = ()  # what would resolve it (core/view.py): operations that exist
+    @classmethod
+    def of(cls, refusal, severity, message=None) -> Issue  # a refusal as an issue — its code, subject and
+                                                           # next kept; the one way, never by hand; placed
+                                                           # at its part's file, key and line by the door's
+                                                           # `finding_of` (projects.md § 6), built on it
 ```
 
 `code` is what tests and programs match on; `message` is free to change.
@@ -643,7 +829,7 @@ class Issue(Model):
   address (`observables:benchmark`), the project file as the project file.
   Its message is a plain sentence that leaves the file and the key to the
   finding, which shows them once.
-- **`next` holds only operations that exist** — `study expand`, `project new`,
+- **`next` holds only operations that exist** — `study prep`, `project new`,
   `config set` — never an edit of a file the person wrote, which femkit does
   not make ([`projects.md`](projects.md) § 7).
 - **One value, or the choices — never both**: a finding holding both is refused
@@ -667,43 +853,73 @@ class Quantity:
 class Units:
     def __init__(self, table: UnitTable)
     def symbols(self) -> list[str]                                 # every symbol read, prefixed ones included
-    def parse(self, text: str, names: Mapping[str, Quantity] = {}, known=()) -> Quantity
-                                                   # `known`: names given here without a value yet; a name
-                                                   # neither a unit nor given is said once, with the closest
-                                                   # given name, "did you mean", and the names given
+    def unit(self, text: str) -> Quantity                         # a unit, or a product of them; `1` a plain number
+    def si(self, dimension) -> str                                 # a dimension's SI unit, as a definition reads it
+    def measure(self, written, names=None) -> Quantity | list      # the one reader of the quantity form: `{value,
+                                                   # unit}`, a plain number, a definition's name from `names`;
+                                                   # a text is an error whose right is the table to write
     def convert(self, quantity: Quantity, unit: str) -> Fraction   # its value in that unit
     def canonical(self, dimension) -> str | None                   # a base dimension's canonical unit: `m`
     def of(self, dimension) -> list[str]                           # every symbol of it, prefixed ones included
+    def shown(self, quantity, display=()) -> str                   # a value for a person, in the first unit of
+                                                   # `display` its dimension has, else its canonical unit
 
 def number(text: str) -> Fraction              # one decimal number, as the grammar reads it, exactly: a table's cell
 def decimal(value: Fraction) -> str            # a value for a person, exactly: its decimal where it has one, else p/q
-def name_spans(text: str) -> list[tuple[int, int, str]]   # each name a quantity text uses — a parameter or a
-                                                          # unit symbol — with its span; empty when the grammar
-                                                          # cannot read the text: what a graph draws a wire from
 class UnitError(ValueError)                    # names the text and what in it is wrong
 ```
 
+- **Definitions** ([`models.md`](models.md) § 3): a
+  definition's `unit` is read by this table and grammar, any product of its
+  units, `1` for a dimensionless value, which the grammar reads as a plain
+  number already; femkit
+  converts each definition into SI for the functions that read it — an angle
+  in degrees, the canonical unit below — and each function's result back into
+  its declared unit. A number given as a definition's `value` is a TOML
+  number of its `type`, never a text, read exactly; a computed one is
+  recorded as returned.
+- **One quantity form**, everywhere a quantity is written — the person's
+  parts, materials and studies, and femkit's own data ([ADR 0021](../decisions/0021-definitions.md)
+  decision 2): a field with
+  a dimension holds a table `{value = <number>, unit = "<unit>"}` — the
+  number of the field's own type; a list of numbers for a range, under one
+  unit — or, where the field may cite one, a definition's name, its
+  dimension checked against the field's, named as the field's whole value
+  (`"gap"`), never inside a table; a dimensionless field holds a plain number, or
+  `{value, unit = "1"}`; a field that names a unit (`display`, a column's
+  unit) holds its text. No quantity is written as a text, no expression
+  anywhere but a function in `definitions.py`; a text where a quantity
+  belongs is a finding saying the table to write. A study's axis states its
+  values as plain numbers and its `unit` once. The kinds: `length` (a
+  length's dimension — a coordinate is one, since only a geometry script
+  writes a bare number, [`geometry.md`](geometry.md) § 3), `any` (any
+  dimension, a definition allowed), `constant` (no definition — a
+  material's, since a material cites nothing, [`projects.md`](projects.md)
+  § 3) and `unit`.
 - **Exact.** A number is read from its decimal text — `500`, `0.5`, `-3`,
-  `1.602176634e-19` — as an exact rational, never through a binary float, and
-  every operation keeps it exact. A value is held in its dimension's canonical
+  `1.602176634e-19` — as an exact rational, never through a binary float —
+  a TOML number by the text the person wrote (`persist.exact_number`), held
+  as that exact decimal in a model so it writes back as written, and
+  computed as a fraction — and every operation keeps it exact. A value is held in its dimension's canonical
   unit: coherent SI, with plane angle a base dimension of its own, held in
   degrees, so that a written angle stays exact; a radian would need π, and the
   table has none.
-- **One grammar** reads a quantity (`"500 nm"`, `"8.854187817e-12 F/m"`,
-  `"5 W/m^2"`), a unit (`"F/m"`) and an expression of named quantities — a
-  model's parameters (`"gap / 2 + 1 nm"`): numbers, unit symbols and the names
-  given; `+` and `-` between terms of one dimension; `*`, `/` and
-  juxtaposition (`500 nm`, `kg m/s^2`), left to right, binding tighter than
-  `+` and `-`; parentheses; a unary `-`; `^` with an integer, on a unit symbol
-  only. A name given is read before a unit symbol; a model refuses a parameter
-  named like a unit ([`models.md`](models.md) § 3). Nothing else is read.
+- **One grammar** reads a unit — `"F/m"`, `"W/m^2"`, `"C^2/(N m^2)"` — and
+  nothing else: unit symbols; `*`, `/` and juxtaposition (`kg m/s^2`), left
+  to right; parentheses; `^` with an integer. No quantity and no expression
+  is read from text.
 - **The table is data**: each base dimension with its canonical unit as
   written; each unit in order, either a base dimension times an exact `factor`
   or `equals`, an expression of units above it, and whether SI prefixes apply
   to it; each prefix with its power of ten. Loading refuses a text that reads
   two ways — a unit that is also a prefixed unit, or two prefixed readings of
   one text — a unit that is not positive, and a canonical unit that is not
-  exactly one of its dimension.
+  exactly one of its dimension. Memory is a dimension of the table,
+  `information`, its canonical unit `byte` and `KiB`–`PiB` its binary
+  multiples, through which a job's memory is compared with a queue's limit
+  (`jobs.md` § 3); a scheduler's `K`/`M`/`G`/`T`/`P` letters map to them in
+  one table, `units.MEMORY_LETTERS` — read as binary multiples, not
+  measured.
 - **Refused**, as a `UnitError` naming the text: a symbol that is neither a
   unit nor a name given; terms of different dimensions added or subtracted,
   quoting both; a conversion to a unit of another dimension, naming both; a

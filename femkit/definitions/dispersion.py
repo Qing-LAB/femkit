@@ -23,7 +23,7 @@ from pydantic import Field, ValidationInfo, model_validator
 
 from femkit.core import dirs, persist
 from femkit.core.markdown import headings
-from femkit.core.schema import Model, as_quantity, refuse
+from femkit.core.schema import Measure, Model, Number, as_quantity, refuse
 from femkit.core.units import Quantity, UnitError, Units
 from femkit.definitions.formulations import Described
 from femkit.definitions.properties import NAME
@@ -64,7 +64,7 @@ Sign = Literal[tuple(SIGNS)]
 class Constant(Described):
     """A physical constant the spectral variables are converted by (material-data.md § 1)."""
 
-    value: str = as_quantity("its exact value, with its unit", "constant")
+    value: Measure[Number] = as_quantity("its exact value, with its unit", "constant")
 
 
 class Spectral(Model):
@@ -171,7 +171,7 @@ class Dispersion(Model):
         """Every value and unit read by the unit table, and each spectral variable's unit of the
         dimension its relation to the frequency gives it."""
         problems: list[tuple[tuple, str]] = []
-        texts = [(("constants", n, "value"), c.value) for n, c in self.constants.items()]
+        texts = [(("constants", n, "value", "unit"), c.value.unit) for n, c in self.constants.items()]
         texts += [(("variables", n, "unit"), v.unit) for n, v in self.variables.items()]
         texts += [(("models", n, "parameters", p, "units", i), u) for n, m in self.models.items()
                   for p, spec in m.parameters.items() for i, u in enumerate(spec.units)]
@@ -179,16 +179,16 @@ class Dispersion(Model):
                   for s, terms in m.sums.items() for p, spec in terms.parameters.items() for i, u in enumerate(spec.units)]
         for at, text in texts:
             try:
-                units.parse(text)
+                units.unit(text)
             except UnitError as exc:
                 problems.append((at, str(exc)))
         if problems or base is None:
             return problems
-        frequency = units.parse(self.variables[base].unit)
+        frequency = units.unit(self.variables[base].unit)
         for name, v in self.variables.items():
             if v.spectral is not None:
                 given = self.constant(v.spectral, units) * Quantity(Fraction(1), frequency.dimension) ** v.spectral.power
-                if units.parse(v.unit).dimension != given.dimension:
+                if units.unit(v.unit).dimension != given.dimension:
                     problems.append((("variables", name, "unit"), f"{v.unit!r} is not of the dimension its relation to "
                                                                   f"the frequency, {base}, gives it"))
         return problems
@@ -197,7 +197,7 @@ class Dispersion(Model):
 
     def constant(self, spectral: Spectral, units: Units) -> Quantity:
         """The constant a spectral variable is the frequency's multiple of: 1 for the frequency."""
-        return units.parse(self.constants[spectral.constant].value) if spectral.constant else Quantity(Fraction(1))
+        return units.measure(self.constants[spectral.constant].value) if spectral.constant else Quantity(Fraction(1))
 
     def forms(self, variable: str) -> list[str]:
         """The variables a value of ``variable`` may be stated as (materials.md § 3, `range`): every
@@ -210,7 +210,7 @@ class Dispersion(Model):
     def form(self, value: Quantity, variable: str, units: Units) -> str | None:
         """The form of ``variable`` that ``value`` is stated as, told by its dimension; None for a
         value in none of them."""
-        return next((f for f in self.forms(variable) if units.parse(self.variables[f].unit).dimension == value.dimension),
+        return next((f for f in self.forms(variable) if units.unit(self.variables[f].unit).dimension == value.dimension),
                     None)
 
     def stated_as(self, value: Quantity, variable: str, units: Units) -> Quantity | None:

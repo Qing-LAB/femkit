@@ -1,7 +1,16 @@
-.notes { position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: 50; display: grid; gap: var(--space-2); width: min(380px, 92vw); }
-.notes__note { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius);
-  background: var(--surface-raised); border: 1px solid var(--line); border-left: 3px solid var(--info); box-shadow: var(--shadow-lg); font-size: var(--text-sm); }
-.notes__note--ok { border-left-color: var(--ok); }
-.notes__note--bad { border-left-color: var(--bad); }
-.notes__text { flex: 1; min-width: 0; }
-.notes__close { border: none; background: none; color: var(--text-faint); cursor: pointer; font-size: var(--text-lg); line-height: 1; }
+/* Notifications: a stack at the corner, each notice with its tone's edge. */
+.notes {
+  position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: var(--layer-notice);
+  display: flex; flex-direction: column; gap: var(--space-2); width: min(var(--layout-inspector-min), 100% - var(--space-8));
+}
+.notes__note {
+  display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  background: var(--color-surface-raised); border: var(--size-hairline) solid var(--color-line);
+  border-left: var(--size-stripe) solid var(--color-info); border-radius: var(--size-radius);
+  box-shadow: var(--layer-notice-shadow); animation: notes-in var(--motion-base) var(--motion-ease-out);
+}
+@keyframes notes-in { from { opacity: 0; transform: translateY(var(--space-2)); } }
+.notes__note--ok { border-left-color: var(--color-ok); }
+.notes__note--bad { border-left-color: var(--color-error); }
+.notes__text { flex: 1; display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--type-size-sm); }
+.notes__title { font-weight: var(--type-weight-strong); }

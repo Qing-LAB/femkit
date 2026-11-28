@@ -5,28 +5,32 @@ Loading reads only definition files: it probes nothing and starts nothing.
 
 from __future__ import annotations
 
-import hashlib
 import os
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Callable
 
 from femkit.core import persist, view
-from femkit.core.dirs import CONTROL, folder_from
+from femkit.core.dirs import CONTROL, checkout, folder_from
 from femkit.core.locks import SUBJECT
 from femkit.core.operations import Context
 from femkit.core import states
-from femkit.core.schema import DefinitionError, key_path, load_toml, validate
+from femkit.core.schema import DefinitionError, key_path, load_toml, parsed, render, validate
 from femkit.core.states import StateTable
 from femkit.core.units import UnitTable, Units
+from femkit.engines import package_dir, registered
 from femkit.definitions.dispersion import Dispersion
 from femkit.definitions.formulations import FormulationDefinition, StepKind, StepKindList
 from femkit.definitions.importers import Importer, TableRecord, property_of
-from femkit.definitions.meshers import MesherDefinition
+from femkit.definitions.meshers import HandOver, MesherDefinition
 from femkit.definitions.places import PlaceKind, PlaceList
+from femkit.definitions.programs import Program, ProgramList
 from femkit.definitions.properties import Property, PropertyList
+from femkit.definitions.stages import PYTHON, RECORDS, Artifact, ArtifactList, StageKind, Stages, late_why, taken_late
+from femkit.engines.stages import documents
 from femkit.schedulers import readers as scheduler_readers
-from femkit.definitions.models import ControlDefinition, EnvironmentDefinition, ManagerKind, SchedulerKind
+from femkit.definitions.models import (ControlDefinition, EnvironmentDefinition, ManagerKind, Naming, ProcessStart,
+                                       SchedulerKind)
 from femkit.definitions.requests import SCHEMA_CHECK
 
 
@@ -50,7 +54,7 @@ class CatalogueError(DefinitionError):
         super().__init__(
             data_root(),
             [(f"{Path(e.file).relative_to(data_root()) if Path(e.file).is_relative_to(data_root()) else e.file}"
-              f":{path}", reason) for e in errors for path, reason in e.problems],
+              f":{p.where}", p.reason) for e in errors for p in e.problems],
             (view.command(SCHEMA_CHECK),),
         )
 
@@ -75,7 +79,7 @@ def control_files() -> tuple[Path, Path]:
 
 def control_digest() -> str:
     """What the install script's stamp holds: the SHA-256 of both files, channels first (envs.md § 7.2)."""
-    return hashlib.sha256(b"".join(shipped(file, persist.read_bytes) for file in control_files())).hexdigest()
+    return persist.digest(b"".join(shipped(file, persist.read_bytes) for file in control_files()))
 
 
 def load_control() -> ControlDefinition:
@@ -98,6 +102,38 @@ def load_control() -> ControlDefinition:
 
 def load_managers() -> dict[str, ManagerKind]:
     return _load_dir(data_root() / "managers", ManagerKind)
+
+
+def load_process() -> ProcessStart:
+    """How every process femkit starts for an environment begins (envs.md § 4.4)."""
+    return load_toml(data_root() / "process.toml", ProcessStart)
+
+
+def process(ctx: Context) -> ProcessStart:
+    """The clean start, loaded once per invocation."""
+    return _cached(ctx, "process")
+
+
+def load_naming() -> Naming:
+    """Every environment's name with the package manager (envs.md § 1)."""
+    return load_toml(data_root() / "naming.toml", Naming)
+
+
+def naming(ctx: Context) -> Naming:
+    """The naming rule, loaded once per invocation."""
+    return _cached(ctx, "naming")
+
+
+def managed_by(rule: Naming, name: str) -> str:
+    """The name the package manager knows the environment ``name`` by, under ``rule``: the control
+    environment's, `femkit`, or every other's, `femkit-<name>` (envs.md § 1)."""
+    return rule.control if name == CONTROL else render(rule.other, {"name": name})
+
+
+def managed(ctx: Context, name: str) -> str:
+    """The name the package manager knows the environment ``name`` by (envs.md § 1) — the one rule,
+    `naming.toml`'s, which every command that creates, asks for or enters an environment reads."""
+    return managed_by(naming(ctx), name)
 
 
 def load_schedulers() -> dict[str, SchedulerKind]:
@@ -149,18 +185,35 @@ def _loaded(key: str, load: Callable[[], Any]) -> dict[str, Any]:
 CUDA_SUFFIX = "-cuda"  # a definition's CUDA environment is named after it with this (definitions.md § 4.5)
 
 
+def environment_context() -> dict:
+    """What an environment definition's validators are given beside its file (core.md § 2): the
+    registered engines, each with the reader IDs it registers."""
+    return {"engines": registered()}
+
+
 def load_environments() -> dict[str, EnvironmentDefinition]:
     """Every environment: one per definition, built without CUDA, and a second, `<name>-cuda`,
     for a definition with a [cuda] part (definitions.md § 4.5)."""
     directory = data_root() / "environments"
-    found = _load_dir(directory, EnvironmentDefinition)
+    found = _load_dir(directory, EnvironmentDefinition, environment_context())
     taken = {name: f"{CONTROL!r} names the control environment (control.txt)" for name in found if name == CONTROL}
     taken |= {name: f"{name!r} is no environment name: a letter or digit, then letters, digits, '.', '_' or '-' — "
                     "it names the environment's lock and folders" for name in found if not SUBJECT.fullmatch(name)}
     taken |= {name: f"a name ending in {CUDA_SUFFIX!r} is a definition's CUDA environment"
               for name in found if name.endswith(CUDA_SUFFIX)}
-    if taken:
-        raise CatalogueError([DefinitionError(directory / f"{name}.toml", [("", why)]) for name, why in taken.items()])
+    engines: dict[str, list[str]] = {}
+    for name, definition in found.items():                 # one refused for its name declares nothing
+        if definition.engine is not None and name not in taken:
+            engines.setdefault(definition.engine, []).append(name)
+    clash = {name: ("engine", f"{' and '.join(names)} both declare the engine {engine}: an engine names one "
+                              "environment") for engine, names in engines.items() if len(names) > 1 for name in names}
+    projects = [name for name, d in found.items() if d.projects and name not in taken]
+    clash |= {name: ("projects", f"{' and '.join(projects)} both take the packages projects declare: a project's "
+                                 "scripts run in one environment") for name in projects if len(projects) > 1}
+    if taken or clash:
+        raise CatalogueError([DefinitionError(directory / f"{name}.toml", [("", why)]) for name, why in taken.items()]
+                             + [DefinitionError(directory / f"{name}.toml", [held])
+                                for name, held in clash.items() if name not in taken])
     out = {}
     control = load_control().dependencies if any(d.control_packages for d in found.values()) else []
     for name, definition in found.items():
@@ -175,38 +228,214 @@ def load_environments() -> dict[str, EnvironmentDefinition]:
 
 
 def environments(ctx: Context) -> dict[str, EnvironmentDefinition]:
-    """Every environment, loaded once per invocation."""
-    return ctx.cached("environments", load_environments)
+    """Every environment, loaded once per invocation: what observing one needs, and nothing
+    else's loading — a formulation that does not load leaves the environments' commands
+    working."""
+    return _cached(ctx, "environments")
+
+
+def _engines(envs: dict[str, EnvironmentDefinition]) -> dict[str, str]:
+    """Each engine ``envs`` declare, by its name, with the environment whose definition declares it."""
+    return dict(sorted((env.engine, name) for name, env in envs.items()
+                       if env.engine is not None and not name.endswith(CUDA_SUFFIX)))
+
+
+def load_engines() -> dict[str, str]:
+    """Each engine `study prep --engine` may name, with the environment it resolves to (`engines`),
+    read from the environments' files: what names the engines in a help (api.md § 6)."""
+    return _engines(load_environments())
+
+
+def engines(ctx: Context) -> dict[str, str]:
+    """Each engine `study prep --engine` may name, with the environment it resolves to: the engine
+    environment whose definition declares it — one alone, two declaring one refused when they load
+    (definitions.md § 2.2; framework.md § 5)."""
+    return _engines(environments(ctx))
+
+
+def with_gpus(ctx: Context, name: str, gpus: int) -> str | None:
+    """The environment ``name`` runs as where ``gpus`` are asked (definitions.md § 4.5): itself
+    with none; with any, its CUDA environment, `<name>-cuda` — None where its definition has no
+    CUDA part. The one home of the twin by GPUs: a job's (jobs.md § 3, step 4), the one a GPU
+    validate names (envs.md § 5)."""
+    if gpus <= 0:
+        return name
+    twin = name + CUDA_SUFFIX
+    return twin if twin in environments(ctx) else None
+
+
+def control(ctx: Context) -> ControlDefinition:
+    """The channel order and the control environment's packages, loaded once per invocation."""
+    return _cached(ctx, "control")
+
+
+def managers(ctx: Context) -> dict[str, ManagerKind]:
+    """The manager kinds, loaded once per invocation."""
+    return _cached(ctx, "managers")
 
 
 def load(ctx: Context) -> Catalogue:
-    """The shipped catalogue, loaded once per invocation (api.md § 2.4)."""
-    return ctx.cached("catalogue", load_catalogue)
+    """The shipped catalogue, every type loaded once per invocation (api.md § 2.4) — each by the
+    one cached loader its own reader shares — or every problem with every file."""
+    return ctx.cached("catalogue", lambda: _whole(lambda kind: _cached(ctx, kind)))
+
+
+def _cached(ctx: Context, kind: str) -> Any:
+    """One type of shipped definition, by its field of `Catalogue`, loaded once per invocation."""
+    return ctx.cached(f"definitions/{kind}", _loader(kind))
+
+
+def _loader(kind: str) -> Callable[[], Any]:
+    """The loader of one type of shipped definition, by its field of `Catalogue`."""
+    return next(f.metadata["load"] for f in fields(Catalogue) if f.name == kind)
 
 
 def schedulers(ctx: Context) -> dict[str, SchedulerKind]:
     """The scheduler kinds, loaded once per invocation; they need no engine registry."""
-    return ctx.cached("schedulers", load_schedulers)
+    return _cached(ctx, "schedulers")
+
+
+def _environment_names() -> set[str]:
+    """Every environment's name, what a definition naming one is checked by: each file's, and its
+    CUDA twin's, while the environments do not load — their own loading says why, once."""
+    try:
+        return set(load_environments())
+    except CatalogueError:
+        directory = data_root() / "environments"
+        return {n for p in directory.glob("*.toml") for n in (p.stem, p.stem + CUDA_SUFFIX)}
+
+
+def _of_the_checkout(module: str) -> bool:
+    """Whether ``module`` is one of femkit's checkout: a package's folder, or a file of one."""
+    where = checkout().joinpath(*module.split("."))
+    return (where / "__init__.py").is_file() or where.with_suffix(".py").is_file()
+
+
+def load_programs() -> dict[str, Program]:
+    """Every femkit program that runs inside an environment (envs.md § 4.4): each in an environment
+    that exists, its module one of the checkout."""
+    return dict(load_toml(data_root() / "programs.toml", ProgramList,
+                          {"environments": _environment_names(), "modules": _of_the_checkout}).root)
+
+
+def programs(ctx: Context) -> dict[str, Program]:
+    """The programs that run inside an environment, loaded once per invocation."""
+    return _cached(ctx, "programs")
+
+
+def stage_programs() -> frozenset[str]:
+    """femkit's stage programs, by their files' names (framework.md § 1): the programs of
+    `femkit/engines/stages/`, the documents they share beside them aside."""
+    shared = Path(documents.__file__)
+    return frozenset(p.name for p in shared.parent.glob("*.py") if p != shared)
+
+
+def load_artifacts() -> dict[str, Artifact]:
+    """The artifact types (workflow.md § 2.2), each opened in an environment that exists."""
+    return dict(load_toml(data_root() / "artifacts.toml", ArtifactList, {"environments": _environment_names()}).root)
+
+
+def artifacts(ctx: Context) -> dict[str, Artifact]:
+    """The artifact types, loaded once per invocation."""
+    return _cached(ctx, "artifacts")
+
+
+def load_stages(parts: dict[str, list[str]] | None = None) -> Stages:
+    """The stage kinds (workflow.md § 2.1), and the name of a study's meshing sequence (§ 7): each
+    environment, artifact type, document and check program the kinds name is one that exists; and,
+    given ``parts`` — the project layout's part kinds, each with the files every part of it holds by
+    a fixed name, as the layout's one reader reads it — each part a kind brings one the layout
+    declares, its program a stage program of femkit's or a file every such part holds. The layout's
+    model and reader are the projects domain's, above this one, so `schema check` gives them
+    (definitions.md §§ 2.2, 2.3)."""
+    return load_toml(data_root() / "stages.toml", Stages,
+                     {"environments": _environment_names(), **_names("artifacts", load_artifacts),
+                      "programs": stage_programs(), "documents": frozenset(documents.SHAPES),
+                      **({"parts": parts} if parts is not None else {})})
+
+
+def stages(ctx: Context) -> Stages:
+    """The stage kinds and the meshing sequence's name, loaded once per invocation."""
+    return _cached(ctx, "stages")
+
+
+def load_handovers() -> dict[str, HandOver]:
+    """Every hand-over (geometry.md § 8): each reads an artifact type that exists, hands an engine
+    an adapter registers through a program of its package, and keeps places of the vocabulary;
+    two that give one engine one type at one order are refused, each in its file."""
+    directory = data_root() / "handovers"
+    found = _load_dir(directory, HandOver, {**_names("artifacts", load_artifacts), **_names("places", load_places),
+                                            "engine_packages": {e: package_dir(e) for e in registered()}})
+    taken: dict[tuple[str, str, int], list[str]] = {}
+    for name, h in found.items():
+        for order in h.orders:
+            taken.setdefault((h.engine, h.reads, order), []).append(name)
+    clashes: dict[str, list[str]] = {}
+    for (engine, typ, order), names in taken.items():
+        for name in names if len(names) > 1 else ():
+            clashes.setdefault(name, []).append(f"{' and '.join(names)} both give {engine} the type {typ} at order "
+                                                f"{order}: the order a case asks for would not choose one")
+    if clashes:
+        raise CatalogueError([DefinitionError(directory / f"{n}.toml", [("orders", "; ".join(w))])
+                              for n, w in sorted(clashes.items())])
+    return found
+
+
+def handovers(ctx: Context) -> dict[str, HandOver]:
+    """The hand-overs, loaded once per invocation."""
+    return _cached(ctx, "handovers")
 
 
 def load_meshers() -> dict[str, MesherDefinition]:
-    """Every mesher; each names an engine environment that provides it (models.md § 6.5)."""
-    try:
-        environments = set(load_environments())
-    except CatalogueError:                          # said once, by the environments' own loading; each file's
-        directory = data_root() / "environments"    # name stands for its environments meanwhile
-        environments = {n for p in directory.glob("*.toml") for n in (p.stem, p.stem + CUDA_SUFFIX)}
-    return _load_dir(data_root() / "meshers", MesherDefinition, {"environments": environments})
+    """Every mesher (workflow.md § 2.3): each names the environment that provides it, one of
+    femkit's stage programs and artifact types that exist, hands its program only the documents
+    the stage kind it fills is handed, and writes every file that kind's check names
+    (definitions.md § 2.2)."""
+    directory = data_root() / "meshers"
+    held = _loaded("stages", load_stages).get("stages")
+    kinds = held.kinds if held is not None else None
+    filled = [k for k in kinds.values() if k.filled_by == "mesher"] if kinds is not None else []
+    found = _load_dir(directory, MesherDefinition, {
+        "environments": _environment_names(), **_names("artifacts", load_artifacts), "programs": stage_programs(),
+        **({"documents": frozenset(d for k in filled for d in k.documents)} if kinds is not None else {})})
+    wanted = {p.name for k in filled for a in k.check for p in parsed(a)} - {*RECORDS, PYTHON} \
+        - {d for k in filled for d in k.documents}
+    problems: dict[str, list[tuple[str, str]]] = {}
+    for name, m in found.items():
+        if wanted - set(m.writes):
+            problems.setdefault(name, []).append(("writes", f"the mesh stage's check reads "
+                                                  f"{', '.join('{%s}' % r for r in sorted(wanted - set(m.writes)))}: "
+                                                  "every mesher writes it by that name"))
+    errors = [DefinitionError(directory / f"{n}.toml", sorted(set(p))) for n, p in sorted(problems.items())]
+    if kinds is not None:
+        errors += _taken_late(kinds, found)
+    if errors:
+        raise CatalogueError(errors)
+    return found
+
+
+def _taken_late(kinds: dict[str, StageKind], meshers: dict[str, MesherDefinition]) -> list[DefinitionError]:
+    """`stages.toml`'s kinds held to their order, the kind the meshers fill among them: each kind
+    takes only from kinds before it (workflow.md § 7) — the kind a mesher fills taking what every
+    mesher reads, and writing what every mesher writes. Its own kinds alone, `Stages` holds."""
+    filled = {n for n, k in kinds.items() if k.filled_by == "mesher"}
+    reads = {n: {*(k.inputs or {}).values()} | ({t for m in meshers.values() for t in m.reads.values()}
+                                                  if n in filled else set()) for n, k in kinds.items()}
+    writes = {n: k.writes() | ({t for m in meshers.values() for t in m.writes.values()} if n in filled else set())
+              for n, k in kinds.items()}
+    problems = [(f"kinds.{name}", late_why(later, types))
+                for name, later, types in taken_late(list(kinds), reads, writes) if name in filled or later in filled]
+    return [DefinitionError(data_root() / "stages.toml", problems)] if problems else []
 
 
 def meshers(ctx: Context) -> dict[str, MesherDefinition]:
     """The meshers, loaded once per invocation."""
-    return ctx.cached("meshers", load_meshers)
+    return _cached(ctx, "meshers")
 
 
 def formulations(ctx: Context) -> dict[str, FormulationDefinition]:
     """The formulations, loaded once per invocation; they need no engine registry."""
-    return ctx.cached("formulations", load_formulations)
+    return _cached(ctx, "formulations")
 
 
 def units(ctx: Context) -> Units:
@@ -221,7 +450,7 @@ def load_places() -> dict[str, PlaceKind]:
 
 def places(ctx: Context) -> dict[str, PlaceKind]:
     """The kinds of place, loaded once per invocation."""
-    return ctx.cached("places", load_places)
+    return _cached(ctx, "places")
 
 
 def load_properties() -> dict[str, Property]:
@@ -233,7 +462,7 @@ def load_properties() -> dict[str, Property]:
 
 def properties(ctx: Context) -> dict[str, Property]:
     """The property list, loaded once per invocation."""
-    return ctx.cached("properties", load_properties)
+    return _cached(ctx, "properties")
 
 
 def load_dispersion() -> Dispersion:
@@ -248,7 +477,7 @@ def load_dispersion() -> Dispersion:
 
 def dispersion(ctx: Context) -> Dispersion:
     """The variables and the dispersion models, loaded once per invocation."""
-    return ctx.cached("dispersion", load_dispersion)
+    return _cached(ctx, "dispersion")
 
 
 def load_importers() -> dict[str, Importer]:
@@ -283,7 +512,7 @@ def load_importers() -> dict[str, Importer]:
 
 def importers(ctx: Context) -> dict[str, Importer]:
     """The importers, loaded once per invocation."""
-    return ctx.cached("importers", load_importers)
+    return _cached(ctx, "importers")
 
 
 def load_step_kinds() -> dict[str, StepKind]:
@@ -294,7 +523,7 @@ def load_step_kinds() -> dict[str, StepKind]:
 
 def step_kinds(ctx: Context) -> dict[str, StepKind]:
     """The step kinds, loaded once per invocation."""
-    return ctx.cached("step_kinds", load_step_kinds)
+    return _cached(ctx, "step_kinds")
 
 
 def states_dir() -> Path:
@@ -333,7 +562,7 @@ def load_templates() -> dict[str, Path]:
 
 def templates(ctx: Context) -> dict[str, Path]:
     """The project templates, listed once per invocation."""
-    return ctx.cached("templates", load_templates)
+    return _cached(ctx, "templates")
 
 
 def _type(files: str, model: type | None, load: Callable[[], Any]) -> Any:
@@ -351,10 +580,16 @@ class Catalogue:
     environments: dict[str, EnvironmentDefinition] = _type("environments/<name>.toml", EnvironmentDefinition,
                                                            load_environments)
     managers: dict[str, ManagerKind] = _type("managers/<kind>.toml", ManagerKind, load_managers)
+    process: ProcessStart = _type("process.toml", ProcessStart, load_process)
+    naming: Naming = _type("naming.toml", Naming, load_naming)
+    programs: dict[str, Program] = _type("programs.toml", Program, load_programs)
     schedulers: dict[str, SchedulerKind] = _type("schedulers/<kind>.toml", SchedulerKind, load_schedulers)
     units: UnitTable = _type("units.toml", UnitTable, load_units)
     formulations: dict[str, FormulationDefinition] = _type("formulations/<family>.toml", FormulationDefinition,
                                                            load_formulations)
+    artifacts: dict[str, Artifact] = _type("artifacts.toml", Artifact, load_artifacts)
+    stages: Stages = _type("stages.toml", Stages, load_stages)
+    handovers: dict[str, HandOver] = _type("handovers/<name>.toml", HandOver, load_handovers)
     meshers: dict[str, MesherDefinition] = _type("meshers/<id>.toml", MesherDefinition, load_meshers)
     places: dict[str, PlaceKind] = _type("geometry/kinds.toml", PlaceKind, load_places)
     properties: dict[str, Property] = _type("properties.toml", Property, load_properties)
@@ -367,11 +602,17 @@ class Catalogue:
 
 def load_catalogue() -> Catalogue:
     """Every definition, or every problem with every file."""
+    return _whole(lambda kind: _loader(kind)())
+
+
+def _whole(load_kind: Callable[[str], Any]) -> Catalogue:
+    """Every type of definition, each by ``load_kind`` given its field's name — or every problem
+    with every file, together."""
     errors: list[DefinitionError] = []
     parts: dict = {}
     for kind in fields(Catalogue):
         try:
-            parts[kind.name] = kind.metadata["load"]()
+            parts[kind.name] = load_kind(kind.name)
         except CatalogueError as exc:
             errors.extend(exc.errors)
         except DefinitionError as exc:

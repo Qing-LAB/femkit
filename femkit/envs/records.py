@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
 
-from femkit.core.persist import read_json
 from femkit.core.schema import Model
 
 
@@ -19,6 +17,14 @@ class Manifest(Model):
     manager_kind: str = Field(description="the manager kind that made it")
     manager_version: str = Field(description="that manager's version")
     solver_version: str = Field(description="what the engine's version probe reported")
+    projects: list[str] = Field(default_factory=list, description="the packages the projects under the projects "
+                                "root declare that it was installed with, beside its own",
+                                json_schema_extra={"doc": "envs.md § 4.3"})
+    settings: dict[str, list[str]] | None = Field(default=None, description="the person's own settings of the "
+                                                  "manager that would have changed what went into it, which its "
+                                                  "commands set aside — each by its key, with where the manager read "
+                                                  "it; none where the manager's kind declares no way to read them",
+                                                  json_schema_extra={"doc": "envs.md § 4.4"})
     time: str = Field(description="when it was written, UTC")
 
 
@@ -37,10 +43,3 @@ class ChecksRecord(Model):
     outcomes: list[CheckOutcome] = Field(description="every check's outcome")
     time: str = Field(description="when it was written, UTC")
 
-
-def read(path: Path, model):
-    """The record, or None when it is missing or does not load (it then counts as missing)."""
-    try:
-        return model.model_validate(read_json(path))
-    except (OSError, ValueError):
-        return None

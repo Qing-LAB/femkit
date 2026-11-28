@@ -1,9 +1,9 @@
 # The property list (materials.md § 1): every material property femkit knows, named once, with
 # its unit, its form, and its name in each engine and each source. A formulation lists the names
-# it reads; a material holds its datasets under them; a translator writes the engine's name from
-# here. A property joins the list with the first formulation that reads it, or as the equivalent
-# form of one that a source gives. `depends_on` names the variables of dispersion.toml a dataset
-# of it may vary with (materials.md § 2).
+# it reads; a material holds its datasets under them; an engine's input writer writes the
+# engine's name from here. A property joins the list with the first formulation that reads it, or
+# as the equivalent form of one that a source gives. `depends_on` names the variables of
+# dispersion.toml a dataset of it may vary with (materials.md § 2).
 
 [relative_permittivity]
 description = "the material's relative permittivity"

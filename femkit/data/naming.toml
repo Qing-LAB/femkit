@@ -1,0 +1,6 @@
+# Every environment's name with the package manager (envs.md § 1): the control environment's, whole,
+# and every other's, `{name}` its name in femkit — `femkit-elmer`, `femkit-elmer-cuda`. The one home
+# of the rule: read by femkit/definitions/catalogue.py (`managed`) and, each as its one line, by
+# scripts/install-env.sh, which runs before Python.
+control = "femkit"
+other = "femkit-{name}"

@@ -1,32 +1,228 @@
-.graph { position: relative; width: 100%; height: 100%; background: var(--bg); }
-.graph .react-flow__renderer { background: transparent; }
-.graph__ground { color: var(--line-strong); }
-.graph__node { --tone: var(--rank-0); position: relative; width: var(--node-width); padding: var(--space-2) var(--space-3) var(--space-3);
-  border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow);
-  border-top: 3px solid var(--tone); transition: box-shadow var(--motion), border-color var(--motion); }
-.graph__node--rank-1 { --tone: var(--rank-1); }
-.graph__node--rank-2 { --tone: var(--rank-2); }
-.graph__node--rank-3 { --tone: var(--rank-3); }
-.graph__node--rank-4 { --tone: var(--rank-4); }
-.graph__node--chosen { box-shadow: 0 0 0 2px var(--tone), var(--shadow-lg); }
-.graph__node--wrong { border-color: var(--bad-soft); }
-.graph__kind { display: flex; align-items: center; gap: var(--space-1); color: var(--tone); font-size: var(--text-2xs);
-  font-weight: var(--weight-strong); text-transform: uppercase; letter-spacing: var(--tracking-caps); }
-.graph__label { margin-top: 2px; font-size: var(--text-md); font-weight: var(--weight-strong); color: var(--text); overflow-wrap: anywhere; }
-.graph__findings { margin-top: var(--space-1); display: inline-flex; padding: 0 var(--space-2); border-radius: var(--radius-pill);
-  background: var(--bad-soft); color: var(--bad); font-size: var(--text-2xs); font-weight: var(--weight-medium); }
-.graph .graph__in, .graph .graph__port { width: 10px; height: 10px; border: 2px solid var(--surface); background: var(--tone); }
-.graph .graph__in { background: var(--line-strong); }
-.graph__wire .react-flow__edge-path { stroke: var(--line-strong); stroke-width: 1.6; }
-.graph__wire--text .react-flow__edge-path { stroke-dasharray: 5 4; }
-.graph__wire.selected .react-flow__edge-path { stroke: var(--accent); }
-.graph .react-flow__edge-textbg { fill: var(--bg); }
-.graph .react-flow__edge-text { fill: var(--text-muted); font-size: var(--text-2xs); }
-.graph__controls { box-shadow: var(--shadow); border-radius: var(--radius-sm); overflow: hidden; }
-.graph__controls button { background: var(--surface); border-bottom-color: var(--line); fill: var(--text-muted); }
-.graph__map { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); }
-.graph__map-node--rank-0 { fill: var(--rank-0); }
-.graph__map-node--rank-1 { fill: var(--rank-1); }
-.graph__map-node--rank-2 { fill: var(--rank-2); }
-.graph__map-node--rank-3 { fill: var(--rank-3); }
-.graph__map-node--rank-4 { fill: var(--rank-4); }
+/* Graph: the canvas — free-standing cards, each wearing its group's colour on its title; its slots as
+   rows, each dot on the edge facing its wires' other ends, in the colour of what it carries;
+   curved wires in those colours, a waiting one dashed; what is lit stands out and the rest is dimmed;
+   the clicked wires' sentences by the click; a legend and a minimap over the canvas. */
+.graph { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: var(--color-canvas); }
+.graph__toolbar {
+  display: flex; justify-content: flex-end; gap: var(--space-1); padding: var(--space-1) var(--space-2);
+  background: var(--color-surface); border-bottom: var(--size-hairline) solid var(--color-line);
+}
+.graph__area { position: relative; flex: 1; min-height: 0; }
+.graph .react-flow { --xy-background-color: transparent; }
+.graph__unplaced { visibility: hidden; }
+.graph--measure .react-flow__viewport, .graph--laying .react-flow__viewport { opacity: 0; }
+.graph--placed .react-flow__viewport { transition: opacity var(--motion-base) var(--motion-ease-out); }
+.graph .react-flow__node.dragging { cursor: grabbing; }
+
+/* A card: its group's colour — a part's section's, a stage's kind's — on its title and its edge. It is
+   as wide as its kind line on one line, from a card's width up to its widest; its name and its slots'
+   words take the width it has, never widen it. An object's card on its own is a small one. */
+.graph__card {
+  --tint: var(--section, var(--stage, var(--color-line-strong)));
+  position: relative; display: flex; flex-direction: column;
+  width: max-content; min-width: var(--size-card); max-width: var(--size-card-wide);
+  color: var(--color-text); background: var(--color-surface); cursor: grab;
+  border: var(--size-hairline) solid var(--color-line); border-top: var(--size-stripe) solid var(--tint);
+  border-radius: var(--size-radius); box-shadow: var(--layer-raised-shadow);
+  transition: box-shadow var(--motion-quick) var(--motion-ease-standard), border-color var(--motion-quick) var(--motion-ease-standard),
+              opacity var(--motion-quick) var(--motion-ease-standard);
+}
+.graph__card:hover { box-shadow: var(--layer-lifted-shadow); }
+.graph__card:focus-visible { outline: none; box-shadow: 0 0 0 var(--size-ring) var(--color-ring), var(--layer-lifted-shadow); }
+.graph__card--lit { border-color: var(--color-accent); border-top-color: var(--tint); }
+.graph__card--dim { opacity: var(--color-opacity-dim); }
+.graph__card--selected, .graph__card--selected:hover {
+  border-color: var(--color-accent); border-top-color: var(--tint);
+  box-shadow: 0 0 0 var(--size-ring) var(--color-ring), var(--layer-lifted-shadow);
+}
+.graph__card--marked { outline: var(--size-rule) dashed var(--color-accent); outline-offset: var(--size-rule); }
+.graph__card--small { min-width: var(--size-card-small); max-width: var(--size-card-small); }
+.graph__name-line, .graph__rows { contain: inline-size; }
+
+/* Each group's shape — with its colour and its icon, what tells its cards apart — drawn whole, so the
+   slots on a card's edges are never cut: its corners, its border, a tab above it or a notch in it. */
+.graph__card[data-shape="rounded"] { border-radius: var(--size-radius-lg); }
+.graph__card[data-shape="square"] { border-radius: 0; }
+.graph__card[data-shape="round"] { border-radius: var(--size-control); }
+.graph__card[data-shape="double"] { border: var(--size-ring) double var(--tint); border-top-width: var(--size-stripe); }
+.graph__card[data-shape="tab"] { --graph-tab-width: var(--size-tab); --graph-tab-height: var(--space-2); border-top-left-radius: 0; }
+.graph__card[data-shape="notch"] { --graph-tab-width: var(--space-8); --graph-tab-height: var(--space-2); }
+.graph__card[data-shape="tab"]::before, .graph__card[data-shape="notch"]::before {
+  content: ""; position: absolute; width: var(--graph-tab-width); height: var(--graph-tab-height); pointer-events: none;
+}
+.graph__card[data-shape="tab"]::before {
+  left: calc(var(--size-hairline) * -1); bottom: 100%; background: var(--tint);
+  border-radius: var(--size-radius-sm) var(--size-radius-sm) 0 0;
+}
+.graph__card[data-shape="notch"]::before {
+  left: 50%; top: calc(var(--size-stripe) * -1); transform: translateX(-50%); background: var(--color-canvas);
+  border-radius: 0 0 var(--size-radius) var(--size-radius);
+}
+
+.graph__title {
+  position: relative; display: flex; flex-direction: column; gap: var(--space-1);
+  padding: var(--space-2) var(--space-3); border-bottom: var(--size-hairline) solid var(--color-line);
+}
+.graph__title { border-top-left-radius: inherit; border-top-right-radius: inherit; }
+.graph__title::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; background: var(--tint); opacity: var(--color-opacity-tint);
+  border-radius: inherit;
+}
+.graph__name-line, .graph__kind-line { position: relative; }   /* the title's lines over its wash */
+.graph__card[aria-expanded="false"] .graph__title { border-bottom: none; }
+.graph__name-line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; min-height: var(--size-control-sm); }
+.graph__controls { display: inline-flex; align-items: center; flex: none; }
+.graph__copies {
+  padding: 0 var(--space-2); font-size: var(--type-size-2xs); font-weight: var(--type-weight-strong); color: var(--color-accent-text);
+  background: var(--color-accent-soft); border-radius: var(--size-radius-pill);
+}
+.graph__icon {
+  display: grid; place-items: center; flex: none; width: var(--size-control-sm); height: var(--size-control-sm);
+  color: var(--color-surface); background: var(--tint); border-radius: var(--size-radius-sm);
+}
+.graph__name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--type-size-md); font-weight: var(--type-weight-strong); line-height: var(--type-leading-snug);
+}
+/* What the card is, its state, its engine and its tags, on one line — wrapped only where it outgrows the card. */
+.graph__kind-line { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.graph__kind {
+  font-size: var(--type-size-2xs); font-weight: var(--type-weight-strong); letter-spacing: var(--type-tracking-caps);
+  text-transform: uppercase; color: var(--color-text-muted);
+}
+/* An object's value on its own card — a definition's, in its unit. */
+.graph__value { font-family: var(--type-mono); font-size: var(--type-size-xs); color: var(--color-text); overflow-wrap: anywhere; }
+/* A word the card carries in a pill: a stage's engine, or what a port names that is no node — a study's. */
+.graph__chip {
+  padding: 0 var(--space-2); font-size: var(--type-size-2xs); font-weight: var(--type-weight-strong);
+  letter-spacing: var(--type-tracking-caps); text-transform: uppercase; color: var(--color-text-muted);
+  border: var(--size-hairline) solid var(--color-line-strong); border-radius: var(--size-radius-pill);
+}
+.graph__count {
+  display: inline-grid; place-items: center; flex: none; min-width: var(--size-badge); height: var(--size-badge); padding: 0 var(--space-1);
+  font-size: var(--type-size-2xs); font-weight: var(--type-weight-bold); color: var(--color-surface);
+  background: var(--severity, var(--color-text-muted)); border-radius: var(--size-radius-pill);
+}
+.graph__row .graph__count { margin-left: auto; }
+
+/* A box's tag: a case, the stages cases share, a grouping folder — in its own colour. */
+.graph__tag {
+  display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-2);
+  font-family: var(--type-mono); font-size: var(--type-size-2xs); color: var(--color-text);
+  background: var(--color-surface); border: var(--size-hairline) solid var(--tag, var(--color-line-strong)); border-radius: var(--size-radius-pill);
+}
+.graph__tag::before { content: ""; width: var(--size-dot); height: var(--size-dot); background: var(--tag, var(--color-line-strong)); border-radius: var(--size-radius-pill); }
+
+/* The slots, one row each across the whole card, so each dot stands on its edge. */
+.graph__rows { margin: 0; padding: var(--space-1) 0; list-style: none; display: flex; flex-direction: column;
+               gap: var(--space-1); }
+/* A row's label and its sentence start on one line, at its top: a sentence that wraps runs down inside
+   its own row, never beside the next row's label; each part of a row as tall as a badge at least, so
+   one that wraps not starts on its first line, and the row's dot stands on that line. */
+.graph__row {
+  position: relative; display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0;
+  min-height: var(--size-badge); padding: 0 calc(var(--size-handle) + var(--space-3));
+  font-size: var(--type-size-xs); line-height: var(--type-leading-snug); color: var(--color-text-muted);
+}
+.graph__row > span:not(.graph__count) { display: inline-flex; align-items: center; min-height: var(--size-badge); }
+.graph .graph__row > .graph__slot { top: calc(var(--size-badge) / 2); }
+.graph__row--right { justify-content: flex-end; text-align: end; }
+.graph__row--object { cursor: pointer; }
+.graph__row--object:hover { background: var(--color-surface-hover); }
+.graph__row--selected { background: var(--color-accent-soft); color: var(--color-accent-text); }
+.graph__row--marked { outline: var(--size-hairline) dashed var(--color-accent); outline-offset: calc(var(--size-hairline) * -1); }
+.graph__row--lit { color: var(--color-text); }
+/* An object's slot, named by the object it belongs to. */
+.graph__object { flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--type-weight-medium); color: var(--color-text); }
+.graph__words { min-width: 0; font-family: var(--type-mono); font-size: var(--type-size-2xs); overflow-wrap: anywhere; }
+.graph__row--lit .graph__words { color: var(--color-accent-text); }
+
+/* A slot's dot, on the card's edge, in the colour of what it carries; where several of a row stand on
+   one edge, each after the first a step further in. */
+.graph .graph__slot {
+  --graph-slot-shift: calc(var(--graph-slot-step, 0) * (var(--size-handle) + var(--space-1)));
+  width: var(--size-handle); height: var(--size-handle); min-width: 0; min-height: 0;
+  background: var(--wire, var(--color-wire)); border: var(--size-hairline) solid var(--color-surface);
+}
+/* Inside the card's border, never across it: each marker its own width and a step in from the edge. */
+.graph .graph__slot.react-flow__handle-left { translate: calc(var(--size-handle) / 2 + var(--space-1) + var(--graph-slot-shift)) 0; }
+.graph .graph__slot.react-flow__handle-right { translate: calc((var(--size-handle) / 2 + var(--space-1) + var(--graph-slot-shift)) * -1) 0; }
+/* What a slot is, told by its shape on either edge it stands on: an output gives — a round dot; an
+   input takes — a triangle pointing into its card. One size for both. */
+.graph .graph__slot.source { border-radius: 50%; }
+.graph .graph__slot.target { border-radius: 0; border: 0; }
+.graph .graph__slot.target.react-flow__handle-left { clip-path: polygon(0 0, 100% 50%, 0 100%); }
+.graph .graph__slot.target.react-flow__handle-right { clip-path: polygon(100% 0, 0 50%, 100% 100%); }
+.graph .graph__slot--lit { box-shadow: 0 0 0 var(--size-rule) var(--color-ring); }
+
+/* A wire: a curve in the colour of what it carries; a click lights it and says it, the pointer passing
+   over does nothing — React Flow leaves a wire nobody selects `inactive`, without pointer events. */
+.graph .react-flow__edge.graph__wire { pointer-events: visibleStroke; cursor: pointer; }
+.graph__wire .react-flow__edge-path { stroke: var(--wire, var(--color-wire)); stroke-width: var(--size-rule); fill: none; }
+.graph__wire--waiting .react-flow__edge-path { stroke-dasharray: var(--space-1) var(--space-1); }
+.graph__wire--lit .react-flow__edge-path { stroke-width: var(--size-ring); }
+.graph__wire--dim { opacity: var(--color-opacity-dim); }
+.graph__wire { transition: opacity var(--motion-quick) var(--motion-ease-standard); }
+
+/* The clicked wires' sentences, by the click: after it and above it, or before it and below it where
+   the canvas has more room there. */
+.graph__tip {
+  --graph-tip-dx: var(--space-3); --graph-tip-dy: calc(-100% - var(--space-3));
+  position: absolute; left: var(--graph-tip-x); top: var(--graph-tip-y); z-index: var(--layer-overlay);
+  width: max-content; max-width: var(--size-tip); padding: var(--space-1) var(--space-2); pointer-events: none; visibility: hidden;
+  transform: translate(var(--graph-tip-dx), var(--graph-tip-dy));
+  font-size: var(--type-size-xs); line-height: var(--type-leading-snug); color: var(--color-text);
+  background: var(--color-surface-raised); border: var(--size-hairline) solid var(--color-line-strong);
+  border-radius: var(--size-radius-sm); box-shadow: var(--layer-overlay-shadow);
+}
+.graph__tip--shown { visibility: visible; }
+.graph__tip[data-before="true"] { --graph-tip-dx: calc(-100% - var(--space-3)); }
+.graph__tip[data-below="true"] { --graph-tip-dy: var(--space-4); }
+.graph__tip-line { margin: 0; }
+.graph__tip-line + .graph__tip-line { margin-top: var(--space-1); padding-top: var(--space-1); border-top: var(--size-hairline) solid var(--color-line); }
+
+/* The legend, opened from the toolbar: the groups' looks, what the wires carry, what a dashed wire means;
+   a group's look in little, its swatch, the list beside the canvas shows too. */
+.graph__legend {
+  position: absolute; top: var(--space-2); right: var(--space-2); z-index: var(--layer-overlay);
+  display: flex; flex-direction: column; gap: var(--space-2); max-width: var(--layout-canvas-min); padding: var(--space-2) var(--space-3);
+  font-size: var(--type-size-2xs); color: var(--color-text-muted);
+  background: var(--color-surface); border: var(--size-hairline) solid var(--color-line); border-radius: var(--size-radius-sm);
+  box-shadow: var(--layer-overlay-shadow);
+}
+.graph__legend-group { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
+.graph__legend-entry { display: inline-flex; align-items: center; gap: var(--space-1); }
+.graph__swatch {
+  --tint: var(--section, var(--stage)); --graph-tab-width: 50%; --graph-tab-height: var(--size-hairline);
+  position: relative; display: inline-grid; place-items: center; flex: none; width: var(--space-6); height: var(--space-4);
+  color: var(--tint); background: var(--color-surface); border: var(--size-rule) solid var(--tint); border-radius: var(--size-radius-sm);
+}
+.graph__swatch[data-shape="square"] { border-radius: 0; }
+.graph__swatch[data-shape="round"] { border-radius: var(--size-radius-pill); }
+.graph__swatch[data-shape="double"] { border: var(--size-ring) double var(--tint); }
+.graph__swatch[data-shape="tab"] { border-top-left-radius: 0; }
+.graph__swatch[data-shape="tab"]::before, .graph__swatch[data-shape="notch"]::before {
+  content: ""; position: absolute; width: var(--graph-tab-width); height: var(--space-1);
+}
+.graph__swatch[data-shape="tab"]::before { left: calc(var(--size-rule) * -1); bottom: 100%; background: var(--tint); }
+.graph__swatch[data-shape="notch"]::before {
+  left: 50%; top: calc(var(--size-rule) * -1); transform: translateX(-50%); background: var(--color-surface);
+}
+.graph__legend-line { width: var(--space-5); border-top: var(--size-rule) solid var(--wire, var(--color-wire)); }
+.graph__legend-line--waiting { border-top-style: dashed; }
+
+/* A card's own menu, where the person pressed: duplicate it here, or take this copy away. */
+.graph__menu {
+  position: absolute; left: var(--graph-menu-x); top: var(--graph-menu-y); z-index: var(--layer-overlay);
+  display: flex; flex-direction: column; align-items: stretch; padding: var(--space-1);
+  background: var(--color-surface-raised); border: var(--size-hairline) solid var(--color-line-strong);
+  border-radius: var(--size-radius-sm); box-shadow: var(--layer-overlay-shadow);
+}
+
+/* The minimap: the cards as quiet marks on the canvas, the view framed. */
+.graph .graph__minimap {
+  --xy-minimap-background-color: var(--color-surface); --xy-minimap-mask-background-color: var(--color-scrim);
+  --xy-minimap-mask-stroke-color: var(--color-accent);
+  border: var(--size-hairline) solid var(--color-line); border-radius: var(--size-radius-sm); box-shadow: var(--layer-raised-shadow);
+}
+.graph .graph__mini { fill: var(--color-line-strong); }

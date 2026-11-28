@@ -276,8 +276,9 @@ def taken(dataset: Value | Table | Modelled, held: str, read: str, at: Quantity 
         raise Refused(f"the data varies with the {spoken(variable)}, and the step supplies none",
                       code="dataset-varies", subject=subject)
     if at is None and isinstance(span, Span):
-        raise Refused(f"the value holds only within its range, {dataset.range[0]} to {dataset.range[1]}, never at zero "
-                      "frequency, and the step supplies no variable", code="dataset-varies", subject=subject)
+        low, high = (f"{decimal(Fraction(v))} {dataset.range.unit}" for v in dataset.range.value)
+        raise Refused(f"the value holds only within its range, {low} to {high}, never at zero frequency, and the step "
+                      "supplies no variable", code="dataset-varies", subject=subject)
     if at is not None and isinstance(span, Span):
         within(at, span.bounds, span.variable, dispersion, units, subject=subject)
     if isinstance(dataset, Value):
@@ -288,7 +289,7 @@ def taken(dataset: Value | Table | Modelled, held: str, read: str, at: Quantity 
         except UnitError as exc:
             raise Refused(str(exc), code="not-a-form", subject=subject) from None
         columns = interpolate(rows(file, dataset.convention), x, subject=subject)
-        value = Complex(*columns) * units.parse(listed.unit).value
+        value = Complex(*columns) * units.unit(listed.unit).value
     else:
         value = evaluate(dataset, held, stated_as(at, variable, dispersion, units, subject=subject), dispersion, units,
                          subject=subject)

@@ -13,7 +13,11 @@ from femkit.definitions import catalogue
 from femkit.projects import door
 
 CONDITIONS = ('"potential"', '"insulating"', '"surface_charge"', '"normal_flux"', '"interface"')
-AXIS = 'values = ["0.1 m", "0.05 m", "0.025 m"]\n'   # the Laplace study's one axis's values, after which an axis is added
+VALUES = "values = [0.1, 0.05, 0.025]\n"            # the Laplace study's one axis's values, then its unit
+#: The Laplace study's one axis's values and unit, after which an axis is added.
+AXIS = VALUES + '# the unit its values are in, where what it varies has one: a unit of its dimension\nunit = "m"\n'
+SIZE = 'size = {value = 0.1, unit = "m"}'           # the Laplace recipe's size
+LEFT = 'value = {value = 0, unit = "V"}'             # the Laplace physics' left side's potential
 STEP = 'kind = "stationary"\n'                        # the Laplace study's one step's last key
 
 
@@ -42,47 +46,80 @@ def found(issues) -> list[tuple]:
      ("unknown-parameter", "physics:electrostatics:conditions.sides.charge", "conditions.sides.charge", None, ())),
     ("laplace_square", "physics/electrostatics.toml", 'value = "bias"', "",
      ("missing-parameter", "physics:electrostatics:conditions.right.value", "conditions.right.value", None, ())),
-    ("laplace_square", "physics/electrostatics.toml", 'value = "0 V"', 'value = "0 m"',
+    ("laplace_square", "physics/electrostatics.toml", 'value = {value = 0, unit = "V"}', 'value = {value = 0, unit = "m"}',
      ("wrong-dimension", "physics:electrostatics:conditions.left.value", "conditions.left.value", None, ())),
     ("laplace_square", "physics/electrostatics.toml", 'value = "bias"', 'value = "bias * nothing"',
      ("bad-quantity", "physics:electrostatics:conditions.right.value", "conditions.right.value", None, ())),
-    # an observable set: its reduction where it is read, its unit, its point's lengths
-    ("laplace_square", "observables/midpoint.toml", 'reduction = "value"', 'reduction = "integral"',
-     ("wrong-reduction", "observables:midpoint:observables.potential_middle.reduction",
-      "observables.potential_middle.reduction", '"value"', ())),
-    ("laplace_square", "observables/midpoint.toml", 'unit = "V"', 'unit = "Vx"',
+    # an observables part: an observable's unit
+    ("laplace_square", "observables/midpoint/observables.toml", 'unit = "V"', 'unit = "Vx"',
      ("bad-unit", "observables:midpoint:observables.potential_middle.unit", "observables.potential_middle.unit",
       None, ())),
-    ("laplace_square", "observables/midpoint.toml", 'point = ["side / 2", "side / 2"]', 'point = ["side / 2", "1 V"]',
-     ("wrong-dimension", "observables:midpoint:observables.potential_middle.point",
-      "observables.potential_middle.point", None, ())),
-    ("two_material", "observables/benchmark.toml", 'group = "low"', 'group = "low"\npoint = ["0 m", "0 m"]',
-     ("unloadable", "observables:benchmark", "observables.energy_low", None, ())),        # read at two places
-    # the project file: the parts it names, a part it does not, a parameter named like a unit
+    # the project file: the parts it names, a part it does not
     ("laplace_square", "project.toml", 'components = ["square"]', 'components = ["square", "round"]',
      ("no-such-part", "project:components", "components", None, ('"square"',))),
-    ("laplace_square", "project.toml", 'studies = ["check"]', "studies = []",
+    ("laplace_square", "project.toml", 'studies = ["check"]', 'studies = []',
      ("not-named", "project:studies", "studies", '["check"]', ())),
-    ("laplace_square", "project.toml", 'bias = "1 V"', 'bias = "1 V"\nm = "2 m"',
-     ("named-like-a-unit", "project:parameters.m", "parameters.m", None, ())),
 ])
 def test_a_part_breaking_its_own_rule_is_a_finding_at_its_file_and_key(tmp_path, template, file, old, new, finding):
-    """Fails if a physics, an observable set or the project file breaking a rule of its own or
+    """Fails if a physics, an observables part or the project file breaking a rule of its own or
     its formulation's is not one finding with its code, at its file and key, with the one value
     that would be right or the choices (models.md §§ 3, 5.2; projects.md § 3; core.md § 10)."""
     code, subject, key, right, choices = finding
     assert (code, subject, file, key, right, choices) in found(check(tmp_path, template, file, old, new))
 
 
+
+
+@pytest.mark.parametrize("template, file, old, new, finding", [
+    # a text where a quantity belongs: the table to write, where it reads as a number and a unit
+    ("laplace_square", "mesh/uniform.toml", SIZE, 'size = "0.1 m"',
+     ("bad-quantity", "mesh:uniform:size", "size", '{value = 0.1, unit = "m"}', ())),
+    ("laplace_square", "physics/electrostatics.toml", LEFT, 'value = "0 V"',
+     ("bad-quantity", "physics:electrostatics:conditions.left.value", "conditions.left.value",
+      '{value = 0, unit = "V"}', ())),
+    ("two_material", "materials/dielectric_2/material.toml", "value = 4", 'value = "4"',
+     ("bad-quantity", "material:dielectric_2:properties.relative_permittivity.benchmark.value",
+      "properties.relative_permittivity.benchmark.value", "4", ())),
+    # a definition's name: one the project defines, of the field's dimension
+    ("laplace_square", "physics/electrostatics.toml", 'value = "bias"', 'value = "biass"',
+     ("bad-quantity", "physics:electrostatics:conditions.right.value", "conditions.right.value", '"bias"', ())),
+    ("laplace_square", "physics/electrostatics.toml", 'value = "bias"', 'value = "side"',
+     ("wrong-dimension", "physics:electrostatics:conditions.right.value", "conditions.right.value", None, ())),
+    ("laplace_square", "mesh/uniform.toml", SIZE, 'size = "bias"',
+     ("wrong-dimension", "mesh:uniform:size", "size", None, ())),
+    # a plain number where a unit belongs: the table it would be, in the unit the field is stated in
+    ("laplace_square", "physics/electrostatics.toml", LEFT, "value = 0",
+     ("wrong-dimension", "physics:electrostatics:conditions.left.value", "conditions.left.value",
+      '{value = 0, unit = "V"}', ())),
+    # a name among a range's numbers, where a material cites no definition
+    ("laplace_square", "materials/vacuum/material.toml", 'range = "all"', 'range = {value = ["side", 2], unit = "m"}',
+     ("bad-quantity", "material:vacuum:properties.relative_permittivity.definition.range",
+      "properties.relative_permittivity.definition.range", None, ())),
+], ids=["a recipe's size as text", "a condition's value as text", "a material's value as text",
+        "a definition misspelled", "a definition of another dimension", "a size naming a potential",
+        "a number with no unit", "a range naming a definition"])
+def test_a_quantity_is_written_in_the_one_form_and_a_text_is_a_finding_saying_the_table(tmp_path, template, file,
+                                                                                        old, new, finding):
+    """Fails if a quantity written as a text is read rather than a finding naming the table to
+    write; if a definition's name a field may cite is not checked to exist and to be of the
+    field's dimension; or if a plain number where a unit belongs is not a finding offering the
+    table in the unit the field is stated in (core.md § 11: "a field with a dimension holds a
+    table `{value = <number>, unit = "<unit>"}` … or, where the field may cite one, a
+    definition's name, its dimension checked against the field's … a text where a quantity
+    belongs is a finding saying the table to write")."""
+    code, subject, key, right, choices = finding
+    assert (code, subject, file, key, right, choices) in found(check(tmp_path, template, file, old, new))
+
+
 @pytest.mark.parametrize("template, file, old, new, key", [
-    ("two_material", "observables/benchmark.toml", 'group = "high"', 'group = "high"\nunits = "J/m"',
-     "observables.energy_high.units"),                                    # in one member of a union
-    ("laplace_square", "studies/check.toml", "[steps.solve]", "[steps.Solve]", "steps.Solve"),   # a table's key
-    ("laplace_square", "studies/check.toml", AXIS, "values = [[1]]\n",
+    ("two_material", "observables/benchmark/observables.toml", 'function = "energy_low"',
+     'function = "energy_low"\nunits = "J/m"', "observables.energy_low.units"),       # a typed value's key
+    ("laplace_square", "studies/check.toml", "[steps.potential]", "[steps.Solve]", "steps.Solve"),   # a table's key
+    ("laplace_square", "studies/check.toml", VALUES, "values = [[1]]\n",
      'axes."mesh:uniform:size".values[0]'),                              # a quoted key; no member of a union fits
-    ("two_material", "materials/dielectric_2/material.toml", 'value = "4"', "value = [4]",
+    ("two_material", "materials/dielectric_2/material.toml", "value = 4", "value = [4]",
      "properties.relative_permittivity.benchmark.value"),
-], ids=["a discriminated member", "a table's key", "a quoted key, no member fitting", "a material's value"])
+], ids=["an observable's key", "a table's key", "a quoted key, no member fitting", "a material's value"])
 def test_a_part_that_does_not_load_is_one_finding_at_each_key_its_file_writes(tmp_path, template, file, old, new,
                                                                                key):
     """Fails if a part that does not load is not one finding at each key that is wrong, written as
@@ -95,10 +132,10 @@ def test_a_part_that_does_not_load_is_one_finding_at_each_key_its_file_writes(tm
 
 
 @pytest.mark.parametrize("file, old, new, key, right, choices", [
-    ("mesh/uniform.toml", 'size = "0.1 m"', 'szie = "0.1 m"', "szie", None, ("size", "sizes")),
+    ("mesh/uniform.toml", SIZE, 'szie = {value = 0.1, unit = "m"}', "szie", None, ("size", "sizes")),
     ("studies/check.toml", 'family = "lagrange"', 'family = "lagrnge"', "numerics.element.family", None,
      ('"lagrange"', '"nedelec"')),
-    ("mesh/uniform.toml", "schema = 1", "schema = 2", "schema", "1", ()),
+    ("mesh/uniform.toml", "schema = 2", "schema = 3", "schema", "2", ()),
     ("mesh/uniform.toml", "order = 1", "order = 3", "order", None, ("1", "2")),
     ("studies/check.toml", 'family = "lagrange"', "", "numerics.element", None, ()),
 ], ids=["a misspelled key", "a misspelled value", "the one value that is right", "a value outside its list",
@@ -120,23 +157,24 @@ def test_a_part_that_does_not_load_says_at_the_key_what_would_be_right(laplace, 
     ('mesh = "uniform"', 'mesh = "fine"', ("no-such-part", "study:check:mesh", "mesh", None, ('"uniform"',))),
     ('display = ["m", "V", "V/m"]', 'display = ["m", "Vx"]', ("bad-unit", "study:check:display", "display", None, ())),
     (STEP, 'kind = "frequency"\n',
-     ("unsupported-kind", "study:check:steps.solve.kind", "steps.solve.kind", None, ('"stationary"',))),
+     ("unsupported-kind", "study:check:steps.potential.kind", "steps.potential.kind", None, ('"stationary"',))),
     # steps taking from each other (models.md § 4.5)
-    (STEP, STEP + 'takes = { charge_density = "nowhere.potential" }\n',
-     ("no-such-step", "study:check:steps.solve.takes.charge_density", "steps.solve.takes.charge_density", None, ())),
-    (STEP, STEP + 'takes = { a = "again.heat" }\n\n[steps.again]\nphysics = "electrostatics"\n' + STEP,
-     ("no-such-quantity", "study:check:steps.solve.takes.a", "steps.solve.takes.a", None,
+    (STEP, STEP + 'takes_from = { charge_density = "nowhere.potential" }\n',
+     ("no-such-step", "study:check:steps.potential.takes_from.charge_density", "steps.potential.takes_from.charge_density", None, ())),
+    (STEP, STEP + 'takes_from = { a = "again.heat" }\n\n[steps.again]\nphysics = "electrostatics"\n' + STEP,
+     ("no-such-quantity", "study:check:steps.potential.takes_from.a", "steps.potential.takes_from.a", None,
       ('"again.potential"', '"again.electric_field"', '"again.displacement"', '"again.energy_density"'))),
-    (STEP, STEP + 'takes = { a = "again.potential" }\n\n[steps.again]\nphysics = "electrostatics"\n' + STEP
-     + 'takes = { b = "solve.potential" }\n',
-     ("step-circle", "study:check:steps.solve.takes", "steps.solve.takes", None, ())),
+    (STEP, STEP + 'takes_from = { a = "again.potential" }\n\n[steps.again]\nphysics = "electrostatics"\n' + STEP
+     + 'takes_from = { b = "potential.potential" }\n',
+     ("step-circle", "study:check:steps.potential.takes_from", "steps.potential.takes_from", None, ())),
     # axes, each by the address of what it varies, and their crossing (models.md § 5.1)
     ('[axes."mesh:uniform:size"]', '[axes."mesh:uniform:nowhere"]',
      ("bad-axis", 'study:check:axes."mesh:uniform:nowhere"', 'axes."mesh:uniform:nowhere"', None, ())),
     ('[axes."mesh:uniform:size"]', '[axes.bias]',                    # no address: the one it most likely means
-     ("bad-axis", "study:check:axes.bias", "axes.bias", '"project:parameters.bias"', ())),
-    (AXIS, AXIS + '\n[axes."project:parameters.side"]\nclass = "numerical convergence"\nvalues = ["1 m", "1 V"]\n',
-     ("bad-axis-value", 'study:check:axes."project:parameters.side".values', 'axes."project:parameters.side".values',
+     ("bad-axis", "study:check:axes.bias", "axes.bias", '"project:definitions.bias"', ())),
+    (AXIS, AXIS + '\n[axes."project:definitions.side"]\nclass = "numerical convergence"\nvalues = [1, "1 V"]\n'
+                  'unit = "m"\n',
+     ("bad-axis-value", 'study:check:axes."project:definitions.side".values', 'axes."project:definitions.side".values',
       None, ())),
     (AXIS, AXIS + '\n[axes."study:check:numerics.element.degree"]\nclass = "numerical convergence"\nvalues = [1, 0]\n',
      ("bad-axis-value", 'study:check:axes."study:check:numerics.element.degree".values',
@@ -145,12 +183,12 @@ def test_a_part_that_does_not_load_says_at_the_key_what_would_be_right(laplace, 
                   '"numerical convergence"\nvalues = ["definition", "other"]\n',
      ("bad-axis-value", 'study:check:axes."component:square:assign.domain.datasets.relative_permittivity".values',
       'axes."component:square:assign.domain.datasets.relative_permittivity".values', None, ('"definition"',))),
-    (AXIS, AXIS + '\n[axes."project:parameters.bias"]\nclass = "physical sweep"\nvalues = ["1 V", "2 V"]\n',
+    (AXIS, AXIS + '\n[axes."project:definitions.bias"]\nclass = "physical sweep"\nvalues = [1, 2]\nunit = "V"\n',
      ("crossing-missing", "study:check:crossing", "crossing", None, ())),
-    (AXIS, AXIS + '\n[axes."project:parameters.bias"]\nclass = "physical sweep"\nvalues = ["1 V", "2 V"]\n\n'
+    (AXIS, AXIS + '\n[axes."project:definitions.bias"]\nclass = "physical sweep"\nvalues = [1, 2]\nunit = "V"\n\n'
                   '[crossing]\naxes = ["mesh:uniform:size"]\nreason = "at every bias"\n',
      ("crossing-incomplete", "study:check:crossing.axes", "crossing.axes",
-      '["mesh:uniform:size", "project:parameters.bias"]', ())),
+      '["mesh:uniform:size", "project:definitions.bias"]', ())),
 ])
 def test_a_study_breaking_its_own_rule_is_a_finding_at_its_key(tmp_path, old, new, finding):
     """Fails if a study naming a part the project lacks or a unit that does not read, asking a kind
@@ -161,16 +199,6 @@ def test_a_study_breaking_its_own_rule_is_a_finding_at_its_key(tmp_path, old, ne
     code, subject, key, right, choices = finding
     assert (code, subject, "studies/check.toml", key, right, choices) in found(
         check(tmp_path, "laplace_square", "studies/check.toml", old, new))
-
-
-def test_a_binding_for_an_environment_femkit_does_not_declare_is_a_finding(tmp_path):
-    """Fails if a study binding resources in an environment no definition declares is not a
-    finding at its key, the declared environments its choices (models.md § 5.1)."""
-    issues = check(tmp_path, "laplace_square", "studies/check.toml", "[environments.elmer.resources]",
-                   "[environments.elmers.resources]")
-    names = tuple(f'"{n}"' for n in sorted(catalogue.environments(kit.ctx())))
-    assert ("no-such-environment", "study:check:environments.elmers", "studies/check.toml", "environments.elmers",
-            None, names) in found(issues)
 
 
 FACES = ('"left"', '"right"', '"sides"')   # the square's groups that may be an outer boundary
@@ -184,7 +212,8 @@ FACES = ('"left"', '"right"', '"sides"')   # the square's groups that may be an 
     ('kind = "insulating"\n', 'kind = "insulating"\n\n[conditions.domain]\nkind = "insulating"\n',
      ("wrong-place", "physics:electrostatics:conditions.domain", "conditions.domain", "domain", FACES), None),
     ('kind = "insulating"\n',
-     'kind = "insulating"\n\n[sources.charge]\nkind = "charge_density"\non = "left"\nvalue = "1 C/m^3"\n',
+     'kind = "insulating"\n\n[sources.charge]\nkind = "charge_density"\non = "left"\n'
+     'value = {value = 1, unit = "C/m^3"}\n',
      ("wrong-place", "physics:electrostatics:sources.charge.on", "sources.charge.on", "left", ('"domain"',)), None),
     ('2 = "per unit depth"', '3 = "full"',
      ("no-meaning", "physics:electrostatics:meaning.2", "meaning.2", None, ('"per unit depth"', '"axisymmetric"')),
@@ -206,12 +235,12 @@ def test_what_the_pairing_finds_in_a_physics_is_said_once_at_the_physics_key(tmp
         (code, subject, "physics/electrostatics.toml", key, label, choices)]
     assert (f"did you mean `{meant}`?" in result.issues[0].message) == (meant is not None)
     states = {p.part: p.state for p in result.parts}
-    assert states["physics:electrostatics"] == "findings" and states["study:check"] != "findings"
+    assert states["physics:electrostatics"] == "errors" and states["study:check"] != "errors"
 
 
 MESH, STUDY, PROJECT = "mesh/uniform.toml", "studies/check.toml", "project.toml"
 VACUUM = "materials/vacuum/material.toml"
-SIDE = '[axes."project:parameters.side"]\nclass = "numerical convergence"\nvalues = '
+SIDE = '[axes."project:definitions.side"]\nclass = "numerical convergence"\nvalues = '
 DEGREE = '[axes."study:check:numerics.element.degree"]\nclass = "numerical convergence"\nvalues = '
 DATASET = ('[axes."component:square:assign.domain.datasets.relative_permittivity"]\nclass = "numerical convergence"\n'
            'values = ')
@@ -220,67 +249,71 @@ DATASET = ('[axes."component:square:assign.domain.datasets.relative_permittivity
 @pytest.mark.parametrize("changes, wrong", [
     # a recipe's value: the key it varies holds a value that does not read; another key does not;
     # the recipe does not load
-    ([(MESH, 'size = "0.1 m"', 'size = "0.1 furlong"')], []),
-    ([(MESH, 'size = "0.1 m"', 'size = "0.1"')], []),
-    ([(MESH, "tolerance = 1e-9", 'tolerance = "1 furlong"'), (STUDY, '"0.05 m"', '"1 V"')], ["1 V"]),
+    ([(MESH, SIZE, 'size = {value = 0.1, unit = "furlong"}')], []),
+    ([(MESH, SIZE, "size = 0.1")], []),
+    ([(MESH, "tolerance = 1e-9", 'tolerance = "1 furlong"'), (STUDY, "0.05, ", '"1 V", ')], ["1 V"]),
     ([(MESH, "order = 1", "order = 7")], []),
-    # a parameter: the one it varies does not read; another does not
-    ([(PROJECT, 'side = "1 m"', 'side = "1 furlong"'), (STUDY, AXIS, AXIS + SIDE + '["1 m", "2 m"]\n')], []),
-    ([(PROJECT, 'bias = "1 V"', 'bias = "1 furlong"'), (STUDY, AXIS, AXIS + SIDE + '["1 m", "1 V"]\n')], ["1 V"]),
+    # a definition: the one it varies does not read; another does not
+    ([(PROJECT, 'unit = "m"', 'unit = "furlong"'), (STUDY, AXIS, AXIS + SIDE + '[1, 2]\nunit = "m"\n')], []),
+    ([(PROJECT, 'unit = "V"', 'unit = "furlong"'), (STUDY, AXIS, AXIS + SIDE + '[1, "1 V"]\nunit = "m"\n')], ["1 V"]),
     # a numerics field: the study's own other key is wrong
     ([(STUDY, 'display = ["m", "V", "V/m"]', 'display = ["Vx"]'), (STUDY, AXIS, AXIS + DEGREE + "[1, 2]\n")], []),
     ([(STUDY, 'display = ["m", "V", "V/m"]', 'display = ["Vx"]'), (STUDY, AXIS, AXIS + DEGREE + "[1, 0]\n")], ["0"]),
     # a material's dataset: its material's value does not read; the material does not load
-    ([(VACUUM, 'value = "1"', 'value = "1 furlong"'), (STUDY, AXIS, AXIS + DATASET + '["definition"]\n')], []),
+    ([(VACUUM, "value = 1", 'value = {value = 1, unit = "furlong"}'), (STUDY, AXIS, AXIS + DATASET + '["definition"]\n')],
+     []),
     ([(VACUUM, 'display = "Vacuum"', "display = 1"), (STUDY, AXIS, AXIS + DATASET + '["definition"]\n')], []),
-    ([(VACUUM, 'value = "1"', 'value = "1 furlong"'), (STUDY, AXIS, AXIS + DATASET + '["definition", "x"]\n')],
+    ([(VACUUM, "value = 1", 'value = {value = 1, unit = "furlong"}'),
+      (STUDY, AXIS, AXIS + DATASET + '["definition", "x"]\n')],
      ["x"]),
-], ids=["recipe: its own key", "recipe: its own key, no unit", "recipe: another key", "recipe: not loading", "parameter: its own",
-        "parameter: another", "numerics: another key", "numerics: a wrong value", "dataset: its material's value",
+], ids=["recipe: its own key", "recipe: its own key, no unit", "recipe: another key", "recipe: not loading", "definition: its own",
+        "definition: another", "numerics: another key", "numerics: a wrong value", "dataset: its material's value",
         "dataset: its material not loading", "dataset: a wrong one"])
 def test_an_axis_is_blamed_only_for_a_value_that_fails_in_its_keys_place(tmp_path, changes, wrong):
     """Fails if an axis value is a finding because the part it varies has a finding of its own —
     its file does not load, another of its keys, or the value it holds now, does not read — which
     that part's own finding already names; or if a value that itself fails in its key's place —
     another dimension, a dataset the material does not hold, a degree below 1 — is not one; for
-    every kind of axis: a parameter, a recipe's value, a numerics field, a material's dataset
+    every kind of axis: a definition, a recipe's value, a numerics field, a material's dataset
     (models.md § 5.1: an axis's values checked against what they vary)."""
     folder = kit.copy_template(tmp_path / "projects", "laplace_square")
     for file, old, new in changes:
         kit.rewrite(folder / file, old, new)
     issues = kit.run("project.check", project="laplace_square").issues
-    assert [i.label for i in issues if i.code in ("bad-axis", "bad-axis-value")] == wrong
+    assert [i.label for i in issues if i.code in ("bad-axis", "bad-axis-value") and i.file == STUDY] == wrong
     assert any(i.severity == "error" and not i.subject.startswith("study:check:axes") for i in issues)
 
 
 @pytest.mark.parametrize("template, study, groups", [
     ("laplace_square", "check", "`left`, `right` and `sides` are each an outer boundary"),
-    ("two_material", "benchmark", "`left`, `right` and `sides` are each an outer boundary, and `middle` an interface,"),
+    ("two_material", "benchmark",
+     "`left`, `right` and `sides` are each an outer boundary, and `middle` an interface,"),
 ])
 def test_what_only_the_built_geometry_can_tell_is_one_note_on_the_study(tmp_path, template, study, groups):
     """Fails if a condition on a face — which may be an outer boundary, an interface or an
     embedded face until the geometry exists — is checked as fitting, or as not, rather than said
     to be not checked yet; if that is said other than once for the study, naming its groups and
-    their places in the person's words; or if the study's state does not say so (projects.md
-    §§ 6, 8; geometry.md § 7)."""
+    their places in the person's words; or if the study's state does not say so (projects.md §§ 6, 8;
+    geometry.md § 7; models.md § 5.1)."""
     kit.copy_template(tmp_path / "projects", template)
     result = kit.run("project.check", project=template)
     assert [(i.code, i.severity, i.file, i.key, i.message) for i in result.issues] == [
         (door.UNCHECKED, "info", f"studies/{study}.toml", "component",
-         f"whether {groups} is checked once the geometry of `{'square' if study == 'check' else 'slab'}` is built")]
+         f"whether {groups} is checked once the geometry of `{'square' if study == 'check' else 'slab'}` is "
+         "built")]
     assert {p.part: p.state for p in result.parts}[f"study:{study}"] == "unchecked" and result.ok()
 
 
-FINDINGS_FIRST = ('[[rules]]\nstate = "findings"\nwhen = "findings"\n\n'
-                  '[[rules]]\nstate = "unchecked"\nwhen = "unchecked"\n')
+ERRORS_FIRST = ('[[rules]]\nstate = "errors"\nwhen = "errors"\n\n'
+                '[[rules]]\nstate = "unchecked"\nwhen = "unchecked"\n')
 UNCHECKED_FIRST = ('[[rules]]\nstate = "unchecked"\nwhen = "unchecked"\n\n'
-                   '[[rules]]\nstate = "findings"\nwhen = "findings"\n')
+                   '[[rules]]\nstate = "errors"\nwhen = "errors"\n')
 
 
 def test_each_parts_state_is_observed_by_the_rules_its_table_declares(definitions, tmp_path):
     """Fails if `project check` gives a part's state otherwise than by the first rule that holds
-    of those `femkit/data/states/part.toml` declares, in their order: a study with a finding and
-    what cannot be checked yet is `findings` by the shipped table, and `unchecked` once a table
+    of those `femkit/data/states/part.toml` declares, in their order: a study with an error and
+    what cannot be checked yet is `errors` by the shipped table, and `unchecked` once a table
     of the test's own puts that rule first (projects.md § 8: "observed ... by the rules
     `femkit/data/states/part.toml` declares, in this order"; core.md § 7)."""
     folder = kit.copy_template(tmp_path / "projects", "laplace_square")
@@ -289,79 +322,26 @@ def test_each_parts_state_is_observed_by_the_rules_its_table_declares(definition
     def states() -> dict[str, str]:
         return {p.part: p.state for p in kit.run("project.check", project="laplace_square").parts}
 
-    assert (states()["study:check"], states()["physics:electrostatics"]) == ("findings", "complete")
-    kit.rewrite(definitions / "states" / "part.toml", FINDINGS_FIRST, UNCHECKED_FIRST)
+    assert (states()["study:check"], states()["physics:electrostatics"]) == ("errors", "complete")
+    kit.rewrite(definitions / "states" / "part.toml", ERRORS_FIRST, UNCHECKED_FIRST)
     assert (states()["study:check"], states()["physics:electrostatics"]) == ("unchecked", "complete")
 
 
-DERIVED = ('"potential"', '"electric_field"', '"displacement"', '"energy_density"')
-
-
-@pytest.mark.parametrize("template, file, old, new, code, key, choices", [
-    ("laplace_square", "observables/midpoint.toml", 'point = ["side / 2", "side / 2"]',
-     'point = ["side / 2", "side / 2", "0 m"]', "wrong-point", "observables.potential_middle.point", ()),
-    ("laplace_square", "observables/midpoint.toml", 'quantity = "potential"', 'quantity = "temperature"',
-     "no-such-quantity", "observables.potential_middle.quantity", DERIVED),
-    ("laplace_square", "observables/midpoint.toml", 'unit = "V"', 'unit = "V/m"', "wrong-unit",
-     "observables.potential_middle.unit", ()),
-    ("two_material", "observables/benchmark.toml", 'group = "low"', 'group = "low"\nside = "middle"', "wrong-side",
-     "observables.energy_low.side", ('"low"', '"high"')),
-    ("two_material", "observables/benchmark.toml", 'group = "high"', 'group = "top"', "not-promised",
-     "observables.energy_high.group", ('"low"', '"high"', '"middle"', '"left"', '"right"', '"sides"')),
-])
-def test_an_observable_its_study_cannot_read_is_a_finding_at_the_observables_key(tmp_path, template, file, old, new,
-                                                                                code, key, choices):
-    """Fails if an observable whose point has another number of lengths than the paired frame's
-    axes, whose quantity the study's physics do not derive, whose unit is not one of its quantity
-    — times what it is integrated over — whose side is no body, or whose group the component does
-    not promise, is not one finding at the observable's own key, the values that would do its
-    choices, and none on the study (models.md §§ 5.1, 5.2)."""
-    issues = check(tmp_path, template, file, old, new)
-    observables = file.removesuffix(".toml").replace("/", ":", 1)
-    assert [(i.code, i.subject, i.file, i.key, i.choices) for i in issues if i.severity == "error"] == [
-        (code, f"{observables}:{key}", file, key, choices)]
-
-
-@pytest.mark.parametrize("point", ['["side / 2", "side / 2"]', '["side / 2", "side"]'], ids=["alike", "unlike"])
-def test_lengths_of_a_point_wrong_one_way_are_one_finding_at_its_key(tmp_path, point):
-    """Fails if a point whose lengths are wrong one way — each using `side`, a parameter that is no
-    length — is said more than once at the point's key, whether its lengths read alike or not: one
-    finding per key and code, as a finding is told apart by them (core.md §§ 9, 10; models.md
-    § 5.2)."""
-    folder = kit.copy_template(tmp_path / "projects", "laplace_square")
-    kit.rewrite(folder / "project.toml", 'side = "1 m"', 'side = "1 V"')
-    kit.rewrite(folder / "observables" / "midpoint.toml", 'point = ["side / 2", "side / 2"]', f"point = {point}")
-    at = "observables:midpoint:observables.potential_middle.point"
-    assert [i.code for i in kit.run("project.check", project="laplace_square").issues if i.subject == at] == [
-        "wrong-dimension"]
-
-
-@pytest.mark.parametrize("file, old, new, subject", [
-    ("project.toml", 'bias = "1 V"', 'bias = "1 V"\nhalf = "sied / 2"', "project:parameters.half"),
-    ("observables/midpoint.toml", 'point = ["side / 2", "side / 2"]', 'point = ["sied / 2", "side / 2"]',
-     "observables:midpoint:observables.potential_middle.point"),
-], ids=["in the project file", "in an observable's point"])
-def test_a_misspelled_parameter_is_said_one_way_with_the_one_it_most_likely_means(tmp_path, file, old, new, subject):
-    """Fails if a name that is neither a unit nor a parameter — a parameter misspelled, in the
-    project file or in a value that may use the parameters — is said otherwise than one way: the
-    name once; "did you mean" the parameter closest to it; the parameters given (core.md § 11:
-    "a symbol that is neither a unit nor a name given"; models.md § 3)."""
+@pytest.mark.parametrize("file, old, new, subject, right, choices", [
+    ("mesh/uniform.toml", SIZE, 'size = "sied"', "mesh:uniform:size", '"side"', ()),
+    ("mesh/uniform.toml", SIZE, 'size = "breadth"', "mesh:uniform:size", None, ('"side"',)),
+], ids=["close to one", "close to none"])
+def test_a_misspelled_definition_is_said_one_way_with_the_one_it_most_likely_means(tmp_path, file, old, new, subject,
+                                                                                  right, choices):
+    """Fails if a name that names no definition, where a value may name one, is said otherwise than
+    one way: the name once; "did you mean" the definition closest to it, as its right value; with
+    none close, the definitions of the value's dimension its choices — never `bias`, a potential,
+    for a size (core.md § 11: "a definition's name, its dimension checked against the field's";
+    models.md § 3)."""
     (finding,) = [i for i in check(tmp_path, "laplace_square", file, old, new) if i.subject == subject]
-    assert finding.code == "bad-quantity"
-    assert finding.message.count("`sied`") == 1 and "did you mean `side`?" in finding.message
-    assert "`bias`" in finding.message
-
-
-def test_an_observable_name_two_sets_of_a_study_share_is_a_finding_on_the_study(tmp_path):
-    """Fails if two observable sets one study reports may share an observable's name — a
-    reference or an analysis names an observable by its name alone (models.md § 5.2)."""
-    folder = kit.copy_template(tmp_path / "projects", "two_material")
-    (folder / "observables" / "again.toml").write_text((folder / "observables" / "benchmark.toml").read_text())
-    kit.rewrite(folder / "studies" / "benchmark.toml", 'observables = ["benchmark"]',
-                'observables = ["benchmark", "again"]')
-    issues = kit.run("project.check", project="two_material").issues
-    assert sorted(i.label for i in issues if i.code == "observable-twice") == [
-        "energy_high", "energy_low", "potential_high", "potential_low", "potential_middle"]
+    assert (finding.code, finding.right, finding.choices) == ("bad-quantity", right, choices)
+    assert finding.message.count(new.split('"')[1]) == 1
+    assert ("did you mean `side`?" in finding.message) == (right is not None)
 
 
 def test_a_material_lacking_a_property_the_physics_reads_is_a_finding_on_the_material(tmp_path):
@@ -379,26 +359,28 @@ def test_a_material_lacking_a_property_the_physics_reads_is_a_finding_on_the_mat
 
 def test_a_broken_part_is_a_finding_and_every_other_part_is_still_checked(tmp_path):
     """Fails if a part that does not load stops the others being read and checked, or its finding
-    does not name its file and key (models.md § 11.1: "A part that does not load ... is a finding
-    on it, and every other part is still read")."""
+    does not name its file and key, each in the chain's order — by rank, then the kind's place,
+    then name (models.md
+    § 11.1: "A part that does not load ... is a finding on it, and every other part is still
+    read"; projects.md § 4)."""
     folder = kit.copy_template(tmp_path / "projects", "laplace_square")
-    kit.rewrite(folder / "physics" / "electrostatics.toml", 'value = "0 V"', "value = [")
-    kit.rewrite(folder / "observables" / "midpoint.toml", 'unit = "V"', 'unit = "Vx"')
+    kit.rewrite(folder / "physics" / "electrostatics.toml", LEFT, "value = [")
+    kit.rewrite(folder / "observables" / "midpoint" / "observables.toml", 'unit = "V"', 'unit = "Vx"')
     result = kit.run("project.check", project="laplace_square")
     assert [(i.code, i.file) for i in result.issues if i.severity == "error"] == [
-        ("bad-unit", "observables/midpoint.toml"), ("unloadable", "physics/electrostatics.toml")]
+        ("unloadable", "physics/electrostatics.toml"), ("bad-unit", "observables/midpoint/observables.toml")]
     assert {p.part: p.state for p in result.parts}["physics:electrostatics"] == "unloadable" and not result.ok()
 
 
 def test_a_project_file_that_does_not_load_is_its_own_finding_alone(tmp_path):
-    """Fails if, while the project file does not load, a part using a parameter — a physics'
+    """Fails if, while the project file does not load, a part using a definition — a physics'
     value, an observable's point, a recipe's size — has a finding of its own about it: what the
-    parameters hold is not known, and the project file's own finding says why (models.md § 3:
-    "one using a parameter that does not resolve does not resolve either, and has no finding of
-    its own")."""
+    definitions hold is not known, and the project file's own finding says why (models.md § 3;
+    projects.md § 6: "nothing for one using a parameter that does not resolve, whose own finding
+    says why")."""
     folder = kit.copy_template(tmp_path / "projects", "laplace_square")
-    kit.rewrite(folder / "mesh" / "uniform.toml", 'size = "0.1 m"', 'size = "side / 10"')
-    kit.rewrite(folder / "project.toml", "[parameters]", "[parameters")
+    kit.rewrite(folder / "mesh" / "uniform.toml", SIZE, 'size = "side"')
+    kit.rewrite(folder / "project.toml", "[definitions]\n", "[definitions\n")
     result = kit.run("project.check", project="laplace_square")
     assert [(i.code, i.file) for i in result.issues if i.severity != "info"] == [("unloadable", "project.toml")]
     states = {p.part: p.state for p in result.parts}
@@ -408,8 +390,8 @@ def test_a_project_file_that_does_not_load_is_its_own_finding_alone(tmp_path):
 def test_a_name_the_project_file_misspells_has_the_list_put_right_as_its_one_finding(tmp_path):
     """Fails if a study the project file names that has no file, close to one there, is not one
     finding whose right value is the list with the misspelling replaced — `["check"]`, never
-    `["chek", "check"]` — or the study it means is said, besides, to be not named (projects.md
-    § 3: "a name with no file is a finding with its fix"; core.md § 10)."""
+    `["chek", "check"]` — or the study it means is said, besides, to be not named (projects.md § 3:
+    "a name with no file is a finding with its fix"; core.md § 10)."""
     issues = check(tmp_path, "laplace_square", "project.toml", 'studies = ["check"]', 'studies = ["chek"]')
     assert [(i.code, i.key, i.right, i.choices) for i in issues if i.severity != "info"] == [
         ("no-such-part", "studies", '["check"]', ())]
@@ -421,10 +403,10 @@ def test_a_step_taking_from_no_other_step_offers_the_others_as_its_choices(tmp_p
     are the study's other steps, each with the quantity it names (core.md § 10: "where several
     would do … they are `choices`"; models.md § 4.5)."""
     issues = check(tmp_path, "laplace_square", "studies/check.toml", STEP,
-                   STEP + 'takes = { charge_density = "solv.potential" }\n\n[steps.other]\nphysics = "electrostatics"\n'
+                   STEP + 'takes_from = { charge_density = "solv.potential" }\n\n[steps.other]\nphysics = "electrostatics"\n'
                    + STEP + '\n[steps.third]\nphysics = "electrostatics"\n' + STEP)
     assert [(i.code, i.key, i.choices) for i in issues if i.code == "no-such-step"] == [
-        ("no-such-step", "steps.solve.takes.charge_density", ('"other.potential"', '"third.potential"'))]
+        ("no-such-step", "steps.potential.takes_from.charge_density", ('"other.potential"', '"third.potential"'))]
 
 
 def test_a_step_kind_its_formulation_does_not_support_is_a_finding_whatever_the_component(tmp_path):
@@ -437,4 +419,4 @@ def test_a_step_kind_its_formulation_does_not_support_is_a_finding_whatever_the_
     issues = kit.run("project.check", project="laplace_square").issues
     assert "component" in [i.key for i in issues if i.code == "no-such-part"]
     assert [(i.key, i.choices) for i in issues if i.code == "unsupported-kind"] == [
-        ("steps.solve.kind", ('"stationary"',))]
+        ("steps.potential.kind", ('"stationary"',))]

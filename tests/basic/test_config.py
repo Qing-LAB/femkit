@@ -27,7 +27,7 @@ def init(**fields):
 def test_init_writes_each_key_directly_under_the_line_showing_it():
     """Fails if config init writes a key away from its help: appended at its table's end, where
     the next table's help stands (config.md § 3.2)."""
-    init(projects="/data/projects", jobs=4, preamble=["module load x"], activation="source activate")
+    init(projects="/data/projects", jobs=4, preamble=["module load x"], command="source activate")
     entries = key_comments(settings.config_file().read_text())
     shown = {e.path: e.line for e in entries if e.shown}
     written = {e.path: e.line for e in entries if not e.shown and not e.header}
@@ -60,16 +60,17 @@ def test_an_invalid_value_or_key_is_refused_before_anything_is_written(request_,
 def test_a_value_is_toml_text_and_a_bare_word_is_refused():
     """Fails if config set guesses that a bare word is text, reads TOML text otherwise than
     the file would, or fails on a value of the wrong type instead of refusing it — here `true`
-    for a number; or if the refusal of a bare word does not give, as its next step, the command
-    again with the word in quotes where the key takes that text, and only there (config.md § 3.2:
-    "a bare word is refused, never guessed to be text"; core.md § 9: "its next steps say what to
-    do"; web.md § 7.3)."""
-    with refused(UsageError, "not-toml", "/data/projects") as caught:
+    for a number; or if the refusal of a bare word is about the word rather than the key, or does
+    not give, as its next step, the command again with the word in quotes where the key takes that
+    text, and only there (config.md § 3.2: "a bare word is refused, never guessed to be text";
+    core.md § 9: a refusal's subject is "what it is about: a setting", and "its next steps say
+    what to do"; web.md § 7.3)."""
+    with refused(UsageError, "not-toml", "paths.projects") as caught:
         planned("config.set", key="paths.projects", value="/data/projects")
     (again,) = caught.value.next
     assert again.call.operation == "config.set"
     assert again.call.request == {"key": "paths.projects", "value": '"/data/projects"'}
-    with refused(UsageError, "not-toml", "eight") as caught:
+    with refused(UsageError, "not-toml", "build.jobs") as caught:
         planned("config.set", key="build.jobs", value="eight")       # no text fits: no quoted command
     assert caught.value.next == ()
     with refused(UsageError, "invalid-value", "build.jobs"):
@@ -144,6 +145,25 @@ def test_init_with_nothing_to_add_still_reports_kept_ignored_and_blocking_keys()
     assert {("stated-unset", "activation.preamble"), ("stated-unset", "activation.command")} <= codes
 
 
+def test_a_step_stating_what_the_person_alone_knows_asks_for_it_one_step_a_form():
+    """Fails if a step that states a key only the person knows — how this machine enters an
+    environment — writes the key's example as if it were their value (`--preamble 'module load
+    mamba'`), or lists the alternatives of one key each as a step of its own (`--activation
+    'source activate'`, `--activation 'conda activate'`, …), rather than one step for each form of
+    the command, each asking for its value (workflow.md § 7: "never an example written as if it
+    were theirs"; config.md § 3.2: "naming the options, one step for each form of the command")."""
+    plan = planned("config.init", **GIVEN)[1]
+    steps = {i.subject: i.next for i in plan.issues if i.code == "stated-unset"}
+    preamble, command = steps["activation.preamble"], steps["activation.command"]
+    assert [(s.call.request, [f.field for f in s.fills]) for s in preamble] == [({}, ["preamble"]),
+                                                                                 ({"no_preamble": True}, [])]
+    (asking,) = command
+    assert (asking.call.request, [f.field for f in asking.fills]) == ({}, ["command"])
+    for key, step in (("activation.preamble", preamble[0]), ("activation.command", asking)):
+        example = settings.key(key).example
+        assert all(str(v) not in step.command for v in (example if isinstance(example, list) else [example]))
+
+
 @pytest.mark.parametrize("text", [
     "[build\n",                              # not TOML
     "[build]\njobs = 0\n",                   # a value the model rejects
@@ -181,3 +201,30 @@ def test_config_path_names_each_of_femkits_directories_and_what_chose_it():
     or names another rule than the variable that chose it (config.md § 2)."""
     rows = run("config.path").directories
     assert [(r.name, r.rule) for r in rows] == list(dirs.VARIABLES.items())
+
+
+def test_a_settings_step_is_chosen_from_its_fields_declaration():
+    """Fails if the step that states a key another command needs is chosen otherwise than by the
+    key's field: `config init`, once, for the keys it asks for (`ask`) — `paths.projects` and the
+    activation among them — and `config set`, its value to fill, for one it proposes but cannot here
+    (`propose`), `launch.mpi` (config.md § 3.2: "a setting's next step is built in one place … its
+    step is `config init` … a key `config init` proposes but cannot here … is `config set`")."""
+    def said(keys):
+        return [(a.call.operation, a.call.request, [f.field for f in a.fills]) for a in settings.steps(keys)]
+    assert said(["paths.projects"]) == [("config.init", {}, [])]
+    assert said(["activation.preamble", "activation.command"]) == [("config.init", {}, [])]
+    assert said(["launch.mpi"]) == [("config.set", {"key": "launch.mpi"}, ["value"])]
+    assert said(["activation.command", "build.cuda_architectures"]) == [
+        ("config.init", {}, []), ("config.set", {"key": "build.cuda_architectures"}, ["value"])]
+
+
+def test_a_settings_value_to_fill_takes_the_keys_own_schema_so_a_list_is_given_as_a_list():
+    """Fails if `config set`'s value to fill, for a key holding a list, does not carry the key's own
+    schema fragment — a list — so the page would ask for one text and write a list key as a string
+    (web.md § 7.3: "`json_schema` is a self-contained JSON schema fragment of what it may hold";
+    config.md § 3.1; the fill's `toml` says the request takes it as TOML text)."""
+    from femkit.config import settings
+    (step,) = settings.setting(["launch.mpi"])
+    (fill,) = step.fills
+    assert any(s.get("type") == "array" for s in fill.json_schema.get("anyOf", [fill.json_schema]))
+    assert fill.toml == "whole"

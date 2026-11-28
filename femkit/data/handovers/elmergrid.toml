@@ -1,0 +1,15 @@
+# Elmer's hand-over (geometry.md § 8): Gmsh's MSH 2.2, converted by ElmerGrid inside Elmer's own job
+# before the solve. Its program checks that every group it hands reached Elmer by its name.
+reads = "mesh/msh-2.2"
+engine = "elmer"
+orders = [1, 2]
+names = ["body", "outer_boundary", "interface", "embedded"]
+conversion = "ElmerGrid 14 2, given the mesh's bodies and faces alone, into a folder named without a dot: ElmerGrid cuts an output name at its first dot"
+program = "handover.py"
+arguments = ["{mesh}", "{handover}", "mesh"]
+outputs = ["mesh"]
+basis = """measured 2026-11-25, ElmerGrid of Elmer 26.2 on Gmsh 4.15.2's MSH 2.2: the names of bodies, outer \
+boundaries, interfaces and embedded faces kept, in 2-D and 3-D; second order kept as six-node triangles, \
+three-node edges and ten-node tetrahedra (306, 203, 510), which Elmer reads as curved. Not kept: the name of a \
+point group, nor of a group no element is in; and in 3-D an edge or a point group makes ElmerGrid read the mesh \
+as 2-D and drop every body's and face's name — so the hand-over gives ElmerGrid the bodies and faces alone"""

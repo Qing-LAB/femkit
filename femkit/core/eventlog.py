@@ -68,6 +68,7 @@ class LogState(Model):
     finished_steps: tuple[str, ...]
     failed_step: str | None
     interrupted: bool
+    running: str | None = None     # the step started and not ended while its run goes on: whose last lines a surface shows
 
 
 def _runs(start: dict) -> bool:
@@ -93,6 +94,7 @@ def fold(events: list[dict]) -> LogState:
             steps[e["step"]] = held.model_copy(update={"outcome": e.get("outcome"), "log": e.get("log") or held.log})
             if e.get("outcome") != "done":
                 failed = e["step"]
+    alive = start is not None and end is None and _runs(start)
     return LogState(
         operation=start.get("operation") if start else None,
         basis=(start.get("basis") or {}) if start else {},
@@ -102,5 +104,6 @@ def fold(events: list[dict]) -> LogState:
         steps=tuple(steps.values()),
         finished_steps=tuple(s.id for s in steps.values() if s.outcome == "done"),
         failed_step=failed,
-        interrupted=start is not None and end is None and not _runs(start),
+        interrupted=start is not None and end is None and not alive,
+        running=next((s.id for s in reversed(steps.values()) if s.outcome == "running"), None) if alive else None,
     )

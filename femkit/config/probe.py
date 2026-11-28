@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from femkit.core import process
+from femkit.core.operations import Context
+from femkit.definitions import catalogue
 from femkit.definitions.models import SchedulerKind
 
 GPU_QUERY = ("nvidia-smi", "--query-gpu=name,compute_cap,memory.total", "--format=csv,noheader,nounits")
@@ -46,15 +48,17 @@ def gpu_architectures() -> tuple[list[str] | None, str]:
     return sorted({g["compute_capability"].replace(".", "") for g in found}), why
 
 
-def detect_scheduler(kinds: dict[str, SchedulerKind]) -> tuple[str | None, str]:
-    """The kind whose submit command is found (jobs.md § 9.2); a kind without commands
-    when none is. A login node may lack the kind's other commands; they are located apart."""
+def detect_scheduler(kinds: dict[str, SchedulerKind], submit_declared: bool = False) -> tuple[str | None, str]:
+    """The kind whose submit command is found, or declared (jobs.md § 9.2) — a declared one
+    stands for every kind with commands; a kind without commands when none is. A login node may
+    lack the kind's other commands; they are located apart."""
     found = [name for name, kind in kinds.items()
-             if kind.commands and shutil.which(kind.commands["submit"])]
+             if kind.commands and (submit_declared or shutil.which(kind.commands["submit"]))]
     if len(found) > 1:
         return None, f"more than one scheduler kind found: {', '.join(found)}"
     if found:
-        return found[0], f"{kinds[found[0]].commands['submit']} is on PATH"
+        return found[0], ("its submit command is declared" if submit_declared
+                          else f"{kinds[found[0]].commands['submit']} is on PATH")
     plain = [name for name, kind in kinds.items() if not kind.commands]
     if len(plain) != 1:
         return None, f"{len(plain)} kinds have no commands; cannot tell which applies"  # never one: 0 or 2+
@@ -87,3 +91,21 @@ def place(kinds: dict[str, SchedulerKind], env: Mapping[str, str]) -> Place:
     """Where this process runs on the detected kind; where no kind can be told apart, a workstation."""
     name, _ = detect_scheduler(kinds)
     return Place(where(kinds[name], env), name, kinds[name]) if name else Place("workstation")
+
+
+# ------------------------------------------------------------------ what config init proposes
+
+def _gpu_architectures(ctx: Context) -> tuple[list[str] | None, str]:
+    archs, source = gpu_architectures()
+    return archs, f"measured by {source}"
+
+
+def _scheduler_launcher(ctx: Context) -> tuple[list[str] | None, str]:
+    kinds = catalogue.schedulers(ctx)
+    kind, why = detect_scheduler(kinds)
+    return (kinds[kind].mpi_launch, f"the {kind} scheduler kind's launcher ({why})") if kind else (None, why)
+
+
+#: What `config init` proposes a key from, by the name the key's field gives it (`propose`,
+#: config.md § 3.1): the value, or None and why not, and where it came from.
+PROPOSALS = {"gpu-architectures": _gpu_architectures, "scheduler-launcher": _scheduler_launcher}

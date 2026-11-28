@@ -1,4 +1,5 @@
-"""The Elmer adapter: its version probe, its log reader and check programs (definitions.md § 1)."""
+"""The Elmer adapter: its log reader, the reader of its version command's irregular output, check
+programs and the hand-over of a mesh (`handover.py`, geometry.md § 8; definitions.md § 1)."""
 
 from __future__ import annotations
 
@@ -6,13 +7,11 @@ from femkit.engines.elmer.readers import VERSION, solver_log
 
 ENGINE = "elmer"
 
-#: Run inside the environment; ElmerSolver states its version and stops.
-VERSION_COMMAND = ["ElmerSolver", "-v"]
-
 READERS = {"elmer-solver-log": solver_log}
 
 
 def read_version(stdout: str, stderr: str) -> str | None:
-    """`major.minor` from ElmerSolver's `Version: 26.2-…` line, on either stream."""
+    """`major.minor` from the `Version: 26.2-…` line that `ElmerSolver -v`, the environment's
+    version command, prints on either stream: no last line it prints is the version."""
     found = VERSION.search(stdout) or VERSION.search(stderr)
     return found.group(1) if found else None

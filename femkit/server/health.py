@@ -10,10 +10,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import http.client
-import json
 import secrets
 import socket
 
+from femkit.core import persist
 from femkit.server.protocol import HEALTH_ROUTE, LOOPBACK, Listen
 
 
@@ -53,7 +53,7 @@ def ask(listen: Listen, token: str, *, timeout: float = 5.0) -> tuple[bool, str]
     finally:
         conn.close()
     try:
-        answered = json.loads(body)["proof"]
+        answered = persist.json_value(body.decode())["proof"]
     except (ValueError, KeyError, TypeError):
         return False, f"{listen.describe()} answered, but not as a femkit server (HTTP {response.status})"
     if not isinstance(answered, str) or not hmac.compare_digest(answered, proof(token, nonce)):

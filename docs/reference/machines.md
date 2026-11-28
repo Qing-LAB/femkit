@@ -6,11 +6,10 @@
 
 ## Record
 
-One machine's record, as measured on it (jobs.md § 9.1).
+One machine's record, as measured on it (jobs.md § 9.1). Its file states the record's schema version, `schema`, first; a record of another version does not load.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `schema` | `1` | required | the record's schema version: one of `1` |
 | `measured` | [Measured](#measured) | required | when and where the probe ran |
 | `identity` | text or [Unknown](#unknown) | required | the scheduler's cluster name, or the host name |
 | `host` | [Host](#host) | required | the machine the probe ran on; on a cluster, never what a job is fit against |
@@ -65,7 +64,7 @@ A fact that could not be measured, and why. Never read as zero or none.
 | `version` | text or [Unknown](#unknown) | required | its version |
 | `root` | text or [Unknown](#unknown) | required | its root (base) prefix |
 | `platform` | text or [Unknown](#unknown) | required | what an environment built here is for, e.g. linux-64 |
-| `run_enters` | boolean or [Unknown](#unknown) | required | whether `&lt;manager&gt; run -p &lt;control prefix&gt;` runs inside that prefix here |
+| `run_enters` | boolean or [Unknown](#unknown) | required | whether `&lt;manager&gt; run -n femkit` runs inside the prefix the manager lists for the control environment here |
 
 ## SchedulerFacts
 
@@ -94,7 +93,7 @@ A fact that could not be measured, and why. Never read as zero or none.
 | `count` | integer | required | how many nodes are alike in the four facts below |
 | `cores` | integer or [Unknown](#unknown) | required | cores per node |
 | `memory_mib` | integer or [Unknown](#unknown) | required | memory per node |
-| `gpus` | table of text → integer | empty | GPUs per node, {type: count}; {} is none |
+| `gpus` | table of text → integer or [Unknown](#unknown) | empty | GPUs per node, {type: count}; {} is none |
 | `architecture` | text or [Unknown](#unknown) | required | e.g. x86_64, aarch64 |
 
 ## Queue
@@ -120,9 +119,22 @@ A fact that could not be measured, and why. Never read as zero or none.
 
 ## Settings
 
+config.toml's values a job run here needs, copied
+
 | key | type | default | meaning |
 |---|---|---|---|
-| `environments` | text | required | paths.environments, as in effect |
-| `mpi` | list of text, optional | — | launch.mpi; absent when unset |
-| `preamble` | list of text, optional | — | activation.preamble; absent when unset |
-| `activation` | text, optional | — | activation.command; absent when unset |
+| `launch` | [CopiedLaunch](#copiedlaunch) | see table | how processes start |
+| `activation` | [CopiedActivation](#copiedactivation) | see table | how a job's shell gets ready |
+
+## CopiedLaunch
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `mpi` | list of text, optional | — | how a multi-rank process starts, e.g. ["mpirun", "-np", "{ranks}"]; must pass {ranks}. When unset: a multi-rank check or job, and installing an environment with MPI, are refused, naming this key. Placeholders: `{ranks}` |
+
+## CopiedActivation
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `preamble` | list of text, optional | — | the shell lines a run script runs on this machine before it enters an environment — a batch job starts a fresh shell, so a `module load` that puts the manager on PATH belongs here; [] states that none are needed (see config.md § 3.1). When unset: `job probe --write` is refused, naming this key |
+| `command` | `source activate` \| `conda activate` \| `mamba activate`, optional | — | how a shell on this machine enters an environment after the preamble — by the activate script on PATH, which a cluster's module puts there, or by the manager's shell function, its own hook evaluated first: one of `source activate`, `conda activate`, `mamba activate` (see config.md § 3.1). When unset: `job probe --write` is refused, naming this key |

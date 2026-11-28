@@ -1,0 +1,242 @@
+# Every file of a calculation folder, a launch folder and a run (jobs.md § 1.1): its name, where
+# it lies, the code or the program that writes it, who reads it, and whether `job launch` copies it
+# into each run; for a file femkit copies in, where from, and whether it is a module femkit's programs
+# run with, which a stage's identity hashes with them (workflow.md § 4); and, for a record a stage's
+# check writes, the stage programs' document it holds
+# (femkit/engines/stages/documents.py), by which a stage kind's check names it. Read by
+# femkit/jobs/layout.py, the one reader; jobs.md § 1's tree and § 5.1's records are a summary of it,
+# held to it by a test. A name in angle brackets stands for files the
+# request or its maker names — a stage's maker names its own, as the workflow declares it; `run-NNN`
+# for each run, numbered from 1. A prepare's files are written by `jobs.prepare.commit` into a folder
+# there, or with the folder, whole, by `jobs.folders.write` — what `job prepare` and `study prep`
+# both call (jobs.md § 3).
+
+# The folder of femkit's own programs, by its path from the femkit package: a request's
+# `programs` name theirs in it (jobs.md § 1.1; framework.md § 1).
+programs = "engines/stages"
+
+# ------------------------------------------------------------------ a calculation folder
+
+[files.request]
+name = "job.toml"
+lies = ["calculation", "launch"]
+writer = "a person, or jobs.folders.write; its resources again, jobs.folders.restate"
+readers = ["job prepare", "job launch", "job status", "the run door"]
+copied = true
+says = "the request (jobs.md § 2)"
+
+[files.inputs]
+name = "<inputs>"
+lies = ["calculation"]
+writer = "a person, or jobs.folders.write"
+readers = ["the command"]
+copied = true
+says = "files the command reads, as the request lists them"
+
+[files.maker]
+name = "<maker's files>"
+lies = ["calculation"]
+writer = "jobs.folders.write"
+readers = ["the folder's maker"]
+says = "what the folder's maker keeps beside the request, named as the maker declares it — a stage's stage.json"
+
+[files.maker_action]
+name = "maker.json"
+lies = ["launch"]
+writer = "jobs.folders.write"
+readers = ["job status", "job launch"]
+says = "the action that writes the launch folder again, offered once it has been launched (jobs.md § 1.2)"
+
+[files.machine]
+name = "machine.toml"
+lies = ["calculation", "launch"]
+writer = "jobs.prepare.commit, or jobs.folders.write with the folder"
+readers = ["job prepare", "job launch"]
+says = "the calculation's own copy of its target's record, taken at its first prepare (jobs.md § 3)"
+
+[files.programs]
+name = "<programs>"
+lies = ["calculation"]
+writer = "jobs.prepare.commit, or jobs.folders.write with the folder"
+readers = ["the command", "the check"]
+copied = true
+says = "femkit's programs the request names, copied in from femkit's programs"
+
+[files.monitor]
+name = "monitor.py"
+lies = ["calculation"]
+writer = "jobs.prepare.commit, or jobs.folders.write with the folder"
+readers = ["the run script"]
+copied = true
+source = "engines/stages/monitor.py"
+says = "the monitor started beside every run (jobs.md § 4.3)"
+
+[files.documents]
+name = "documents.py"
+lies = ["calculation"]
+writer = "jobs.prepare.commit, or jobs.folders.write with the folder"
+readers = ["the command", "the check"]
+copied = true
+source = "engines/stages/documents.py"
+module = true
+says = "the documents every femkit program reads and writes (framework.md § 1)"
+
+[files.process]
+name = "process.py"
+lies = ["calculation"]
+writer = "jobs.prepare.commit, or jobs.folders.write with the folder"
+readers = ["the command", "the check", "the monitor"]
+copied = true
+source = "core/process.py"
+module = true
+says = "the process runner every femkit program starts a process through (framework.md § 1)"
+
+[files.script]
+name = "run.sh"
+lies = ["calculation"]
+writer = "jobs.prepare.commit, or jobs.folders.write with the folder"
+readers = ["job launch"]
+copied = true
+says = "the run script (jobs.md § 4); a run's copy holds the paths of what it shares, written in by job launch"
+
+[files.submit]
+name = "submit.sh"
+lies = ["calculation", "launch"]
+writer = "jobs.prepare.commit, or jobs.folders.write with the folder"
+readers = ["job launch"]
+copied = true
+says = "the scheduler header that starts run.sh, on a target with a scheduler (not built yet)"
+
+[files.prepared]
+name = "prepared.json"
+lies = ["calculation", "launch"]
+writer = "jobs.prepare.commit, or jobs.folders.write with the folder"
+readers = ["job prepare", "job launch", "job status"]
+says = "what prepare resolved — written last (jobs.md § 3, step 7)"
+
+[files.run]
+name = "run-NNN"
+lies = ["calculation"]
+writer = "job launch"
+readers = ["the run door"]
+says = "one start: a folder holding the files below (jobs.md § 5)"
+
+# ------------------------------------------------------------------ a launch folder
+
+[files.walk]
+name = "run.sh"
+lies = ["launch"]
+writer = "job launch"
+readers = ["the job"]
+says = "the walk of a batch or a sequence (jobs.md §§ 4.1, 4.2)"
+
+[files.launch_record]
+name = "launch.json"
+lies = ["launch"]
+writer = "job launch"
+readers = ["job launch", "job status", "job list"]
+says = "the launch record: when it went, the job, its members or parts, each part's runs (jobs.md § 5.1)"
+
+[files.launch_log]
+name = "log"
+lies = ["launch"]
+writer = "the walk"
+readers = ["a person"]
+says = "the walk's log: each member's start and end, each part's launch as it printed it"
+
+# ------------------------------------------------------------------ a run
+
+[files.log]
+name = "run.log"
+lies = ["run"]
+writer = "the run script"
+readers = ["a person", "the monitor"]
+own = true
+says = "the run script's standard output and error, the command's among them (jobs.md § 4, block 5)"
+
+[files.check_log]
+name = "check.log"
+lies = ["run"]
+writer = "the check"
+readers = ["a person", "the run script"]
+own = true
+says = "the check's output, its last line the reason when it fails (jobs.md § 4, block 13)"
+
+[files.outputs_made]
+name = "<outputs>"
+lies = ["run"]
+writer = "the command"
+readers = ["the check", "a share's launch"]
+own = true
+says = "what the command left: the request's outputs, read-only once checked"
+
+[files.launched]
+name = "launched.json"
+lies = ["run"]
+writer = "job launch"
+readers = ["the run door"]
+says = "written once the start succeeded: when, the machine's identity, the job it rides (jobs.md § 5.1)"
+
+[files.started]
+name = "started.json"
+lies = ["run"]
+writer = "the run script"
+readers = ["the run door"]
+own = true
+says = "its start: the time, the host, what the scheduler granted, the GPU model (jobs.md § 4, block 4)"
+
+[files.ended]
+name = "ended.json"
+lies = ["run"]
+writer = "the run script"
+readers = ["the run door", "the monitor"]
+own = true
+says = "how the command ended, or why the script stopped before its end (jobs.md § 4, blocks 6 and 14)"
+
+[files.checked]
+name = "checked.json"
+lies = ["run"]
+writer = "the check"
+readers = ["the run door", "the monitor"]
+own = true
+document = "checked"
+says = "the contract's verdict on what the command left (jobs.md § 4, block 13)"
+
+[files.outputs]
+name = "outputs.json"
+lies = ["run"]
+writer = "the check"
+readers = ["job launch"]
+own = true
+document = "outputs"
+says = "each output with its SHA-256, once the check passed (jobs.md § 4, block 13)"
+
+[files.monitor_log]
+name = "monitor.log"
+lies = ["run"]
+writer = "the monitor"
+readers = ["a person", "the run door"]
+own = true
+says = "the monitor's records, its closing one among them (jobs.md § 4.3)"
+
+[files.util]
+name = "util.csv"
+lies = ["run"]
+writer = "the monitor"
+readers = ["a person"]
+own = true
+says = "what the run used against what the job holds (jobs.md § 4.3)"
+
+[files.gone]
+name = "gone.json"
+lies = ["run"]
+writer = "the first reader that finds the job over, through the run door"
+readers = ["the run door"]
+says = "the job's word, written once: when, where it asked, what it found (jobs.md § 5.1)"
+
+[files.cancel]
+name = "cancel.json"
+lies = ["run"]
+writer = "job cancel"
+readers = ["the run door"]
+says = "written once its signal was sent: the words a stopped run's state carries (jobs.md § 5.4)"

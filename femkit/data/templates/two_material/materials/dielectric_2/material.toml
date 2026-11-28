@@ -21,13 +21,13 @@ display = "Dielectric 2"
 
 # the dataset named `benchmark`
 [properties.relative_permittivity.benchmark]
-# a real constant, with its unit where it has one
-value = "4"
+# a real constant: `{value, unit}`, a plain number where it has no unit
+value = 4
 # the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)`
 convention = "real"
 # where the data comes from: a citation a reader can check, with its DOI where there is one
 source = "the two-material benchmark's choice (docs/science/electrostatics.md § 9.1)"
-# where the data holds: `all`, or `[from, to]` in its variable
+# where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable
 range = "all"
 
 # anything kept beside the material; read by no step

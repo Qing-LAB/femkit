@@ -31,4 +31,4 @@ class ImportRequest(Model):
 
 # ------------------------------------------------------------------ the operations these requests are for
 
-MATERIAL_IMPORT = Verb("material.import", ImportRequest)
+MATERIAL_IMPORT = Verb("material.import", ImportRequest, on_machine=False, effect="changes")

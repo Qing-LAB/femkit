@@ -1,16 +1,19 @@
-"""Where an environment's files live (envs.md § 1, § 4.3; config.md § 4)."""
+"""Where an environment's files live, within the prefix the manager lists for it and in femkit's
+own folders (envs.md § 1, § 4.3; config.md § 4): never where the prefix itself lies, which is the
+manager's (`manager.Manager.prefix`)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from femkit.config import settings
 from femkit.core import dirs, locks
-from femkit.core.operations import Context, operations_root
+from femkit.core.operations import operations_root
 
-
-def prefix(ctx: Context, name: str) -> Path:
-    return settings.environments_root(settings.load(ctx).config) / name
+def unmade(managed: str) -> Path:
+    """What a plan made before the environment the manager knows as ``managed`` exists writes for its
+    prefix, `<prefix of femkit-NAME>`: each step that needs it runs with the one the manager then
+    lists (envs.md § 4.1)."""
+    return Path(f"<prefix of {managed}>")
 
 
 def records(prefix_dir: Path) -> Path:

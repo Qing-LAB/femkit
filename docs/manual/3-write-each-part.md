@@ -6,36 +6,40 @@
 tests run each example and hold it to what femkit prints
 
 A project is made of **parts**: each is one file you write in your own
-editor, and each says one thing — the shared parameters, a material, a
-geometry, the physics, a mesh recipe, what to report, and a study that puts
-them together. This chapter goes through each kind, using the two templates
-of chapter 2, and shows for each a mistake and what femkit says about it.
+editor — or, for a geometry and for observables, a folder of a file and a
+script — and each says one thing: the shared definitions, a material, a
+geometry, the physics, a mesh recipe, a study that puts them together, and
+the observables computed from each solved case. No file names a solver: you
+choose the one that solves a study when you prep it (chapter 5). This
+chapter goes through each kind, using the two templates of chapter 2, and
+shows for each a mistake and what femkit says about it.
 
 Parts refer to each other by name. The geometry promises named pieces —
 bodies and faces, which femkit calls **groups** — and everything else is
 written on those groups, never on a particular geometry, so a physics, a mesh
-recipe or a set of observables serves every geometry that promises the
-groups it names. A study pairs them:
+recipe or an observables part serves every geometry that promises the
+groups it names. A study pairs them; an observables part reads studies once
+they are solved:
 
 ```mermaid
 flowchart LR
-    P["project.toml<br/>parameters: length, height, interface, bias"]
+    P["project.toml<br/>definitions: length, height, interface, bias"]
     C["components/slab/<br/>component.toml + geometry.py<br/>promises: low, high, middle, left, right, sides"]
     M1["materials/dielectric_1"]
     M2["materials/dielectric_2"]
     PH["physics/electrostatics.toml<br/>conditions on left, right, sides, middle"]
     ME["mesh/uniform.toml"]
-    O["observables/benchmark.toml<br/>points; the groups low, high"]
-    S["studies/benchmark.toml"]
+    S["studies/benchmark.toml<br/>no engine: chosen at prep"]
+    O["observables/benchmark/<br/>observables.toml + observe.py<br/>takes definitions; the groups low, high"]
     P -->|"components, studies"| C
     P --> S
     C -->|"reads length, height, interface"| P
     C -->|"low is filled with"| M1
     C -->|"high is filled with"| M2
     S -->|"component"| C
-    S -->|"steps.solve.physics"| PH
+    S -->|"steps.potential.physics"| PH
     S -->|"mesh"| ME
-    S -->|"observables"| O
+    S -->|"studies"| O
     PH -.->|"names groups of"| C
     O -.->|"names groups of"| C
 ```
@@ -45,9 +49,14 @@ flowchart LR
 Every file femkit starts you with explains itself: the comment directly
 above each setting — each **key**, in the file's terms — is that key's help,
 and a key shown commented out (`# growth = 0.5`) is one you may set. Every
-value that has a unit is written with it, in quotes: `"1 m"`, `"500 nm"`,
-`"0.5 um"`, `"1 V"`, `"9.03 eV"`. A comment followed by a blank line is just
-prose. Every part's file holds `schema = 1`: the version of its format.
+quantity that has a unit is a small table of its number and its unit —
+`{value = 1, unit = "m"}`, `{value = 500, unit = "nm"}`, `{value = 9.03,
+unit = "eV"}` — or the name of one of your definitions (`"bias"`); a plain
+number with no unit is written as itself (`4`). A comment followed by a
+blank line is just prose. Every part's file holds `schema`, the version of
+its format: `schema = 2` for a study, a mesh recipe and an observables part,
+whose format changed, `schema = 1` for every other. A file of an older
+version is told what changed since, at its `schema`.
 
 The full list of every key of every part, with its type and default, is the
 [parts reference](../reference/parts.md); each section below names its table
@@ -66,35 +75,45 @@ $ femkit project new layers --from two_material --yes
 [project new] plan: 3 steps
   1. make the projects root ~/femkit-projects
   2. make the global library ~/femkit-projects/materials, holding a copy of femkit's shipped materials: vacuum
-  3. copy 9 files of two_material to ~/femkit-projects/layers
-[project new] 3 steps; logs in ~/.local/state/femkit/operations/project-layers/20261125T164829.685662Z
+  3. copy 11 files of two_material to ~/femkit-projects/layers
+[project new] 3 steps; logs in ~/.local/state/femkit/operations/project-layers/20261128T040244.029019Z
 [1/3] make the projects root ~/femkit-projects
 [2/3] make the global library ~/femkit-projects/materials, holding a copy of femkit's shipped materials: vacuum
-[3/3] copy 9 files of two_material to ~/femkit-projects/layers
-[project new] made ~/femkit-projects/layers from two_material: 9 files
+[3/3] copy 11 files of two_material to ~/femkit-projects/layers
+[project new] made ~/femkit-projects/layers from two_material: 11 files
+  copied
   components/slab/component.toml
   components/slab/geometry.py
+  definitions.py
   materials/dielectric_1/material.toml
   materials/dielectric_2/material.toml
   mesh/uniform.toml
-  observables/benchmark.toml
+  observables/benchmark/observables.toml
+  observables/benchmark/observe.py
   physics/electrostatics.toml
   project.toml
   studies/benchmark.toml
+next -- check the new project, as any other:
+    femkit project check --project layers
 $ femkit project new square --from laplace_square --yes
 [project new] plan: 1 step
-  1. copy 8 files of laplace_square to ~/femkit-projects/square
-[project new] 1 step; logs in ~/.local/state/femkit/operations/project-square/20261125T164830.279349Z
-[1/1] copy 8 files of laplace_square to ~/femkit-projects/square
-[project new] made ~/femkit-projects/square from laplace_square: 8 files
+  1. copy 10 files of laplace_square to ~/femkit-projects/square
+[project new] 1 step; logs in ~/.local/state/femkit/operations/project-square/20261128T040244.970353Z
+[1/1] copy 10 files of laplace_square to ~/femkit-projects/square
+[project new] made ~/femkit-projects/square from laplace_square: 10 files
+  copied
   components/square/component.toml
   components/square/geometry.py
+  definitions.py
   materials/vacuum/material.toml
   mesh/uniform.toml
-  observables/midpoint.toml
+  observables/midpoint/observables.toml
+  observables/midpoint/observe.py
   physics/electrostatics.toml
   project.toml
   studies/check.toml
+next -- check the new project, as any other:
+    femkit project check --project square
 ```
 
 Each mistake below is checked with `project check` (chapter 4 reads its
@@ -103,7 +122,7 @@ output in detail), then put right before the next.
 ## The project file — `project.toml`
 
 The project file says what the project is, names its geometries (its
-**components**) and its studies, and holds the **parameters** every other
+**components**) and its studies, and holds the **definitions** every other
 file may use:
 
 ```console
@@ -111,7 +130,7 @@ $ cat ~/femkit-projects/layers/project.toml
 # The two-material benchmark (docs/science/electrostatics.md § 9.1): a layered capacitor, two
 # materials in series between two held potentials, a named interface between them. Its exact
 # potential is linear in each layer, so first-order elements reproduce it on any mesh; the
-# formulation's reference values follow from the parameters below and the two materials.
+# formulation's reference values follow from the definitions below and the two materials.
 #
 # This is the project file (manual: 3 · Write each part). Every key's help is the comment
 # directly above it; a key shown commented out is one you may set.
@@ -128,71 +147,161 @@ components = ["slab"]
 # the project's studies, by name: each the file `studies/<name>.toml`
 studies = ["benchmark"]
 
-# the shared parameters, by name: each a quantity with its unit, or an expression of other parameters with `+`, `-`, `*`, `/` and parentheses (manual: 3 · Write each part)
-[parameters]
+# what the project's observables scripts need beyond femkit's `postprocess` environment, so a copy of the project carries it (manual: 3 · Write each part)
+# [postprocess]
+# the conda packages its scripts import beyond what femkit's `postprocess` environment holds, each installed into it on every machine: a package by its name, which a script imports by that name, or `{ conda = "scikit-image", module = "skimage" }` for one it imports by another
+# packages = ["pint"]
+
+# the project's definitions, by name: each a number of its type with its unit, written as its value or computed by a function in `definitions.py`; every other part uses one by its name (manual: 3 · Write each part)
+[definitions]
+
 # the slab's extent along x, from the frame's origin
-length = "1 m"
+[definitions.length]
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its value, a number of its type — a `float` may be written `10`, a `complex` as `[real, imaginary]` — its unit written apart, in `unit`; else `function`
+value = 1
+# else the name of the function in the project's `definitions.py` that computes it: it takes no arguments, reads every other definition as `defs.<name>`, a plain number in SI units — an angle in degrees — and returns its own the same way
+# function = "length"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "m"
+
 # the slab's extent along y
-height = "1 m"
+[definitions.height]
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its value, a number of its type — a `float` may be written `10`, a `complex` as `[real, imaginary]` — its unit written apart, in `unit`; else `function`
+value = 1
+# else the name of the function in the project's `definitions.py` that computes it: it takes no arguments, reads every other definition as `defs.<name>`, a plain number in SI units — an angle in degrees — and returns its own the same way
+# function = "height"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "m"
+
 # where the two materials meet, along x: between 0 and the length
-interface = "0.5 m"
+[definitions.interface]
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its value, a number of its type — a `float` may be written `10`, a `complex` as `[real, imaginary]` — its unit written apart, in `unit`; else `function`
+value = 0.5
+# else the name of the function in the project's `definitions.py` that computes it: it takes no arguments, reads every other definition as `defs.<name>`, a plain number in SI units — an angle in degrees — and returns its own the same way
+# function = "interface"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "m"
+
 # the potential the right side is held at
-bias = "1 V"
+[definitions.bias]
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its value, a number of its type — a `float` may be written `10`, a `complex` as `[real, imaginary]` — its unit written apart, in `unit`; else `function`
+value = 1
+# else the name of the function in the project's `definitions.py` that computes it: it takes no arguments, reads every other definition as `defs.<name>`, a plain number in SI units — an angle in degrees — and returns its own the same way
+# function = "bias"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "V"
 ```
 
 - `description`: a sentence or two for you and your colleagues.
 - `components` and `studies`: the names of the project's components and
   studies. A component or study the project file does not name is never
   used, and `project check` says so.
-- `[parameters]`: each a quantity with its unit, or an expression of other
-  parameters with `+`, `-`, `*`, `/` and parentheses — `"length / 2"`,
-  `"(interface + length) / 2"`. The geometry script, the physics, the mesh
-  recipe and the observables use them by name, and a study can vary one
-  (chapter 5).
+- `[postprocess]`, shown commented out: the packages your observables
+  scripts need beyond what femkit's `postprocess` environment holds (numpy,
+  scipy, matplotlib, netCDF4, xarray and meshio), each by its conda name —
+  `packages = ["pint"]` — or, for one a script imports by another name,
+  `{ conda = "scikit-image", module = "skimage" }`. A copy of the project
+  carries them, and `femkit env install postprocess` installs them on each
+  machine (chapter 1).
+- `[definitions]`: the project's shared values, each by its name a small
+  table — `type`, the number's kind (`int`, `float` or `complex`); `unit`,
+  any unit femkit reads or a product of them (`nm`, `F/m`), `1` for a plain
+  number; and either `value`, the number itself, or `function`, the name of
+  a function in `definitions.py` that computes it (below). The geometry
+  script, the physics, the mesh recipe and the observables use them by name,
+  and a study can vary a written one (chapter 5).
 
-A misspelled name in an expression:
+A value written as text, the way femkit once read it:
 
 <!-- edit ~/femkit-projects/layers/project.toml -->
 ```diff
- # where the two materials meet, along x: between 0 and the length
--interface = "0.5 m"
-+interface = "lenght / 2"
+-value = 0.5
++value = "0.5 m"
 ```
 
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          findings
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  component:slab          components/slab/component.toml        complete
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
-  x the parameter interface does not read: `lenght` is neither a unit nor a parameter given here; did you mean `length`? (the parameters: `bias`, `height`, `length`)
-      project.toml: parameters.interface
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            errors
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
+  x `interface`'s value is "0.5 m", and a value here is a number of its type (`float`); its unit is written apart, in `unit`
+      project.toml, line 56: definitions.interface.value
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 `project check` lists each part with its state, then its **findings**: here
-an error, marked `x`, at the key `parameters.interface` of `project.toml` —
-a name femkit knows neither as a parameter nor as a unit, with the closest
-parameter's name and the list of them — and a note, marked `-`, on what
-cannot be checked until the geometry is built. Chapter 4 reads
-this output line by line. Put the value back:
+an error, marked `x`, at the key of `project.toml` that holds the text — a
+value is a number, its unit written apart in `unit` — and a note, marked `-`, on what cannot be checked until the geometry is
+built. Chapter 4 reads this output line by line. Put the value back:
 
 <!-- edit ~/femkit-projects/layers/project.toml -->
 ```diff
- # where the two materials meet, along x: between 0 and the length
--interface = "lenght / 2"
-+interface = "0.5 m"
+-value = "0.5 m"
++value = 0.5
 ```
 
-Its keys: the `ProjectFile` table of the
-[parts reference](../reference/parts.md).
+Its keys: the `ProjectFile`, `Definition`, `Postprocess` and `Package`
+tables of the [parts reference](../reference/parts.md).
+
+### A value you calculate — `definitions.py`
+
+A value you need to calculate comes from a Python function in one file of
+the project, `definitions.py`, which every template starts with its header:
+`import numpy as np`, `from scipy import constants` and `import
+project.definitions as defs`. The definition names its function:
+
+```toml
+[definitions.gap]
+type = "float"
+value = 10
+unit = "nm"
+
+[definitions.half_gap]
+type = "float"
+function = "half_gap"
+unit = "nm"
+```
+
+```python
+def half_gap():
+    return defs.gap / 2
+```
+
+- A function takes no arguments and reads every other definition as
+  `defs.<name>` — a plain number of its type, **in SI units**, an angle in
+  degrees — and returns its own value the same way: `defs.gap` above is
+  `1e-08`, and the `5e-09` it returns is shown as 5 nm. You never convert a
+  unit; femkit does, both ways.
+- The file holds imports and functions alone, and may import numpy, scipy,
+  `math`, `cmath` and `project.definitions`. `project check` reads it without
+  running it, and says at its line a `defs.<name>` naming no definition, a
+  circle of functions, a function the file lacks, or anything else at its
+  top level.
+- femkit runs your functions in an environment of its own, `model_prep`
+  (numpy, scipy, netCDF4 and xarray), which the install sets up with the
+  others (chapter 1). `project check` runs them to
+  validate them and writes nothing; `study prep` runs them once for every
+  point of the study and keeps their values in `computed/<study>/definitions.nc`,
+  which every other command reads while it is in step with your files. A
+  function that fails, returns a number not of its type, or runs past a
+  minute is a finding at its definition, with the file and the line. Saving a
+  file never runs them.
 
 ## A material — `materials/<name>/material.toml`
 
@@ -224,13 +333,13 @@ display = "Dielectric 2"
 
 # the dataset named `benchmark`
 [properties.relative_permittivity.benchmark]
-# a real constant, with its unit where it has one
-value = "4"
+# a real constant: `{value, unit}`, a plain number where it has no unit
+value = 4
 # the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)`
 convention = "real"
 # where the data comes from: a citation a reader can check, with its DOI where there is one
 source = "the two-material benchmark's choice (docs/science/electrostatics.md § 9.1)"
-# where the data holds: `all`, or `[from, to]` in its variable
+# where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable
 range = "all"
 
 # anything kept beside the material; read by no step
@@ -249,38 +358,38 @@ A value in the wrong unit — a relative permittivity has none:
 
 <!-- edit ~/femkit-projects/layers/materials/dielectric_2/material.toml -->
 ```diff
- # a real constant, with its unit where it has one
--value = "4"
-+value = "4 V"
+ # a real constant: `{value, unit}`, a plain number where it has no unit
+-value = 4
++value = { value = 4, unit = "V" }
 ```
 
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  findings
-  component:slab          components/slab/component.toml        complete
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
-  x `value` is "4 V", a quantity of current^-1 length^2 mass time^-3; it needs a number with no unit
-      materials/dielectric_2/material.toml: properties.relative_permittivity.benchmark.value
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    errors
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
+  x `value` is {value = 4, unit = "V"}, a quantity of current^-1 length^2 mass time^-3; it needs a number with no unit
+      materials/dielectric_2/material.toml, line 25: properties.relative_permittivity.benchmark.value
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 femkit names what it read by its dimension in SI base quantities — a volt is
 mass × length² ÷ (time³ × current) — and a relative permittivity has none: it
-is a plain number. Put it back:
+is a plain number, written as itself. Put it back:
 
 <!-- edit ~/femkit-projects/layers/materials/dielectric_2/material.toml -->
 ```diff
- # a real constant, with its unit where it has one
--value = "4 V"
-+value = "4"
+ # a real constant: `{value, unit}`, a plain number where it has no unit
+-value = { value = 4, unit = "V" }
++value = 4
 ```
 
 Its keys: the `Material`, `Value`, `Table` and `Modelled` tables of the
@@ -329,8 +438,8 @@ unit = "m"
 # what the script reads beside its own numbers
 [inputs]
 
-# the project parameters the script reads, by name, each with what it must be — a length reaches the script in the frame's unit, an angle in degrees, a number as itself: one of `length`, `angle`, `number`
-[inputs.parameters]
+# the project's definitions the script reads, by name, each with what it must be — a length reaches the script in the frame's unit, an angle in degrees, a number as itself: one of `length`, `angle`, `number`
+[inputs.definitions]
 length = "length"
 height = "length"
 interface = "length"
@@ -338,6 +447,14 @@ interface = "length"
 # the files beside the script that it reads, each by its path from the component's folder, with its SHA-256
 # [inputs.files]
 # "profile.csv" = "<the file's SHA-256>"
+
+# what the script writes beside the geometry: a mesh, only for a script that meshes too (manual: 3 · Write each part)
+# [outputs]
+
+# a mesh it writes too, every promised group a named group of it — for a mesh no recipe can state; a mesh recipe names the `given` mesher to take it on unchanged
+# [outputs.mesh]
+# its geometry order, as a mesh recipe's — 2 for elements bent to follow a curved surface: one of `1`, `2`
+# order = 2
 
 # the named groups the script promises, each with its dimension — the frame's for a body, one less for a face, 1 for an edge in 3-D, 0 for a point; every other part names only these
 [groups]
@@ -375,13 +492,21 @@ material = "dielectric_2"
   coordinates are zero; every point another file gives is measured from it.
   For a 2-D drawing that a physics treats as a body of revolution,
   `[frame.symmetry]` names the axis.
-- `[inputs.parameters]`: the project parameters the script reads, each with
+- `[inputs.definitions]`: the project's definitions the script reads, each with
   what it must be — `length`, `angle` or `number`. A length reaches the
   script as a plain number in the frame's unit; an angle in degrees.
   `[inputs.files]` lists files beside the script that it reads, each with
   its **SHA-256**: a 64-character fingerprint computed from the file's
   bytes, which changes if any byte of the file changes, so a file changed
   under its component is noticed.
+- `[outputs]`: left out, as here, unless your script meshes too — a mesh
+  no mesh recipe can state, such as a structured block or an extruded
+  layer. `[outputs.mesh]` then gives the mesh's geometry `order`, 1 or 2 as
+  a recipe's; the script is handed a third file name, `mesh.msh`, writes
+  its mesh there as MSH 2.2 text (setting `Mesh.MshFileVersion` to 2.2 and
+  `Mesh.Binary` to 0 first), and every group it promises must be a named
+  group of that mesh. A mesh recipe takes it on unchanged by naming the
+  mesher `given` (below).
 - `[groups]`: every group the script promises, with its dimension — the
   frame's for a body, one less for a face, 1 for an edge in 3-D, 0 for a
   point. Every other part names only these.
@@ -390,8 +515,9 @@ material = "dielectric_2"
   library; `GLOBAL/vacuum` names the library's explicitly (chapter 6).
 
 The script is yours: a full Python program, written as you like. femkit hands
-it its parameters in a small JSON file and names the file it writes; the
-script draws the shapes and names the groups, and does not mesh:
+it its values in a small JSON file and names the file it writes; the
+script draws the shapes and names the groups, and — unless its contract
+declares a mesh — does not mesh:
 
 <details>
 <summary>The slab's <code>geometry.py</code></summary>
@@ -404,9 +530,9 @@ between them. It names the groups its contract (component.toml) promises — the
 and `high`, the face `middle` between them, and the outer sides `left` (x = 0), `right`
 (x = length) and `sides` (the top and the bottom of both layers).
 
-femkit runs it as `python geometry.py INPUTS OUTPUT` (geometry.md § 2). INPUTS is a JSON
-file, {"schema": 1, "parameters": {"length": 1.0, "height": 1.0, "interface": 0.5}}: each
-parameter the contract declares, a length in the frame's unit — metres here. OUTPUT is the
+femkit runs it as `python geometry.py INPUTS OUTPUT` (manual: 3 · Write each part). INPUTS is
+a JSON file, {"schema": 2, "definitions": {"length": 1.0, "height": 1.0, "interface": 0.5}}: each
+definition the contract declares, a length in the frame's unit — metres here. OUTPUT is the
 file to write the geometry to; its format is femkit's choice, by its extension. The script
 builds the shapes and names the groups; it does not mesh, since meshing is femkit's next
 step. Run it by hand the same way, with an INPUTS file of your own.
@@ -420,8 +546,8 @@ import gmsh
 
 def main(inputs: str, output: str) -> None:
     with open(inputs) as f:
-        parameters = json.load(f)["parameters"]
-    length, height, interface = parameters["length"], parameters["height"], parameters["interface"]
+        definitions = json.load(f)["definitions"]
+    length, height, interface = definitions["length"], definitions["height"], definitions["interface"]
     if not 0 < interface < length or not height > 0:
         sys.exit(f"the interface must lie inside the slab, 0 < {interface} < {length}, "
                  f"and its height must be positive, not {height}")
@@ -486,17 +612,25 @@ if __name__ == "__main__":
 
 </details>
 
-femkit running the script, and then meshing what it draws, is not built yet
-([plan](../plans/plan.md) § 4, X). You can run it yourself, in a Python
-that has Gmsh's Python module, with an inputs file of your own, in a folder
-outside the project — femkit warns about any file in a project that is none
-of its parts (chapter 4):
+femkit runs the script for each case of a study, and meshes what it draws,
+with `study prep` (chapter 7). You can also run it yourself, in a
+Python that has Gmsh's Python module — the `gmsh` environment, which femkit
+installs beside its engines, as `femkit-gmsh` (chapter 1): enter it first —
+with an inputs file of your own, in a folder outside the project, since
+femkit warns about any file in a project that is none of its parts
+(chapter 4):
 
 ```bash
+conda activate femkit-gmsh
 mkdir -p ~/geometry-try && cd ~/geometry-try
-echo '{"schema": 1, "parameters": {"length": 1.0, "height": 1.0, "interface": 0.5}}' > inputs.json
-python ~/femkit-projects/layers/components/slab/geometry.py inputs.json slab.msh
+echo '{"schema": 2, "definitions": {"length": 1.0, "height": 1.0, "interface": 0.5}}' > inputs.json
+python ~/femkit-projects/layers/components/slab/geometry.py inputs.json geometry.xao
 ```
+
+`geometry.xao` is the file femkit names for the script to write: the exact
+shapes — a straight side stays a line, a circle stays a circle — and their
+named groups, in OpenCASCADE's format, the geometry kernel Gmsh draws with.
+femkit's meshing reads it back, so the mesh follows the true shapes.
 
 A material can fill only a body. Assigning one to the face between the
 layers:
@@ -510,20 +644,20 @@ layers:
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  component:slab          components/slab/component.toml        findings
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Component    component:slab          components/slab/component.toml          errors
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
   x a material fills a body; `middle` is outer_boundary or interface or embedded
-      components/slab/component.toml: assign.middle
+      components/slab/component.toml, line 65: assign.middle
       one of: "high", "low"
   - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 A face lies on the outside of the geometry (`outer_boundary`), between two
@@ -538,8 +672,9 @@ bodies. Put it back:
 +[assign.high]
 ```
 
-Its keys: the `Component`, `Frame`, `Symmetry`, `Inputs` and `Assignment`
-tables of the [parts reference](../reference/parts.md).
+Its keys: the `Component`, `Frame`, `Symmetry`, `Inputs`, `Outputs`,
+`DeclaredMesh` and `Assignment` tables of the
+[parts reference](../reference/parts.md).
 
 ## The physics — `physics/<name>.toml`
 
@@ -572,7 +707,7 @@ formulation = "electrostatics"
 # which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
 kind = "potential"
 # the potential the boundary is held at, in V
-value = "0 V"
+value = {value = 0, unit = "V"}
 
 [conditions.right]
 # which condition holds on the group: one of `potential`, `insulating`, `surface_charge`, `normal_flux`, `interface`
@@ -590,6 +725,13 @@ kind = "interface"
 
 # each source by its name: its kind, the group it acts in or on, and the parameters its kind lists
 # [sources]
+# [sources.charge]
+# which source it is: one of `charge_density`
+# kind = "charge_density"
+# the group it acts in or on, by name
+# on = "low"
+# rho, the free charge per unit volume, in C/m^3
+# value = {value = 1e-12, unit = "C/m^3"}
 ```
 
 - `formulation`: today `electrostatics`, the electrostatic potential
@@ -614,20 +756,20 @@ A condition on a group the component does not promise:
 ```console
 $ femkit project check --project layers
 [project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  component:slab          components/slab/component.toml        complete
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            complete
-  physics:electrostatics  physics/electrostatics.toml           findings
-  study:benchmark         studies/benchmark.toml                unchecked
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             errors
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
   x the study `benchmark` pairs this physics with the component `slab`, which promises no group `top`
-      physics/electrostatics.toml: conditions.top
+      physics/electrostatics.toml, line 32: conditions.top
       one of: "middle", "left", "right", "sides"
   - whether `left` and `right` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
+      studies/benchmark.toml, line 13: component
 ```
 
 The physics names groups only, so the finding names the study that pairs it
@@ -645,8 +787,8 @@ Its keys: the `Physics`, `Condition` and `Source` tables of the
 
 ## A mesh recipe — `mesh/<name>.toml`
 
-A mesh recipe says how fine the mesh is, over the whole geometry and near
-named groups:
+A mesh recipe says which mesher makes the mesh, and how fine the mesh is,
+over the whole geometry and near named groups:
 
 ```console
 $ cat ~/femkit-projects/square/mesh/uniform.toml
@@ -654,16 +796,19 @@ $ cat ~/femkit-projects/square/mesh/uniform.toml
 # no group, so it serves any component; the study's axis varies its `size` as
 # `mesh:uniform:size`.
 
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
-schema = 1
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `2` (manual: 3 · Write each part)
+schema = 2
 
-# the largest element size anywhere: a length
-size = "0.1 m"
+# the mesher that makes the mesh, by name — `given`, the mesh the component's script writes, passed on unchanged; the meshers: `given`, `gmsh` (manual: 3 · Write each part)
+mesher = "gmsh"
+
+# the largest element size anywhere: a length above 0
+size = {value = 0.1, unit = "m"}
 
 # the geometry order — how closely elements follow a curved surface, 2 bending them to it: one of `1`, `2`
 order = 1
 
-# how far each group's measure in the mesh may differ from its measure in the geometry, relative: a plain number
+# how far each group's measure in the mesh may differ from its measure in the geometry, relative: a plain number, 0 or above
 tolerance = 1e-9
 
 # how fast the size grows away from a group of `sizes`: the size added per unit of distance, a plain number above 0; required with `sizes`
@@ -672,11 +817,15 @@ tolerance = 1e-9
 # the smallest quality an element may have, by Gmsh's signed inverse condition number, at most 1; unset, only an inverted element, below 0, is refused
 # quality = 0.3
 
-# a finer size on and near named groups, keyed by the group: each a length
+# a finer size on and near named groups, keyed by the group: each a length above 0
 # [sizes]
-# left = "0.02 m"
+# left = {value = 0.02, unit = "m"}
 ```
 
+- `mesher`: what makes the mesh — `gmsh`, Gmsh's mesher, in the `gmsh`
+  environment; or `given`, the mesh your geometry script writes itself,
+  taken on unchanged (above). The recipe names it, never the study: a mesh
+  has its own environment, whatever solver then takes it.
 - `size`: the largest element anywhere.
 - `order`: 1 for straight-sided elements, 2 for elements bent to follow a
   curved surface.
@@ -684,36 +833,85 @@ tolerance = 1e-9
   must match the geometry's.
 - `[sizes]` with `growth`: a finer size on and near named groups, and how
   fast the size grows away from them.
-- `quality`: the worst element shape accepted.
+- `quality`: the worst element shape accepted, measured by Gmsh's *signed
+  inverse condition number*: 1 for a perfectly shaped element, near 0 for one
+  squashed flat, and below 0 for an *inverted* element — one folded inside
+  out, its corners in the wrong order, which no solver can use. Left unset,
+  only an inverted element is refused.
 
-Meshing itself is not built yet ([plan](../plans/plan.md) § 4, X); the
-recipe is checked now. A misspelled key:
+### Curved surfaces, and what `order` does in each solver
+
+A mesh cuts a shape into small triangles (in 2-D) or tetrahedra (in 3-D).
+With `order = 1` every element has straight sides, so a circle becomes a
+polygon; with `order = 2` each side gets a middle point placed on the true
+surface, and the element bends to follow it:
+
+```text
+   order = 1                     order = 2
+   ________                      ___..___
+  /        \  straight sides    /        \  sides bent onto
+ /          \ cut the curve    (          ) the true curve
+```
+
+How much that matters, measured on a disk of radius 1 meshed with elements of
+size 0.2: its area is off by 0.6 % at order 1, and by 0.0003 % at order 2.
+When your result depends on a curved surface — the field at a rounded metal
+tip, say — ask for `order = 2`.
+
+Each solver takes the curved mesh differently. A study makes one mesh per
+case, from its recipe, and every engine you choose solves from it; femkit
+checks, when you choose an engine, that it can take that mesh:
+
+```mermaid
+flowchart LR
+    G["your geometry script<br/>→ geometry.xao"] --> M["mesher = gmsh:<br/>Gmsh's mesh, your recipe"]
+    M --> E["Elmer: that mesh,<br/>curved at order 2"]
+    M -->|"order 1"| N["NGSolve: that mesh"]
+    G -->|"order 2"| R["NGSolve's own mesher,<br/>Netgen (not built yet),<br/>then curved by NGSolve"]
+```
+
+- **Elmer** solves exactly the mesh Gmsh made from the recipe, curved or
+  not.
+- **NGSolve at order 1** solves the same Gmsh mesh.
+- **NGSolve at order 2** cannot take a curved mesh made elsewhere: it bends
+  its elements using the shape behind the mesh, and a mesh brought in from
+  outside has none. It needs a recipe whose mesher is NGSolve's own, Netgen,
+  which meshes your geometry in the `ngsolve` environment, NGSolve curving
+  that mesh when it solves. Netgen's mesher is not built yet
+  ([plan](../plans/plan.md) § 4, X; the reasons:
+  [ADR 0017](../decisions/0017-netgen-curves-ngsolve-geometry.md)), and
+  whether Elmer can take Netgen's mesh is not known yet; until then only
+  Elmer takes an `order = 2` recipe's mesh, and choosing NGSolve for it is
+  refused (below).
+
+`study prep` meshes with it (chapter 7); the recipe is checked first. A
+misspelled key:
 
 <!-- edit ~/femkit-projects/square/mesh/uniform.toml -->
 ```diff
- # the largest element size anywhere: a length
--size = "0.1 m"
-+szie = "0.1 m"
+ # the largest element size anywhere: a length above 0
+-size = {value = 0.1, unit = "m"}
++szie = {value = 0.1, unit = "m"}
 ```
 
 ```console
 $ femkit project check --project square
 [project check] square: 1 error, 2 notes; the first is the next step
-  part                    file                              state
-  project                 project.toml                      complete
-  material:vacuum         materials/vacuum/material.toml    complete
-  component:square        components/square/component.toml  complete
-  mesh:uniform            mesh/uniform.toml                 unloadable
-  observables:midpoint    observables/midpoint.toml         complete
-  physics:electrostatics  physics/electrostatics.toml       complete
-  study:check             studies/check.toml                unchecked
+  section      part                    file                                   state       engines that can solve it
+  Definitions  project                 project.toml                           complete
+  Definitions  material:vacuum         materials/vacuum/material.toml         complete
+  Component    component:square        components/square/component.toml       complete
+  Physics      physics:electrostatics  physics/electrostatics.toml            complete
+  Mesh         mesh:uniform            mesh/uniform.toml                      unloadable
+  Study        study:check             studies/check.toml                     unchecked
+  Results      observables:midpoint    observables/midpoint/observables.toml  complete
   x `szie` is no key here; did you mean `size`?
-      mesh/uniform.toml: szie
+      mesh/uniform.toml, line 12: szie
       one of: size, sizes, quality, growth
   - what the study pairs with `mesh:uniform` is checked once that file loads
-      studies/check.toml: mesh
+      studies/check.toml, line 16: mesh
   - whether `left`, `right` and `sides` are each an outer boundary is checked once the geometry of `square` is built
-      studies/check.toml: component
+      studies/check.toml, line 13: component
 ```
 
 A key femkit does not know makes the file unreadable — its state is
@@ -723,191 +921,55 @@ back:
 
 <!-- edit ~/femkit-projects/square/mesh/uniform.toml -->
 ```diff
- # the largest element size anywhere: a length
--szie = "0.1 m"
-+size = "0.1 m"
+ # the largest element size anywhere: a length above 0
+-szie = {value = 0.1, unit = "m"}
++size = {value = 0.1, unit = "m"}
 ```
 
 Its keys: the `Recipe` table of the
 [parts reference](../reference/parts.md).
 
-## Observables — `observables/<name>.toml`
-
-An observable set says what a study reports: each **observable** reads a
-quantity of the physics somewhere — at a point, along a line or over a group
-— and reduces it to a number in a unit you choose:
-
-```console
-$ cat ~/femkit-projects/layers/observables/benchmark.toml
-# The benchmark's observables (manual: 3 · Write each part; docs/science/electrostatics.md
-# § 9.1): the potential at the middle of each layer and on the interface, and the energy in each
-# layer.
-# Each point is an expression of the project's parameters, measured from the slab's lower-left
-# corner, so the reference values follow from the parameters wherever the interface lies.
-
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
-schema = 1
-
-# the set's observables, by name, unique across the sets a study reports (manual: 3 · Write each part)
-[observables]
-
-# the potential halfway through the first layer
-[observables.potential_low]
-# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
-quantity = "potential"
-# where it is read, as a point: one length per axis of the component's frame, from its origin; or give `line` or `group` instead
-point = ["interface / 2", "height / 2"]
-# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
-reduction = "value"
-# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
-unit = "V"
-
-# the potential on the interface
-[observables.potential_middle]
-# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
-quantity = "potential"
-# where it is read, as a point: one length per axis of the component's frame, from its origin; or give `line` or `group` instead
-point = ["interface", "height / 2"]
-# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
-reduction = "value"
-# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
-unit = "V"
-
-# the potential halfway through the second layer
-[observables.potential_high]
-# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
-quantity = "potential"
-# where it is read, as a point: one length per axis of the component's frame, from its origin; or give `line` or `group` instead
-point = ["(interface + length) / 2", "height / 2"]
-# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
-reduction = "value"
-# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
-unit = "V"
-
-# the field's energy in the first layer, per metre of depth
-[observables.energy_low]
-# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
-quantity = "energy_density"
-# where it is read, as a group: one the paired component promises; or give `point` or `line` instead
-group = "low"
-# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
-reduction = "integral"
-# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
-unit = "J/m"
-
-# the field's energy in the second layer, per metre of depth
-[observables.energy_high]
-# the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
-quantity = "energy_density"
-# where it is read, as a group: one the paired component promises; or give `point` or `line` instead
-group = "high"
-# how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
-reduction = "integral"
-# the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
-unit = "J/m"
-```
-
-- `quantity`: what it reads, such as `potential` or `energy_density`.
-- `point`, `line` or `group`: where. A point is one length per axis of the
-  component's frame, measured from its origin, and may use the parameters,
-  so it stays in place when a parameter changes.
-- `reduction`: `value` at a point; `average`, `integral`, `maximum` or
-  `norm` over a line or a group.
-- `unit`: the unit it is reported in. An integral's unit is the quantity's
-  times the length, area or volume it is taken over — and in a 2-D slice of
-  a long object, per unit depth.
-
-An energy reported in joules, where the integral over a 2-D slice is per
-metre of depth:
-
-<!-- edit ~/femkit-projects/layers/observables/benchmark.toml -->
-```diff
- # the field's energy in the first layer, per metre of depth
- [observables.energy_low]
- # the quantity it reads: a derived quantity of the formulation of the physics a study pairs it with
- quantity = "energy_density"
- # where it is read, as a group: one the paired component promises; or give `point` or `line` instead
- group = "low"
- # how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
- reduction = "integral"
- # the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
--unit = "J/m"
-+unit = "J"
-```
-
-```console
-$ femkit project check --project layers
-[project check] layers: 1 error, 1 note; the first is the next step
-  part                    file                                  state
-  project                 project.toml                          complete
-  material:dielectric_1   materials/dielectric_1/material.toml  complete
-  material:dielectric_2   materials/dielectric_2/material.toml  complete
-  component:slab          components/slab/component.toml        complete
-  mesh:uniform            mesh/uniform.toml                     complete
-  observables:benchmark   observables/benchmark.toml            findings
-  physics:electrostatics  physics/electrostatics.toml           complete
-  study:benchmark         studies/benchmark.toml                unchecked
-  x `energy_low` reads energy_density, in J/m^3 times an area, and is reported in J, which is not a unit of that
-      observables/benchmark.toml: observables.energy_low.unit
-  - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
-      studies/benchmark.toml: component
-```
-
-The energy density, in J/m³, integrated over an area — a body of a 2-D
-slice — is in J/m: per metre of depth. Put it back:
-
-<!-- edit ~/femkit-projects/layers/observables/benchmark.toml -->
-```diff
- group = "low"
- # how it is reduced where it is read — a value at a point, the others over a line or a group: one of `value`, `average`, `integral`, `maximum`, `norm`
- reduction = "integral"
- # the unit it is reported in: a unit of its quantity, or, for an integral, of its quantity times the length, area or volume it is integrated over
--unit = "J"
-+unit = "J/m"
-```
-
-Its keys: the `ObservableSet`, `AtPoint`, `AlongLine` and `OverGroup` tables
-of the [parts reference](../reference/parts.md).
-
 ## A study — `studies/<name>.toml`
 
 A study puts the parts together: it pairs one component with the physics
-of each step, a mesh recipe and observable sets, and says how the equations
-are solved and what varies:
+of each step and a mesh recipe, and says how the equations are solved and
+what varies. It names no solver — the **engine**: you choose the one that
+solves it when you prep it (below):
 
 ```console
 $ cat ~/femkit-projects/square/studies/check.toml
-# One study (manual: 3 · Write each part): it pairs the square with the physics, a mesh recipe
-# and an observable set, and holds everything that is not the physics. Its one axis refines the
-# mesh: `study expand` writes one case per size, and the midpoint's potential is the same in each.
+# The Laplace check (manual: 3 · Write each part): it pairs the square with the physics and a mesh
+# recipe, and holds everything that is not the physics. It names no engine: the engine that solves
+# it is chosen when it is prepped — `femkit study prep check --engine elmer`, or `--engine ngsolve`
+# — and femkit then checks that the engine takes the recipe's mesh; the solve itself is not built
+# yet. Its one axis refines the mesh: `study prep` writes one case per size. Its solve's job and
+# its meshing job each ask one core, a short wall and modest memory, ample for the square's small
+# 2-D meshes.
 
-# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `1` (manual: 3 · Write each part)
-schema = 1
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `2` (manual: 3 · Write each part)
+schema = 2
 
 # the component it solves, by name
 component = "square"
 
-# the mesh recipe it meshes with, by name
+# the mesh recipe it meshes with, by name: the recipe states the mesher that makes its mesh, which the engine chosen to solve the study must take
 mesh = "uniform"
-
-# the observable sets it reports, by name
-observables = ["midpoint"]
 
 # the units values are shown in: each value in the first listed unit of its dimension, else in SI units, angles in degrees
 display = ["m", "V", "V/m"]
 
-# its steps, by name: each solves its physics as a kind of calculation, after any step it takes from; the order they are written in means nothing (manual: 3 · Write each part)
+# its steps, by name: each solves its physics as a kind of calculation, after any step it takes from; the order they are written in means nothing; one step for now, several in one study not built yet (manual: 3 · Write each part)
 [steps]
 
-[steps.solve]
+[steps.potential]
 # the physics it solves, by name
 physics = "electrostatics"
 # the kind of calculation, which the physics' formulation must support: one of `stationary` (manual: 3 · Write each part)
 kind = "stationary"
-# when several physics are solved in turn, what it takes from a step that runs before it — a heat step taking an optics step's absorbed power, say: each by what it is to its own physics, then the step's name and a quantity that step derives
-# takes = { heat_source = "optics.absorbed_power_density" }
+# when several physics are solved in turn, what it takes from a step that runs before it — a heat step taking an optics step's absorbed power, say: each by what it is to its own physics, then the step's name and a quantity that step derives; not built yet, since a study solves one step until several are
+# takes_from = { heat_source = "optics.absorbed_power_density" }
 
-# how the equations are discretized and solved — the finite element and the linear solver — the same in every environment (manual: 3 · Write each part)
+# how the equations are discretized and solved — the finite element and the linear solver — the same whatever the engine (manual: 3 · Write each part)
 [numerics]
 
 # the finite element
@@ -924,28 +986,39 @@ kind = "direct"
 # the relative tolerance an iterative solver stops at: a plain number; required with `iterative`
 # tolerance = 1e-10
 
-# what varies, each axis keyed by the address of what it varies — a parameter, `project:parameters.side`; a value of the mesh recipe, `mesh:uniform:size`; a numerics field; or a material's dataset — every axis crossed with every other (manual: 3 · Write each part)
+# what varies, each axis keyed by the address of what it varies — a definition written as its value, `project:definitions.side`; a value of the mesh recipe, `mesh:uniform:size`; a numerics field; or a material's dataset — every axis crossed with every other, but those a group steps together, which cross as one; a value one formula gives is that formula, not an axis (manual: 3 · Write each part)
 [axes]
 
 # the recipe's size, halved twice
 [axes."mesh:uniform:size"]
 # why it varies: one of `numerical convergence`, `geometry convergence`, `physical sweep`
 class = "numerical convergence"
-# its values, in order, each written as the value the axis varies is written in its own file
-values = ["0.1 m", "0.05 m", "0.025 m"]
+# its values, in order: plain numbers — in its `unit` where what it varies has one — or, for a material's dataset, each dataset by its name
+values = [0.1, 0.05, 0.025]
+# the unit its values are in, where what it varies has one: a unit of its dimension
+unit = "m"
 
-# when the axes are of more than one class: every axis, and why their full product is needed
+# groups of axes that step together, each by its name: the n-th case takes each one's n-th value — for values no formula relates, such as each sample's measured sizes (manual: 3 · Write each part)
+# [together]
+
+# [together.samples]
+# the address of each axis of the study it steps together, two or more, of one class, with as many values each
+# axes = ["project:definitions.side", "project:definitions.bias"]
+# why their values belong together, in a sentence
+# reason = "each square as built, with the bias it was measured at"
+
+# when what is crossed holds axes of more than one class: every axis, and why their full product is needed
 # [crossing]
 # the address of every axis of the study
-# axes = ["mesh:uniform:size", "project:parameters.bias"]
+# axes = ["mesh:uniform:size", "project:definitions.bias"]
 # why the full product is needed, in a sentence
 # reason = "the midpoint must hold half the bias at every size, whatever the bias"
 
-# each engine environment's settings for this study, by the environment's name (manual: 3 · Write each part)
-[environments]
+# what belongs to the solve, whatever engine solves it: the resources of the job that solves its cases (manual: 3 · Write each part)
+[solve]
 
-# the job's resources in this environment (manual: 3 · Write each part)
-[environments.elmer.resources]
+# the resources of the job that solves the study's cases, each in turn within it, stated, never derived (manual: 3 · Write each part)
+[solve.resources]
 # MPI ranks
 ranks = 1
 # threads per rank
@@ -954,15 +1027,18 @@ threads = 1
 gpus = 0
 # wall time, `[D-]HH:MM:SS`; read on a machine with a scheduler
 wall = "00:10:00"
-# memory per node, a whole number with `K`, `M`, `G` or `T`; read on a machine with a scheduler
+# memory per node, a whole number with `K`, `M`, `G`, `T` or `P`; read on a machine with a scheduler
 memory = "2G"
 # the queue, on a machine with a scheduler
 # partition = "batch"
 # the quality of service, where the record lists one
 # qos = "normal"
 
-# the job's resources in this environment (manual: 3 · Write each part)
-[environments.ngsolve.resources]
+# the job that makes its geometries and meshes: its resources alone (manual: 3 · Write each part)
+[meshing]
+
+# the resources of the job that makes the study's geometries and meshes, each in turn within it, stated, never derived (manual: 3 · Write each part)
+[meshing.resources]
 # MPI ranks
 ranks = 1
 # threads per rank
@@ -970,34 +1046,45 @@ threads = 1
 # GPUs per node, a count; 0 states that none is used
 gpus = 0
 # wall time, `[D-]HH:MM:SS`; read on a machine with a scheduler
-wall = "00:10:00"
-# memory per node, a whole number with `K`, `M`, `G` or `T`; read on a machine with a scheduler
-memory = "2G"
+wall = "00:05:00"
+# memory per node, a whole number with `K`, `M`, `G`, `T` or `P`; read on a machine with a scheduler
+memory = "1G"
 # the queue, on a machine with a scheduler
 # partition = "batch"
 # the quality of service, where the record lists one
 # qos = "normal"
 ```
 
-- `component`, `mesh`, `observables`: the parts it pairs, by name.
+- `component`, `mesh`: the parts it pairs, by name. The recipe names the
+  mesher that makes the mesh; the engine you choose must be able to take
+  that mesh (below).
 - `display`: the units values are shown in.
 - `[steps]`: each step solves one physics as one kind of calculation —
-  today `stationary`, a field that does not change in time.
+  today `stationary`, a field that does not change in time. A study holds
+  one step for now: several steps in one study, and what a step takes from
+  one before it, `takes_from`, are not built yet, and a second step is an
+  error.
 - `[numerics]`: the finite element — its family and polynomial degree — and
-  the linear solver, the same in every engine.
+  the linear solver, the same whatever the engine.
 - `[axes]`: what varies, each axis named by what it varies — its
   **address**, in the file's comments: the kind of file, its name, and the
   key, `mesh:uniform:size` being `size` in the mesh recipe `uniform`, and
-  `project:parameters.bias` the parameter `bias` of the project file. Each
+  `project:definitions.bias` the definition `bias` of the project file. Each
   axis has its values and its reason — its `class`: `numerical
   convergence`, `geometry convergence` or `physical sweep`.
 - `[crossing]`: when the axes have more than one reason, every axis and why
   all their combinations are needed.
-- `[environments]`: for each engine, the resources a run asks for — MPI
-  ranks, threads, GPUs, time and memory.
+- `[solve]`: what belongs to the solve, whatever engine solves it:
+  `resources`, the MPI ranks, threads, GPUs, time and memory of the job that
+  solves the study's cases (not built yet) — a GPU asked for there means the
+  engine's GPU build, such as `elmer-cuda`. What only one engine has — its
+  own options — will go under that engine's name, `[solve.elmer]`, and apply
+  only when it solves; that is not built yet.
+- `[meshing]`: `resources` alone, the job that makes the study's geometries
+  and meshes (chapter 7), each step of it one process — so it asks for one
+  core and far less time than a solve.
 
-Chapter 5 is about studies, their axes, and the calculations they make. A
-kind of calculation the physics does not have:
+A kind of calculation the physics does not have:
 
 <!-- edit ~/femkit-projects/square/studies/check.toml -->
 ```diff
@@ -1009,19 +1096,19 @@ kind of calculation the physics does not have:
 ```console
 $ femkit project check --project square
 [project check] square: 1 error, 1 note; the first is the next step
-  part                    file                              state
-  project                 project.toml                      complete
-  material:vacuum         materials/vacuum/material.toml    complete
-  component:square        components/square/component.toml  complete
-  mesh:uniform            mesh/uniform.toml                 complete
-  observables:midpoint    observables/midpoint.toml         complete
-  physics:electrostatics  physics/electrostatics.toml       complete
-  study:check             studies/check.toml                findings
+  section      part                    file                                   state     engines that can solve it
+  Definitions  project                 project.toml                           complete
+  Definitions  material:vacuum         materials/vacuum/material.toml         complete
+  Component    component:square        components/square/component.toml       complete
+  Physics      physics:electrostatics  physics/electrostatics.toml            complete
+  Mesh         mesh:uniform            mesh/uniform.toml                      complete
+  Study        study:check             studies/check.toml                     errors    elmer, ngsolve
+  Results      observables:midpoint    observables/midpoint/observables.toml  complete
   x electrostatics does not support the `static` kind of calculation
-      studies/check.toml: steps.solve.kind
+      studies/check.toml, line 28: steps.potential.kind
       one of: "stationary"
   - whether `left`, `right` and `sides` are each an outer boundary is checked once the geometry of `square` is built
-      studies/check.toml: component
+      studies/check.toml, line 13: component
 ```
 
 <!-- edit ~/femkit-projects/square/studies/check.toml -->
@@ -1031,8 +1118,472 @@ $ femkit project check --project square
 +kind = "stationary"
 ```
 
-Its keys: the `Study`, `Step`, `Numerics`, `Element`, `Solver`, `Axis`,
-`Crossing`, `Binding` and `Resources` tables of the
+### The engine — chosen when you prep it
+
+Every step but the solve runs in an environment of its own, whatever the
+engine — the geometry in `gmsh`, the mesh in its mesher's, the observables
+in `postprocess` — so the engine is no part of the study: it is the solver
+you choose when you prep the study, `femkit study prep check --engine elmer`
+or `--engine ngsolve` (chapter 5), and you may choose another at any time.
+Each engine's solves are kept apart, and every engine solves the same cases
+from the study's one set of geometries and meshes. Solving is not built yet:
+today `--engine` checks that the engine takes the study's mesh.
+
+`project check` shows, for each study, the engines that can solve it: those
+that take the mesh its recipe makes. NGSolve takes no curved mesh from Gmsh
+yet, so a recipe at `order = 2` leaves Elmer alone:
+
+<!-- edit ~/femkit-projects/square/mesh/uniform.toml -->
+```diff
+ # the geometry order — how closely elements follow a curved surface, 2 bending them to it: one of `1`, `2`
+-order = 1
++order = 2
+```
+
+```console
+$ femkit project check --project square
+[project check] square: every part loads and checks; 1 note
+  section      part                    file                                   state      engines that can solve it
+  Definitions  project                 project.toml                           complete
+  Definitions  material:vacuum         materials/vacuum/material.toml         complete
+  Component    component:square        components/square/component.toml       complete
+  Physics      physics:electrostatics  physics/electrostatics.toml            complete
+  Mesh         mesh:uniform            mesh/uniform.toml                      complete
+  Study        study:check             studies/check.toml                     unchecked  elmer
+  Results      observables:midpoint    observables/midpoint/observables.toml  complete
+  - whether `left`, `right` and `sides` are each an outer boundary is checked once the geometry of `square` is built
+      studies/check.toml, line 13: component
+next -- what the parts' states allow:
+    femkit study prep --project square check --engine ENGINE   # make its cases, geometries and meshes, and the jobs that make them
+```
+
+No error: the study names no engine, so nothing in it is wrong. Choosing
+NGSolve to solve it is refused before anything is written, the error at the
+study's `mesh`, and the engines that can take it are offered instead. The
+error says no **hand-over** gives NGSolve the mesh: a hand-over is the step
+that gives an engine a mesh in the form it reads — Elmer's converts Gmsh's
+mesh with ElmerGrid, NGSolve's builds its own mesh from Gmsh's — run in the
+solve's job, just before the solve. NGSolve's takes Gmsh's mesh at order 1
+alone, since it cannot keep the curved elements of order 2:
+
+```console
+$ femkit study prep --project square check --engine ngsolve --dry-run
+  x no hand-over gives ngsolve the mesh gmsh writes at geometry order 2: the engine ngsolve cannot take this recipe's mesh
+      studies/check.toml, line 16: mesh
+[study prep] refused: the engine ngsolve cannot take the mesh the study check's recipe makes
+next -- instead:
+    femkit study prep --project square check --engine elmer
+```
+
+Put the order back:
+
+<!-- edit ~/femkit-projects/square/mesh/uniform.toml -->
+```diff
+ # the geometry order — how closely elements follow a curved surface, 2 bending them to it: one of `1`, `2`
+-order = 2
++order = 1
+```
+
+A study file that names an engine is told where the engine is chosen:
+
+<!-- edit ~/femkit-projects/square/studies/check.toml -->
+```diff
+ # the component it solves, by name
+ component = "square"
++engine = "elmer"
+```
+
+```console
+$ femkit project check --project square
+[project check] square: 1 error; the first is the next step
+  section      part                    file                                   state       engines that can solve it
+  Definitions  project                 project.toml                           complete
+  Definitions  material:vacuum         materials/vacuum/material.toml         complete
+  Component    component:square        components/square/component.toml       complete
+  Physics      physics:electrostatics  physics/electrostatics.toml            complete
+  Mesh         mesh:uniform            mesh/uniform.toml                      complete
+  Study        study:check             studies/check.toml                     unloadable
+  Results      observables:midpoint    observables/midpoint/observables.toml  complete
+  x `engine` is no key here: the engine is chosen when the study is solved, `femkit study prep STUDY --engine ENGINE`
+      studies/check.toml, line 14: engine
+```
+
+<!-- edit ~/femkit-projects/square/studies/check.toml -->
+```diff
+ # the component it solves, by name
+ component = "square"
+-engine = "elmer"
+```
+
+Chapter 5 is about studies, their axes, and the calculations they make. A
+study's keys: the `Study`, `Step`, `Numerics`, `Element`, `Solver`, `Axis`,
+`Together`, `Crossing`, `Solve`, `Meshing` and `Resources` tables of the
+[parts reference](../reference/parts.md).
+
+## Observables — `observables/<name>/`
+
+An **observables part** says what each solved case gives you: each
+**observable** a number — or an array over the case's own dimensions — that
+a function of yours computes from the case's solution. It reads studies
+after they are solved, naming each, and comes after them; a study names no
+observables. It is a folder holding two files, `observables.toml`, which
+declares each observable, and `observe.py`, its functions:
+
+```console
+$ cat ~/femkit-projects/layers/observables/benchmark/observables.toml
+# The benchmark's observables (manual: 3 · Write each part; docs/science/electrostatics.md
+# § 9.1): the potential at the middle of each layer and on the interface, halfway up, and the
+# energy in each layer, each computed by its function in observe.py beside this file, from the
+# solve's output of the study's case. The solve is not built yet, so no value is computed yet.
+# The formulation's reference values name them.
+
+# the version of this file's format, which femkit raises when it changes how files of this kind are written: one of `2` (manual: 3 · Write each part)
+schema = 2
+
+# the studies it reads, by name: any whose components promise the groups it takes (manual: 3 · Write each part)
+studies = ["benchmark"]
+
+# its observables, by name, unique across the parts reading one study: each computed by its function (manual: 3 · Write each part)
+[observables]
+
+# the potential halfway through the first layer
+[observables.potential_low]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "potential_low"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "V"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.potential_low.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+definitions = ["interface", "height"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+# groups = ["low"]
+
+# the potential on the interface
+[observables.potential_middle]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "potential_middle"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "V"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.potential_middle.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+definitions = ["interface", "height"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+# groups = ["low"]
+
+# the potential halfway through the second layer
+[observables.potential_high]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "potential_high"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "V"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.potential_high.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+definitions = ["interface", "length", "height"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+# groups = ["low"]
+
+# the field's energy in the first layer, per metre of depth
+[observables.energy_low]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "energy_low"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "J/m"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.energy_low.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+# definitions = ["interface"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+groups = ["low"]
+
+# the field's energy in the second layer, per metre of depth
+[observables.energy_high]
+# the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+function = "energy_high"
+# the number's type: an `int` a whole number, a `float` a 64-bit double, a `complex` a pair of them: one of `int`, `float`, `complex`
+type = "float"
+# its unit: a unit femkit reads, or a product of them — `nm`, `F/m`, `C^2/(N m^2)` — and `1` for a plain number, an `int`'s alone
+unit = "J/m"
+# for an array, each of its dimensions by name, with the unit of its coordinate — `{ x = "nm" }`, a profile along a line; none: one number
+# dims = { x = "m" }
+
+# what its function reads of the case beside its solve's run: definitions, groups
+[observables.energy_high.takes]
+# the project's definitions it reads, by name, each at the case's point, in SI units, as `case.defs.<name>`
+# definitions = ["interface"]
+# groups of the components of the studies it reads, by name, each as the built geometry holds it, with its regions in the case's mesh, as `case.groups.<name>`
+groups = ["high"]
+```
+
+- `studies`: the studies it reads, by name — any whose components promise
+  the groups it takes: here the two-material benchmark. It reads each solve
+  of their cases, whatever engine solved it.
+- `[observables.<name>]`: each observable, its name unique among the parts
+  reading one study:
+  - `function`: its function in `observe.py`;
+  - `type` and `unit`: what it gives, as a definition's (above) — the
+    number's type and the unit its value is in;
+  - `dims`: for an array, each of its dimensions with the unit of its
+    coordinate — `dims = { x = "m" }`, a profile along a line;
+  - `[observables.<name>.takes]`: what its function uses of the case —
+    `definitions`, the project's definitions by name, and `groups`, groups
+    of the components of the studies it reads.
+
+```console
+$ cat ~/femkit-projects/layers/observables/benchmark/observe.py
+# The functions that compute the benchmark's observables (manual: 3 · Write each part). Each takes
+# one argument, `case` — the folder of the case's finished solve run, `case.run`; the definitions
+# its `takes` names, `case.defs.<name>`, in SI units; the groups it names, `case.groups.<name>`,
+# each with its regions in the case's mesh; the study and the engine whose solve it reads,
+# `case.study` and `case.engine` — and returns a number of its type, in SI units. This file holds
+# functions alone. femkit runs it after each case's solve, in its postprocess environment, as a
+# stage of its own. The solve is not built yet, and what it writes in its run is not settled, so
+# each function says what it would read and computes nothing.
+
+
+def potential_low(case):
+    """The potential halfway through the first layer, halfway up."""
+    x, y = case.defs.interface / 2, case.defs.height / 2          # in metres
+    raise NotImplementedError(f"the potential at ({x} m, {y} m) is read from the solve's output, which femkit does not make yet")
+
+
+def potential_middle(case):
+    """The potential on the interface, halfway up."""
+    x, y = case.defs.interface, case.defs.height / 2              # in metres
+    raise NotImplementedError(f"the potential at ({x} m, {y} m) is read from the solve's output, which femkit does not make yet")
+
+
+def potential_high(case):
+    """The potential halfway through the second layer, halfway up."""
+    x, y = (case.defs.interface + case.defs.length) / 2, case.defs.height / 2   # in metres
+    raise NotImplementedError(f"the potential at ({x} m, {y} m) is read from the solve's output, which femkit does not make yet")
+
+
+def energy_low(case):
+    """The field's energy in the first layer, per metre of depth."""
+    regions = case.groups.low.regions                             # the engine's own IDs of `low` in the case's mesh
+    raise NotImplementedError(f"the energy in the regions {regions} is read from the solve's output, which femkit does not make yet")
+
+
+def energy_high(case):
+    """The field's energy in the second layer, per metre of depth."""
+    regions = case.groups.high.regions                            # the engine's own IDs of `high` in the case's mesh
+    raise NotImplementedError(f"the energy in the regions {regions} is read from the solve's output, which femkit does not make yet")
+```
+
+Each function takes one argument, `case`, which holds what its `takes`
+names and where the solution is:
+
+- `case.run`: the folder of the case's finished solve, a Python
+  `pathlib.Path`, holding what its engine wrote, which your function reads
+  as it likes — the files are the engine's, and femkit reads none of them;
+- `case.defs.<name>`: each definition its `takes.definitions` names, at the
+  case's values, in SI units, as `definitions.py` reads `defs.<name>` — a
+  plain number;
+- `case.groups.<name>`: each group its `takes.groups` names: `.regions`,
+  the engine's own numbers for it in that case's mesh, a list of whole
+  numbers, and `.place`, where it lies — a body, a boundary, an interface —
+  as the built geometry holds it;
+- `case.study`, `case.engine`: the study, and the engine whose solve it
+  reads, by their names.
+
+`takes` is all a function may read of `case`: a function — or one it calls,
+handing it `case` — that reads a definition or a group its `takes` does not
+name is an error, said before anything runs.
+
+It returns a number of its type in SI units, or an xarray DataArray over its
+`dims`; femkit checks what it returns against what `observables.toml`
+declares. `observe.py` holds imports and functions alone, and may import what
+`postprocess` holds — numpy, scipy, matplotlib, netCDF4, xarray and meshio —
+and the packages its project names in `[postprocess]` (above). `project
+check` reads it without running it. Its functions run after each case's
+solve, which is not built yet; what a solve writes in its run is not settled
+either, so the template's functions read what `takes` gives them — the
+definitions, the groups' regions — and say, in one line, what they would
+read of the solve, computing nothing.
+
+A function `observe.py` does not have:
+
+<!-- edit ~/femkit-projects/layers/observables/benchmark/observables.toml -->
+```diff
+ # the field's energy in the first layer, per metre of depth
+ [observables.energy_low]
+ # the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+-function = "energy_low"
++function = "energy_lwo"
+```
+
+```console
+$ femkit project check --project layers
+[project check] layers: 1 error, 1 note; the first is the next step
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  errors
+  x observe.py has no function `energy_lwo`; did you mean `energy_low`?
+      observables/benchmark/observables.toml, line 73: observables.energy_low.function
+      one of: "energy_high", "energy_low", "potential_high", "potential_low", "potential_middle"
+  - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
+      studies/benchmark.toml, line 13: component
+```
+
+<!-- edit ~/femkit-projects/layers/observables/benchmark/observables.toml -->
+```diff
+ # the field's energy in the first layer, per metre of depth
+ [observables.energy_low]
+ # the name of its function in the part's `observe.py`: it takes one argument, `case`, and returns a number of its type, or an xarray DataArray of it over its `dims`, in SI units
+-function = "energy_lwo"
++function = "energy_low"
+```
+
+A function reading what its `takes` does not name — the slab's length, here,
+where its height was meant:
+
+<!-- edit ~/femkit-projects/layers/observables/benchmark/observe.py -->
+```diff
+ def potential_middle(case):
+     """The potential on the interface, halfway up."""
+-    x, y = case.defs.interface, case.defs.height / 2              # in metres
++    x, y = case.defs.interface, case.defs.length / 2              # in metres
+```
+
+```console
+$ femkit project check --project layers
+[project check] layers: 1 error, 1 note; the first is the next step
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  errors
+  x `potential_middle` reads `case.defs.length` (observe.py, line 19), and its `takes.definitions` names no `length`: what a function reads of the case is what its `takes` lists
+      observables/benchmark/observables.toml, line 48: observables.potential_middle.takes.definitions
+  - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
+      studies/benchmark.toml, line 13: component
+```
+
+Its `takes` names what it reads; here the function should read the height:
+
+<!-- edit ~/femkit-projects/layers/observables/benchmark/observe.py -->
+```diff
+ def potential_middle(case):
+     """The potential on the interface, halfway up."""
+-    x, y = case.defs.interface, case.defs.length / 2              # in metres
++    x, y = case.defs.interface, case.defs.height / 2              # in metres
+```
+
+An import of what `postprocess` does not hold, which no machine would have:
+
+<!-- edit ~/femkit-projects/layers/observables/benchmark/observe.py -->
+```diff
+ # each function says what it would read and computes nothing.
++
++import skimage
+```
+
+```console
+$ femkit project check --project layers
+[project check] layers: 1 error, 1 note; the first is the next step
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  errors
+  x observe.py imports `skimage`, and may import only the modules matplotlib, meshio, netCDF4, numpy, scipy, xarray; to import it, add its conda package to the project file's `[postprocess] packages`: `packages = ["skimage"]`, or `{ conda = "NAME", module = "skimage" }` in that list where its conda name differs
+      observables/benchmark/observe.py, line 10
+  - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
+      studies/benchmark.toml, line 13: component
+```
+
+As the finding says, named in the project file — here by its conda name,
+`scikit-image`, with the name it is imported by — it is one the project
+brings, and each machine installs it into `postprocess` (chapter 1):
+
+<!-- edit ~/femkit-projects/layers/project.toml -->
+```diff
+ # what the project's observables scripts need beyond femkit's `postprocess` environment, so a copy of the project carries it (manual: 3 · Write each part)
+-# [postprocess]
++[postprocess]
+ # the conda packages its scripts import beyond what femkit's `postprocess` environment holds, each installed into it on every machine: a package by its name, which a script imports by that name, or `{ conda = "scikit-image", module = "skimage" }` for one it imports by another
+-# packages = ["pint"]
++packages = [{ conda = "scikit-image", module = "skimage" }]
+```
+
+```console
+$ femkit project check --project layers
+[project check] layers: every part loads and checks; 1 note
+  section      part                    file                                    state      engines that can solve it
+  Definitions  project                 project.toml                            complete
+  Definitions  material:dielectric_1   materials/dielectric_1/material.toml    complete
+  Definitions  material:dielectric_2   materials/dielectric_2/material.toml    complete
+  Component    component:slab          components/slab/component.toml          complete
+  Physics      physics:electrostatics  physics/electrostatics.toml             complete
+  Mesh         mesh:uniform            mesh/uniform.toml                       complete
+  Study        study:benchmark         studies/benchmark.toml                  unchecked  elmer, ngsolve
+  Results      observables:benchmark   observables/benchmark/observables.toml  complete
+  - whether `left`, `right` and `sides` are each an outer boundary, and `middle` an interface, is checked once the geometry of `slab` is built
+      studies/benchmark.toml, line 13: component
+next -- what the parts' states allow:
+    femkit study prep --project layers benchmark --engine ENGINE   # make its cases, geometries and meshes, and the jobs that make them
+```
+
+Take both back out:
+
+<!-- edit ~/femkit-projects/layers/observables/benchmark/observe.py -->
+```diff
+ # each function says what it would read and computes nothing.
+-
+-import skimage
+```
+
+<!-- edit ~/femkit-projects/layers/project.toml -->
+```diff
+ # what the project's observables scripts need beyond femkit's `postprocess` environment, so a copy of the project carries it (manual: 3 · Write each part)
+-[postprocess]
++# [postprocess]
+ # the conda packages its scripts import beyond what femkit's `postprocess` environment holds, each installed into it on every machine: a package by its name, which a script imports by that name, or `{ conda = "scikit-image", module = "skimage" }` for one it imports by another
+-packages = [{ conda = "scikit-image", module = "skimage" }]
++# packages = ["pint"]
+```
+
+An observables part written as a single file, `observables/<name>.toml`, as
+femkit once read it, is told that it is now a folder, and is not read.
+
+Its keys: the `ObservablesPart`, `Observable` and `Takes` tables of the
 [parts reference](../reference/parts.md).
 
 ## Your own files — `custom/`

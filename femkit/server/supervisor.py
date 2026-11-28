@@ -15,36 +15,47 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from collections.abc import Mapping
 import signal
-import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import BinaryIO, Callable
 
 from femkit.core import dirs, locks, persist
-from femkit.core.process import GRACE, Identity, identify
+from femkit.core.process import Child, Identity, identify
 from femkit.server import protocol
 from femkit.server.protocol import Listen, LogRoll, Pidfile, event_line
 
 
 MODULE = "femkit.server.supervisor"   # started as `python -m femkit.server.supervisor`
+TICK = 0.2   # seconds between two looks for a stop or a restart a signal asked for: a person sees no delay
 
 
-def argv(python: str, web_python: str, listen: Listen, fds: dict, hold: str, log_max_bytes: int,
+def argv(python: str, web_python: str, module: str, listen: Listen, fds: dict, hold: str, log_max_bytes: int,
          log_keep: int) -> list[str]:
-    """The supervisor's command, as `serve start` runs it and its plan shows it: ``fds`` the
-    descriptors it inherits — the listening socket, the server's lock, the web environment's use."""
-    return [python, "-m", MODULE, "--python", web_python, "--listen", json.dumps(listen.as_json()),
-            "--fd", str(fds["socket"]), "--lock-fd", str(fds["lock"]), "--use-fd", str(fds["use"]),
-            "--hold", hold, "--log-max-bytes", str(log_max_bytes), "--log-keep", str(log_keep)]
+    """The supervisor's command, as `serve start` runs it and its plan shows it: ``module`` its
+    child's, as its declaration names it (envs.md § 4.4); ``fds`` the descriptors it inherits — the
+    listening socket, the server's lock, and each environment it uses, held shared: the web
+    environment, which runs its child, and the control environment, which runs it."""
+    uses = [word for fd in fds["use"] for word in ("--use-fd", str(fd))]
+    return dirs.femkit_argv(python, MODULE, "--python", web_python, "--module", module,
+                            "--listen", json.dumps(listen.as_json()),
+                            "--fd", str(fds["socket"]), "--lock-fd", str(fds["lock"]), *uses,
+                            "--hold", hold, "--log-max-bytes", str(log_max_bytes), "--log-keep", str(log_keep))
 
 
-def child_argv(python: str, listen: Listen, fd: int | str, parent: int | str) -> list[str]:
-    """The web application's command, on the web environment's ``python``: it serves on the
-    inherited socket ``fd`` and ends when ``parent`` does (web.md § 4)."""
-    return [python, "-m", protocol.CHILD_MODULE, "--fd", str(fd), "--parent", str(parent),
-            "--listen", json.dumps(listen.as_json())]
+def child_env(start: Mapping[str, str]) -> dict[str, str]:
+    """The child's environment: femkit's own program on the web environment's Python, from the clean
+    start ``start`` (envs.md §§ 4.4, 7)."""
+    return dirs.femkit_env(start)
+
+
+def child_argv(python: str, module: str, listen: Listen, fd: int | str, parent: int | str) -> list[str]:
+    """The web application's command, its ``module`` on the web environment's ``python``: it serves
+    on the inherited socket ``fd`` and ends when ``parent`` does (web.md § 4)."""
+    return dirs.femkit_argv(python, module, "--fd", str(fd), "--parent", str(parent),
+                            "--listen", json.dumps(listen.as_json()))
 
 
 def remove_files(listen: Listen) -> None:
@@ -56,74 +67,70 @@ def remove_files(listen: Listen) -> None:
         persist.remove(path)
 
 
-def supervise(listen: Listen, fd: int, python: str, *, log_max_bytes: int, log_keep: int,
-              echo: BinaryIO | None = None, on_child: Callable[[Identity], None] | None = None) -> int:
+def supervise(listen: Listen, fd: int, python: str, module: str, start: Mapping[str, str], *, log_max_bytes: int,
+              log_keep: int, echo: BinaryIO | None = None, on_child: Callable[[Identity], None] | None = None) -> int:
     """Run the child until a stop, a child that exits by itself, or two deaths by a signal
-    within the flap window. Returns the supervisor's exit code. ``echo``: a terminal the
-    child's output also goes to (`serve foreground`); ``on_child``: told each child started."""
+    within the flap window. Returns the supervisor's exit code. ``start``: the clean start each
+    child begins from (envs.md § 4.4) — `serve foreground`'s, or the detached supervisor's own
+    environment, which `serve start` began so; ``echo``: a terminal the child's output also goes to
+    (`serve foreground`); ``on_child``: told each child started."""
     roll = LogRoll(protocol.log_file(listen.name), max_bytes=log_max_bytes, keep=log_keep)
     me = identify(os.getpid())
     assert me is not None
-    state: dict = {"child": None, "restart": False, "stop": False}
+    asked = {"restart": False, "stop": False}
 
-    def note(message: str) -> None:
-        line = event_line("supervisor", message).encode()
-        roll.write(line)
+    def write(data: bytes) -> None:
+        roll.write(data)
         if echo is not None:
-            echo.write(line)
+            echo.write(data)
             echo.flush()
 
-    def end_child() -> None:
-        """SIGTERM now, SIGKILL after the grace: a child held up by a request in flight never
-        holds up a stop or a restart."""
-        child = state["child"]
-        if child is None or child.poll() is not None:
-            return
-        child.terminate()
-        timer = threading.Timer(GRACE, lambda: child.poll() is None and child.kill())
-        timer.daemon = True
-        timer.start()
+    def note(message: str) -> None:
+        write(event_line("supervisor", message).encode())
 
+    def copy(child: Child) -> None:
+        """The child's output into the log as it comes — read beside the main thread, so a
+        child stopping is never held up by a full pipe."""
+        for chunk in child.chunks():
+            write(chunk)
+
+    # A signal only says what was asked: the main thread acts on it, so the child is never
+    # touched from inside a handler that may have interrupted a wait on it.
     def on_restart(signum, frame):
-        state["restart"] = True
-        end_child()
+        asked["restart"] = True
 
     def on_stop(signum, frame):
-        state["stop"] = True
-        end_child()
+        asked["stop"] = True
 
     signal.signal(signal.SIGHUP, on_restart)
     signal.signal(signal.SIGTERM, on_stop)
     signal.signal(signal.SIGINT, on_stop)
     deaths: list[float] = []
-    code = 0
+    child: Child | None = None
+    reader: threading.Thread | None = None
     try:
-        while not state["stop"]:
-            state["restart"] = False
-            child = subprocess.Popen(child_argv(python, listen, fd, me.pid), stdin=subprocess.DEVNULL,
-                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, pass_fds=(fd,),
-                                     start_new_session=True, cwd=dirs.checkout(),  # femkit, from the checkout
-                                     env={**os.environ, "PYTHONNOUSERSITE": "1"})
-            state["child"] = child
-            who = identify(child.pid)
-            Pidfile(me, who, dirs.host(), listen, echo is not None).write()
-            note(f"child started: pid {child.pid}")
-            if who is not None and on_child is not None:
-                on_child(who)
-            assert child.stdout is not None
-            for chunk in iter(lambda: child.stdout.read1(65536), b""):
-                roll.write(chunk)
-                if echo is not None:
-                    echo.write(chunk)
-                    echo.flush()
-            code = child.wait()
-            state["child"] = None
-            if state["stop"]:
+        while not asked["stop"]:
+            asked["restart"] = False
+            child = Child.start(child_argv(python, module, listen, fd, me.pid), keep_fds=(fd,), output="pipe",
+                                cwd=dirs.checkout(),  # femkit, from the checkout
+                                env=child_env(start))
+            Pidfile(me, child.identity, dirs.host(), listen, echo is not None).write()
+            note(f"child started: pid {child.identity.pid}")   # before its output: one writer at a time
+            if on_child is not None:
+                on_child(child.identity)
+            reader = threading.Thread(target=copy, args=(child,), daemon=True)
+            reader.start()
+            code = child.wait(TICK)
+            while code is None:   # a stop or a restart asked stops it: SIGTERM, SIGKILL after the grace
+                code = child.stop() if asked["stop"] or asked["restart"] else child.wait(TICK)
+            reader.join()
+            child = reader = None
+            if asked["stop"]:
                 break
-            if protocol.child_exit_action(code, asked=state["restart"]) == "exit":
+            if protocol.child_exit_action(code, asked=asked["restart"]) == "exit":
                 note(f"child exited with code {code} by itself; not respawned")
                 return code or 1
-            if state["restart"]:
+            if asked["restart"]:
                 note("restart asked: starting a new child")
                 continue
             now = time.monotonic()
@@ -136,14 +143,10 @@ def supervise(listen: Listen, fd: int, python: str, *, log_max_bytes: int, log_k
         note("stopped")
         return 0
     finally:
-        live = state["child"]
-        if live is not None and live.poll() is None:
-            live.terminate()
-            try:
-                live.wait(timeout=GRACE)
-            except subprocess.TimeoutExpired:
-                live.kill()
-                live.wait()
+        if child is not None:
+            child.stop()
+        if reader is not None:
+            reader.join()
         remove_files(listen)
         roll.close()
 
@@ -153,18 +156,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--listen", required=True, help="where it listens, as JSON")
     parser.add_argument("--fd", type=int, required=True, help="the listening socket, inherited")
     parser.add_argument("--python", required=True, help="the web environment's Python, which runs the child")
+    parser.add_argument("--module", required=True, help="the child's module, as its declaration names it")
     parser.add_argument("--lock-fd", type=int, required=True, help="the server's lock, inherited")
-    parser.add_argument("--use-fd", type=int, required=True, help="the web environment's lock, held shared, inherited")
+    parser.add_argument("--use-fd", type=int, action="append", required=True,
+                        help="an environment's lock, held shared, inherited: once for each environment it uses")
     parser.add_argument("--hold", required=True, help="what its locks' files name as their holder, and the "
                                                        "actions that end the hold, as JSON written by `serve start`")
     parser.add_argument("--log-max-bytes", type=int, required=True)
     parser.add_argument("--log-keep", type=int, required=True)
     args = parser.parse_args(argv)
-    listen = Listen.from_json(json.loads(args.listen))
-    by, next = json.loads(args.hold)
-    for fd in (args.lock_fd, args.use_fd):  # held from here for as long as this process runs
+    listen = Listen.from_json(persist.json_value(args.listen))
+    by, next = persist.json_value(args.hold)
+    for fd in (args.lock_fd, *args.use_fd):  # held from here for as long as this process runs
         locks.adopt(fd, by, next)
-    return supervise(listen, args.fd, args.python,
+    # started by `serve start` from the clean start, femkit's checkout its import path (envs.md § 4.4)
+    begun = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    return supervise(listen, args.fd, args.python, args.module, begun,
                      log_max_bytes=args.log_max_bytes, log_keep=args.log_keep)
 
 

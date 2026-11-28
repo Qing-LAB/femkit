@@ -15,11 +15,10 @@ import pytest
 from tests import kit
 from femkit.config import settings
 from femkit.config.settings import UserConfig
-from femkit.core.schema import Declared, DefinitionError, help_findings, help_text, load_text
+from femkit.core.schema import Declared, DefinitionError, declared_by, help_findings, help_text, load_text
 from femkit.definitions import catalogue
 from femkit.materials import material
-from femkit.models import physics, study
-from femkit.projects import door, layout, schemas
+from femkit.projects import checking, door, layout, schemas
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -49,18 +48,19 @@ def test_each_template_and_its_copy_pass_project_check(tmp_path, template):
         ("info", door.UNCHECKED, file, key) for file, key in NOT_CHECKED_YET[template]]
 
 
-def declared(model: type, text: str, manual: str | None) -> Declared:
-    """The help of each key of ``text`` a declaration beside ``model``'s schema states: a
+def declared(opened: door.Opened, part: door.Part) -> Declared:
+    """The help of each key of ``part``'s text a declaration beside its schema states — a
     physics' formulation, kinds and parameters; a study's step kinds; a material's properties and
-    its models' parameters — ending, where it ends with one, with ``manual``, its kind's chapter."""
+    its models' parameters — as the declarations registered for its schema state them, ending, where
+    it ends with one, with its kind's chapter of the manual (core.md § 2; web.md § 8.3)."""
+    return declared_by(checking.stated(checking.Checking.of(opened, kit.ctx(), checking.Defined()), part))
+
+
+def helps_of(text: str) -> Declared:
+    """The help of each key of a material's text the property list and the dispersion list state
+    (`material.keys`): a material femkit ships, which no project holds."""
     ctx = kit.ctx()
-    if model is physics.Physics:
-        return physics.declared(catalogue.formulations(ctx), text, manual)
-    if model is study.Study:
-        return study.declared(catalogue.formulations(ctx), manual)
-    if model is material.Material:
-        return material.declared(catalogue.properties(ctx), catalogue.dispersion(ctx), text)
-    return lambda path: None
+    return declared_by(material.keys(catalogue.properties(ctx), catalogue.dispersion(ctx), text))
 
 
 def test_the_comment_above_each_key_of_every_template_is_its_help():
@@ -68,8 +68,7 @@ def test_the_comment_above_each_key_of_every_template_is_its_help():
     the settings file's template, and every material femkit ships — the comment above a key is
     not that key's help as its schema states it, or, for a key a formulation, the property list or
     the dispersion list declares, as it states it; or a key its schema names is neither set nor
-    shown commented out;
-    or a part kind escapes the comparison (projects.md § 7: "the comment above each key is that
+    shown commented out; or a part kind escapes the comparison (projects.md § 7: "the comment above each key is that
     key's help as its schema states it, held so by a test"; materials.md § 4: femkit's shipped
     materials "each written as a template is, the comment above each key its help"; core.md § 2;
     config.md § 3.2)."""
@@ -81,25 +80,36 @@ def test_the_comment_above_each_key_of_every_template_is_its_help():
         for part in opened.parts.values():
             kind = opened.layout.kinds[part.address.kind]
             model, text = schemas.registered()[kind.schema_], opened.texts[part.file]
-            helps = declared(model, text, kind.manual)
+            helps = declared(opened, part)
             findings[f"{name}/{part.file}"] = [str(f) for f in help_findings(text, model, helps, kind.manual)]
             compared.add(kind.schema_)
     materials = opened.layout.kinds[opened.layout.kind_of(material.KEY)]
     shipped = door.shipped(opened.layout, opened.layout.kind_of(material.KEY))
     for name, held in shipped.items():
         text = held.file.read_text(encoding="utf-8")
-        findings[str(held.file)] = [str(f) for f in help_findings(text, material.Material,
-                                                                   declared(material.Material, text, materials.manual),
+        findings[str(held.file)] = [str(f) for f in help_findings(text, material.Material, helps_of(text),
                                                                    materials.manual)]
     assert shipped and {file: found for file, found in findings.items() if found} == {}
     assert compared == {k.schema_ for k in opened.layout.kinds.values()}
     vacuum = catalogue.templates(kit.ctx())["laplace_square"] / "materials/vacuum/material.toml"
     text = vacuum.read_text().replace("# the material's relative permittivity, in 1\n", "# its permittivity\n")
-    assert [(f.key, f.problem) for f in help_findings(text, material.Material,
-                                                      declared(material.Material, text, materials.manual),
-                                                      materials.manual)] \
+    assert [(f.key, f.problem) for f in help_findings(text, material.Material, helps_of(text), materials.manual)] \
         == [("properties.relative_permittivity",
              "its comment reads 'its permittivity'; its help is \"the material's relative permittivity, in 1\"")]
+
+
+def test_each_template_holds_one_study_naming_no_engine_and_its_observables_part_reads_it():
+    """Fails if a template holds more than one study, or a study naming an engine — one per engine,
+    written twice — or its observables part reads other than that study: a study is the problem's
+    design, the engine chosen when it is solved (ADR 0025 decision 1; projects.md § 7; models.md
+    § 5.1)."""
+    for folder in catalogue.templates(kit.ctx()).values():
+        opened = kit.opened(folder)
+        studies = [p for p in opened.parts.values() if p.address.kind == "study"]
+        (study,) = studies
+        assert "engine" not in type(study.data).model_fields
+        readers = [p.data.studies for p in opened.parts.values() if p.address.kind == "observables"]
+        assert readers == [[study.address.name]]
 
 
 #: A contract or the plan, as a text a person reads would cite it: `models.md § 2`, `plan § 4`.

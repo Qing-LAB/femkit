@@ -12,7 +12,7 @@ and the command line over it (`femkit/cli/`); the web surface over it is
 
 | rule | § |
 |---|---|
-| Everything femkit does for a person is an **operation**, declared once: name, request model, result model, whether it changes anything, its lock subject | 2 |
+| Everything femkit does for a person is an **operation**, declared once: name, request model, result model, its effect — whether it reads, changes or removes — its lock subject | 2 |
 | A changing operation is **plan, then apply**; the plan is printable, is what `--dry-run` shows, and is what the person consents to | 3 |
 | The command line and the web are **generic adapters**: every command and route is derived from the declarations; neither holds a decision or a per-operation branch | 4; [`web.md`](web.md) |
 | Request fields become options and arguments; the field's description is the help | 4.1 |
@@ -47,9 +47,11 @@ class EnvRow(Model):
 
 class ListResult(Result):
     rows: list[EnvRow]
-    def report(self) -> Report: ...
+    @property
+    def report(self) -> Report:
+        return Report(blocks=[Table.of(EnvRow, [r.model_dump() for r in self.rows], "name", "state")])
 
-ENV_LIST = Verb("env.list", ListRequest)       # beside the request: femkit/envs/requests.py
+ENV_LIST = Verb("env.list", ListRequest, on_machine=True, effect="reads")       # beside the request: femkit/envs/requests.py
 
 @operation(ENV_LIST, result=ListResult)
 def env_list(req: ListRequest, ctx: Context) -> ListResult:
@@ -59,8 +61,8 @@ def env_list(req: ListRequest, ctx: Context) -> ListResult:
 ### 2.2 A changing operation
 
 ```python
-@operation(ENV_INSTALL, result=InstallOutcome,
-           changes=True, subject=lambda req: [f"env-{n}" for n in req.names])
+@operation(ENV_INSTALL, result=InstallOutcome,     # a changing operation: its verb's effect is `changes`
+           subject=lambda req: [f"env-{n}" for n in req.names])
 class EnvInstall:
     """Install environments from their definitions (envs.md § 4)."""
 
@@ -70,12 +72,13 @@ class EnvInstall:
 
 | declaration part | meaning |
 |---|---|
-| verb | a `Verb` (`core/view.py`): the name and the request model, declared once beside the request; the declaration and every next step that names the operation read it |
+| verb | a `Verb` (`core/view.py`): the name and the request model, declared once beside the request; the declaration and every next step that names the operation read it; a withdrawn operation's name is kept nowhere (conventions § 2); and whether the operation acts on the machine it runs on — this machine's environments, settings, records, jobs or servers — so a step of it for another machine carries that machine ([`web.md`](web.md) § 7.2); a test holds every operation to its declaration; and its `effect` — `reads`, `changes` or `removes` — the one statement of whether it changes anything, which each `Action` of it carries: the command line asks consent and the page confirms before applying one that is not `reads` ([`web.md`](web.md) § 7.2) |
 | name | `group.verb` (`env.install`), or one word for a top-level verb (`doctor`). It is the command `femkit env install` and the route `/api/env/install` |
 | request | a `Model`; its fields are every input the operation takes; a `bool` field defaults to `False`, or the declaration is refused (§ 4.1) |
 | `result` | a `Result` subclass (§ 2.3) |
-| `changes` | `False` (default): one function `(req, ctx) -> result`. `True`: a class with `plan` and `apply` (§ 3) |
+| its effect | read from its verb, never stated again — `reads`: one function `(req, ctx) -> result`, which writes nothing but what any reader of a run writes through the run door — a job's word, and an ended job's address removed ([`core.md`](core.md) § 5; [`jobs.md`](jobs.md) §§ 5.1, 5.4); `changes` or `removes`: a class with `plan` and `apply` (§ 3) |
 | `subject` | for a changing operation: the lock subjects it holds while applying (core.md § 5), from the request; or `"plan"` when they depend on what the plan observes — the plan names them (`serve start`: a login node listens on a socket unless asked otherwise, [`web.md`](web.md) § 4) |
+| `surfaces` | where it is offered: the command line and the page, by default; or the command line alone, for an operation that would stop or hold the server the page talks to — `serve start`, `foreground`, `restart`, `stop` — a next step naming one drawn on the page as its command line to copy; or the page alone, for an operation whose request is a text a person typed in the page — `project save` ([`projects.md`](projects.md) § 7), whose command-line form would be an option carrying a file's content (§ 4). The registry decides each surface's set once (`registry.offered`): the command line's commands, the page's routes and the page declaration's check. A next step naming an operation of the page alone is written by the command line as where it is in the page, never as a command (being built with that operation, plan § 4, X) |
 | docstring | the command's help and the route's description |
 
 The name is unique: a second `Verb` of one name with another request is
@@ -88,16 +91,17 @@ start (§ 6).
 class Result(Model):
     issues: list[Issue] = []
     def ok(self) -> bool                  # default: no issue of severity "error"
-    def report(self) -> Report            # what a person reads, as data (web.md § 7.6); required
+    report: Report                        # a property: what a person reads, as data (web.md § 7.7); required —
+                                          # a computed field of the result's schema, so its JSON carries it
 
 class Outcome(Result):                    # the result of apply
     plan: Plan
-    status: Literal["done", "failed"]
+    status: Literal["done", "failed", "planned"]    # `planned`: the outcome a plan foresees, nothing written
     log: str | None                       # the operation directory (core.md § 6); empty when each row names its own
     def ok(self) -> bool                  # status == "done" and no error issue
 ```
 
-- `report()` builds only from fields of the model; it decides nothing. The
+- `report` builds only from fields of the model; it decides nothing. The
   command line writes it as text, the page draws it; the report is part of the
   result's JSON.
 - A result field carries a description like a request field; the JSON a
@@ -115,6 +119,8 @@ class Context:
     def cached(self, key: str, factory: Callable[[], T]) -> T    # loaded once per context
     def fresh(self) -> "Context"                    # the same variables and clock, nothing read yet: what
                                                     # apply observes again with, never a read cached since the plan
+    def release(self) -> None                       # in an apply: the runner's hold on its subjects ends (§ 3);
+                                                    # once; a fresh context holds nothing to release
     @classmethod
     def from_process(cls) -> "Context"
 ```
@@ -150,12 +156,24 @@ class Plan(Model):
     steps: tuple[Step, ...]                # empty: nothing to do
     issues: list[Issue] = []
     asks: tuple[Ask, ...] = ()             # request fields to ask for on a terminal (§ 3.1)
+    report: Report                         # the outcome its plan foresees, where the operation declares
+                                           # `outcome(plan, ctx)` — status `planned`, never saying a thing
+                                           # is done — the page's Preview (web.md § 7.7); an operation
+                                           # whose outcome is not known before it runs declares none, and
+                                           # its steps are its preview
     def text(self) -> str
-    def digest(self) -> str                # SHA-256 of the canonical JSON
+    def digest(self) -> str                # SHA-256 of its canonical JSON, the report left out: what an
+                                           # apply must match is the request, the basis and the steps
 ```
 
-1. `plan(req, ctx)` observes state and reads definitions. It writes nothing,
-   starts nothing but read-only probes, and lists every step with its command
+1. `plan(req, ctx)` observes state and reads definitions. It writes nothing
+   but what any reader of a run writes through the run door (§ 2, `changes`),
+   starts nothing but read-only probes and one declared computation — a
+   project's definitions, run in `model_prep` in its own process with a time
+   limit, writing nothing but femkit's cache, where its result is kept by the
+   SHA-256s it rests on so a second plan reads it there, and never by
+   `observe` ([`models.md`](models.md) § 3;
+   [ADR 0022](../decisions/0022-one-prep-step.md)), and lists every step with its command
    line. A state that does not allow the action raises `Refused` here
    (core.md § 7, `require`). An operation whose plan rests on facts declares
    `observe(req, ctx)`, the one place they are read: the runner calls it
@@ -170,6 +188,9 @@ class Plan(Model):
    same request planned again, when the facts differ from `plan.basis`; no step
    has run. Then it calls `apply(plan, ctx, observer)`, which runs the steps,
    writing the event log (core.md § 6) and reporting each step to the observer.
+   An apply that waits once its writes are done — a launch waited on — ends
+   its hold first, by `ctx.release()`, after which it writes nothing but what
+   a reader of a run writes ([`jobs.md`](jobs.md) § 5).
    An apply inside another's (`env bootstrap`'s installs) shares its recording:
    each step is recorded once. The first step
    that does not finish stops the run — unless the steps do not depend on one
@@ -226,6 +247,21 @@ command or argument the person leaves out, or a value not among its choices,
 is said as the person types it — `--as`, `STUDY` — with what it takes or the
 choices, and the next step, as every refusal is.
 
+**A flag is one of femkit's own options, never a calculation's value** (the
+person, 2026-11-25). A request field chooses how femkit acts — which machine
+record, whether to wait, whether to only show, what to display, a setting of
+femkit's own at install, which party solves — and is generic and justified
+where it is declared. What a calculation is — its resources, its mesher, a
+recipe's value, a definition — is stated in the person's files and scripts,
+never set, overridden or tuned by an option, so no command writes into them
+behind the person's own editing. One option chooses which party solves,
+the person's own decision (2026-11-27): `study prep --engine`, the engine
+that solves a study, which no file names — a choice of party, switched at
+any time, never a value of the calculation, which every engine solves the
+same ([`workflow.md`](workflow.md) § 7;
+[ADR 0025](../decisions/0025-one-engine-per-study-observables-after.md)
+decision 1).
+
 ### 4.1 From request fields to options
 
 | request field | command line |
@@ -240,8 +276,11 @@ choices, and the next step, as every refusal is.
 - A value is validated by the request model alone: the adapter passes the
   words as they are typed, with no type or presence check of its own, so a
   missing argument and a word that is no number are the request's problems
-  like any other — a `UsageError` naming each by its key path, exit 2, and the
-  refusal's JSON under `--json`.
+  like any other — one refusal for both surfaces (`Operation.request_from`,
+  built by `operations.refused`): each field as the person writes it
+  (`commandline.written`: `STUDY`, `--as NAME`), its help or its choices, the
+  request offered again with the fields given right kept — never pydantic's
+  words; exit 2, and the refusal's JSON under `--json`.
 - Help is the operation's docstring and each field's help
   ([`core.md`](core.md) § 2) — a field whose values are declared data names
   them as they are declared now (`json_schema_extra={"choices": "importers"}`:
@@ -258,8 +297,8 @@ choices, and the next step, as every refusal is.
 
 | option | on | meaning |
 |---|---|---|
-| `--json` | all | print exactly one JSON document on stdout: the result (for a changing operation, its outcome, even when there was nothing to do), or for `--dry-run` the plan, or for a refusal `{"refused": …, "code": …, "subject": …, "message": …, "next": […]}`, or for a defect `{"defect": …, "message": …, "log": …}` (core.md § 9) — the traceback goes to stderr |
-| `--dry-run` | changing | print the plan and stop; never asks or writes, and starts nothing but the plan's read-only probes |
+| `--json` | all | print exactly one JSON document on stdout: the result (for a changing operation, its outcome, even when there was nothing to do), or for `--dry-run` the plan, or for a refusal `{"refused": …, "code": …, "subject": …, "message": …, "next": […], "issues": […]}`, or for a defect `{"defect": …, "message": …, "log": …}` (core.md § 9) — the traceback goes to stderr |
+| `--dry-run` | changing | print the plan and stop; never asks, writes nothing but what any reader of a run writes through the run door (§ 2), and starts nothing but the plan's read-only probes and its declared computation (§ 3) |
 | `--yes`, `-y` | changing | consent given in advance |
 
 Consent: with a non-empty plan and no `--yes`, the CLI first asks the plan's
@@ -292,8 +331,10 @@ Built from `core/text.py`, so every command reads alike:
   then the commands that resolve it.
 - **What to do next** is `next -- <sentence>:` and the commands, one a line,
   indented, prose after `#`. A printed command is one a person can paste:
-  `femkit …`, the launcher the activated control environment puts on the
-  path ([`envs.md`](envs.md) § 7); femkit itself is never installed.
+  `femkit …`, the launcher the install script links from `~/.local/bin`, on
+  the path of any shell that has that folder on it, and of one where the
+  control environment is activated ([`envs.md`](envs.md) § 7); femkit itself
+  is never installed.
   Contracts write commands the same way, or leave out the leading `femkit`
   (`env install NAME`) where the context makes it plain.
 - **A refusal** is `[group verb] refused: <reason>` and `next -- instead:`
@@ -314,7 +355,9 @@ Built from `core/text.py`, so every command reads alike:
   setting's value a person reads; `--json` keeps the full path. A count names
   its noun in English's plural (`1 study`, `2 studies`), by the one helper,
   `text.count`. With `--yes` the plan is printed first,
-  its steps only; its findings come with the outcome.
+  its steps only; its findings come with the outcome — carried there by the
+  runner, once, for every operation, never copied by each apply; `--dry-run
+  --json` and the page's `/plan` answer one shape, `PlanAnswer`.
 
 `--json` is for programs: the model as JSON, indented.
 
@@ -327,8 +370,9 @@ Its routes, `serve`, and the page are [`web.md`](web.md)'s.
 ```python
 DOMAINS = ("femkit.config.operations", "femkit.envs.operations", ...)
 PARTS: tuple[str, ...] = ("femkit.models.project", "femkit.materials.material", ...)
-                                             # the modules that own part schemas
+                                             # the modules that own part schemas, each declaring REGISTERS
 def operations() -> dict[str, Operation]     # imports DOMAINS and PARTS when called, never at import
+def registrations() -> list[tuple[str, Registration]]   # what each module of PARTS registers, in their order
 def part_schemas() -> dict[str, type[Model]] # each part schema PARTS declare, by the key a layout names it
                                              # by, each registered with the door
 def part_checks() -> dict[str, tuple[Check, ...]]   # each check PARTS declare, by the key of the schema it
@@ -339,35 +383,49 @@ The one list of where operations live, and the one list of where part schemas
 live. Adding a verb to an existing domain changes only that domain's
 operations module; adding a domain, or a second module to a domain whose
 operations serve another subject (`jobs.setup`: this machine's setup, beside
-the machine records), adds one line here. A module owning part schemas
-declares `PART_SCHEMAS`, each the key a layout names it by
-([`projects.md`](projects.md) § 4) and its model, and beside it `PART_CHECKS`,
-the key of each schema it checks and its check — possibly another module's
-schema, as the materials package checks a component's assignment
-([`projects.md`](projects.md) § 6); adding one adds a line to `PARTS`.
+the machine records), adds one line here. A module owning part schemas, or a
+part of one, declares what it registers in one shape,
+`REGISTERS = Registration(...)` (`femkit/projects/checking.py`), which it
+fills only with what it has, every other field left empty — the registry
+reads each field, never guessing whether a module declares it:
+
+| field | holds |
+|---|---|
+| `schemas` | each part schema it owns, by the key a layout names it by ([`projects.md`](projects.md) § 4), and its model |
+| `checks` | the key of each schema it checks, and its check — possibly another module's schema, as the materials package checks a component's assignment ([`projects.md`](projects.md) § 6) |
+| `keys` | the key of each schema beside which a declaration states keys, and what states them ([`web.md`](web.md) § 8.3) — a physics' formulation, a step's kind, a material's properties |
+| `packages` | what gives the conda packages the projects under the projects root declare for their scripts ([`definitions.md`](definitions.md) § 4.7) — the project file's module's, one module's alone |
+
+Adding such a module adds a line to `PARTS`.
 
 `GROUPS` declares each command group, by its name, with its one sentence and
 its manual chapter (`Group(sentence, manual)`); the group `""` holds femkit's
 own commands (`doctor`) and the help of `femkit` itself.
 
 `operations()` is femkit's start — the command line and the web server call it
-before anything else — and, besides collecting the operations, it
+before anything else — and, besides collecting the operations, it hands each
+lower layer what lies above it, so no lower layer imports a package above it:
 
-- registers, for each declaration a field may name its values from
-  (`importers`, `environments`, `templates`), what gives its names now
-  (`schema.provide`), read only when a help or a refusal is built,
-
-- registers every part schema with the door (`femkit/projects/schemas.py`),
-  so a lower layer reads a schema it never imports
-  ([`projects.md`](projects.md) § 6), and every part's check with the check
-  frame (`femkit/projects/checking.py`), refusing, as a defect, a check of a
-  schema no module of `PARTS` declares;
-- hands the server what it loads before it starts (`femkit/server/startup.py`)
+- it registers every part schema with the door
+  (`femkit/projects/schemas.py`), so a lower layer reads a schema it never
+  imports ([`projects.md`](projects.md) § 6), and every part's check and
+  keys with the check frame (`femkit/projects/checking.py`), refusing, as a
+  defect, a check of a schema no module of `PARTS` declares;
+- it registers, for each declaration a request field may name its values
+  from, what gives its names now (`schema.provide`), read only when a help or
+  a refusal is built (`schema.choices`): the `importers`, the
+  `environments`, the `templates`, the `meshers` and the `engines`, each by
+  the catalogue's loader;
+- it hands the envs domain what gives the packages the projects under the
+  projects root declare — the `packages` of the one module of `PARTS` that
+  registers it, two or none a defect — by `envs.state.provide`
+  ([`definitions.md`](definitions.md) § 4.7);
+- it hands the server what it loads before it starts (`femkit/server/startup.py`)
   — the project layout, then the page's declaration against the operations it
   collected
   ([`web.md`](web.md) §§ 4, 8.1) — so `serve start` refuses one that does not
   load with no import above its domain;
-- refuses, as a defect, an operation declared twice, and a `Verb` declared
+- it refuses, as a defect, an operation declared twice, and a `Verb` declared
   over one of femkit's request models that names no registered operation or
   another operation's request: a renamed verb, or a next step written with the
   wrong request, fails at start, wherever the step is made. A test's own

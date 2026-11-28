@@ -2,7 +2,14 @@
 
 **Role:** ADR
 
-**Status:** accepted (2026-11-22)
+**Status:** accepted (2026-11-22); decisions 4 and 6 amended by
+[ADR 0025](0025-one-engine-per-study-observables-after.md) (decision 1) —
+a study names no engine, the engine is chosen when it is solved, and what is
+bound to one engine lives under its name in the study's `[solve]` — and
+decision 10 by ADR 0025 (decisions 4–8) — observables are computed after
+the solve by the person's functions, which read the engine's own files, and
+kept in one store. Its "translator" is what ADR 0025 (decision 10) names
+an engine's input writer
 
 **Authority:** the reasons and the alternatives only;
 [`models.md`](../contracts/models.md) owns the rules
@@ -31,6 +38,9 @@ input — without losing track of what was solved.
 4. **Decisions are data in the study**, bound to an environment: accepting an
    approximation names the line, the environment, the reason and what it
    accepted, so it goes stale when that changes.
+   *Amended 2026-11-27:* a decision is stated under its engine's name in the
+   study's `[solve]`, `[solve.<engine>]`, applying when that engine solves
+   ([ADR 0025](0025-one-engine-per-study-observables-after.md) decision 1).
 5. **An ability counts once proven**, in that environment, by the
    formulation's benchmark set — cases an error would show in — and goes
    unproven when the environment, the translator or the mesher changes. Results
@@ -39,6 +49,10 @@ input — without losing track of what was solved.
 6. **A case is the model, the numerics and one axis point**; everything bound
    to an environment lives in the study and is recorded in each preparation's
    manifest.
+   *Amended 2026-11-27:* in the study's `[solve]`, what only one engine has
+   under that engine's name; the study names no engine, chosen when it is
+   solved ([ADR 0025](0025-one-engine-per-study-observables-after.md)
+   decision 1).
 7. **Customizations attach only at extension points each engine declares** —
    `overlay`, `hook`, `replace`, `step`, `custom-input` — as files the person owns,
    referenced by path and hash, each saying what it covers and whether it
@@ -53,6 +67,12 @@ input — without losing track of what was solved.
    ([ADR 0012](0012-one-mesh-path.md)).
 10. **Observables are computed on the engine's own discretization**, inside its
    environment, and written to one result form.
+   *Amended 2026-11-27:* each is computed after the solve by the person's
+   function, in femkit's `postprocess` environment, which reads the engine's
+   own files in the solve's run, or a standard form of them an output
+   translator gives, and kept as netCDF with its metadata
+   ([ADR 0025](0025-one-engine-per-study-observables-after.md) decisions
+   4–8).
 11. **TOML files and web forms** built from the same schemas, as for the rest
    of femkit.
    *Amended 2026-11-23:* the page edits a part's text beside its help, not

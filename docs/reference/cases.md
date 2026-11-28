@@ -10,9 +10,197 @@
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `schema` | `1` | required | the shape this file is written in, raised when it changes: one of `1` |
-| `component` | table of text → Any | required | the component: its frame, the values of the inputs its contract declares, each of its files with its SHA-256 — its script's among them — its promised groups, and each body's material with the dataset of every property the steps' physics read |
-| `steps` | table of text → Any | required | each step by its name: its kind, its physics resolved — the meaning of the component's dimension alone — and what it takes |
-| `mesh` | table of text → Any | required | the mesh recipe, resolved, every default written |
-| `numerics` | table of text → Any | required | the numerics, every default written |
-| `point` | table of text → Any | required | each axis's address and its value |
+| `schema` | `2` | required | the shape this file is written in, raised when it changes: one of `2` |
+| `component` | [CaseComponent](#casecomponent) | required | the component: what its script draws, and each body's material |
+| `steps` | table of text → [CaseStep](#casestep) | required | each step by its name: its kind, its physics resolved — the meaning of the component's dimension alone — and what it takes |
+| `mesh` | [CaseRecipe](#caserecipe) | required | the mesh recipe, resolved, every default written (see geometry.md § 6) |
+| `numerics` | [CaseNumerics](#casenumerics) | required | the numerics, every default written |
+| `point` | table of text → [Exact](#exact) or text | required | each axis's address and its value: a quantity exact; a dataset's name, or a plain number's exact text, as itself |
+
+## CaseComponent
+
+The component in a case (models.md § 5.3): its frame, the values of the inputs its contract declares, each of its files with its SHA-256 — its script's among them — its promised groups, and each body's material with the dataset of every property the steps' physics read.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `frame` | [CaseFrame](#caseframe) | required | its frame: its dimension and its unit, and, for an axisymmetric physics, the axis it is revolved about (see geometry.md § 3) |
+| `inputs` | table of text → [Exact](#exact) | required | the value of each definition its contract declares the script reads, by the definition's name |
+| `files` | table of text → text | required | each of its files — its script's among them — by its name, with its SHA-256 |
+| `groups` | table of text → text | required | each group it promises, with its dimension |
+| `assign` | table of text → [CaseAssignment](#caseassignment) | required | each body group's material, by the group |
+
+## CaseFrame
+
+The script's space (geometry.md § 3): its dimension and its unit; its origin is where the script's coordinates are zero; for an axisymmetric physics, the axis it is revolved about. As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `dimension` | `2` \| `3` | required | the geometry's dimension, drawn in the x-y plane when 2: one of `2`, `3` |
+| `unit` | text | required | the length unit of every number the script writes and of every length handed to it |
+| `symmetry` | [CaseSymmetry](#casesymmetry), optional | required | for a 2-D geometry a physics treats as axisymmetric: the axis it is revolved about |
+
+## CaseSymmetry
+
+The axis a 2-D geometry is revolved about, for an axisymmetric physics (geometry.md § 3). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `axis` | `x` \| `y` | required | the axis of revolution, in the drawing's plane; the drawing lies on one side of it: one of `x`, `y` |
+
+## Exact
+
+A quantity as a case holds it (models.md § 5.3): its exact value in its dimension's canonical units, and that dimension (core.md § 11), so two spellings of one value are one.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `value` | text | required | its exact value in its dimension's canonical units: a whole number, or `p/q` |
+| `dimension` | table of text → integer | required | its dimension: each base quantity by its name, with its power; none for a plain number |
+
+## CaseAssignment
+
+One body's material in a case (materials.md §§ 4, 6): by its name in its library, never `GLOBAL/`, so one material written either way is one case, with the dataset of every property the steps' physics read.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `material` | text | required | the material, by its name in its library |
+| `properties` | table of text → [CaseDataset](#casedataset) | required | each property the steps' physics read, by its name in the property list: the dataset the case uses |
+
+## CaseDataset
+
+One property's dataset in a case (materials.md § 6): its name in its material, and its data, worked out for the case — never where it was found.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `dataset` | text | required | the dataset, by its name in its material |
+| `data` | [CaseValue](#casevalue) or [CaseTable](#casetable) or [CaseModelled](#casemodelled) | required | its data: a value, a table or a dispersion model, every quantity exact (see materials.md § 3) |
+
+## CaseValue
+
+A dataset that is a real constant (materials.md § 3). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `convention` | `real` \| `exp(-iwt)` \| `exp(+iwt)`, optional | required | the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)` |
+| `source` | text, optional | required | where the data comes from: a citation a reader can check, with its DOI where there is one |
+| `range` | `all` or list of [Exact](#exact), optional | required | where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable |
+| `temperature` | [Exact](#exact), optional | required | the temperature its data holds at, where it matters |
+| `uncertainty` | text, optional | required | the uncertainty its source gives, as the source gives it |
+| `value` | [Exact](#exact) | required | a real constant: `{value, unit}`, a plain number where it has no unit |
+
+## CaseTable
+
+A dataset that is a table: a file beside the material's own (materials.md § 3). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `convention` | `real` \| `exp(-iwt)` \| `exp(+iwt)`, optional | required | the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)` |
+| `source` | text, optional | required | where the data comes from: a citation a reader can check, with its DOI where there is one |
+| `range` | `all` or list of [Exact](#exact), optional | required | where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable |
+| `temperature` | [Exact](#exact), optional | required | the temperature its data holds at, where it matters |
+| `uncertainty` | text, optional | required | the uncertainty its source gives, as the source gives it |
+| `table` | text | required | the file holding it, by its path from the material's folder: comma-separated, a first row naming its columns, then one row per point, the variable increasing. Refers by name to file |
+| `sha256` | text, optional | required | its file's SHA-256, so a table changed under its material is seen |
+| `variable` | [CaseColumn](#casecolumn) | required | the variable its first column is written in, and that column's unit |
+| `interpolation` | `linear` | required | how it is read between two rows: one of `linear` (see material-data.md § 5) |
+
+## CaseColumn
+
+A table's first column: the variable it is written in, and its unit (materials.md § 3). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `name` | text | required | the variable, by its name in femkit's list of variables |
+| `unit` | text | required | the unit its column is written in, of the variable's dimension |
+
+## CaseModelled
+
+A dataset that is a dispersion model with its parameters (materials.md §§ 2, 3). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `convention` | `real` \| `exp(-iwt)` \| `exp(+iwt)`, optional | required | the convention of the source's complex values: one of `real`, `exp(-iwt)`, `exp(+iwt)` |
+| `source` | text, optional | required | where the data comes from: a citation a reader can check, with its DOI where there is one |
+| `range` | `all` or list of [Exact](#exact), optional | required | where the data holds: `all`, or `{value = [from, to], unit = "…"}` in its variable |
+| `temperature` | [Exact](#exact), optional | required | the temperature its data holds at, where it matters |
+| `uncertainty` | text, optional | required | the uncertainty its source gives, as the source gives it |
+| `model` | text | required | the dispersion model, by its name in femkit's list of models (see materials.md § 2) |
+| `parameters` | table of text → [Exact](#exact) or list of table of text → [Exact](#exact) | required | its parameters, each by its name in its model's declaration: a quantity in a dimension it declares, or, for a list of terms the model sums, a list of tables of them |
+
+## CaseStep
+
+One step: the physics it solves and the kind of calculation, after any step it takes from (models.md §§ 4.2, 4.5). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `physics` | [CasePhysics](#casephysics) | required | the physics it solves, resolved: every condition's and source's parameters exact |
+| `kind` | text | required | the kind of calculation, which the physics' formulation must support (see models.md § 4.2) |
+| `takes_from` | table of text → text | required | when several physics are solved in turn, what it takes from a step that runs before it — a heat step taking an optics step's absorbed power, say: each by what it is to its own physics, then the step's name and a quantity that step derives; not built yet, since a study solves one step until several are |
+
+## CasePhysics
+
+`physics/<p>.toml`: the physics stated on named groups, never on a component, so it serves every component whose contract promises the groups it names (models.md § 3). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `formulation` | text | required | the formulation family it states (see models.md § 4) |
+| `meaning` | text, optional | required | what the component's dimension means for its formulation, as the physics states it for that dimension alone; none where it states none (see models.md § 3) |
+| `conditions` | table of text → [CaseCondition](#casecondition) | required | the condition on each outer-boundary group, and on each interface group that carries one, keyed by the group. Refers by name to its keys: group:outer_boundary or group:interface |
+| `sources` | table of text → [CaseSource](#casesource) | required | each source by its name: its kind, the group it acts in or on, and the parameters its kind lists |
+
+## CaseCondition
+
+The condition on one group: its kind, one its formulation allows, and the parameters that kind lists (models.md § 3). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written; each key beyond its fields a parameter its kind lists, an `Exact`.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `kind` | text | required | which condition holds on the group |
+
+## CaseSource
+
+One source: its kind, one its formulation allows, the group it acts in or on, and the parameters that kind lists (models.md § 3). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written; each key beyond its fields a parameter its kind lists, an `Exact`.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `kind` | text | required | which source it is |
+| `on` | text | required | the group it acts in or on, by name. Refers by name to group |
+
+## CaseRecipe
+
+`mesh/<name>.toml`: one mesh recipe, on named groups, and the mesher that makes its mesh (geometry.md § 6). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `mesher` | text | required | the mesher that makes the mesh, by name — `given`, the mesh the component's script writes, passed on unchanged (see geometry.md § 6). Refers by name to mesher |
+| `size` | [Exact](#exact) | required | the largest element size anywhere: a length above 0 |
+| `order` | `1` \| `2` | required | the geometry order — how closely elements follow a curved surface, 2 bending them to it: one of `1`, `2` |
+| `tolerance` | [Exact](#exact) | required | how far each group's measure in the mesh may differ from its measure in the geometry, relative: a plain number, 0 or above |
+| `growth` | [Exact](#exact), optional | required | how fast the size grows away from a group of `sizes`: the size added per unit of distance, a plain number above 0; required with `sizes` |
+| `quality` | [Exact](#exact), optional | required | the smallest quality an element may have, by Gmsh's signed inverse condition number, at most 1; unset, only an inverted element, below 0, is refused |
+| `sizes` | table of text → [Exact](#exact) | required | a finer size on and near named groups, keyed by the group: each a length above 0. Refers by name to its keys: group |
+
+## CaseNumerics
+
+How the equations are discretized and solved, the same in every environment, the mesh apart (models.md § 6.4). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `element` | [CaseElement](#caseelement) | required | the finite element |
+| `solver` | [CaseSolver](#casesolver) | required | the linear solver |
+
+## CaseElement
+
+The finite element (models.md § 6.4). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `family` | `lagrange` \| `nedelec` | required | the element family: one of `lagrange`, `nedelec` |
+| `degree` | text | required | its polynomial degree: a whole number, 1 or more |
+
+## CaseSolver
+
+The linear solver (models.md § 5.1). As a case holds it (models.md § 5.3): every quantity exact, every other number its exact text, every field written.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `kind` | `direct` \| `iterative` | required | how the linear system is solved, exactly or to a tolerance: one of `direct`, `iterative` |
+| `tolerance` | text, optional | required | the relative tolerance an iterative solver stops at: a plain number; required with `iterative` |

@@ -21,7 +21,7 @@ from femkit.core.schema import key_path, load_text
 from femkit.definitions import catalogue
 from femkit.materials.material import KEY
 from femkit.projects import door, names
-from femkit.projects.checking import Checking
+from femkit.projects.checking import Checking, Registration
 from femkit.projects.door import Part
 
 _ABSENT = object()   # a key one side holds and the other does not
@@ -50,7 +50,7 @@ def check(c: Checking, part: Part) -> Iterator[Issue]:
     now = door.shipped(c.opened.layout, part.address.kind).get(name) if recorded is not None else None
     if now is None or now.digest == recorded or listed.digests.get(name) == now.digest:
         return
-    theirs = load_text(catalogue.shipped(now.file), type(part.data), now.file, {"units": c.units}, exact=True) \
+    theirs = load_text(catalogue.shipped(now.file), type(part.data), now.file, {"units": c.units}) \
         if part.data is not None else None
     keys = differing(part.data.model_dump(by_alias=True), theirs.model_dump(by_alias=True)) if theirs else []
     which = (f"these keys differ from your copy, and some may be your own edits: "
@@ -61,5 +61,4 @@ def check(c: Checking, part: Part) -> Iterator[Issue]:
                           f"offered, never applied: {which}; femkit's file is {now.file}")
 
 
-PART_SCHEMAS: dict = {}   # the material's schema is `material.py`'s
-PART_CHECKS = {KEY: check}
+REGISTERS = Registration(checks={KEY: check})
